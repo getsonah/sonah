@@ -12,8 +12,8 @@ it claimed, with the agent's own words as evidence.
 [Website](https://sonah.dev) &nbsp;&bull;&nbsp; [Install](#install) &nbsp;&bull;&nbsp; [Guide](docs/INSTALL.md) &nbsp;&bull;&nbsp; [Privacy](docs/PRIVACY.md) &nbsp;&bull;&nbsp; [Changelog](CHANGELOG.md)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.png">
-  <img width="800" alt="A Sonah review: where your attention is needed, then each thing you asked with what settles it" src="docs/images/review-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/getsonah/sonah/assets/review-dark.png">
+  <img width="800" alt="A Sonah review: where your attention is needed, then each thing you asked with what settles it" src="https://raw.githubusercontent.com/getsonah/sonah/assets/review-light.png">
 </picture>
 
 </div>

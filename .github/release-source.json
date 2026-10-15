@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/3",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "5a647fa8281815dcae1406934714dd7f9b58143d",
+  "sourceHead": "a5e8896c044209782da27e822ffb8d377d1844c8",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -81,8 +81,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "4d087ff1b0e29f06c394cf8ba4ef2dc4925f5c1cc42296f87741ed7b38b838c7",
-      "bytes": 2064,
+      "sha256": "7dae440638253378b3b34ca70425705881c4bb28714f437ff854324104a257ad",
+      "bytes": 2152,
       "mode": 420
     },
     {
