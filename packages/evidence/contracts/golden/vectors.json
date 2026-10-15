@@ -1,0 +1,40 @@
+{
+  "schema": "sonah.golden-vectors/1",
+  "note": "Frozen cross-implementation vectors. An independent implementation of C-01 must reproduce every digest below byte for byte.",
+  "records": {
+    "C-01 minimal record": {
+      "canonical": "{\"schema\":\"sonah.text/1\",\"text\":\"\"}",
+      "digest": "sha256:dc5351a27a1a684336ea0c1961c7ecd2d84b3a9ee27a07e81a6194fd39a8f664"
+    },
+    "C-02 text blob": {
+      "canonical": "{\"chunk\":{\"fromByte\":0,\"index\":0,\"totalBytes\":12,\"untilByte\":12},\"redactionProfile\":\"p1\",\"repo\":{\"host\":\"github.com\",\"id\":\"1\"},\"role\":\"instruction\",\"schema\":\"sonah.text/1\",\"sourceKey\":\"k1\",\"text\":\"do the thing\"}",
+      "digest": "sha256:6cebb588de97be47d4964f3c962997fe7fb41e4991f1450acdfa86345233db39"
+    },
+    "C-02 multibyte text": {
+      "canonical": "{\"schema\":\"sonah.text/1\",\"text\":\"héllo 😀 wörld\"}",
+      "digest": "sha256:ce253838599c1d69385c25e1a0dd9c46e198688f2e516d9ad9421f71fbd0d64a"
+    },
+    "C-03 gap": {
+      "canonical": "{\"channel\":\"commentary\",\"code\":\"missing_chunk\",\"commitOid\":null,\"count\":1,\"eventIds\":[],\"fromSequence\":null,\"prContext\":null,\"schema\":\"sonah.gap/1\",\"scope\":\"session\",\"sessionKey\":\"s1\",\"untilSequence\":null}",
+      "digest": "sha256:222b2d27f540f4168bca91d5973afe15ba3a2281d00b40d16591b4ff094c061c"
+    },
+    "C-04 evidence link": {
+      "canonical": "{\"basis\":\"none\",\"boundary\":{\"afterOid\":null,\"beforeOid\":null,\"patchReceipt\":null},\"commitOid\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"coverage\":\"unknown\",\"coveredPaths\":[],\"repo\":{\"host\":\"github.com\",\"id\":\"1\"},\"schema\":\"sonah.link/1\",\"snapshots\":[],\"verification\":\"unlinked\"}",
+      "digest": "sha256:cc0aea95f18ad72c0ff2baf75d214f5fb234c22b082614fef0924bccc3e6dcc3"
+    }
+  },
+  "identities": {
+    "C-06 finding identity": {
+      "tag": "sonah.finding-identity/1",
+      "digest": "sha256:fe89b957bf5790cc1699a1ee3d6f759dc3e69e888baaa31857419ef14ac28664"
+    },
+    "C-06 requirement identity": {
+      "tag": "sonah.requirement-identity/1",
+      "digest": "sha256:8dc85683e8756495fbb8beb0139a579328ed9db90d355f90bf64385629b21374"
+    },
+    "C-06 identity with astral set members": {
+      "tag": "sonah.finding-identity/1",
+      "digest": "sha256:7bb2041bf901aedc737dd06ce3dcd4cba313d279072e26193b6e5dd3bb0aeadc"
+    }
+  }
+}

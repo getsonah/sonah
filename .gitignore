@@ -1,0 +1,15 @@
+node_modules/
+# Recorded sessions are never committed, in any form: transcripts can carry live credentials.
+corpus/sessions/
+out/
+.env
+*.log
+.DS_Store
+dist/
+release/
+
+# A generated review of a real session quotes its text: output, never committed.
+SONAH-REVIEW-OF-THIS-SESSION.md
+
+# Worktrees an agent creates inside the checkout.
+.claude/worktrees/

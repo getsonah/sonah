@@ -1,0 +1,58 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+# The suite only reads the repository, so the token can do nothing else.
+permissions:
+  contents: read
+# A newer push to the same pull request cancels its run in progress. Each push to main is a group of its own, so every
+# push to main is tested and none of its runs is cancelled or left waiting.
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # Every OS and Node version reports its own result: one failure does not cancel the others.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v7
+        with: { node-version: "${{ matrix.node }}", package-manager-cache: false }
+      # No install step: zero runtime dependencies is a stated invariant of this codebase.
+      # If `npm test` ever needs `npm install` first, that invariant broke and CI should say so.
+      - run: npm test
+      - name: deterministic packages import no model
+        run: |
+          ! grep -rE "from '.*(review-judge|codex-model)" packages/slicer packages/redact packages/render \
+            --include='*.js' | grep -v /test/
+      - name: deterministic packages do no I/O
+        run: |
+          ! grep -rnE "node:child_process|node:os'|randomUUID|mkdtemp|Date\.now|Math\.random|fetch\(" \
+            packages/slicer packages/redact packages/render --include='*.js' | grep -v /test/
+  locale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v7
+        with: { node-version: "22", package-manager-cache: false }
+      - run: sudo locale-gen cs_CZ.UTF-8 || true
+      - run: npm test
+        env: { LANG: cs_CZ.UTF-8, LC_ALL: cs_CZ.UTF-8 }
+  other-home:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v7
+        with: { node-version: "22", package-manager-cache: false }
+      - run: mkdir -p /tmp/other-home && HOME=/tmp/other-home npm test

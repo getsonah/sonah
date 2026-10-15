@@ -1,0 +1,7 @@
+{
+  "name": "@sonah/render",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "BUSL-1.1"
+}

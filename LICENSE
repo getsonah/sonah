@@ -1,0 +1,219 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:             Abhinav Soni
+
+Licensed Work:        Sonah: the getsonah npm package and the getsonah/sonah
+                      source repository, in every version the Licensor
+                      publishes under this License, however obtained.
+                      The Licensed Work is (c) 2026 Abhinav Soni.
+
+Additional Use Grant: You may make production use of the Licensed Work free
+                      of charge if one of the following applies to you,
+                      except to provide a Competing Offering, or as part of
+                      or together with a Competing Offering provided by
+                      anyone other than the Licensor:
+
+                      1. Individuals. You are an individual using the
+                         Licensed Work for your own work, personal or
+                         commercial. If you use it through an Organization,
+                         this applies only while that Organization has had
+                         no more than three (3) Users so far in the current
+                         calendar month.
+
+                      2. Small teams. You are an Organization that has had
+                         no more than three (3) Users so far in the current
+                         calendar month.
+
+                      3. Non-profits. You are a non-profit or charitable
+                         organization, recognized as such under the law of
+                         the country where you are established, using the
+                         Licensed Work for your own non-profit activities.
+
+                      4. Trial. You are an Organization, during the thirty
+                         (30) days that begin on the first day on which
+                         your Organization makes production use of any
+                         version of the Licensed Work that clauses 1 to 3
+                         do not cover. Each Organization may rely on this
+                         clause once, for all versions of the Licensed
+                         Work.
+
+                      A Competing Offering, and any use of the Licensed
+                      Work as part of or together with one, is never
+                      covered by this grant. It requires a separate
+                      commercial license from the Licensor.
+
+                      Definitions. In this Additional Use Grant:
+
+                      "Production use" means any use of the Licensed Work,
+                      in whole or in part, other than reading, building,
+                      modifying and testing the Licensed Work itself and
+                      developing changes to it. It includes running the
+                      Licensed Work, by hand or automatically (for example
+                      in continuous integration), on agent sessions, code
+                      changes or pull requests whose results you or your
+                      Organization use, and any use of it to provide a
+                      product or service to others.
+
+                      An individual "uses" the Licensed Work in a calendar
+                      month if, in that month, they run it, have it run for
+                      them, or have agent sessions, code changes or pull
+                      requests that they started, directed or authored
+                      reviewed by it, in production use. Only reading or
+                      discussing its results is not use. Work done by an
+                      agent, bot or automated account counts as the work of
+                      each individual who started or directed it.
+
+                      You use the Licensed Work "through an Organization"
+                      when you use it in the course of your work for that
+                      Organization, as its employee, officer, contractor,
+                      consultant or agent, or while otherwise engaged by
+                      it. Having your contribution to a repository that the
+                      Organization makes publicly available reviewed is not
+                      use through that Organization, unless you are
+                      otherwise engaged by it.
+
+                      The "Users" of an Organization in a calendar month are
+                      every individual who uses the Licensed Work through
+                      that Organization in that month. Each individual
+                      counts once in a month, however often they use it and
+                      on however many machines, accounts or repositories. A
+                      "calendar month" is reckoned in Coordinated Universal
+                      Time (UTC).
+
+                      "Organization" means a company, partnership, public
+                      body or other legal entity, together with every entity
+                      that controls it, is controlled by it, or is under
+                      common control with it. "Control" means direct or
+                      indirect ownership of more than fifty percent (50%) of
+                      the voting interests of an entity, or the power to
+                      direct its management.
+
+                      A "Competing Offering" is a product or service that is
+                      offered to others on a paid basis (including through
+                      paid support arrangements) or otherwise for commercial
+                      advantage; that includes, hosts or embeds the Licensed
+                      Work or a derivative work of it, or is packaged so that
+                      the Licensed Work must be obtained for it to operate;
+                      and that:
+
+                      (a) offers the same or substantially similar
+                          functionality as the Licensed Work, including on a
+                          hosted, managed or software-as-a-service basis;
+
+                      (b) substitutes for the Licensed Work, or for any
+                          product or service that the Licensor offers using
+                          the Licensed Work; or
+
+                      (c) adds features for teams or organizations to the
+                          Licensed Work, such as shared or collaborative
+                          review, review history, administration or access
+                          control.
+
+                      Using the Licensed Work within your own Organization
+                      for its own work is not a Competing Offering, but each
+                      individual who uses it counts as one of your Users.
+                      Consulting, support and integration services are not
+                      a Competing Offering when the Licensed Work runs in
+                      the customer's own environment, under the customer's
+                      control, solely for that customer's own internal use;
+                      that customer's use is its own production use and
+                      must be covered by this grant or by a commercial
+                      license held by the customer. Operating or hosting
+                      the Licensed Work as a service for customers, for
+                      each customer separately or for many together, is not
+                      covered by this exception.
+
+Change Date:          Two years from the date on which each version of the
+                      Licensed Work is first made publicly available.
+
+Change License:       Apache License, Version 2.0
+
+For a commercial license, including a team license for an Organization with
+more than three (3) Users, or to ask whether you need one, contact Abhinav
+Soni at abhinav04soni@gmail.com.
+
+Material in the Licensed Work that was copied or adapted from third-party
+projects remains under its own license and keeps its notices; see
+THIRD_PARTY_NOTICES.md and the notices in the files concerned.
+
+Notice
+
+The Business Source License (this document, or the “License”) is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.
+
+------------------------------------------------------------------------------
+
+Business Source License 1.1
+
+License text copyright © 2017 MariaDB Corporation Ab, All Rights Reserved.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
+
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and the rights granted in the paragraph
+above terminate.
+
+If your use of the Licensed Work does not comply with the requirements
+currently in effect as described in this License, you must purchase a
+commercial license from the Licensor, its affiliated entities, or authorized
+resellers, or you must refrain from using the Licensed Work.
+
+All copies of the original and modified Licensed Work, and derivative works
+of the Licensed Work, are subject to this License. This License applies
+separately for each version of the Licensed Work and the Change Date may vary
+for each version of the Licensed Work released by Licensor.
+
+You must conspicuously display this License on each original or modified copy
+of the Licensed Work. If you receive the Licensed Work in original or
+modified form from a third party, the terms and conditions set forth in this
+License apply to your use of that work.
+
+Any use of the Licensed Work in violation of this License will automatically
+terminate your rights under this License for the current and all other
+versions of the Licensed Work.
+
+This License does not grant you any right in any trademark or logo of
+Licensor or its affiliates (provided that you may use a trademark or logo of
+Licensor as expressly required by this License).
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON
+AN “AS IS” BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS,
+EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND
+TITLE.
+
+MariaDB hereby grants you permission to use this License’s text to license
+your works, and to refer to it using the trademark “Business Source License”,
+as long as you comply with the Covenants of Licensor below.
+
+Covenants of Licensor
+
+In consideration of the right to use this License’s text and the “Business
+Source License” name and trademark, Licensor covenants to MariaDB, and to all
+other recipients of the licensed work to be provided by Licensor:
+
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where “compatible” means that software provided under the Change License can
+   be included in a program with software provided under GPL Version 2.0 or a
+   later version. Licensor may specify additional Change Licenses without
+   limitation.
+
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text “None”.
+
+3. To specify a Change Date.
+
+4. Not to modify this License in any other way.

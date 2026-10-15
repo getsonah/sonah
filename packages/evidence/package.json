@@ -1,0 +1,12 @@
+{
+  "name": "@sonah/evidence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canonical evidence contracts: serialization, identity, schemas and goldens.",
+  "license": "BUSL-1.1",
+  "type": "module",
+  "exports": {
+    "./contracts": "./contracts/index.js"
+  },
+  "engines": { "node": ">=20" }
+}

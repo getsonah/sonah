@@ -1,0 +1,8 @@
+{
+  "name": "@sonah/golden",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "license": "BUSL-1.1"
+}
