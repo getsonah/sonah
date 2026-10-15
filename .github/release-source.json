@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/3",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "fcfa05ad95e41fe69b7871c5eeab473e087f25ec",
+  "sourceHead": "5a647fa8281815dcae1406934714dd7f9b58143d",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -81,8 +81,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "d6047fce9d62ea9394ca158d86d05e63ca5903d495667384443421025ddddfe1",
-      "bytes": 19869,
+      "sha256": "4d087ff1b0e29f06c394cf8ba4ef2dc4925f5c1cc42296f87741ed7b38b838c7",
+      "bytes": 2064,
       "mode": 420
     },
     {
@@ -111,8 +111,8 @@
     },
     {
       "path": "docs/INSTALL.md",
-      "sha256": "5e0602ca204d036948a5ceefdc1a0794d86b976fda247d44d17add7971813db1",
-      "bytes": 22360,
+      "sha256": "99a24d6cc0c0ee5597c50f5acca7f8dcfa1d2724c2b71c1783b6efa7496a36d0",
+      "bytes": 29375,
       "mode": 420
     },
     {
@@ -549,8 +549,8 @@
     },
     {
       "path": "packages/cli/test/m33-g3-docs-status.test.js",
-      "sha256": "9c95053abc140ec5f9db2564bf9b39696d93db9624cec44c1b8a219e1c01556f",
-      "bytes": 5711,
+      "sha256": "7f4d84654ca8e460b85644bf38b4ce05809cc3908025de8c64ffaa186d1d95ed",
+      "bytes": 5487,
       "mode": 420
     },
     {
@@ -561,8 +561,8 @@
     },
     {
       "path": "packages/cli/test/m33-g4-harness-docs.test.js",
-      "sha256": "5af29b44341693c7dd8d3697692f8c1bbc29db43f55f0c587b73a991d39a4dc8",
-      "bytes": 12145,
+      "sha256": "6d939c1beeafa5f4798bcd089df21098ca087640787415978b83b284e555be76",
+      "bytes": 12355,
       "mode": 420
     },
     {

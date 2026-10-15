@@ -33,14 +33,17 @@ test('M33 G4 premise: an incomplete session review with a supported DECIDE reads
   assert.equal(reduceSessionStatus([], 'complete', 'incomplete'), 'UNCHECKED');
 });
 
-for (const [name, text] of [['README.md', README], ['docs/INSTALL.md', INSTALL]]) {
-  test(`M33 G4, D71 ${name}: an incomplete session review is said to have not completed, never by a status`, () => {
-    const words = flat(text);
-    // assert.ok, not assert.match: a failure names the sentence, never prints the whole document.
-    assert.ok(!/reads UNCHECKED/.test(words), 'no status is told for an incomplete review');
-    assert.ok(/did not complete/.test(words), 'it says the review did not complete');
-  });
-}
+test('M33 G4, D71 README.md: no status is told for an incomplete review', () => {
+  // The short front page says nothing of incomplete reviews; the guide below does (owner decision 2026-10-15).
+  assert.ok(!/reads UNCHECKED/.test(flat(README)), 'no status is told for an incomplete review');
+});
+
+test('M33 G4, D71 docs/INSTALL.md: an incomplete session review is said to have not completed, never by a status', () => {
+  const words = flat(INSTALL);
+  // assert.ok, not assert.match: a failure names the sentence, never prints the whole document.
+  assert.ok(!/reads UNCHECKED/.test(words), 'no status is told for an incomplete review');
+  assert.ok(/did not complete/.test(words), 'it says the review did not complete');
+});
 
 // ---- the harness summary ----------------------------------------------------------------------
 

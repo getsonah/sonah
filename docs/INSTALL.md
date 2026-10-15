@@ -311,6 +311,98 @@ rerun makes no new model call).
 `--dry-run` with the same options reads nothing from GitHub and posts nothing: it shows the comment the recording's
 last finished review would post, or says there is none yet.
 
+## How the code step reviews the change
+
+The code step (on unless you run `sonah config code-pass off` or add `--no-code-pass`; `--code-pass` turns it on for
+one review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. After the session review, Sonah reads the change the session made: every file that differs
+from the commit the session started from (read with git, which it never writes to; with no git history to start from,
+the session's own recorded edits), each file's lines before and after, and a file git shows changed that no recorded
+edit wrote is marked so. It reads those files as they are now, then the files the session read, in the working
+directory the recording names, and sends them to the reviewer in the request (the reviewer still has no tools). A
+credential-shaped file, a file in `~/.claude` or `~/.codex` (or the home you set for Claude Code or Codex, or a folder
+one of them links to, deleted or not), Claude Code's own `~/.claude.json` and its backups, a link into any of these, a
+binary file (or one git diffs as binary, through a
+`binary` or `-diff` attribute), a file outside that directory (wherever a link leads), one too large for a request, and
+a file that no longer holds what the session last wrote to it are never sent, before or after; the page counts them by
+kind, and the code review does not read as complete while any part of the change went unshown (a file the agent
+changed outside that directory, such as a scratch file, included). When the working
+directory is a folder of a larger repository, git is asked about that folder only: paths that differ elsewhere are
+counted, never named. The reviewer first checks the agent's claims, decisions, asks not
+shown done and failures it passed over against the code, then reads the whole change four ways (behaviour, tests,
+contracts, your ask), with what the session review found beside it, each finding naming the input that shows it and
+quoting every step from that input to the line (of the session, a step may quote only your words or a recorded
+result, never the agent's: a helper's report, and a `CLAUDE.md` the agent wrote, edited or deleted in the session, count
+as the agent's; a copy, move or `git checkout` onto it is not seen as a write).
+Every answer and finding quotes the code and is checked word for word by code, then by three checking passes that must
+all uphold it; a finding's checking passes are never shown the agent's words from the session (a finding's own wording
+is the reviewer's, and is shown), and the passes that check a row against the code see what the row states and no other
+words of the agent's. The
+page lists them under "What the code review found": each finding beside the row of the session review it follows
+from, then the others, then questions only you
+can answer, then what the code review did not cover. Each checked row says what the code shows of it, beside its own
+status, which the code pass never changes. Run it again on the same `--state-dir`, and the session part reuses its
+stored answers: only the code pass asks anything new. `--dry-run --state-dir DIR` says, with no call and nothing
+written, how many stored session answers such a run would reuse and what the code pass would send first.
+`--code-model ID` (or `SONAH_CODE_MODEL`) runs the code pass on a model of its own, such as `claude-opus-5-5[1m]`, while
+the session review stays on `--model` (or the default); the code pass's stored answers are kept per model.
+
+### Cursor and optional stops
+
+Cursor sessions are read only when you pass their path
+(`ls -t ~/.cursor/projects/*/agent-transcripts/*.jsonl | head -1`), and a Cursor recording can omit tool outputs, so a
+review of it can check less. Optional stops, off by default: `--max-calls N`, `--max-input-bytes N`,
+`--stop-at-utilization U`. Running the same review again reuses stored answers and costs nothing; a review that did not
+complete asks again only what failed (it still wrote its page, so give the rerun a new `--output` name).
+`sonah review --help` lists every review option.
+
+## What Sonah does and does not do
+
+It does:
+
+- read the recording your agent already keeps; you change nothing in how you work;
+- review long sessions in parts; test every claim the agent made, and every edit against what you said, in three
+  independent checking passes, and every other item the model proposes in one check against the evidence it cites
+  (`--profile standard`: three passes for every item): what the checks reject is left off the page, and what they
+  cannot settle is kept and marked not checked;
+- check every quote against the recording by code, never by trusting the model;
+- show what it could not check, and why, instead of guessing;
+- mask secrets on your computer in everything it writes for you to read;
+- keep everything on your computer except the model requests themselves.
+
+It does not:
+
+- give a verdict, approve, merge or block anything;
+- run your code or your tests: the review reads the recording and, with the code step (on unless you turn it off),
+  the files the session changed or read, as they are now, and their changes from Git, which it never writes to;
+- let the model rate its own confidence or the severity of anything;
+- post anything anywhere unless you ask for it and confirm;
+- change your recordings.
+
+It can be wrong. That is why every row carries the evidence you need to check it yourself.
+
+## Known limits
+
+Sonah is a beta (`0.3.0-beta.1`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+can change between betas.
+
+- Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
+  verified.
+- The default reviewer needs a Claude account that can use `claude-sonnet-5-5[1m]`; the Codex CLI and the Anthropic API
+  are the alternatives.
+- A long review takes a while: parts are reviewed four at a time, and a large session can take tens of minutes. The
+  estimate printed before the first call is the best guide.
+- Work done by a helper agent is reviewed only when its recording is found beside the parent's. A missing one is named,
+  never silently treated as the parent's work.
+- A file changed through the shell (`sed -i`, a heredoc) is recorded only as its command: there is no recorded edit of
+  the file to show or check.
+- The code step reads the files as they are on this computer now. A recording from another computer, or a project
+  whose files were deleted since, leaves it with nothing to read. The page and the terminal say so, and the exit code
+  still follows the session review, unless you add `--code-pass`, which makes the code step's coverage count.
+- Images you paste into your messages are sent to the reviewer. This is new, and checked on the default `claude`
+  reviewer only, not yet on the `codex` or Anthropic API reviewers.
+- The review can miss a decision or put one in the wrong place: check the rows that matter to you against their
+  evidence.
+
 ## Verification
 
 An automated test installs Sonah from a checkout into an empty temporary home folder with the checkout installer

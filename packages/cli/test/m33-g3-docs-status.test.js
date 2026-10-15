@@ -50,13 +50,11 @@ test('D71 premise: a completed review exits 0 with or without findings and over 
 
 const STATUS_WORDS = /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/;
 
-test('D71 README: the exit code is the run state, and no status is told', () => {
+test('D71 README: no status is told, and the exit codes are left to the guide', () => {
+  // The README is the short front page (owner decision 2026-10-15); the exit codes are told in TROUBLESHOOTING and
+  // INSTALL, checked below, and the README only links to them.
   const text = flat(README);
-  // assert.ok, not assert.match: a failure names the sentence, never prints the whole document.
-  assert.ok(/The exit code reports only whether Sonah's own review ran/.test(text), 'the exit is the run state');
-  assert.ok(/a review with findings that ran to the end exits `0`/.test(text), 'a finding never moves the exit');
-  assert.ok(/ran but did not complete exits `1`/.test(text), 'exit 1 is incomplete');
-  assert.ok(/\(docs\/TROUBLESHOOTING\.md#exit-codes\)/.test(text), 'the one table is linked');
+  assert.ok(/\(docs\/TROUBLESHOOTING\.md\)/.test(text), 'the troubleshooting guide is linked');
   assert.ok(!/^\| `[0-9]+` \|/m.test(README), 'the exit-code table is kept in one place, not repeated here');
   assert.ok(!STATUS_WORDS.test(text), 'no status is told');
 });
