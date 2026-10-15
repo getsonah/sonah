@@ -1,7 +1,7 @@
 {
   "name": "getsonah",
   "version": "0.3.0-beta.1",
-  "description": "Review the decisions and deviations behind AI-written code, with recorded evidence.",
+  "description": "Code review for your agent's PRs: did you get what you asked for? Reviews the Claude Code or Codex session behind the change, locally.",
   "keywords": [
     "ai-agents",
     "claude-code",
