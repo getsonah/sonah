@@ -29,7 +29,7 @@ import { join } from 'node:path';
 import { createAnswerCache, memoizeJudge } from '../../cli/src/answer-cache.js';
 
 const { challengeItems } = challengeModule;
-const { renderReview } = reviewRender;
+const { coverageCauses } = reviewRender;
 
 // ---- shared synthetic session ------------------------------------------------------------------
 
@@ -134,20 +134,10 @@ const answering = (sessionFindings) => async (request) => {
 const review = (findings) => runCodeReview({ session: vendorSession(), pr: CODE_PR, diff: DIFF, judge: answering(findings) });
 const titles = (report) => JSON.stringify([report.findings, report.decisions]);
 
-const section = (md, heading) => {
-  const lines = md.split('\n');
-  const at = lines.indexOf(heading);
-  if (at < 0) return null;
-  const end = lines.findIndex((l, i) => i > at && (l.startsWith('### ') || l === '---'));
-  return lines.slice(at + 1, end < 0 ? undefined : end).filter(Boolean);
-};
-const WITHHELD_HEADING = '### Checked, inconclusive — withheld';
-const UNCHECKED_HEADING = '### What was not checked';
-
 test('W3d-4 a finding resting on a write whose outcome is unknown is withheld AND caps, as declared absent evidence', async () => {
   assert.ok(snapshotDiff({ pr: CODE_PR, diff: DIFF }).complete, 'premise: the frozen diff is readable');
   assert.ok(ledger.GAP_CODES.includes('write_outcome_unknown'), 'a closed gap code');
-  assert.equal(typeof reviewRender.GAP_SENTENCE.write_outcome_unknown, 'string', 'with one sentence');
+  assert.ok(reviewRender.COVERAGE_CAUSES.includes('write_outcome_unknown'), 'with one cause and its sentence');
   const report = await review([FINDINGS.unknown]);
   assert.equal(report.findings.length, 0, 'never published');
   assert.ok(!titles(report).includes('SYNTHETIC_W3D4_WITHHELD_UNKNOWN'));
@@ -163,13 +153,8 @@ test('W3d-4 a finding resting on a write whose outcome is unknown is withheld AN
   assert.equal(report.withheld.proposals, 0, 'it is not an inconclusive check, so it is not counted as one');
   assert.deepEqual(report.rejectedFindings.map((r) => r.reason), ['unreviewed_scope'],
     'it is rejected as a check that could not run, so the rejected count still holds every proposal');
-  const md = renderReview(report);
-  const unchecked = section(md, UNCHECKED_HEADING);
-  assert.ok(unchecked?.some((l) => l.startsWith('- `write_outcome_unknown` at `A3` (1) — ')
-    && l.includes(reviewRender.GAP_SENTENCE.write_outcome_unknown)), md);
-  assert.ok(!(section(md, WITHHELD_HEADING) ?? []).some((l) => /proposal|finding/.test(l)),
-    'and it is not listed as a check that ran and was inconclusive');
-  assert.ok(!md.includes('SYNTHETIC_W3D4_WITHHELD_UNKNOWN'));
+  assert.deepEqual(coverageCauses(report).find(([cause]) => cause === 'write_outcome_unknown'),
+    ['write_outcome_unknown', { n: 1 }], 'the causes name it');
 });
 
 test('W3d-4 a finding resting on a write that failed stays withheld-only: it does not cap', async () => {
@@ -182,26 +167,22 @@ test('W3d-4 a finding resting on a write that failed stays withheld-only: it doe
   assert.equal(report.reviewStatus, 'CLEAN');
 });
 
-test('W3d-4 the withheld section says why each proposal was withheld, one closed sentence per cause', async () => {
+test('W3d-4 the report counts why each proposal was withheld, one closed cause each', async () => {
   const report = await review([FINDINGS.quote, FINDINGS.frozen, FINDINGS.role, FINDINGS.late, FINDINGS.failed]);
   assert.equal(report.findings.length, 0, 'premise: nothing publishes');
   assert.equal(report.withheld.proposals, 5);
   assert.equal(report.coverage, 'complete', 'every one of them is a check that ran');
   assert.equal(report.reviewStatus, 'CLEAN');
-  const md = renderReview(report);
-  const lines = section(md, WITHHELD_HEADING);
-  assert.ok(lines, `a withheld section:\n${md}`);
-  const CAUSES = ['proposals', 'no_frozen_code', 'role_missing', 'rule_after_action', 'action_failed'];
-  const sentence = (cause) => `- ${reviewRender.WITHHELD_SENTENCE[cause]?.({ n: 1 })}.`;
-  for (const cause of CAUSES) assert.ok(lines.includes(sentence(cause)), `missing ${cause}:\n${lines.join('\n')}`);
-  assert.ok(lines.includes('- 1 proposal(s) withheld: their quotes did not match the record.'),
-    'only the one whose quote did not verify is said to have a bad quote');
-  // Five distinct sentences for five distinct causes.
-  assert.equal(new Set(CAUSES.map((cause) => reviewRender.WITHHELD_SENTENCE[cause]({ n: 1 }))).size, 5);
-  for (const title of Object.values(FINDINGS).map((f) => f.title)) assert.ok(!md.includes(title), `${title} reached the report`);
+  const causes = report.withheld.causes ?? {};
+  for (const cause of ['no_frozen_code', 'role_missing', 'rule_after_action', 'action_failed'])
+    assert.equal(causes[cause], 1, `${cause}: ${JSON.stringify(causes)}`);
+  assert.equal(report.withheld.proposals - Object.values(causes).reduce((n, k) => n + k, 0), 1,
+    'only the one whose quote did not verify is left without a cause');
+  for (const title of Object.values(FINDINGS).map((f) => f.title))
+    assert.ok(!titles(report).includes(title), `${title} reached the report`);
 });
 
-test('W3d-4 every withheld cause a rejection can carry is closed, bare, and has a sentence', () => {
+test('W3d-4 every withheld cause a rejection can carry is closed and bare', () => {
   const causes = ledger.WITHHELD_REJECTION_CAUSES;
   // M33 G4: `actor_ambiguous` — a decision whose cited actions resolve to more than one actor, or none. M36 phase 3 (D68 F,
   // c6): `other_session` — a contradicted claim whose result was recorded in another session than its statement.
@@ -211,21 +192,11 @@ test('W3d-4 every withheld cause a rejection can carry is closed, bare, and has 
   assert.ok(Array.isArray(causes) && Object.isFrozen(causes) && causes.length === 10, 'one frozen list');
   for (const cause of causes) {
     assert.match(cause, /^[a-z][a-z_]*$/);
-    assert.ok(reviewRender.WITHHELD_CAUSES.includes(cause), `${cause} has no rendered cause`);
     assert.ok(!ledger.JUDGMENT_REASONS.includes(cause), `${cause} is a cause, never a new reason`);
   }
-  assert.deepEqual(Object.keys(reviewRender.WITHHELD_SENTENCE).sort(), [...reviewRender.WITHHELD_CAUSES].sort());
 });
 
-test('W3d-4 a report that declares no causes still counts every withheld proposal once, as a quote', () => {
-  const md = renderReview({ pr: CODE_PR, findings: [], decisions: [], counts: { decisions: 0, byColumn: {} },
-    coverage: 'complete', codeCoverage: 'complete', rejectedDecisions: [], rejectedFindings: [], gaps: [],
-    withheld: { proposals: 3, unsettled: 0 } });
-  assert.deepEqual(section(md, WITHHELD_HEADING).filter((l) => l.startsWith('- ')),
-    ['- 3 proposal(s) withheld: their quotes did not match the record.']);
-});
-
-// ---- F163 / F164 unrecorded writes ----------------------------------------------------------
+// ---- F164 unrecorded writes ----------------------------------------------------------
 
 const unrecordedGap = (over = {}) => ({ code: 'unrecorded_body', channel: 'code', scope: 'session', count: 3,
   eventIds: ['A1', 'A2', 'A3'], writes: [
@@ -241,23 +212,6 @@ const unrecordedReport = (gaps, adapterGaps = []) => ({
   codeCoverageFacts: { placed: ['src/a.js', 'src/b.js'] },
   findings: [], decisions: [], counts: { decisions: 0, byColumn: {} }, coverage: 'partial', codeCoverage: 'complete',
   rejectedDecisions: [], rejectedFindings: [], gaps });
-
-test('W3d-4 F163 the unrecorded_body gap says one sentence per cover type, and no generic headline', () => {
-  const md = renderReview(unrecordedReport([unrecordedGap()]));
-  const lines = section(md, UNCHECKED_HEADING);
-  const at = lines.findIndex((l) => l.startsWith('- `unrecorded_body`'));
-  assert.ok(at >= 0, md);
-  const headline = lines[at];
-  assert.ok(!headline.includes(reviewRender.GAP_SENTENCE.unrecorded_body),
-    `the declaration note and classified lines should supply the explanation:\n${headline}`);
-  assert.ok(headline.includes('3 write(s) whose body the recording does not contain'), 'the declaration\'s own note stays');
-  const covers = lines.slice(at + 1).filter((l) => l.startsWith('  - '));
-  assert.deepEqual(covers, [`  - 3 ${reviewRender.UNRECORDED_COVER_SENTENCE.none}.`]);
-  // Each cover sentence stands on its own: it says the body was not recorded AND what covered it.
-  for (const sentence of Object.values(reviewRender.UNRECORDED_COVER_SENTENCE))
-    assert.match(sentence, /no recorded body/, sentence);
-  assert.ok(!md.includes(reviewRender.GAP_SENTENCE.unrecorded_body), 'the generic sentence is nowhere in the report');
-});
 
 test('W3d-4 F164 gap de-duplication keys on code, channel, scope and sorted eventIds, not on JSON bytes', () => {
   assert.equal(typeof ledger.gapKey, 'function', 'one key, exported');
@@ -331,12 +285,8 @@ test('W3d-4 F157 a decision is unplaceable for a recorded reason, and the report
     assert.equal(report.decisions[0].relevanceUnknown, reason, 'why it is unknown is recorded on the row');
     assert.equal(report.coverage, 'partial', 'absent evidence still caps, as before');
   }
-  const window = (report) => section(renderReview(report), UNCHECKED_HEADING).filter((l) => l.startsWith('- window 1:'));
-  assert.ok(window(noList).includes('- window 1: 1 decision(s) could not be placed in the PR: the PR file list was not available.'),
-    window(noList).join('\n'));
-  assert.ok(!window(noList).some((l) => l.includes('supplied only partly')), 'a list that was never supplied is not a partial file');
-  assert.ok(window(partly).includes('- window 1: 1 decision(s) concern a file the PR supplied only partly.'), window(partly).join('\n'));
-  assert.ok(!window(partly).some((l) => l.includes('not available')));
+  for (const report of [noList, partly])
+    assert.equal(report.windowResults[0].shortfall.grounding.relevanceUnchecked, 1, 'the window counts it');
   // A decision whose place IS known carries no reason at all.
   const placed = await reviewRun.runReview({ session: vendorSession(), judge: deciding, pr: { repo: REPO, number: 588,
     enumeration: 'complete', files: [{ path: 'vendor/one.js', change: 'modified', contentState: 'complete' }] } });

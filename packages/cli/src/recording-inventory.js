@@ -1,6 +1,5 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { redact } from '../../redact/index.js';
 import { readRecordingIdentity, recordingVersion } from './recording-read.js';
 import { CONFLICT_CANDIDATE_FIELDS } from '../../slicer/src/recording-identity.js';
 
@@ -30,32 +29,20 @@ const wellFormedCandidates = candidates => candidates !== null && typeof candida
   && candidates.values !== null && typeof candidates.values === 'object'
   && CONFLICT_CANDIDATE_FIELDS.every(field => Array.isArray(candidates.values[field]));
 
-/** C-03 (M33 conflicting sources). Every candidate value of a conflicting source passes the same
- * recording-identity redaction as a source row BEFORE it is stored or compared. A value the
- * redactor withholds is dropped and its field becomes `hidden`, which matches any value. The
- * records live only in this frozen Map, keyed by source key: never in sources, a ledger, a packet
- * or a cache key. A candidate list that cannot be verified is recorded as malformed. */
+/** C-03 (M33 conflicting sources). Every candidate value of a conflicting source (each one the recording-identity
+ * read checked by its shape, slicer recording-identity.js). The records live only in this frozen Map, keyed by source
+ * key: never in sources, a ledger, a packet or a cache key. A candidate list that cannot be verified is recorded as
+ * malformed. D90 (owner decision 2026-10-15, privacy is not a design constraint): nothing scans a value, so no field
+ * is `hidden` (an identity scan once dropped a value it read as secret-shaped and hid its field, which matched any
+ * value); the field stays in the record's shape (slicer child-links.js reads it). */
 function conflictCandidateRecords(pending) {
-  const rows = [];
-  for (const [key, { adapter, candidates }] of pending) {
-    if (!wellFormedCandidates(candidates)) continue;
-    for (const field of CONFLICT_CANDIDATE_FIELDS)
-      for (const value of candidates.values[field]) rows.push({ key, field, value, row: { adapter, [field]: value } });
-  }
-  const scrubbed = rows.length
-    ? redact({ ask: [], ledger: [], claim: {}, sources: rows.map(entry => entry.row), dropped: [] }).ledger.sources : [];
-  const verified = Array.isArray(scrubbed) && scrubbed.length === rows.length;
   const records = new Map();
   for (const [key, { candidates }] of pending) {
-    records.set(key, { malformed: !verified || !wellFormedCandidates(candidates),
-      values: Object.fromEntries(CONFLICT_CANDIDATE_FIELDS.map(field => [field, []])), hidden: new Set(),
-      overflow: wellFormedCandidates(candidates) ? [...candidates.overflow] : [] });
+    const wellFormed = wellFormedCandidates(candidates);
+    records.set(key, { malformed: !wellFormed,
+      values: Object.fromEntries(CONFLICT_CANDIDATE_FIELDS.map(field => [field, wellFormed ? [...candidates.values[field]]
+        : []])), hidden: new Set(), overflow: wellFormed ? [...candidates.overflow] : [] });
   }
-  rows.forEach(({ key, field, value }, index) => {
-    const record = records.get(key), row = verified ? scrubbed[index] : null;
-    if (row?.[field] === value && row.identityUncheckedFields === undefined) record.values[field].push(value);
-    else record.hidden.add(field);
-  });
   const frozen = new Map([...records].map(([key, record]) => [key, Object.freeze({
     malformed: record.malformed,
     values: Object.freeze(Object.fromEntries(CONFLICT_CANDIDATE_FIELDS
@@ -158,14 +145,14 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
     } catch { changedFiles++; }
   }
   if (changedFiles) reasons.add('source_changed');
-  // Identity redaction precedes cache storage and every join. No tool text survives.
-  const cleaned = redact({ ask: [], ledger: [], claim: {}, sources, dropped: [] }).ledger.sources;
+  // D90 (owner decision 2026-10-15): the identities are kept as read (checked by their shape, recording-identity.js);
+  // nothing scans them before cache storage or a join (an identity scan once did).
   if (performance.now() >= deadline) reasons.add('deadline');
   const enumerationIncomplete = first.incomplete || last.incomplete || enumerationChanged;
   const incomplete = enumerationIncomplete || failedFiles > 0 || unscannedFiles > 0 || changedFiles > 0
     || reasons.has('deadline');
   const conflictCandidates = conflictCandidateRecords(pendingCandidates);
-  const result = { files, sources: cleaned, conflictCandidates, incomplete,
+  const result = { files, sources, conflictCandidates, incomplete,
     stats: { candidateFiles: files.length + first.omittedFiles, verifiedFiles: sources.length,
       failedFiles, unscannedFiles, omittedFiles: first.omittedFiles, enumerationIncomplete,
       unindexedDirectories: first.unindexedDirectories,

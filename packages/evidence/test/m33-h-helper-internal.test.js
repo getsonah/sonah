@@ -26,11 +26,11 @@ import { join } from 'node:path';
 import { Session } from '../src/session.js';
 // Namespace imports, so each test fails on its own against code that predates it.
 import * as ledger from '../src/ledger.js';
-import * as review from '../src/review.js';
 import * as reviewRun from '../src/run-review.js';
 import * as prompt from '../src/prompt.js';
 import * as challenge from '../src/challenge.js';
 import * as story from '../../render/session-story.js';
+import { REPORT_DISCLOSURE_WORDS, REPORT_ITEM_WORDS } from '../../render/report-words.js';
 import { runCodeReview } from '../src/code-review.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { loadSessionEvidence } from '../../cli/src/session-evidence.js';
@@ -161,13 +161,14 @@ const part = (report, name = 'T1') => report.parts.find((p) => p.part === name);
 
 // ---- the closed vocabulary -----------------------------------------------------------------------------------------------
 
-test('M33 H helper_internal is a closed disclosure reason beside self_corrected, each with one rendered sentence', () => {
+test('M33 H helper_internal is a closed disclosure reason beside self_corrected, with the story\'s sentence', () => {
   // M33 brittleness M4 added `disclosed` after them: an upheld disclosure of an edit, never a role.
   assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
   assert.ok(Object.isFrozen(ledger.DISCLOSURE_REASONS));
-  assert.deepEqual(Object.keys(review.DISCLOSURE_SENTENCE).sort(), [...ledger.DISCLOSURE_REASONS].sort());
-  assert.equal(typeof story.STORY_SENTENCES.helperInternal, 'string');
-  assert.equal(typeof story.STORY_HELPER_STATEMENT_LABEL, 'string');
+  // D97: the page's and the report .md's words for it (report-words.js).
+  assert.deepEqual(Object.keys(REPORT_DISCLOSURE_WORDS.claim).sort(), ['disclosed', 'helper_internal', 'self_corrected']);
+  assert.equal(typeof REPORT_DISCLOSURE_WORDS.claim.helper_internal, 'string');
+  assert.equal(REPORT_ITEM_WORDS.helperSaid, 'A helper said:');
 });
 
 // ---- Claude Code, Agent tool -----------------------------------------------------------------------------------------
@@ -256,7 +257,6 @@ test('M33 H an unsettled helper-internal claim never holds its part off CLEAN; i
     assert.equal(report.partCounts.parts_decide_unsettled, 0, label);
     assert.equal(ledger.decideUnsettledCount(report), 0, label);
     assert.equal(report.withheld.unsettled, 1, `${label}: the unsettled check is counted, never hidden`);
-    assert.ok(review.renderReview(report).includes('1 item(s) the challengers could not settle'), label);
     // M35: the parent's relay contradicted only by the helper's run is withheld before any challenge (RELAY_WITHHELD):
     // never asked, so never unsettled.
     const relay = await reviewOf(agentSession(), [CLAIMS.relay], { profile, verdict: onClaimOf('C2', 'uncertain') });
@@ -295,12 +295,8 @@ test('M33 H repair: a report saved without its recording reads exactly as the li
     assert.equal(again.sessionStatus, 'CLEAN', `${label}: the saved report reads as the live run did`);
     assert.deepEqual(again.parts.map((p) => [p.part, p.status, p.reasons]), report.parts.map((p) => [p.part, p.status, p.reasons]),
       label);
-    // The same review, but for the session timeline only a report holding its recording can show.
-    const timeline = /<details>\n<summary><b>What happened in the session<\/b><\/summary>\n[\s\S]*?<\/details>\n\n/;
-    assert.match(review.renderReview(report), timeline, `${label}: premise`);
-    assert.equal(review.renderReview(saved), review.renderReview(report).replace(timeline, ''), `${label}: one rendered review`);
-    // D71 (a): no headline status; the saved report says the review ran to completion, as the live run did.
-    assert.equal(review.renderReview(saved).split('\n')[4], review.RUN_STATE_SENTENCE.complete, label);
+    // D71 (a): no headline status; the saved report reads as a review that ran to completion, as the live run did.
+    assert.equal(ledger.reviewRunState(saved), ledger.reviewRunState(report), label);
     // Only code's mark counts: none (an older report's) reads DECIDE-bound — lower, never cleaner — and a mark a model
     // put on its own candidate is not code's.
     assert.equal(ledger.honestStatuses(withoutMarks(saved)).sessionStatus, 'NO_FINDINGS', label);
@@ -345,9 +341,6 @@ test('M33 H a helper\'s self-corrected claim stays helper_internal FYI and keeps
   assert.deepEqual(finding.resolvedBy.observation, { ...R.pass, sessionKey: SESSION_KEY, childId: 'w' });
   assert.deepEqual(finding.resolvedBy.statement, { ...R.helperFixed, sessionKey: SESSION_KEY, childId: 'w' });
   assert.equal(report.counts.resolutions.verified, 1);
-  const md = review.renderReview(report);
-  assert.ok(md.includes('Corrected later in the same turn:'));
-  assert.ok(md.includes(review.HELPER_INTERNAL_TAG));
 });
 
 const candidateOf = (receipts, over = {}) => ({ origin: 'session-review', kind: 'claim_contradicted',
@@ -391,40 +384,26 @@ test('M33 H a merge that keeps DECIDE keeps no helper_internal disclosure', () =
 
 // ---- the rendered report and the story say it in plain words ---------------------------------------------------------
 
-test('M33 H the rendered report says the claim was a helper\'s internal statement; the parent\'s DECIDE says nothing of it', async () => {
+test('M33 H the report marks the claim as a helper\'s internal statement; the parent\'s DECIDE carries no mark', async () => {
   // M35: the parent's DECIDE is its own contradicted claim (a relay contradicted only by the helper's run is withheld).
   const report = await reviewOf(agentSession(), [CLAIMS.helperSaid, CLAIMS.parentOnly]);
-  const md = review.renderReview(report);
-  // D71 (a): both under one Findings heading, no status; the helper's row says what it is, the parent's says nothing.
-  assert.ok(md.includes('#### Contradicted') && !md.includes('### For information') && !md.includes('### Needs your attention'));
-  const blocks = md.slice(md.indexOf('#### Contradicted')).split('\n\n**').slice(1);
-  const helperBlock = blocks.find((block) => block.includes(review.HELPER_INTERNAL_TAG));
-  const parentBlock = blocks.find((block) => block.includes('`claim\\_contradicted`') && block !== helperBlock);
-  assert.ok(helperBlock && parentBlock, md);
-  assert.ok(helperBlock.includes(`\`claim\\_contradicted\` · ${review.HELPER_INTERNAL_TAG}`));
-  assert.ok(helperBlock.includes(review.DISCLOSURE_SENTENCE.helper_internal('“the nested parser tests pass now.”')));
-  assert.ok(!parentBlock.includes(review.HELPER_INTERNAL_TAG));
-  assert.ok(!parentBlock.includes(review.DISCLOSURE_SENTENCE.helper_internal('“lint is clean.”')));
-  assert.doesNotMatch(md, /· (DECIDE|FYI)\b/);
-  // A hand-edited DECIDE row carrying the disclosure renders as the DECIDE it is.
-  const forged = { ...report, findings: report.findings.map((f) => ({ ...f, disclosureReason: 'helper_internal' })) };
-  const forgedMd = review.renderReview(forged);
-  assert.equal(forgedMd.split(review.HELPER_INTERNAL_TAG).length - 1, 1, 'only the disclosed row says it');
+  assert.deepEqual(contradictions(report).map((f) => [f.status, f.disclosureReason ?? null]).sort(),
+    [['DECIDE', null], ['FYI', 'helper_internal']]);
 });
 
-test('M33 H the session story says the claim was a helper\'s internal statement, and labels its words as the helper\'s', async () => {
+test('M33 H, D97 the report .md says the claim was a helper\'s internal statement, and labels its words as the helper\'s', async () => {
   const session = agentSession();
   // M35: the parent's statement is its own contradicted claim (RELAY_WITHHELD).
   const report = await reviewOf(session, [CLAIMS.helperSaid, CLAIMS.parentOnly]);
-  const md = story.renderSessionStory(session, report);
-  assert.ok(md.includes(story.STORY_SENTENCES.helperInternal));
-  assert.equal(md.split(story.STORY_SENTENCES.helperInternal).length - 1, 1, 'said once, for the helper\'s finding only');
-  assert.ok(md.includes(`> **${story.STORY_HELPER_STATEMENT_LABEL}:** the nested parser tests pass now.`));
-  assert.ok(md.includes(`> **${story.STORY_RECEIPT_LABELS.commentary}:** lint is clean.`),
+  const md = story.renderReportMarkdown(session, report);
+  const helper = REPORT_DISCLOSURE_WORDS.claim.helper_internal;
+  assert.equal(md.split(helper).length - 1, 1, 'said once, for the helper\'s finding only');
+  assert.ok(md.includes(`${REPORT_ITEM_WORDS.helperSaid} “the nested parser tests pass now.”`), md);
+  assert.ok(md.includes('“lint is clean.”') && !md.includes(`${REPORT_ITEM_WORDS.helperSaid} “lint is clean.”`),
     'the parent\'s statement is still what the agent said');
   // Without the helper's FYI there is nothing to say.
   const relay = await reviewOf(session, [CLAIMS.parentOnly]);
-  assert.ok(!story.renderSessionStory(session, relay).includes(story.STORY_SENTENCES.helperInternal));
+  assert.ok(!story.renderReportMarkdown(session, relay).includes(helper));
 });
 
 // ---- the combined route ------------------------------------------------------------------------------------------------
@@ -772,8 +751,9 @@ test('M33 H repair: the narrative prompt asks for a relay as the passing agent\'
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   // M35 windowing moved it once more (`sonah.narrative/21`): windows, carried context, trims, aliases (C-07).
   // M36 phase 1 moved it once more (`sonah.narrative/22`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.narrative/23`): the window format (D68; FORMAT_VERSIONS).
@@ -786,8 +766,9 @@ test('M33 H repair: the narrative prompt asks for a relay as the passing agent\'
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
   const session = agentSession();
   // D71 (S2): a combined request keeps the relay rule in its task (D71 i); a session-only review says it in its brief.
   const { SONAH_SESSION_REVIEW_AGENT } = await import('../src/review-agent.js');
@@ -843,7 +824,11 @@ test('M33 H repair: the challengers judge a relay as the passing agent\'s own cl
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   // M35 windowing moved it once more (`sonah.challenge/18`): every evidence byte and a session-only candidate's aliases.
   // M36 phase 1 moved it once more (`sonah.challenge/19`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.challenge/20`): the window format (D68; FORMAT_VERSIONS).
@@ -867,7 +852,11 @@ test('M33 H repair: the challengers judge a relay as the passing agent\'s own cl
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/44');
   const system = flat(challenge.challengeSystem());
   for (const words of [RULE.challenge, RULE.challengeNotClaim]) assert.ok(system.includes(words), words);
   assert.ok(!system.includes(BEFORE_REPAIR.challenge));
@@ -959,38 +948,32 @@ test('M33 H repair Claude Code Workflow: the parent passing on its agent\'s repo
 
 // ---- M33 H repair: the words say what the review did ------------------------------------------------------------------
 
-test('M33 H repair: the rendered review labels the helper\'s words "helper said"; the parent\'s stay "agent said"', async () => {
+// Ported from review.md's test (review.md is deleted, D97): the report labels a helper's words as a helper's, the
+// parent's as the agent's, and its fixed words never say that everything the main agent said was reviewed.
+test('M33 H repair: the report .md labels the helper\'s words "A helper said"; the parent\'s carry no helper label', async () => {
   // M35: the parent's statement is its own contradicted claim (RELAY_WITHHELD).
-  const report = await reviewOf(agentSession(), [CLAIMS.helperSaid, CLAIMS.parentOnly]);
-  const md = review.renderReview(report);
-  assert.ok(md.includes('- **helper said** `child:w:C1` — “the nested parser tests pass now.”'));
-  assert.ok(!md.includes('- **agent said** `child:w:C1`'));
-  assert.ok(md.includes('- **agent said** `C3` — “lint is clean.”'));
-  assert.ok(md.includes('- **result** `child:w:A1-r`'), 'the result keeps its label');
+  const session = agentSession();
+  const md = story.renderReportMarkdown(session, await reviewOf(session, [CLAIMS.helperSaid, CLAIMS.parentOnly]));
+  assert.ok(md.includes(`${REPORT_ITEM_WORDS.helperSaid} “the nested parser tests pass now.”`), md);
+  assert.ok(!md.includes(`${REPORT_ITEM_WORDS.agentSaid} “the nested parser tests pass now.”`));
+  assert.ok(md.includes('\n“lint is clean.”') && !md.includes(`${REPORT_ITEM_WORDS.helperSaid} “lint is clean.”`), md);
   // Self-corrected too: the correction is the helper's own statement.
   const resolvedBy = { observation: R.pass, statement: R.helperFixed };
-  const corrected = review.renderReview(await reviewOf(agentSession({ corrected: true }), [{ ...CLAIMS.helperSaid, resolvedBy }]));
-  assert.ok(corrected.includes('- **helper said** `child:w:C2` — “after the second edit the parser tests pass.”'));
-  assert.ok(!corrected.includes('**agent said** `child:w:'));
-  // The plain sentence no longer says that everything the main agent said was reviewed.
-  for (const words of [review.DISCLOSURE_SENTENCE.helper_internal('“x”'), story.STORY_SENTENCES.helperInternal]) {
+  const corrected = story.renderReportMarkdown(session, await reviewOf(agentSession({ corrected: true }),
+    [{ ...CLAIMS.helperSaid, resolvedBy }]));
+  assert.ok(!corrected.includes(`${REPORT_ITEM_WORDS.agentSaid} “after the second edit the parser tests pass.”`));
+  // The fixed words never say that everything the main agent said was reviewed.
+  for (const words of Object.values(REPORT_DISCLOSURE_WORDS.claim))
     assert.ok(!/anything the main agent told you/i.test(words), words);
-    assert.match(words, /if the main agent passed it on to you, that statement is reviewed as the main agent's own claim/i);
-  }
 });
 
-test('M33 H repair, D71 (a): the session story lists every finding under one heading, the helper\'s said as what it is', async () => {
+test('M33 H repair, D71 (a), D97: the report .md lists every contradicted claim as an item, the helper\'s said as what it is', async () => {
   const session = agentSession();
-  const lines = (md) => md.split('\n');
-  // D88 (story /25): a contradicted claim is listed under what the agent told you, never under a status's heading.
-  const headings = (md) => lines(md).filter((line) => /^## (Findings|What the agent told you|Needs your decision|Worth a look)$/
-    .test(line));
-  const items = (md) => lines(md).filter((line) => /^\*\*(Finding|Needs your decision|Worth a look)\*\* · /.test(line));
   // M35: the parent's DECIDE is its own contradicted claim (RELAY_WITHHELD).
   for (const claims of [[CLAIMS.helperSaid, CLAIMS.parentOnly], [CLAIMS.helperSaid], [CLAIMS.parentOnly]]) {
-    const told = story.renderSessionStory(session, await reviewOf(session, claims));
-    assert.deepEqual(headings(told), ['## What the agent told you']);
-    assert.deepEqual(items(told).map((line) => line.split('**')[1]), claims.map(() => 'Finding'));
-    assert.equal(told.includes(story.STORY_SENTENCES.helperInternal), claims.includes(CLAIMS.helperSaid));
+    const told = story.renderReportMarkdown(session, await reviewOf(session, claims));
+    assert.doesNotMatch(told, /Needs your decision|Worth a look|\bDECIDE\b|\bFYI\b/);
+    assert.equal(told.split('contradicts a claim of the agent\'s.').length - 1, claims.length, told);
+    assert.equal(told.includes(REPORT_DISCLOSURE_WORDS.claim.helper_internal), claims.includes(CLAIMS.helperSaid));
   }
 });

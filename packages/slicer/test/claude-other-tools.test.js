@@ -236,10 +236,10 @@ test('visible task identity must agree with native launch and completion identit
     .taskOutputCompleted, undefined);
 });
 
-test('other-tool input travels through the existing redacted argsExcerpt channel', () => {
+test('other-tool input travels through the existing argsExcerpt channel, as recorded (D90)', () => {
   const built = buildEvents([call('Workflow', { script: 'echo API_KEY=abcdefghijklmnopqrstuv' }),
     result()]);
   const ev = redact({ ask: [], ledger: built.events, claim: {} }).ledger.ledger[0];
   assert.equal(ev.inputRecorded, true);
-  assert.doesNotMatch(ev.argsExcerpt ?? '', /abcdefghijklmnopqrstuv/);
+  assert.equal(ev.argsExcerpt, 'script: echo API_KEY=abcdefghijklmnopqrstuv');
 });

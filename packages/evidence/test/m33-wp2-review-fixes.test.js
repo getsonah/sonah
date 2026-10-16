@@ -18,7 +18,8 @@ import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 // Namespace imports, so each test fails on its own against code that predates it.
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
+import { reviewRunState } from '../src/ledger.js';
+import { PUBLIC_RUN_WORDS } from '../../github/publication.js';
 import { runCodeReview } from '../src/code-review.js';
 
 const REPO = { host: 'github.com', id: '0' };
@@ -270,8 +271,7 @@ const G_PR = { repo: { host: 'github.com', id: '9' }, number: 9, baseOid: 'b'.re
 const combinedHeadline = (first, second) => runCodeReview({ session: headlineSession(), pr: G_PR, diff: G_DIFF,
   judge: answerFor(first, second, { codeFindings: [], sessionFindings: [], reviewedFiles: [] }) });
 // D71 (a), owner decision 2026-10-08: no headline status. What the review says of itself is one line, whether Sonah's
-// own review ran (review.js RUN_STATE_SENTENCE); over an incomplete review it never reassures.
-const headlineOf = (md) => md.split('\n').find((line) => line.startsWith("Sonah's review"));
+// own review ran (the PR comment's PUBLIC_RUN_WORDS); over an incomplete review it never reassures.
 const REASSURING = /none needs a decision|nothing is blocking/i;
 const STATUS_TOKENS = /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/;
 const WITH_FYI = { ...EMPTY, claims: [SELF_CORRECTED] };
@@ -290,11 +290,7 @@ test('M33 WP2 headline, D71: an FYI over an incomplete session review says the r
     assert.equal(report.reviewStatus, 'FYI', `${name}: premise`);
     assert.equal(report.sessionReview, 'incomplete', `${name}: premise`);
     assert.deepEqual(report.parts.map((p) => [p.part, p.status]), [['T1', 'FYI'], ['T2', 'UNCHECKED']], `${name}: premise`);
-    const md = review.renderReview(report);
-    assert.equal(headlineOf(md), review.RUN_STATE_SENTENCE.incomplete, name);
-    assert.ok(md.includes('Session review: **did not complete**'), name);
-    assert.doesNotMatch(md, REASSURING, name);
-    assert.doesNotMatch(md, STATUS_TOKENS, name);
+    assert.equal(reviewRunState(report), 'incomplete', name);
   }
 });
 
@@ -307,10 +303,7 @@ test('M33 WP2 headline, D71: a NO_FINDINGS over an incomplete session review say
     const report = await reviewed();
     assert.equal(report.reviewStatus, 'NO_FINDINGS', `${name}: premise`);
     assert.equal(report.sessionReview, 'incomplete', `${name}: premise`);
-    const md = review.renderReview(report);
-    assert.equal(headlineOf(md), review.RUN_STATE_SENTENCE.incomplete, name);
-    assert.doesNotMatch(md, REASSURING, name);
-    assert.doesNotMatch(md, STATUS_TOKENS, `${name}: never a status`);
+    assert.equal(reviewRunState(report), 'incomplete', name);
   }
 });
 
@@ -318,15 +311,14 @@ test('M33 WP2 headline, D71: a completed session review says it ran to completio
   const sessionOnly = await sessionOnlyHeadline(WITH_FYI, EMPTY);
   assert.equal(sessionOnly.sessionReview, 'complete');
   assert.equal(sessionOnly.reviewStatus, 'FYI');
-  assert.equal(headlineOf(review.renderReview(sessionOnly)), review.RUN_STATE_SENTENCE.complete);
+  assert.equal(reviewRunState(sessionOnly), 'complete');
   const combined = await combinedHeadline(WITH_FYI, EMPTY);
   assert.equal(combined.sessionReview, 'complete');
   assert.equal(combined.reviewStatus, 'FYI');
   // The code review read no file here, so Sonah's review as a whole did not complete, whatever the session found.
-  assert.equal(headlineOf(review.renderReview(combined)), review.RUN_STATE_SENTENCE[
-    combined.codeCoverage === 'complete' ? 'complete' : 'incomplete']);
-  assert.deepEqual(Object.keys(review.RUN_STATE_SENTENCE).sort(), ['complete', 'incomplete']);
-  for (const sentence of Object.values(review.RUN_STATE_SENTENCE)) {
+  assert.equal(reviewRunState(combined), combined.codeCoverage === 'complete' ? 'complete' : 'incomplete');
+  assert.deepEqual(Object.keys(PUBLIC_RUN_WORDS).sort(), ['complete', 'incomplete']);
+  for (const sentence of Object.values(PUBLIC_RUN_WORDS)) {
     assert.doesNotMatch(sentence, REASSURING);
     assert.doesNotMatch(sentence, /clean|approv|ready|complete enough/i);
     assert.doesNotMatch(sentence, STATUS_TOKENS);

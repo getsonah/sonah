@@ -18,23 +18,13 @@ import { Session } from '../src/session.js';
 // Namespace imports, so each test fails on its own against code that predates it.
 import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
-import * as reviewRender from '../src/review.js';
 import * as prompt from '../src/prompt.js';
 import * as agent from '../src/review-agent.js';
 import { runCodeReview } from '../src/code-review.js';
 
 const { runReview } = reviewRun;
-const { renderReview } = reviewRender;
 const REPO = { host: 'github.com', id: '0' };
 const EMPTY = { decisions: [], pivots: [], claims: [], requirements: [] };
-const WITHHELD_HEADING = '### Checked, inconclusive — withheld';
-const section = (md, heading) => {
-  const start = md.indexOf(heading);
-  if (start < 0) return null;
-  const rest = md.slice(start + heading.length);
-  const end = rest.search(/\n(### |---)/);
-  return (end < 0 ? rest : rest.slice(0, end)).split('\n');
-};
 
 // ---- 1. an ambiguous actor is withheld ------------------------------------------------------------
 
@@ -172,9 +162,8 @@ test('M33 G4 the real shape under M36 packed windows: one window shows both acto
   assert.equal(report.sessionReview, 'complete', 'the session review completed');
   assert.equal(report.coverage, 'complete');
   assert.notEqual(report.sessionStatus, 'UNCHECKED');
-  const md = renderReview(report);
-  assert.doesNotMatch(md, /rejected before display: `ambiguous_authority`/, 'not listed as a check that did not run');
-  assert.doesNotMatch(md, /SYNTHETIC\\?_G4\\?_DIM A1 child/, 'the crossing decision is never shown');
+  assert.ok(!report.rejectedDecisions.some((r) => r.reason === 'ambiguous_authority' && !ledger.withheldRejection(r)),
+    'not rejected as a check that did not run: its rejection is a withheld one');
 });
 
 test('M33 G4 the combined route under M35 windowing never publishes a parent-and-child decision', async () => {
@@ -196,7 +185,6 @@ test('M33 G4 the combined route under M35 windowing never publishes a parent-and
   const report = await runCodeReview({ session, pr, diff, judge });
   assert.deepEqual(report.decisions, []);
   assert.equal(report.sessionReview, 'complete');
-  assert.doesNotMatch(renderReview(report), /SYNTHETIC\\?_G4\\?_DIM A1 child/, 'never shown');
 });
 
 // ---- 2. the prompts ask for one actor per decision ------------------------------------------------
@@ -226,8 +214,9 @@ test('M33 G4 every review prompt says a decision cites one actor, and the versio
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   // D71 (S2) moved it once more (sonah.session-review-agent/3), and D71 (S3) once more (sonah.session-review-agent/4): the new channels (D71_CHANNELS_VERSIONS).
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
@@ -275,8 +264,9 @@ test('M33 G4 every review prompt says a decision cites one actor, and the versio
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(profile.promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(profile.promptVersion, 'sonah.narrative/37');
   assert.equal(reviewRun.runProfile('combined').reviewAgent, 'sonah.review-agent/2');
 });
 
@@ -356,7 +346,6 @@ test('M33 G4 a joint vote citing an action\'s id for its supplied result is move
   assert.equal(joint.eventRepairedVotes, votes.length);
   assert.ok(report.findings.some((f) => f.kind === 'claim_contradicted'), 'the finding survives on repaired votes');
   assert.equal(report.counts.promisesAsFindings, 1);
-  assert.match(renderReview(report), /vote receipt\(s\) citing an action were moved to its one recorded result by code/);
 });
 
 test('M33 G4 near misses: a joint vote the repair cannot resolve is still rejected', async () => {
@@ -400,29 +389,7 @@ test('M33 G4 near miss: an action whose one result this request was not shown is
   assert.ok(joint.results.flatMap((r) => r.votes).every((v) => v.valid === false));
 });
 
-// ---- 4. the renderer ------------------------------------------------------------------------------
-
-const baseReport = (over = {}) => ({ repo: REPO, pr: null, reviewScope: 'session-only', hasSessionEvidence: true,
-  decisions: [], findings: [], rejectedDecisions: [], rejectedFindings: [], gaps: [], promises: [],
-  counts: { decisions: 0, byColumn: { 'asked-settled': 0, 'asked-chose': 0, unasked: 0 }, uncheckedColumn: 0,
-    rejectedDecisions: 0, rejectedFindings: 0 },
-  coverage: 'complete', codeCoverage: 'missing', sessionReview: 'complete', ...over });
-
-test('M33 G4 the renderer states how many claims are shown as their findings', async () => {
-  assert.equal(typeof reviewRender.PROMISES_AS_FINDINGS_SENTENCE, 'function', 'one closed sentence');
-  const one = renderReview(baseReport({ counts: { ...baseReport().counts, promisesAsFindings: 1 } }));
-  assert.ok(one.includes(`_${reviewRender.PROMISES_AS_FINDINGS_SENTENCE(1)}_`), 'stated when there is one');
-  assert.match(reviewRender.PROMISES_AS_FINDINGS_SENTENCE(1), /\b1\b/);
-  assert.match(reviewRender.PROMISES_AS_FINDINGS_SENTENCE(3), /\b3\b/);
-  for (const n of [0, undefined, -1, 1.5, '2']) {
-    const md = renderReview(baseReport({ counts: { ...baseReport().counts, promisesAsFindings: n } }));
-    assert.ok(!md.includes(reviewRender.PROMISES_AS_FINDINGS_SENTENCE(1).replace(/\b1\b/, '')), `nothing for ${n}`);
-  }
-  // A producer's own count, rendered from a whole session review.
-  const report = await runCodeReview({ session: claimsSession(), pr: GREET_PR, diff: GREET_DIFF,
-    judge: combinedJudge(AGAINST) });
-  assert.ok(renderReview(report).includes(`_${reviewRender.PROMISES_AS_FINDINGS_SENTENCE(1)}_`));
-});
+// ---- 4. the value's cause ---------------------------------------------------------------------------
 
 /** Writes and a command, each with or without a recorded outcome. */
 function valueSession() {
@@ -577,14 +544,7 @@ test('D79 near misses: every other failure of the quote still drops the receipt 
   assert.ok(reasons.includes('value_unchecked') && !reasons.includes('receipt_rejected'), `${reasons}`);
 });
 
-const cardOf = (md, dimension) => {
-  const start = md.indexOf(`<summary><b>${dimension}</b>`);
-  assert.ok(start >= 0, `premise: the card for ${dimension} is rendered`);
-  return md.slice(start, md.indexOf('</details>', start));
-};
-const adopted = (card) => /\*\*What was adopted\.\*\* (.*)/.exec(card)?.[1] ?? null;
-
-test('M33 G4 an unchecked value says only the cause the ledger recorded', () => {
+test('M33 G4 an unchecked value records only the cause the ledger found, naming the value\'s own write', () => {
   const session = valueSession();
   const rows = [
     ['NONE', { actions: ['W1'] }],
@@ -597,60 +557,8 @@ test('M33 G4 an unchecked value says only the cause the ledger recorded', () => 
     ['FAILED', { actions: ['W3'], value: 'src/failed.js', valueReceipt: { eventId: 'W3', role: 'action', field: 'path',
       quote: 'src/failed.js' } }],
   ].map(([name, over]) => ground(session, { ...over, dimension: `SYNTHETIC_G4_${name}` }).decision);
-  const md = renderReview(baseReport({ session, decisions: rows, coverage: 'complete',
-    counts: { ...baseReport().counts, decisions: rows.length } }));
-  const card = (name) => adopted(cardOf(md, `SYNTHETIC_G4_${name}`.replace(/_/g, '\\_')));
-  const S = reviewRender.VALUE_UNCHECKED_SENTENCE;
-  for (const name of ['NONE', 'NONE_ON_COMMAND']) {
-    assert.equal(card(name), `_${S.not_proposed()}_`);
-    assert.doesNotMatch(card(name), /did not check out|does not establish|failed or cancelled/, name);
-  }
-  assert.equal(card('UNQUOTED'), `_${S.unquoted()}_`);
-  assert.equal(card('WRONG_QUOTE'), `_${S.unmatched()}_`, 'never blames the unrelated unknown write');
-  assert.doesNotMatch(card('WRONG_QUOTE'), /W2/);
-  assert.equal(card('UNKNOWN'), `_${S.write_outcome_unknown(['W2'])}_`, 'names the value\'s own write only');
-  assert.doesNotMatch(card('UNKNOWN'), /W4/);
-  assert.equal(card('FAILED'), `_${S.write_unsuccessful(['W3'])}_`);
-  // Only a value that was proposed and checked counts as inconclusive.
-  const withheld = section(md, WITHHELD_HEADING);
-  assert.ok(withheld.includes(`- ${reviewRender.WITHHELD_SENTENCE.values({ n: 4 })}.`), withheld.join('\n'));
-});
-
-test('D79 a paraphrased value\'s card names its write and shows where the kept receipt landed', () => {
-  const session = valueSession();
-  const row = ground(session, { ...paraphrase('W1'), dimension: 'SYNTHETIC_G4_PARAPHRASED' }).decision;
-  const md = renderReview(baseReport({ session, decisions: [row], coverage: 'complete',
-    counts: { ...baseReport().counts, decisions: 1 } }));
-  const card = cardOf(md, 'SYNTHETIC\\_G4\\_PARAPHRASED');
-  assert.equal(adopted(card), `_${reviewRender.VALUE_UNCHECKED_SENTENCE.value_paraphrased(['W1'])}_`);
-  assert.ok(card.includes('**Where it landed.**'), 'the kept receipt is shown');
-  assert.ok(card.includes(WRITTEN('W1').replace(/_/g, '\\_')), 'with the code it quotes (Markdown-escaped)');
-  assert.ok(!card.includes('a constant set to three'), 'never the paraphrase');
-  // It counts as a value proposed and checked but not confirmed, like every other unchecked value.
-  assert.ok(section(md, WITHHELD_HEADING).includes(`- ${reviewRender.WITHHELD_SENTENCE.values({ n: 1 })}.`));
-});
-
-test('M33 G4 a row with no recorded cause names none, even with the session to read', () => {
-  const session = valueSession();
-  const row = { actorSession: 'sess-g4-values', dimension: 'SYNTHETIC_G4_LEGACY', chosen: 'SYNTHETIC_G4 chosen', value: null,
-    valueReceipt: null, valueState: 'unchecked', actions: ['W2'], stated: null, constrainedBy: null, instructionReview: null,
-    column: 'asked-chose', columnState: 'grounded', amends: [], materiality: 'structural', materialityRule: 'new-module',
-    relevance: 'session-effect', reasons: ['value_unchecked'] };
-  for (const valueUnchecked of [undefined, { cause: 'SYNTHETIC_NOT_A_CAUSE', action: null }, 'write_outcome_unknown',
-    { cause: 'write_outcome_unknown', action: 'NOT_CITED' }]) {
-    const decisions = [valueUnchecked === undefined ? row : { ...row, valueUnchecked }];
-    const md = renderReview(baseReport({ session, decisions, counts: { ...baseReport().counts, decisions: 1 } }));
-    const text = adopted(cardOf(md, 'SYNTHETIC\\_G4\\_LEGACY'));
-    if (valueUnchecked?.action === 'NOT_CITED')
-      assert.equal(text, `_${reviewRender.VALUE_UNCHECKED_SENTENCE.write_outcome_unknown([])}_`, 'an uncited id is never printed');
-    else assert.equal(text, `_${reviewRender.VALUE_UNCHECKED_SENTENCE.unrecorded()}_`, JSON.stringify(valueUnchecked));
-  }
-});
-
-test('M33 G4 every recorded value cause has one sentence', () => {
-  const S = reviewRender.VALUE_UNCHECKED_SENTENCE;
-  assert.deepEqual(Object.keys(S).sort(), [...ledger.VALUE_UNCHECKED_CAUSES, 'unrecorded'].sort());
-  assert.ok(!S.not_proposed().includes('did not check out'));
-  assert.match(S.not_proposed(), /No specific value was proposed/);
-  assert.equal(new Set(Object.values(S).map((sentence) => sentence(['X']))).size, Object.keys(S).length);
+  assert.deepEqual(rows.map((d) => [d.dimension, d.valueUnchecked?.cause ?? null, d.valueUnchecked?.action ?? null]), [
+    ['SYNTHETIC_G4_NONE', 'not_proposed', null], ['SYNTHETIC_G4_NONE_ON_COMMAND', 'not_proposed', null],
+    ['SYNTHETIC_G4_UNQUOTED', 'unquoted', null], ['SYNTHETIC_G4_WRONG_QUOTE', 'unmatched', null],
+    ['SYNTHETIC_G4_UNKNOWN', 'write_outcome_unknown', 'W2'], ['SYNTHETIC_G4_FAILED', 'write_unsuccessful', 'W3']]);
 });

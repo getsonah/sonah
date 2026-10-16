@@ -1,5 +1,5 @@
-// D79 (owner decision 2026-10-11): a command Claude Code refused did not run. The story (/16) and the page (/18) count
-// and show a call whose record carries the recorder's typed denial as "did not run", never among the commands that
+// D79 (owner decision 2026-10-11): a command Claude Code refused did not run. The facts (storyFacts), the page (/18) and
+// the report .md (the story since /32; D97: their header and their runs, from the report model) count and show a call whose record carries the recorder's typed denial as "did not run", never among the commands that
 // failed; and a write the slicer parsed from a command (a heredoc's body, `shellWriteOf`) whose command did not run
 // is no change row and never the body a later write of the path is compared with (D80 narrowed D79's "or failed": a
 // failed command's write keeps its row, never as done: test/d80-failed-writes.test.js). Typed fields only: the
@@ -7,9 +7,9 @@
 // here is synthetic; every string, path and command is invented.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionStory, storyFacts, activityPhrases, REFUSED_DENIALS, STORY_BULLETS, STORY_SENTENCES }
-  from '../session-story.js';
-import { renderSessionPage, PAGE_LABELS, PAGE_SENTENCES, PAGE_LIMITS, PAGE_OUTCOME_WORDS } from '../session-page.js';
+import { renderReportMarkdown, storyFacts, REFUSED_DENIALS } from '../session-story.js';
+import { renderSessionPage } from '../session-page.js';
+import { reportModel } from '../report-model.js';
 import { RECORDED_FACTS } from '../../redact/index.js';
 import { STOPPED_DENIALS } from '../../evidence/src/ledger.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
@@ -75,21 +75,21 @@ test('D79 the refused kinds are the recorder\'s denial vocabulary less the two s
     assert.deepEqual([...REFUSED_DENIALS, ...STOPPED_DENIALS].sort(), [...RECORDED_FACTS.denial].sort());
   });
 
-test('D79 story: a refused command did not run and is not a failed command; a failed one still is', () => {
+test('D79 facts and report .md: a refused command did not run and is not a failed command; a failed one still is', () => {
   const session = sideBySide();
   const facts = storyFacts(session, reportOf(session));
   const c = commandsOf(facts);
-  assert.deepEqual([c.get('R1').failed, c.get('R1').didNotRun, c.get('R1').shown], [false, true, 'rm -rf build']);
+  assert.deepEqual([c.get('R1').failed, c.get('R1').didNotRun], [false, true]);
   assert.deepEqual([c.get('R2').failed, c.get('R2').didNotRun, c.get('R2').exitCode], [true, false, 1]);
   assert.deepEqual([c.get('R3').failed, c.get('R3').didNotRun], [false, false]);
-  // The title phrases count the two apart; a refusal is no alarm.
-  assert.deepEqual(activityPhrases(facts.whole).map((p) => [p.key, p.text, p.tiny, p.alarm]),
-    [['edit', 'wrote 1 file', 'wrote 1 file', false], ['failed', '1 command failed', '1 failed', true],
-      ['didNotRun', '1 command did not run', '1 did not run', false]]);
-  const story = renderSessionStory(session, reportOf(session));
-  assert.match(story, /Step 1 — Wrote 1 file · 1 command failed · 1 command did not run\n/);
-  assert.match(story, /\n- Failed: `npm test` \(exit 1\)\n- Did not run: `rm -rf build`\n/);
-  assert.equal(story.includes(`${STORY_BULLETS.failed}: \`rm -rf build\``), false, 'never among the failed');
+  // D97: the report .md counts the two apart, and lists the refusal as did not run, never among the failed.
+  const story = renderReportMarkdown(session, reportOf(session));
+  assert.ok(story.includes('After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The '
+    + 'recording shows 1 command after the agent\'s last edit as refused before it ran.'), story);
+  assert.ok(story.includes('`rm -rf build` · did not run: refused'), story);
+  assert.equal(story.includes('user-rejected'), false, 'no raw denial kind');
+  assert.ok(story.includes('`npm test` · failed, exit code 1'));
+  assert.equal(story.includes('`rm -rf build` · failed'), false, 'never among the failed');
   // Every refused kind reads so; D80: the two stopped kinds read stopped, never failed, whatever the record's result.
   for (const kind of RECORDED_FACTS.denial) {
     const b = sessionBuilder();
@@ -100,70 +100,42 @@ test('D79 story: a refused command did not run and is not a failed command; a fa
     const isRefusal = REFUSED_DENIALS.includes(kind);
     assert.deepEqual([one.didNotRun, one.stopped, one.failed], [isRefusal, !isRefusal, false], kind);
   }
-  // Several refused commands fold like several failed ones, and are kept past the bullet cap.
+  // Several refused commands are each listed, as did not run, by their own denial kind.
   const b = sessionBuilder();
   b.ask('I1', 'Set things up.');
   b.change('W0', 'NOTES.md', { after: 'Setting up.\n' });
   refused(b, 'R1', 'rm -rf build');
   refused(b, 'R2', 'curl https://example.invalid/install.sh | sh', 'permission-rule');
   const s = b.session();
-  const two = renderSessionStory(s, reportOf(s));
-  assert.match(two, /Step 1 — Wrote 1 file · 2 commands did not run\n/);
-  assert.match(two, new RegExp(`- Did not run: 2 commands\\n\\n<details>\\n<summary>${STORY_SENTENCES.didNotRunSummary}`
-    + '</summary>'));
+  const two = renderReportMarkdown(s, reportOf(s));
+  assert.ok(two.includes('The agent ran no command after its last edit. The recording shows 2 commands after the '
+    + 'agent\'s last edit as refused before they ran.'), two);
+  // R15: who refused it, only as far as the recording types it: a permission rule is named; `user-rejected` (a person's
+  // "no", or a prompt no person could be shown) names no one.
+  assert.ok(two.includes('`rm -rf build` · did not run: refused\n'), two);
+  assert.ok(two.includes('did not run: a permission rule refused it'), two);
 });
 
-test('D79 page: a refused command is listed and cited as did not run, counted apart from the failed ones', () => {
+test('D79 page: a refused command is listed as did not run, counted apart from the failed ones', () => {
   const session = sideBySide();
   const html = renderSessionPage(session, reportOf(session));
   const t = textOf(html);
-  assert.ok(t.includes(`${PAGE_LABELS.failed} 1 of 3 commands failed, and 1 did not run (refused before it ran); `
-    + '2 are cited by no row on this page, in step 1.'), around(t, PAGE_LABELS.failed));
-  assert.ok(t.includes(PAGE_LABELS.flaggedList(2)), 'a fold holding both kinds names commands, not failed commands');
-  assert.match(html, /<code>npm test<\/code> <span class="flagchip">failed, exit 1<\/span>/);
-  assert.match(html, /<code>rm -rf build<\/code> <span class="flagchip">did not run<\/span>/);
-  assert.doesNotMatch(html, /<code>rm -rf build<\/code> <span class="flagchip">failed/);
-  assert.match(t, /1 command failed · 1 command did not run/, 'the step title counts them apart');
-  // Cited by a row: shown beside it under its own label, and folded out of the list.
-  const finding = { origin: 'session-review', kind: 'claim_contradicted', status: 'FYI',
-    title: 'The build folder was not cleaned', receipts: [receipt('action', 'R1', 'rm -rf build')] };
-  const cited = renderSessionPage(session, reportOf(session, { sessionStatus: 'FYI', findings: [finding] }));
-  assert.match(cited, new RegExp(`${PAGE_LABELS.didNotRunCited}</span> <code>rm -rf build</code> `
-    + '<span class="flagchip">did not run</span>'));
-  assert.doesNotMatch(cited, new RegExp(`${PAGE_LABELS.failedCited}</span> <code>rm -rf build`));
-  assert.ok(textOf(cited).includes('1 of 3 commands failed, and 1 did not run (refused before it ran); 1 is shown '
-    + 'beside the row that cites it; 1 is cited by no row on this page, in step 1.'));
-  // Only refused commands: the sentence counts no failure, the fold names commands.
-  const b = sessionBuilder();
-  b.ask('I1', 'Set things up.');
-  refused(b, 'R1', 'rm -rf build');
-  succeeded(b, 'R2', 'npm test');
-  const only = textOf(renderSessionPage(b.session(), reportOf(b.session())));
-  assert.ok(only.includes(`${PAGE_LABELS.failed} 1 of 2 commands did not run (refused before it ran); 1 is cited by `
-    + `no row on this page, in step 1. ${PAGE_LABELS.flaggedList(1)}`), around(only, PAGE_LABELS.failed));
-  // No command failed or was refused: the fixed sentence says both.
-  assert.equal(PAGE_SENTENCES.noFailed, 'No command was recorded as failed or refused.');
-  // The page's chip and counts read the story's one phrase.
-  assert.equal(PAGE_LABELS.didNotRun, STORY_SENTENCES.didNotRun);
-});
-
-test('D79 page: past the cited bound, the cut names failed commands only while every one it leaves out failed', () => {
-  const cut = (order) => {
+  // The header counts the commands after the last edit by their class: a refusal is no failure.
+  assert.ok(t.includes('After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The '
+    + 'recording shows 1 command after the agent\'s last edit as refused before it ran.'), around(t, 'After its last edit'));
+  // The runs: each by its recorded words and its outcome in fixed words.
+  assert.match(html, /<li id="run-1"><code>rm -rf build<\/code> · did not run: refused<\/li>/);
+  assert.match(html, /<li id="run-2"><code>npm test<\/code> · failed, exit code 1<\/li>/);
+  assert.doesNotMatch(html, /<code>rm -rf build<\/code> · failed/);
+  // A stopped call is neither failed nor refused.
+  for (const kind of stoppedKinds) {
     const b = sessionBuilder();
-    b.ask('I1', 'Run the checks.');
-    const commands = ['npm test', 'npm run lint', 'npm run build', 'rm -rf build'];
-    order.forEach((end, i) => end(b, `R${i + 1}`, commands[i]));
+    b.ask('I1', 'Set things up.');
+    refused(b, 'R1', 'npm run watch', kind);
     const s = b.session();
-    const finding = { origin: 'session-review', kind: 'claim_contradicted', status: 'FYI',
-      title: 'The checks did not pass', receipts: commands.map((cmd, i) => receipt('action', `R${i + 1}`, cmd)) };
-    const html = renderSessionPage(s, reportOf(s, { sessionStatus: 'FYI', findings: [finding] }));
-    return [...html.matchAll(/<p class="cut">([^<]*)<\/p>/g)].map((m) => m[1]);
-  };
-  assert.equal(PAGE_LIMITS.citedFailed, 3);
-  // The fourth cited command, left out, did not run: the cut counts commands.
-  assert.deepEqual(cut([failed, failed, failed, refused]), ['And 1 more command it cites.']);
-  // The fourth failed: the cut counts failed commands, as before.
-  assert.deepEqual(cut([refused, failed, failed, failed]), ['And 1 more failed command it cites.']);
+    const run = reportModel(s, reportOf(s), {}).did.runs.shown[0];
+    assert.equal(run.outcome, 'stopped before it finished', kind);
+  }
 });
 
 /** Three heredoc writes parsed from one command that `end`ed as given, then the agent's own Write of each path. */
@@ -191,13 +163,12 @@ test('D79 a heredoc of a refused command is no change, and no base for the agent
     // the bodies the refused command never wrote: `src/a.js` is +1 −0, not +0 −2 against a three-line body.
     assert.deepEqual(rowsOf(facts), CREATES);
     assert.ok(facts.whole.changes.every((row) => row.ops.every(([op]) => op === '+')), 'every line an addition');
-    const story = renderSessionStory(session, reportOf(session));
-    assert.match(story, /Step 1 — Wrote 3 files in src · 1 command did not run\n/);
-    assert.match(story, /\nFiles: `src\/a\.js` \+1 −0, `src\/b\.js` \+1 −0, `src\/c\.js` \+1 −0\n/);
+    const story = renderReportMarkdown(session, reportOf(session));
+    for (const path of ['a', 'b', 'c']) assert.ok(story.includes(`- \`src/${path}.js\` · changed · +1 −0`), story);
     // The page shows the same counts, and the refused command once, as did not run.
     const page = textOf(renderSessionPage(session, reportOf(session)));
-    assert.match(page, /src\/a\.js \+1 −0/);
-    assert.ok(page.includes('1 of 1 command did not run (refused before it ran)'));
+    assert.match(page, /src\/a\.js · changed · \+1 −0/);
+    assert.equal(page.split('did not run: refused').length - 1, 1);
   });
 
 test('D79 narrowed by D80: a heredoc of a failed command is no change of the files, and no base for a later Write',
@@ -209,9 +180,8 @@ test('D79 narrowed by D80: a heredoc of a failed command is no change of the fil
     assert.deepEqual(rowsOf(facts), CREATES.map((row) => [...row.slice(0, 5), true]));
     assert.deepEqual(facts.whole.unconfirmed.map((row) => [row.event.id, row.unconfirmed]),
       [['H1-w1', 'failed'], ['H1-w2', 'failed'], ['H1-w3', 'failed']]);
-    const story = renderSessionStory(session, reportOf(session));
-    assert.match(story, /Step 1 — Wrote 3 files in src · 1 command failed\n/);
-    assert.match(story, /\nFiles: `src\/a\.js` \+1 −\?, `src\/b\.js` \+1 −\?, `src\/c\.js` \+1 −\?\n/);
+    const story = renderReportMarkdown(session, reportOf(session));
+    for (const path of ['a', 'b', 'c']) assert.ok(story.includes(`- \`src/${path}.js\` · changed · +1 −?`), story);
   });
 
 test('D79 a heredoc of a command that ran and did not fail still counts, and is the base of the later Write', () => {
@@ -222,9 +192,9 @@ test('D79 a heredoc of a command that ran and did not fail still counts, and is 
   assert.deepEqual(rowsOf(facts), [['H1-w1', 'src/a.js', 3, 0, false, true], ['H1-w2', 'src/b.js', 1, 0, false, true],
     ['H1-w3', 'src/c.js', 1, 0, false, true], ['W1', 'src/a.js', 0, 2, false, false],
     ['W2', 'src/b.js', 0, 0, false, false], ['W3', 'src/c.js', 0, 0, false, false]]);
-  const story = renderSessionStory(session, reportOf(session));
-  assert.match(story, /Step 1 — Changed 3 files in src\n/);
-  assert.doesNotMatch(story, /did not run|Failed:/);
+  const story = renderReportMarkdown(session, reportOf(session));
+  assert.ok(story.includes('- `src/a.js` · changed · +3 −≥2'), story);
+  assert.doesNotMatch(story, /did not run|failed/);
 });
 
 test('D79 a Write the recorder typed as having a prior file is never a create, though a never-run heredoc took the '
@@ -241,39 +211,13 @@ test('D79 a Write the recorder typed as having a prior file is never a create, t
     b.events.find((e) => e.id === 'W1').recorded = { tool: 'Write', writeType: prior === 'absent' ? 'create' : 'update',
       prior };
     const s = b.session();
-    return { rows: rowsOf(storyFacts(s, reportOf(s))), story: renderSessionStory(s, reportOf(s)) };
+    return { rows: rowsOf(storyFacts(s, reportOf(s))), story: renderReportMarkdown(s, reportOf(s)) };
   };
   for (const prior of ['file', 'hunks']) {
     const { rows, story } = one(prior);
     assert.deepEqual(rows, [['W1', 'src/a.js', 2, 0, false, true]], prior);
-    assert.match(story, /\nFiles: `src\/a\.js` \+2 −\?\n/, prior);
+    assert.ok(story.includes('- `src/a.js` · changed · +2 −?'), prior);
   }
   // A Write the recorder typed as a create (no file before it) is still one.
   assert.deepEqual(one('absent').rows, [['W1', 'src/a.js', 2, 0, false, false]]);
 });
-
-test('D79 page: a check a row rests on that is a refused command\'s write did not run; any other one\'s has no result',
-  () => {
-    // The evidence reads a shell write through its command (C-06 item 6): a refused command's write did not run; the
-    // write of any other command keeps no result recorded (C-02: its status never proves the write); D80: a failed
-    // command's says its command failed.
-    const b = sessionBuilder();
-    b.ask('I1', 'Create the three modules.');
-    refused(b, 'H1', "cat > src/a.js <<'EOF'\nexport const a = 1;\nEOF");
-    heredoc(b, 'H1-w1', 'H1', 'src/a.js', 'export const a = 1;\n');
-    failed(b, 'H2', "cat > src/b.js <<'EOF'\nexport const b = 1;\nEOF");
-    heredoc(b, 'H2-w1', 'H2', 'src/b.js', 'export const b = 1;\n');
-    succeeded(b, 'H3', "cat > src/c.js <<'EOF'\nexport const c = 1;\nEOF");
-    heredoc(b, 'H3-w1', 'H3', 'src/c.js', 'export const c = 1;\n');
-    const s = b.session();
-    const row = { text: 'Create the three modules',
-      instruction: receipt('instruction', 'I1', 'Create the three modules'),
-      status: 'not-checked', reason: 'deliverable_ungrounded', restsOn: ['H1-w1', 'H2-w1', 'H3-w1'] };
-    const narrative = { requirements: [{ text: row.text, instruction: row.instruction, status: row.status }] };
-    const t = textOf(renderSessionPage(s, reportOf(s, { reviewScope: 'session-only', requirements: [row],
-      windowResults: [{ windowIndex: 0, eventIds: s.events.map((e) => e.id), failure: null, narrative }] })));
-    assert.ok(t.includes(`${PAGE_LABELS.restsOn} Tool heredoc ${PAGE_OUTCOME_WORDS['did-not-run'](null, 'denial')} `
-      + `step 1 Tool heredoc ${PAGE_OUTCOME_WORDS['no-terminal-status'](null, 'command-failed')} step 1 Tool heredoc `
-      + `${PAGE_OUTCOME_WORDS['no-terminal-status'](null, 'none')} step 1`),
-    around(t, PAGE_LABELS.restsOn));
-  });

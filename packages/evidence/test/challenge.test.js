@@ -107,7 +107,11 @@ test('R3 challenge profile 3 defines source-region roles and fresh receipt prove
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(result.profile.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(result.profile.version, 'sonah.challenge/44');
   for (const request of requests) {
     assert.deepEqual(request.schema.properties.votes.items.properties.receipts.items.properties.role.enum,
       ['instruction', 'commentary', 'action', 'observation', 'code']);
@@ -147,7 +151,9 @@ test('R3 literal written contents and outcomes require their actual roles, witho
       batchVote(request, { ...vote(), receipts: [wrong] }), verifyReceipt: (r) => {
         checkedRoles.push(r.role); return verifyReceipt(session, r);
       } });
+    // `sonah.challenge/44`: a rejected vote is an answer and stands; it is not asked again.
     assert.deepEqual(checkedRoles, ['action', 'action', 'action']);
+    assert.ok(rejected.results[0].votes.every((v) => v.reasked !== true));
     assert.equal(wrong.role, 'action', 'the proposed receipt was not rewritten');
     assert.equal(rejected.survivors.length, 0);
     // D58: every pass voted, so the challenge ran; the wrong role left the item unsettled, and it
@@ -546,7 +552,11 @@ test('R3 one full batch handles sixteen candidates in three fresh keyed passes',
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(result.profile.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(result.profile.version, 'sonah.challenge/44');
   assert.equal(result.attemptedCalls, 3);
   assert.equal(result.plannedBatches, 1);
   assert.equal(result.plannedItems, 16);
@@ -648,6 +658,7 @@ test('R3 receipt validation gets the keyed item, including object-prototype-shap
     seen.set(current.key, (seen.get(current.key) ?? 0) + 1);
     return current.key === 'constructor' ? { ok: false } : verifyReceipt(session, r);
   } });
+  // `sonah.challenge/44`: the rejected item's three votes stand; none is asked again.
   assert.deepEqual([...seen.values()], [3, 3, 3]);
   assert.deepEqual(result.survivors.map((x) => x.key), ['__proto__', 'toString']);
   assert.equal(result.results[1].votes[0].reason, 'receipt_rejected');

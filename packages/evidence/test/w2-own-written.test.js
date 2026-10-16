@@ -17,11 +17,8 @@ import { contradictionSourceOf, codeContradictionSource, ownWrittenCheck, samePa
 import { readWrittenStatement, publishedStatement, writtenShape, writeActionOf, windowSourceMap } from '../src/written.js';
 import { runReview, OWN_WRITTEN_TITLE, CONTRADICTION_TITLES } from '../src/run-review.js';
 import { SESSION_NARRATIVE_SCHEMA } from '../src/prompt.js';
-import { WITHHELD_SENTENCE, CHECKLIST_CONTRADICTION_WORDS, WRITTEN_OWN_WRITTEN_SENTENCE, WRITTEN_LABEL_SENTENCE,
-  renderReview } from '../src/review.js';
-import { STORY_CONTRADICTION_LABELS, contradictionLabel, writtenWords, STORY_WRITTEN_WORDS,
-  STORY_WRITTEN_OWN_WRITTEN_WORDS } from '../../render/session-story.js';
-import { PAGE_CONTRADICTION_WORDS } from '../../render/session-page.js';
+import { CHECKLIST_CONTRADICTION_WORDS } from '../src/review.js';
+import { REPORT_CONTRADICTION_SOURCES } from '../../render/report-words.js';
 
 const TEXT = {
   ask: 'SYNTHETIC_W2O_ASK: add a test for parse and tell me what it covers.',
@@ -60,14 +57,12 @@ test('W2 own_written: the closed words — one more source on role code, one mor
   assert.deepEqual(SESSION_NARRATIVE_SCHEMA.properties.claims.items.properties.contradictedBy.properties.role,
     { enum: ['observation', 'instruction', 'code', 'project-instructions'] });
   assert.equal(WITHHELD_REJECTION_CAUSES.at(-1), 'source_rewritten');
-  assert.equal(typeof WITHHELD_SENTENCE.source_rewritten, 'function');
   assert.deepEqual(WRITTEN_CONTRADICTION_REJECTIONS.slice(3, 5), ['not_own_written', 'source_rewritten']);
   // Every reader has words for it.
-  assert.equal(CHECKLIST_CONTRADICTION_WORDS.own_written, 'Contradicted by what the agent itself wrote');
-  assert.deepEqual(Object.keys(PAGE_CONTRADICTION_WORDS), [...CONTRADICTION_SOURCES]);
-  assert.deepEqual(Object.keys(STORY_CONTRADICTION_LABELS), [...CONTRADICTION_SOURCES]);
-  assert.equal(contradictionLabel({ kind: 'claim_contradicted', contradictionSource: 'own_written' }, { role: 'code' }),
-    'Code the agent wrote');
+  assert.equal(CHECKLIST_CONTRADICTION_WORDS.own_written, 'What the agent itself wrote contradicts it');
+  // D97: the page's words for what contradicts a claim, one per source.
+  assert.deepEqual(Object.keys(REPORT_CONTRADICTION_SOURCES), [...CONTRADICTION_SOURCES]);
+  assert.equal(REPORT_CONTRADICTION_SOURCES.own_written, 'What the agent wrote');
   assert.notEqual(OWN_WRITTEN_TITLE, CONTRADICTION_TITLES.code);
 });
 
@@ -161,8 +156,8 @@ test('W2 own_written: a written statement may cite the agent\'s own earlier writ
   assert.deepEqual([read.contradiction.eventId, read.contradiction.quote, read.source], ['W1', QUOTE, 'own_written']);
   const { record } = publishedStatement({ host: 'github.com', id: '0' }, read, 'upheld');
   assert.deepEqual([record.label, record.contradictionSource], ['contradicted', 'own_written']);
-  assert.equal(writtenWords(record), STORY_WRITTEN_OWN_WRITTEN_WORDS);
-  assert.equal(writtenWords({ ...record, contradictionSource: undefined }), STORY_WRITTEN_WORDS.contradicted);
+  // D97: the readers say what contradicts it by that source (report-words.js REPORT_CONTRADICTION_SOURCES).
+  assert.equal(REPORT_CONTRADICTION_SOURCES[record.contradictionSource], 'What the agent wrote');
   // Not upheld: no source on the record, so a reader says nothing about it.
   assert.equal(publishedStatement({ host: 'github.com', id: '0' }, read, 'refuted').record.contradictionSource, undefined);
   // Where the contract admits only a RESULT (the combined route's), the statement is unreadable as before.
@@ -179,17 +174,7 @@ test('W2 own_written: a written statement may cite the agent\'s own earlier writ
   assert.equal(writeActionOf(session, 'W1'), session.event('W1'), 'one definition of a write, re-exported');
 });
 
-test('W2 own_written: the Markdown review says a written statement was contradicted by the agent\'s own text only then', () => {
-  const base = { pr: null, findings: [], decisions: [], counts: { decisions: 0, byColumn: {} }, coverage: 'complete',
-    codeCoverage: 'complete', rejectedDecisions: [], rejectedFindings: [], gaps: [] };
-  const w = { id: 'w', text: 'A statement.', label: 'contradicted', stated: receipt('W2', 'code', 'covers nested input'),
-    receipts: [receipt('W2', 'code', 'covers nested input')] };
-  const plainMd = renderReview({ ...base, writtenClaims: [w] });
-  assert.ok(plainMd.includes(WRITTEN_LABEL_SENTENCE.contradicted));
-  assert.ok(!plainMd.includes(WRITTEN_OWN_WRITTEN_SENTENCE));
-  const own = renderReview({ ...base, writtenClaims: [{ ...w, contradictionSource: 'own_written' }] });
-  assert.ok(own.includes(WRITTEN_OWN_WRITTEN_SENTENCE));
-  // The combined route's contradiction check is unchanged: only a RESULT, without the session route's flag.
+test('W2 own_written: the combined route\'s contradiction check is unchanged: only a RESULT, without the session route\'s flag', () => {
   const session = sessionOf([ask(), ...write('W1', 'test/parse.test.js', 'test'), said()]);
   assert.equal(findingReceiptCheck(session, 'claim_contradicted', [stated, against]).cause, 'role_missing');
 });

@@ -8,9 +8,8 @@
 //     recorded task path — or, with zero or several candidates, not attached and counted under a closed reason
 //     (unattributed / ambiguous);
 //   - anything else stays unparsed and counted.
-// The slicer keeps the whole report it read, with the turn and row where the parent received it. Redaction scrubs the
-// WHOLE report as output first and only then bounds the scrubbed text by the statement budget at line boundaries, with
-// its truncation declared: nothing is ever cut before redaction has judged it whole.
+// The slicer keeps the whole report it read, with the turn and row where the parent received it, and nothing bounds it
+// (D68 E). D90 (owner decision 2026-10-15, privacy is not a design constraint): nothing in it is masked either.
 //
 // M33 F repair: in Codex rollouts `Task name` names the RECIPIENT and `Sender` the author (see the fixture); the first
 // cut joined on `Task name` and so attributed nothing. Every row here has the recorder's shape.
@@ -412,19 +411,16 @@ test('M33 F a row that repeats a key stays an unsupported row, never an inter-ag
   assert.equal(raw.capture.unsupported, 1);
 });
 
-// ---- redaction and the output cap ---------------------------------------------------------------------------------
+// ---- the report, as recorded -----------------------------------------------------------------------------------------
 
-test('M33 F a secret-shaped token in a report is scrubbed by redaction, as tool output is', async (t) => {
+test('M33 F, D90 a secret-shaped token in a report is kept as recorded, as tool output is', async (t) => {
   const report = `Deployed the fix.\nI used the key ${SECRET} to call the API.\nAll 13 tests pass.`;
   const { raw, clean } = await slice(t, rootRows([finalAnswer('/root/fix_parser', report)]));
-  assert.ok(JSON.stringify(raw).includes(SECRET), 'the slicer keeps what was recorded; redaction decides');
-  const scrubbed = byCall(clean, 'spawn-fix').finalAnswer;
-  assert.equal(JSON.stringify(clean).includes(SECRET), false);
-  assert.equal(JSON.stringify(clean).includes(SECRET.slice(-24)), false);
-  assert.equal(scrubbed.redacted, true);
-  assert.match(scrubbed.text, /^Deployed the fix\./);
-  assert.match(scrubbed.text, /All 13 tests pass\.$/);
-  // The slice hash covers the scrubbed report: a different report is different evidence.
+  assert.ok(JSON.stringify(raw).includes(SECRET), 'the slicer keeps what was recorded');
+  const kept = byCall(clean, 'spawn-fix').finalAnswer;
+  assert.equal(kept.text, report);
+  assert.equal(kept.redacted, undefined);
+  // The slice hash covers the report: a different report is different evidence.
   const other = (await slice(t, rootRows([finalAnswer('/root/fix_parser', 'Deployed the fix.')]))).clean;
   const none = (await slice(t, rootRows())).clean;
   assert.notEqual(sliceHash(clean), sliceHash(other));
@@ -447,14 +443,12 @@ test('D68 (E) the slicer and redaction keep a long report whole: no bound, no ma
   assert.deepEqual(byCall(redact(structuredClone(clean)).ledger, 'spawn-fix').finalAnswer, kept);
 });
 
-// ---- redaction sees the whole report -------------------------------------------------------------------------------------
+// ---- a token at the retired head boundary ------------------------------------------------------------------------------
 
 const TOKEN = `ghp_${'Zk3Qw8Rt'.repeat(4)}Ab9x`;
-const tokenFragments = (text) => Array.from({ length: TOKEN.length - 3 }, (_, i) => TOKEN.slice(i, i + 4))
-  .filter((piece) => text.includes(piece));
 const fillerLines = (n, from = 0) => Array.from({ length: n }, (_, i) => `filler line ${String(from + i).padStart(4, '0')}.`);
 
-test('M33 F redaction sees the whole report: a token at the retired head boundary leaves no fragment', async (t) => {
+test('M33 F, D90 a token at the retired head boundary of a report stands whole, as recorded', async (t) => {
   assert.equal(TOKEN.length, 40);
   for (let offset = 1; offset < TOKEN.length; offset += 7) {
     // In the report AS RECORDED the old head cut (code point 6000) falls `offset` characters into the token.
@@ -466,60 +460,8 @@ test('M33 F redaction sees the whole report: a token at the retired head boundar
     const { raw, clean } = await slice(t, rootRows([finalAnswer('/root/fix_parser', report)]));
     assert.equal(byCall(raw, 'spawn-fix').finalAnswer.text, report, 'the slicer cut nothing');
     const kept = byCall(clean, 'spawn-fix').finalAnswer;
-    assert.deepEqual([kept.truncated, kept.redacted], [undefined, true], `offset ${offset}: scrubbed whole, never cut`);
-    assert.deepEqual(tokenFragments(JSON.stringify(clean)), [], `offset ${offset}: no fragment of the token survives`);
-    assert.ok(kept.text.includes('The deploy key is ‹redacted:github-token› and it worked.'), `offset ${offset}`);
+    assert.deepEqual([kept.text, kept.truncated, kept.redacted], [report, undefined, undefined], `offset ${offset}`);
   }
-});
-
-/** A report whose last `RETIRED.tail` code points are exactly `tail` (the old cut kept exactly that). */
-function reportEndingIn(opening, tail) {
-  const body = [...tail];
-  assert.equal(body.length, RETIRED.tail);
-  return `${fillerLines(700).join('\n')}\n${opening}\n${tail}`;
-}
-/** `lines`, then filler lines and one closing line padded so the whole is exactly `RETIRED.tail` code points. */
-function exactTail(lines) {
-  const out = [...lines];
-  const size = (list) => [...list.join('\n')].length;
-  for (let n = 0; size([...out, ...fillerLines(1, n)]) + 1 + 40 <= RETIRED.tail; n++) out.push(...fillerLines(1, n));
-  const room = RETIRED.tail - size(out) - 1;
-  out.push(`All done here${' '.repeat(room - 'All done here.'.length)}.`);
-  const tail = out.join('\n');
-  assert.equal([...tail].length, RETIRED.tail);
-  return tail;
-}
-
-test('M33 F redaction judges the whole report: a secret whose key the old cut dropped is still scrubbed', async (t) => {
-  // A YAML block under a secret-named key: the key line sits just before the old tail, its value lines open the tail.
-  const value = ['    correct horse battery staple', '    another line of the passphrase'];
-  const tail = exactTail(value);
-  const report = reportEndingIn('db:\n  password: |', tail);
-  // What the old order produced — cut first, so the tail reached redaction without its key — kept the value.
-  const cutFirst = `${FINAL_ANSWER_OMISSION}\n${tail}`;
-  const oldOrder = redact({ ask: [], ledger: [], delegations: [{ adapter: 'codex', callId: 'c', turn: 1, childId: null,
-    status: 'unresolved', reason: 'delegation_child_unchecked', finalAnswer: { text: cutFirst, record: 9, truncated: true } }] });
-  assert.ok(JSON.stringify(oldOrder.ledger).includes('correct horse battery staple'), 'the hazard a cut before redaction made');
-  // The whole report, scrubbed whole (D68 E: never cut): the value is judged under its key and never kept.
-  const { raw, clean } = await slice(t, rootRows([finalAnswer('/root/fix_parser', report)]));
-  assert.equal(byCall(raw, 'spawn-fix').finalAnswer.text, report);
-  const kept = byCall(clean, 'spawn-fix').finalAnswer;
-  assert.deepEqual([kept.truncated, kept.redacted], [undefined, true]);
-  for (const line of value) assert.equal(JSON.stringify(clean).includes(line.trim()), false, line);
-  assert.match(kept.text, /All done here +\.$/, 'the tail is still the report\'s own last lines');
-});
-
-test('M33 F redaction judges the whole report: a key block at the retired tail is dropped whole', async (t) => {
-  const bodyLines = ['b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW',
-    'QyNTUxOQAAACDg4JrQ0lyRZrmYWbEkQyNTUxOQAAACDg4JrQ0lyRZrmYWbEk'];
-  // Built at run time, as the other key-block tests build theirs, so the source carries no key-block header.
-  const [begin, end] = ['-----BEGIN', '-----END'].map((edge) => [edge, 'OPENSSH', 'PRIVATE', 'KEY-----'].join(' '));
-  const tail = exactTail([...bodyLines, end]);
-  const report = reportEndingIn(`The key I used:\n${begin}`, tail);
-  const { clean } = await slice(t, rootRows([finalAnswer('/root/fix_parser', report)]));
-  const kept = byCall(clean, 'spawn-fix').finalAnswer;
-  assert.deepEqual([kept.truncated, kept.redacted], [undefined, true]);
-  for (const line of [...bodyLines, begin, end]) assert.equal(JSON.stringify(clean).includes(line), false, line);
 });
 
 // ---- where the parent received the report -------------------------------------------------------------------------

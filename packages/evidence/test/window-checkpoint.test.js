@@ -411,8 +411,13 @@ test('M33 the run profile is frozen plain data that binds the review\'s closed v
     'maxInputBytes', 'narrativeSchema', 'promptVersion', 'proposalReasks', 'reviewAgent', 'reviewScope',
     'windowIncompleteReasons', 'windowing']);
   // The code step: its versions moved, step 1's to /2. The review of the code step: to /3. Its
-  // second review: to /4. Its third: to /5. The second release review: to /6.
-  assert.equal(profile.codePass.check, 'sonah.code-check/6');
+  // second review: to /4. Its third: to /5. The second release review: to /6. The agentic code step (D90): step 1 is
+  // retired (no `check`), the review agent is code-pass/7 and its checking agents code-verify/1. A file changed since
+  // the session, shown: code-pass/8. The cleanup (nothing held): code-pass/9 and code-verify/2. The triage (D96):
+  // code-pass/10, the tier table bound.
+  assert.equal(Object.hasOwn(profile.codePass, 'check'), false);
+  assert.deepEqual([profile.codePass.pass, profile.codePass.verify], ['sonah.code-pass/10', 'sonah.code-verify/2']);
+  assert.equal(profile.codePass.triage.table, 'sonah.tiers/1');
   assert.equal(profile.proposalReasks, 1);
   assert.deepEqual(profile.evidenceRequests, { reasks: 1, items: 8, bytes: 72_000, parsed: 256 });
   assert.equal(profile.reviewScope, 'session-only');

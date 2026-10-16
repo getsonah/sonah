@@ -1,6 +1,6 @@
-// The code step's context, assembled by code (`sonah.code-pass/2`):
-// the change as a table of contents and `| OLD | NEW | TYPE | code` rows, the whole files in fill order, the session
-// dossier built from the saved report, and the budget that places them in requests. Zero calls.
+// The code step's context, assembled by code (`sonah.code-pass/2`; agentic since `sonah.code-pass/7`, D90): the change
+// as a table of contents and `| OLD | NEW | TYPE | code` rows — the review agent's starting map, bounded, the agent
+// reading any file of the repository itself — and the session dossier built from the saved report. Zero calls.
 //
 // Pure and deterministic: no disk, network, clock or random source. The CLI (cli/src/code-snapshot.js) reads git and the
 // files and hands this module their bytes; code-pass.js freezes them. Nothing here reads a word of a file, a row or an
@@ -13,13 +13,14 @@
 // Portions adapted from PR-Agent (qodo-ai/pr-agent), MIT, Copyright (c) 2026 The PR Agent: the extra hunk context (five
 // lines before, one after) and the dynamic context that widens a hunk to git's section header when the old and new
 // lines before it match, at most ten lines back (`pr_agent/algo/git_patch_processing.py` `extend_patch`, 330f0813); and
-// listing by name what does not fit (`pr_agent/algo/pr_processing.py`).
+// listing by name what does not fit the change block (`pr_agent/algo/pr_processing.py`).
 
 import { isAbsolute, relative, resolve, sep, win32 } from 'node:path';
 import { CODE_DIFF_STATES, CODE_CHANGE_TYPES, CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES, PROMISE_STATUSES,
   REQUIREMENT_STATUSES, FAILURE_HANDLINGS, DECISION_COLUMNS, WRITTEN_LABELS, FORBIDDEN_EDIT_BREACHES, personsProjectFile }
   from './ledger.js';
 import { isRead } from './session.js';
+import { itemKindOf } from './triage.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
   && [Object.prototype, null].includes(Object.getPrototypeOf(v));
@@ -48,12 +49,12 @@ export function displayPath(path, root) {
 export const HOME_SPELLED = /^(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%)(?:[/\\]|$)/i;
 
 /**
- * Whether a request may name a path by itself (the review of the code step, privacy): a path the code step names under
- * the working directory — relative (`displayPath` made it so), with no `..` step, not home-spelled. A path outside the
- * working directory (absolute as recorded, or reached by `..`) is never named in a request, only counted; the caller
- * also never names a file in a harness home, by any name. String work only.
+ * Whether a path the code step names lies under the working directory, by its spelling: relative (`displayPath` made it
+ * so), with no `..` step, not home-spelled. A recorded write outside it (absolute as recorded, or reached by `..`) is no
+ * part of the change under review: it is counted (`outside_root`). Structure, not privacy (D90: every path may be
+ * named). String work only.
  */
-export function namedUnderRoot(path) {
+export function underRoot(path) {
   if (typeof path !== 'string' || !path || isAbsolute(path) || win32.isAbsolute(path) || HOME_SPELLED.test(path))
     return false;
   return !path.split(/[\\/]/).includes('..');
@@ -432,27 +433,26 @@ export function hunkRanges(hunks) {
 
 // ---- the change, as a request shows it ---------------------------------------------------------------------------------
 
-/** What a table-of-contents row says of a path whose hunks a request does not show, by its diff state and file state.
- *  Fixed words for the model; the states stay closed in the report. */
+/** What a table-of-contents row says of a path, by its diff state, and of one whose hunks the change block does not
+ *  show, by why (its file's closed state, or `clipped`: over the change block's bound); and of a file that changed
+ *  after the session's last recorded edit (`drifted`: its last recorded write is no longer literally in it), whose
+ *  hunks are shown like any changed file's. Fixed words for the model; the states stay closed in the report. */
 export const CHANGE_ROW_WORDS = Object.freeze({
   [UNRECORDED]: 'not written by a recorded edit',
-  [BASE_UNKNOWN]: 'no git base: the file is shown whole, its hunks are the recorded edits',
-  [WITHHELD]: 'withheld: no hunk shown',
+  [BASE_UNKNOWN]: 'no git base: its hunks are the recorded edits',
+  [WITHHELD]: 'no hunk shown',
   [DIFF_UNREADABLE]: 'its diff could not be read consistently: no hunk shown',
-  elsewhere: 'its hunks are in another request of this review',
-  unplaced: 'its hunks did not fit this request',
-  untouched: 'not shown to this check',
-  clipped: 'its hunks are too large for one request: not shown',
+  binary: 'binary: no hunk shown',
+  oversize: 'too large to read: no hunk shown',
+  changed_since_session: 'it no longer holds what the session last wrote to it: no hunk shown',
+  unreadable: 'could not be read: no hunk shown',
+  clipped: 'not shown here: its hunks are over this block\'s bound; read the file yourself',
+  drifted: 'changed after the session\'s last recorded edit, so its lines now may not all be the agent\'s',
 });
-/** What the table of contents says, by count only, of the paths it may not name (the review of the code step, privacy):
- *  differing paths outside the working directory or in a harness home, and the paths git shows differing outside the
- *  working directory. Fixed words. */
-export const UNNAMED_ROW_WORDS = Object.freeze({
-  unnamed: (n) => `- and ${n} more differing ${n === 1 ? 'path' : 'paths'} outside the working directory or in a harness `
-    + 'home: not named, no hunk shown',
-  outside: (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start commit outside the working `
-    + 'directory: not reviewed, not named',
-});
+/** What the table of contents says, by count only, of the paths git shows differing from the start commit outside the
+ *  working directory (git's lists stop at it). Fixed words. */
+export const OUTSIDE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
+  + 'commit outside the working directory: not part of the change reviewed';
 
 const pad = (n) => (n === null || n === undefined ? '    ' : String(n).padStart(4, ' '));
 /** One hunk row as Pullfrog formats it: `| OLD | NEW | TYPE | code`. */
@@ -460,7 +460,7 @@ const rowLine = (row) => `| ${pad(row.old)} | ${pad(row.new)} | ${row.type === '
 /** The `@@` line of a shown hunk: git's numbers (as widened) and its section header; a recorded edit by its place. */
 const hunkLine = (hunk) => (hunk.oldStart === null
   ? `@@ ${hunk.header}${hunk.newStart === null ? ': not found in the file now' : hunk.whole === true
-    ? `: wrote the whole file, lines ${hunk.newStart}-${hunk.newStart + hunk.newCount - 1} (shown whole below)`
+    ? `: wrote the whole file, lines ${hunk.newStart}-${hunk.newStart + hunk.newCount - 1} (read the file for its text)`
     : `: new lines ${hunk.newStart}-${hunk.newStart + hunk.newCount - 1}`} @@`
   : `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@${hunk.header ? ` ${hunk.header}` : ''}`);
 
@@ -479,22 +479,18 @@ export function sectionLines(entry) {
 export const sectionBytes = (entry) => sectionLines(entry).reduce((sum, line) => sum + bytesOf(line) + 1, 0);
 
 /**
- * The change block one request shows (Pullfrog's format, adapted): `## Files (N)`, one row per differing path —
- * `- path → lines a-b · type` when the request shows its hunks (a-b: the lines of this block they occupy, counted from
- * the `## Files` line as line 1), else the path with why not — each row's `notes` after it (the dossier keys whose
- * events touch the path, …), never removing or reordering a row; then, by count only, the differing paths it may not
- * name (`unnamed`) and those git shows outside the working directory (`outside`, UNNAMED_ROW_WORDS); then `---` and each
- * shown file's section (`sectionLines`). `entries`: `{ path, type, hunks, shown, notes, why }` in table-of-contents
- * order; `shown` false lists the path by `why` (a CHANGE_ROW_WORDS key). `order` (paths) is the order the shown sections
- * are placed in (a checking pass's own); the table of contents keeps its order. Pure.
+ * The change block (Pullfrog's format, adapted): `## Files (N)`, one row per differing path — `- path → lines a-b ·
+ * type` when the block shows its hunks (a-b: the lines of this block they occupy, counted from the `## Files` line as
+ * line 1), else the path with why not — each row's `notes` after it (the dossier keys whose events touch the path, …),
+ * never removing or reordering a row; then, by count only, the paths git shows differing outside the working directory
+ * (`outside`, OUTSIDE_ROW_WORDS); then `---` and each shown file's section (`sectionLines`). `entries`: `{ path, type,
+ * hunks, shown, notes, why }` in table-of-contents order; `shown` false lists the path by `why` (a CHANGE_ROW_WORDS key).
+ * Pure.
  */
-export function renderChange(entries, { order = null, unnamed = 0, outside = 0 } = {}) {
+export function renderChange(entries, { outside = 0 } = {}) {
   const rows = list(entries);
-  const counted = [...(unnamed > 0 ? [UNNAMED_ROW_WORDS.unnamed(unnamed)] : []),
-    ...(outside > 0 ? [UNNAMED_ROW_WORDS.outside(outside)] : [])];
-  const shown = rows.filter((entry) => entry.shown);
-  const placed = Array.isArray(order) ? [...order.map((path) => shown.find((e) => e.path === path)).filter(Boolean),
-    ...shown.filter((e) => !order.includes(e.path))] : shown;
+  const counted = outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : [];
+  const placed = rows.filter((entry) => entry.shown);
   const out = [];
   const ranges = new Map();
   let at = 1 + rows.length + counted.length + 2 + 1;
@@ -516,10 +512,10 @@ export function renderChange(entries, { order = null, unnamed = 0, outside = 0 }
 // ---- the dossier ------------------------------------------------------------------------------------------------------
 
 const [CLAIM_UNCONFIRMED, CLAIM_CONFIRMED, DESIGN_POINT, NOT_ACTING, FAILURE_PASSED_OVER, NEVER_RAN, ASK_SHORT,
-  EDIT_AGAINST] = CODE_DOSSIER_MOVES;
+  EDIT_AGAINST, ASK_DONE] = CODE_DOSSIER_MOVES;
 const [ASK, CLAIM, DECISION, PIVOT, FAILURE, EDIT_AGAINST_KIND] = CODE_DOSSIER_KINDS;
 const [, VERIFIED] = PROMISE_STATUSES;
-const [, PARTLY_DONE, NOT_DONE] = REQUIREMENT_STATUSES;
+const [DONE, PARTLY_DONE, NOT_DONE] = REQUIREMENT_STATUSES;
 const PASSED_OVER = FAILURE_HANDLINGS[2];
 const [SETTLED, ASKED_CHOSE, UNASKED] = DECISION_COLUMNS;
 const [WRITTEN_UNVERIFIED] = WRITTEN_LABELS;
@@ -600,20 +596,22 @@ export function actorOf(session, eventId) {
  * The session dossier, built by code from the saved report: every ask (its status and what is missing),
  * every claim (its status), every decision by its column, every change of approach, every failure passed over and every
  * edit against an instruction — each keyed (`S1`, `S2`, … in that order), labelled by whose words it is (`actor`:
- * person, agent or recorded), given the move it asks of the reviewer (`move`, CODE_DOSSIER_MOVES, chosen by structure)
- * and quoted as the review recorded it, with the paths its events named and, when step 1 checked the row, its code check.
- * A quote of an item whose words are another actor's than the item's own (an ask's delivery or shortfall in the agent's
- * words, a failure's command and the agent's response to it) is shown as `{ actor, quote }`, so no agent text is ever
- * labelled the person's or a recorded result (the review of the code step). Each item's `sources` are its quoted texts,
- * each with its event, role and actor (`actorOf`). `checks`: step 1's `codeCheck` by `source:index`. Pure.
+ * person, agent or recorded), given the move it asks of the reviewer (`move`, CODE_DOSSIER_MOVES, chosen by structure:
+ * code-pass/7, an ask the review shows done is `ask_done`, its delivery checked in the code) and quoted as the review
+ * recorded it, with the paths its events named. A quote of an item whose words are another actor's than the item's own
+ * (an ask's delivery or shortfall in the agent's words, a failure's command and the agent's response to it) is shown as
+ * `{ actor, quote }`, so no agent text is ever labelled the person's or a recorded result (the review of the code step).
+ * Each item's `sources` are its quoted texts, each with its event, role and actor (`actorOf`). D96 (code-pass/10): each
+ * item's `itemKind` is the report item its row is (triage.js `itemKindOf`, REPORT_ITEM_KINDS), or null when the row can
+ * be no item (a done ask, a confirmed claim, a decision you settled): what makes its key one the code review may triage.
+ * Structure only, from the row; never a tier. Pure.
  */
-export function codeDossier({ report, session, checks = new Map(), root = null }) {
+export function codeDossier({ report, session, root = null }) {
   const items = [];
   const add = (kind, actor, move, source, index, id, shown, ids, sources) => {
-    const check = checks.get(`${source}:${index}`) ?? null;
     items.push({ key: `S${items.length + 1}`, kind, actor, move, source, index, id: id ?? null, shown,
       paths: eventPaths(session, ids, root), sources: sources.filter((s) => typeof s.eventId === 'string'
-        && typeof s.text === 'string' && s.text), ...(check ? { codeCheck: check } : {}) });
+        && typeof s.text === 'string' && s.text), itemKind: itemKindOf(source, list(report?.[source])[index]) });
   };
   const ids = (receipts) => list(receipts).filter(plain).map((r) => r.eventId);
   // The session text each shown quote is: a receipt's own words, by its event, role and actor.
@@ -628,7 +626,8 @@ export function codeDossier({ report, session, checks = new Map(), root = null }
     if (!plain(r)) return;
     const asked = quoteOf(r.instruction) ?? (typeof r.text === 'string' ? r.text : null);
     if (!asked) return;
-    add(ASK, PERSON, [PARTLY_DONE, NOT_DONE].includes(r.status) ? ASK_SHORT : null, 'requirements', i, null,
+    add(ASK, PERSON, [PARTLY_DONE, NOT_DONE].includes(r.status) ? ASK_SHORT : r.status === DONE ? ASK_DONE : null,
+      'requirements', i, null,
       { status: r.status ?? null, asked: quoteOf(r.instruction) ? as(PERSON, r.instruction) : asked,
         ...(quoteOf(r.deliverable) ? { delivered: as(PERSON, r.deliverable) } : {}),
         ...(quoteOf(r.shortfall) ? { missing: as(PERSON, r.shortfall) } : {}) }, ids([r.deliverable, r.shortfall]),
@@ -733,72 +732,42 @@ export function commandsAfterLastEdit(session, paths, root = null) {
   });
 }
 
-/** The dossier as a request shows it: a fixed preface, one JSON line per item, then the commands after each changed
- *  file's last edit (`never_ran` when none). `named(path)` says whether the request may name a path (an item's paths
- *  that it may not are left out). Pure. */
-export function renderDossier(items, commands, { named = () => true } = {}) {
-  const line = (item) => {
-    const paths = item.paths.filter((path) => named(path));
-    return JSON.stringify({ key: item.key, kind: item.kind, actor: item.actor,
-      ...(item.move ? { move: item.move } : {}), ...item.shown, ...(paths.length ? { paths } : {}),
-      ...(item.codeCheck ? { codeCheck: item.codeCheck } : {}) });
-  };
-  const ran = list(commands).filter((c) => c.after !== null && named(c.path)).map((c) => JSON.stringify({ path: c.path,
+/** The dossier as a request shows it: one JSON line per item, then the commands after each changed file's last edit
+ *  (`never_ran` when none). Every path is named (D90). An item the code review may triage names its report item kind
+ *  (`item`, code-pass/10), never its tier: a tier shown would anchor the proposal. Pure. */
+export function renderDossier(items, commands) {
+  const line = (item) => JSON.stringify({ key: item.key, kind: item.kind, actor: item.actor,
+    ...(item.move ? { move: item.move } : {}), ...(item.itemKind ? { item: item.itemKind } : {}), ...item.shown,
+    ...(item.paths.length ? { paths: item.paths } : {}) });
+  const ran = list(commands).filter((c) => c.after !== null).map((c) => JSON.stringify({ path: c.path,
     ...(c.after.length ? { commandsAfterLastEdit: c.after } : { commandsAfterLastEdit: 'none', move: NEVER_RAN }) }));
   return [...(items.length ? items.map(line) : ['(the review recorded no ask, claim, decision or failure)']), '',
     '## Commands recorded after each changed file\'s last recorded edit', '',
     ...(ran.length ? ran : ['(no file was changed by a recorded edit)'])].join('\n');
 }
 
-// ---- placing the context in requests ---------------------------------------------------------------------------------
-
-/**
- * Which files each request of step 2 shows (the budget, in bytes against the review's request bound): the
- * table of contents, the person's words, the dossier and the lens paragraph are in every request; the hunks are never
- * dropped. When every file's hunks fit one request beside them, there is one group: whole files then fill what is left
- * in fill order (`fill`: changed files first, then the files the session read), and a file that does not fit is listed
- * by name. Otherwise the change splits into file groups in table-of-contents order, each keeping a file's hunks with its
- * whole file when it fits; a file whose hunks alone are over a request is `clipped`; read files fill what is left of
- * the groups, first that has room. `costOf(path)` is a file's whole block in bytes (null: none to show), `hunkCost(path)`
- * its hunks' rows, `room` what a request has for hunks and files. `{ groups: [{ hunks: [paths], files: [paths] }],
- * listed: [paths], clipped: [paths] }`. Pure.
- */
-export function placeGroups({ changed, fill, costOf, hunkCost, room }) {
-  const listed = [], clipped = [];
-  const allHunks = changed.reduce((sum, path) => sum + hunkCost(path), 0);
-  const groups = [];
-  if (allHunks <= room) groups.push({ hunks: [...changed], files: [], left: room - allHunks });
-  else {
-    let current = null;
-    for (const path of changed) {
-      const cost = hunkCost(path);
-      if (cost > room) { clipped.push(path); continue; }
-      if (!current || current.left < cost) { current = { hunks: [], files: [], left: room }; groups.push(current); }
-      current.hunks.push(path); current.left -= cost;
-      const whole = costOf(path);
-      if (whole !== null && whole <= current.left) { current.files.push(path); current.left -= whole; }
-    }
+/** The words an item's dossier line shows (`renderDossier`), as values: each string of its `shown` fields and the quote
+ *  of each `{ actor, quote }` there, a list's members included — the review's own words too (a decision's question and
+ *  choice), which no session text holds. Structure only. Pure. */
+export function dossierWords(item) {
+  const words = [];
+  const add = (value) => {
+    if (typeof value === 'string') words.push(value);
+    else if (plain(value) && typeof value.actor === 'string' && typeof value.quote === 'string') words.push(value.quote);
+  };
+  const shown = plain(item?.shown) ? item.shown : {};
+  // Only the fields that hold an item's own words: never Sonah's closed labels (a status, a column, an outcome, a
+  // breach), which many items share, so a quote of one could key a question to the wrong item.
+  for (const [field, value] of Object.entries(shown)) {
+    if (!DOSSIER_WORD_FIELDS.includes(field)) continue;
+    if (Array.isArray(value)) value.forEach(add); else add(value);
   }
-  for (const path of fill) {
-    if (groups.some((g) => g.files.includes(path))) continue;
-    const whole = costOf(path);
-    if (whole === null) continue;
-    const own = groups.find((g) => g.hunks.includes(path));
-    const target = own && own.left >= whole ? own : groups.find((g) => g.left >= whole);
-    if (target) { target.files.push(path); target.left -= whole; continue; }
-    if (!clipped.includes(path)) (whole > room ? clipped : listed).push(path);
-  }
-  return { groups: groups.map(({ hunks, files }) => ({ hunks, files })), listed, clipped };
+  return words;
 }
-
-/** A fixed permutation of `n` items for checking pass `pass` (1-based): pass 1 keeps the order, pass 2 reverses it,
- *  pass 3 takes every other item from the first, then the rest (Bugbot's shuffle, made deterministic). */
-export function passOrder(n, pass) {
-  const order = Array.from({ length: n }, (_, i) => i);
-  if (pass === 2) return order.reverse();
-  if (pass === 3) return [...order.filter((i) => i % 2 === 0), ...order.filter((i) => i % 2 === 1)];
-  return order;
-}
+/** The dossier fields that hold an item's own words (the person's, the agent's, a recorded result's, or the review's
+ *  words for a decision or a change of approach); read in the order the item's line shows them. */
+const DOSSIER_WORD_FIELDS = Object.freeze(['asked', 'delivered', 'missing', 'said', 'contradictedBy', 'question', 'chosen',
+  'value', 'abandoned', 'adopted', 'ran', 'output', 'response', 'did']);
 
 export { RECORDED as DIFF_RECORDED, UNRECORDED as DIFF_UNRECORDED, BASE_UNKNOWN as DIFF_BASE_UNKNOWN,
   WITHHELD as DIFF_WITHHELD, DIFF_UNREADABLE, ADDED, MODIFIED, DELETED, bytesOf };

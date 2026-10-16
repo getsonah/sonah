@@ -206,30 +206,18 @@ test('W3c-11 end to end: the heredoc reaches its change as a recorded body; a te
 
 const KEY = 'AKIAIOSFODNN7EXAMPLE';
 
-test('W3c-11 a planted secret in a heredoc body never reaches the recorded body, even before redaction runs', () => {
+test('W3c-11, D90: a heredoc body is the command\'s own text, as recorded, a key-shaped value included', () => {
   const command = `cat > config/deploy.json <<'EOF'\n{"region": "eu-west-1",\n "aws": "${KEY}"}\nEOF`;
   const { events, writes: [w] } = run(command);
   assert.equal(w.path, 'config/deploy.json');
-  assert.ok(typeof w.after?.text === 'string', 'the body is recorded');
-  assert.ok(!w.after.text.includes(KEY), 'the slicer took the body from the redacted command, not the raw one');
-  assert.ok(w.after.text.includes('‹redacted'), 'and the redactor\'s marker says where the secret was');
-  assert.ok(w.after.text.startsWith('{"region": "eu-west-1",\n'), 'the rest of the body is intact');
-
+  assert.equal(w.after?.text, `{"region": "eu-west-1",\n "aws": "${KEY}"}\n`, 'the body as the command recorded it');
   const clean = redact({ ask: [], ledger: events, claim: {} }).ledger;
-  assert.ok(!JSON.stringify(clean).includes(KEY), 'and nothing downstream of redaction carries it either');
-});
-
-test('W3c-11 when redaction drops the whole command, the heredoc body is not recorded (fail closed)', () => {
-  // An unclassifiable high-entropy token fails the `cmd` channel closed: the whole command goes.
-  // A body copied from the raw command and scrubbed line by line would keep every other line.
+  assert.equal(clean.ledger.find((e) => e.path === 'config/deploy.json' && e.after).after.text, w.after.text,
+    'and redaction leaves it as it is');
+  // A high-entropy value in the body is kept too (an earlier redactor dropped the whole command and the body with it).
   const NOISE = 'Zq8x-T3vL_m9Rk2Wp7Yd4Hs6Nf1Bc5Gj0Xa';
-  const command = `cat > src/seed.js <<'EOF'\nexport const PUBLIC = 1;\nexport const SEED = '${NOISE}';\nEOF`;
-  const probe = redact({ ask: [], ledger: [{ turn: 1, seq: 0, kind: 'bash', cmd: command }], claim: {} });
-  assert.equal(probe.ledger.ledger[0].cmd, undefined, 'fixture check: the redactor drops this command');
-
-  const { writes } = run(command);
-  assert.equal(writes.length, 1, 'the write is still seen: its path is not a secret');
-  assert.equal(writes[0].after, undefined, 'the body the redacted command does not hold is not recorded');
+  const seeded = run(`cat > src/seed.js <<'EOF'\nexport const PUBLIC = 1;\nexport const SEED = '${NOISE}';\nEOF`);
+  assert.equal(seeded.writes[0].after?.text, `export const PUBLIC = 1;\nexport const SEED = '${NOISE}';\n`);
 });
 
 // ---- 2. sed -i with quoted scripts ---------------------------------------------------------

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 import { runReview } from '../src/run-review.js';
 import { GAP_CODES, honestStatuses } from '../src/ledger.js';
-import { renderReview, coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
 
 const EMPTY = { decisions: [], pivots: [], claims: [], requirements: [] };
 const TEXT = { ask: 'SYNTHETIC_M33_CAUSE_ASK: run the synthetic checks.', cmd: 'npm test',
@@ -28,7 +28,9 @@ function declaring(gaps) {
   return session;
 }
 const review = (gaps) => runReview({ session: declaring(gaps), pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
-const header = (report) => renderReview(report).split('\n').find((line) => line.startsWith('Not covered:')) ?? null;
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line), or null for none. */
+const header = (report) => { const causes = coverageCauses(report);
+  return causes.length ? `Not covered: ${causes.map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ')}.` : null; };
 const counted = (counts) => Number.isSafeInteger(counts?.n) && counts.n > 0;
 
 test('M33 a cause whose one declaration states no count is counted by its declaration, as a lower bound', async () => {
@@ -36,7 +38,7 @@ test('M33 a cause whose one declaration states no count is counted by its declar
   assert.equal(report.sessionReview, 'complete');
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 1, atLeast: true }]]);
-  assert.equal(header(report), 'Not covered: at least 1 part of the session evidence was incomplete.');
+  assert.equal(header(report), 'Not covered: at least 1 part of the session evidence is incomplete.');
   assert.doesNotMatch(header(report), /\bsome\b/, 'a count, never "some", beside NO_FINDINGS');
 });
 
@@ -47,7 +49,7 @@ test('M33 several countless declarations of one cause are counted one each', asy
   ]);
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 2, atLeast: true }]]);
-  assert.match(header(report), /at least 2 parts of the session evidence were incomplete/);
+  assert.match(header(report), /at least 2 parts of the session evidence are incomplete/);
 });
 
 test('M33 a counted and a countless declaration of one cause sum to a lower bound', async () => {
@@ -57,12 +59,12 @@ test('M33 a counted and a countless declaration of one cause sum to a lower boun
   ]);
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['source_clipped', { n: 4, atLeast: true }]]);
-  assert.match(header(report), /at least 4 recorded text\(s\) were cut short/);
+  assert.match(header(report), /the recorder shortened at least 4 recorded texts/);
   // Every declaration stating its count keeps the exact count, with no "at least".
   const exact = await review([{ code: 'source_clipped', channel: 'code', count: 3, eventIds: ['A1'] },
     { code: 'source_clipped', channel: 'commentary', count: 1 }]);
   assert.deepEqual(coverageCauses(exact), [['source_clipped', { n: 4 }]]);
-  assert.match(header(exact), /Not covered: 4 recorded text\(s\) were cut short/);
+  assert.match(header(exact), /Not covered: the recorder shortened 4 recorded texts,/);
 });
 
 test('M33 a gap code outside the vocabulary still shows the count it declared', async () => {
@@ -112,6 +114,6 @@ test('M33 the PR file list cause carries a count of its declared shortfalls', ()
     instructions: 1, instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 0, pairGaps: 0 };
   const causes = Object.fromEntries(coverageCauses({ pr, coverageFacts: facts, gaps: [] }));
   assert.deepEqual(causes.pr_files_incomplete, { n: 2 });
-  assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /the PR file list was incomplete/);
+  assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /the file list of the pull request is incomplete/);
   assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /\b2\b/);
 });

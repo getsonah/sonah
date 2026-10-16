@@ -10,25 +10,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { GAP_CODES, JUDGMENT_REASONS, JUDGE_FAILURE_CODES, CLI_SAFE_ERROR_CODES, RETRYABLE_JUDGE_CODES, RUN_FAILURE_CODES,
-  UNRECORDED_COVER } from '../src/ledger.js';
-import { GAP_SENTENCE, UNRECORDED_COVER_SENTENCE } from '../src/review.js';
+import { GAP_CODES, JUDGMENT_REASONS, JUDGE_FAILURE_CODES, CLI_SAFE_ERROR_CODES, RETRYABLE_JUDGE_CODES, RUN_FAILURE_CODES }
+  from '../src/ledger.js';
 import { runReview } from '../src/run-review.js';
 import { redisPivotSession, redisPivotPr } from '../fixtures/redis-pivot.js';
 import { GITHUB_ERROR_CODES } from '../../github/errors.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-// ---------------------------------------------------------------- 1. gap codes are one list
-
-test('M72: the gap phrasebook and the frozen gap list are the same set', () => {
-  assert.deepEqual(Object.keys(GAP_SENTENCE).sort(), [...GAP_CODES].sort(),
-    'a gap code with no sentence renders as a bare token; a sentence with no code is dead text');
-});
-
-test('W3c-10: one sentence per unrecorded-write cover, and one for a write nothing covered', () => {
-  assert.deepEqual(Object.keys(UNRECORDED_COVER_SENTENCE).sort(), [...UNRECORDED_COVER, 'none'].sort());
-});
 
 // ------------------------------------------------- 2. no reason carries dynamic text
 
@@ -129,11 +117,10 @@ test('F48: review-judge.js re-exports the one RETRYABLE_JUDGE_CODES declared her
 // W3e-6 / F214: `invalid_model_input` — the judge refusing a request its transport cannot carry,
 // before anything is sent — was not a failure code, so a window read `model_unavailable` with no
 // class. Every declared code now reaches a narrative shortfall in the closed list, that shortfall has
-// its one sentence and its one completion token, and this refusal has its own of each.
+// its one completion token, and this refusal has its own of each.
 
-test('F214: every judge failure code maps to a closed narrative shortfall, sentence and completion token', async () => {
+test('F214: every judge failure code maps to a closed narrative shortfall and completion token', async () => {
   const { NARRATIVE_SHORTFALL, WINDOW_INCOMPLETE_REASONS } = await import('../src/run-review.js');
-  const { SHORTFALL_SENTENCE } = await import('../src/review.js');
   const session = redisPivotSession();
   const pr = redisPivotPr();
   const seen = {};
@@ -143,7 +130,6 @@ test('F214: every judge failure code maps to a closed narrative shortfall, sente
     assert.equal(window.failure, code);
     const said = window.shortfall.narrative;
     assert.ok(NARRATIVE_SHORTFALL.includes(said) && said !== 'ok', `${code} → ${said}`);
-    assert.equal(typeof SHORTFALL_SENTENCE[said], 'string', `${code} → ${said} has no sentence`);
     assert.ok(WINDOW_INCOMPLETE_REASONS.includes(`narrative:${said}`), `${code} → ${said} has no completion token`);
     seen[code] = said;
   }
@@ -155,10 +141,9 @@ test('F214: every judge failure code maps to a closed narrative shortfall, sente
 // `model_output_limit` (longer than the output ceiling) and `model_response_incomplete` (the API
 // stopped before `end_turn`) — were not failure codes, so a window read `model_unavailable`: told
 // the model could not be reached, when it answered at length. Each is named as itself now, with
-// its own narrative shortfall, sentence and completion token. Driven through the real transport.
+// its own narrative shortfall and completion token. Driven through the real transport.
 test('F216: an output-limit and an incomplete reply are named as themselves, never model_unavailable', async () => {
   const { NARRATIVE_SHORTFALL, WINDOW_INCOMPLETE_REASONS } = await import('../src/run-review.js');
-  const { SHORTFALL_SENTENCE, renderReview } = await import('../src/review.js');
   const { createReviewJudge } = await import(pathToFileURL(join(HERE, '..', '..', 'cli', 'src', 'review-judge.js')));
   const api = { config: { backend: 'anthropic-api', model: 'claude-synthetic-1' }, env: { ANTHROPIC_API_KEY: 'synthetic' } };
   const cases = [
@@ -172,16 +157,12 @@ test('F216: an output-limit and an incomplete reply are named as themselves, nev
     assert.ok(JUDGE_FAILURE_CODES.includes(code), `${code} is a declared failure code`);
     assert.ok(NARRATIVE_SHORTFALL.includes(token), `${token} is a narrative shortfall`);
     assert.ok(WINDOW_INCOMPLETE_REASONS.includes(`narrative:${token}`), `${token} has a completion token`);
-    assert.equal(typeof SHORTFALL_SENTENCE[token], 'string', `${token} has a sentence`);
     const report = await runReview({ session: redisPivotSession(), pr: redisPivotPr(), judge });
     const [window] = report.windowResults;
     assert.equal(window.failure, code);
     assert.equal(window.shortfall.narrative, token);
     assert.equal(window.shortfall.transport, transport);
-    assert.deepEqual(report.instrument.windowCompletion.byReason, { [`narrative:${token}`]: 1 });
-    const md = renderReview(report);
-    assert.ok(md.includes(SHORTFALL_SENTENCE[token]), `the reader is told what happened to ${code}`);
-    assert.ok(!md.includes(SHORTFALL_SENTENCE.model_unavailable), 'never that the model could not be reached');
+    assert.deepEqual(report.instrument.windowCompletion.byReason, { [`narrative:${token}`]: 1 },
+      `the reader is told what happened to ${code}, never that the model could not be reached`);
   }
-  assert.notEqual(SHORTFALL_SENTENCE.output_limit, SHORTFALL_SENTENCE.response_incomplete);
 });

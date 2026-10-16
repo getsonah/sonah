@@ -10,9 +10,10 @@ import { actionOutcome, contradictionSourceOf, EVIDENCE_QUOTE_MAX, DISCLOSURE_QU
   FAILURE_UNCHECKED_REASONS, PROMISE_UNCHECKED_REASONS, REQUIREMENT_FACTS, RESULT_OUTCOME_WORDS } from '../src/ledger.js';
 import { DIGEST_PATTERN } from '../contracts/canonical.js';
 import { SONAH_SESSION_REVIEW_AGENT, SESSION_REVIEW_AGENT_VERSION } from '../src/review-agent.js';
-import { renderReview, closingLinesLine, CHECKLIST_CLAIM_REASON_WORDS } from '../src/review.js';
 import { renderSessionPage, PAGE_COLUMN_REASON_WORDS } from '../../render/session-page.js';
-import { renderSessionStory, STORY_NOT_ACTING_MARK } from '../../render/session-story.js';
+import { REPORT_SECTION_WORDS } from '../../render/report-words.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
+import { REPORT_WHAT_WORDS } from '../../render/report-words.js';
 
 const SIDECAR = (extra = {}) => ({ stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false, ...extra });
 const quote = (eventId, role, text) => ({ eventId, role, quote: text });
@@ -83,16 +84,12 @@ test('S6 M4: the closing message\'s lines no claim covers and those read as asse
     : { ...empty(), notClaims: [{ eventId: closing.id, lines: [3] }] }) });
   assert.deepEqual(report.windowResults.map((w) => w.closingLines),
     [[{ eventId: closing.id, unreviewed: [1, 2], listed: [3] }]]);
-  assert.deepEqual(closingLinesLine(report), ["_Of the agent's closing messages, 2 lines are in no claim, and 1 line the review "
-    + 'read as asserting nothing: the session page lists them as recorded._', '']);
-  assert.ok(renderReview(report).includes(closingLinesLine(report)[0]));
   const html = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) });
-  const claims = html.slice(html.indexOf('id="claims"'), html.indexOf('</section>', html.indexOf('id="claims"')));
-  assert.ok(claims.includes('Show the 2 lines of its closing messages no claim covers'));
-  assert.ok(claims.includes('Show the line of its closing messages the review read as asserting nothing'));
-  assert.ok(claims.includes('<span class="label">Line 1</span> <q class="said">SYNTHETIC_S6 line one: the suite is running.</q>'));
-  assert.ok(claims.includes('<span class="label">Line 2</span> <q class="said">SYNTHETIC_S6 line two: the lint is clean.</q>'));
-  assert.ok(claims.includes('<span class="label">Line 3</span> <q class="said">SYNTHETIC_S6 line three: thanks.</q>'));
+  // D97: the page lists them, folded, under the claims of What the agent did, each as recorded.
+  const claims = html.slice(html.indexOf('id="did"'), html.indexOf('id="not-checked"'));
+  assert.ok(claims.includes(REPORT_SECTION_WORDS.closingLines(3)));
+  for (const line of ['SYNTHETIC_S6 line one: the suite is running.', 'SYNTHETIC_S6 line two: the lint is clean.',
+    'SYNTHETIC_S6 line three: thanks.']) assert.ok(claims.includes(`<li><q class="said">${line}</q></li>`), line);
 });
 
 test('S6 H1: a claim and a decision whose own check did not settle are kept with their weakest status, and readers say why', async (t) => {
@@ -111,11 +108,12 @@ test('S6 H1: a claim and a decision whose own check did not settle are kept with
   assert.deepEqual(unsure.promises.map((p) => [p.status, p.reason]), [['open', 'challenge_unsettled']]);
   assert.deepEqual(unsure.decisions.map((d) => [d.column, d.columnState, d.reasons[0]]), [[null, 'unchecked', 'unsettled']]);
   assert.equal(unsure.claimsRejected, 0, 'a kept claim is not counted as left out');
-  const md = renderReview(unsure);
-  assert.ok(md.includes(`not checked: ${CHECKLIST_CLAIM_REASON_WORDS.challenge_unsettled}`));
+  assert.ok(unsure.promises.some((p) => p.reason === 'challenge_unsettled'), 'the kept claim says why it is not checked');
   const html = renderSessionPage(session, unsure, { sessionHash: 'a'.repeat(64) });
-  assert.ok(html.includes("The review&#39;s own check on it did not settle."));
-  assert.equal(PAGE_COLUMN_REASON_WORDS.unsettled, CHECKLIST_CLAIM_REASON_WORDS.challenge_unsettled);
+  // The claim, listed, says why; the decision Sonah could not tie to an ask says why in its evidence.
+  assert.ok(html.includes("The session review&#39;s own check on it did not settle."));
+  assert.ok(html.includes(PAGE_COLUMN_REASON_WORDS.unsettled.replace(/'/g, '&#39;')));
+  assert.equal(PAGE_COLUMN_REASON_WORDS.unsettled, "The session review's check on it did not settle.");
   // A refuted claim or decision is still left out: that is not unsure.
   const refuted = await runReview({ session, pr: null, reviewScope: 'session-only', judge: judge('refuted') });
   assert.deepEqual([refuted.promises.length, refuted.decisions.length], [0, 0]);
@@ -145,7 +143,7 @@ test('S6 L3, L6: reason tokens are named from their closed lists and the row id 
     '../../cli/src/decision-reviews.js']) assert.ok(!read(path).includes('sha256:[0-9a-f]{64}'), `${path}: no second copy`);
 });
 
-test('S6 L4, L5, M5, L7: the story marks a choice not to act; the outcome words deny no typed fact; the brief says what code checks', async (t) => {
+test('S6 L4, L5, M5, L7: the report .md marks a decision not to act; the outcome words deny no typed fact; the brief says what code checks', async (t) => {
   const { session } = await load(t, rows());
   const [closing] = of(session, 'commentary').slice(-1);
   const decision = { id: `sha256:${'d'.repeat(64)}`, actorSession: session.sessionKey ?? 'm33-u', dimension: 'rerun',
@@ -153,8 +151,11 @@ test('S6 L4, L5, M5, L7: the story marks a choice not to act; the outcome words 
     stated: quote(closing.id, 'commentary', 'the suite is running'), constrainedBy: null, instructionReview: null,
     column: 'unasked', columnState: 'grounded', amends: [], materiality: 'material', materialityRule: 'synthetic',
     relevance: 'unchecked', reasons: [] };
-  const story = renderSessionStory(session, { findings: [], decisions: [decision], reviewScope: 'session-only' });
-  assert.ok(story.includes(`**(${STORY_NOT_ACTING_MARK})**`));
+  // D97: a decision not to act is an item of its own kind, said in its own words.
+  const story = renderReportMarkdown(session, { findings: [], decisions: [decision], reviewScope: 'session-only' });
+  // R14: what it is about stands beside what the agent chose, each behind its own label.
+  assert.ok(story.includes(`**1 Decide:** ${REPORT_WHAT_WORDS.notActingAbout} *rerun*. ${REPORT_WHAT_WORDS.notActingDecision} `
+    + '*no rerun*.'), story);
   assert.equal(RESULT_OUTCOME_WORDS['output-no-status'].output, 'output recorded; no exit code or completion typed for it');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.

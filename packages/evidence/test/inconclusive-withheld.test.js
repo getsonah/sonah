@@ -35,7 +35,7 @@ import { createAnswerCache, memoizeJudge } from '../../cli/src/answer-cache.js';
 const { challengeItems, CHALLENGE_PROFILE } = challengeModule;
 const { runReview } = reviewRun;
 const { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom } = ledger;
-const { renderReview } = reviewRender;
+const { coverageCauses } = reviewRender;
 
 const REPO = { host: 'github.com', id: '58' };
 const modulePath = (i) => `src/part-${i}.js`;
@@ -323,8 +323,6 @@ test('W3d-3 buildLedger: an undetermined column or value is shown UNCHECKED and 
   assert.equal(report.decisions[0].relevance, 'survives');
   assert.equal(report.coverage, 'complete');
   assert.equal(report.sessionStatus, 'CLEAN');
-  // D71 (a): the row's own cell says it was not checked, in words — never the all-caps status token.
-  assert.match(renderReview(report), /\*\*not checked\*\*/, 'the row still shows its own not-checked cell');
 });
 
 test('W3d-3 buildLedger: unchecked relevance and an unevaluable proposal still cap coverage', () => {
@@ -418,7 +416,7 @@ test('W3d-3 codeCoverage: a code finding the challengers could not settle is wit
   assert.equal(unsettled.codeStatus, 'CLEAN');
   assert.equal(unsettled.withheld.unsettled, 1);
   assert.equal(unsettled.findings.length, 0, 'never published');
-  assert.ok(!renderReview(unsettled).includes('SYNTHETIC_D58_CODE_FINDING'));
+  assert.ok(!published(unsettled).includes('SYNTHETIC_D58_CODE_FINDING'));
 
   const notRun = await runCodeReview({ pr: CODE_PR, diff: DIFF, judge: codeAnswer([codeFinding(REAL_QUOTE)]),
     challengeJudge: async () => { throw new Error('synthetic transport failure'); } });
@@ -430,57 +428,29 @@ test('W3d-3 codeCoverage: a code finding the challengers could not settle is wit
 
 // ---- the report says what was withheld -----------------------------------------------------
 
-const section = (md, heading) => {
-  const lines = md.split('\n');
-  const at = lines.indexOf(heading);
-  if (at < 0) return null;
-  const end = lines.findIndex((l, i) => i > at && (l.startsWith('### ') || l === '---'));
-  return lines.slice(at + 1, end < 0 ? undefined : end).filter(Boolean);
-};
-const WITHHELD_HEADING = '### Checked, inconclusive — withheld';
-
-test('W3d-3 the withheld section counts each inconclusive kind from a closed phrasebook', async () => {
-  assert.deepEqual(Object.keys(reviewRender.WITHHELD_SENTENCE ?? {}).sort(), [...(reviewRender.WITHHELD_CAUSES ?? [])].sort(),
-    'one sentence per withheld cause, and no sentence without one');
+test('W3d-3 the report counts each inconclusive kind apart from what did not run', async () => {
   const report = await runReview({ session: session1, pr: prOf(1), judge: reviewer({ uncertain: unsettledDecision }) });
-  const md = renderReview(report);
-  const lines = section(md, WITHHELD_HEADING);
-  assert.ok(lines, `no withheld section:\n${md}`);
-  for (const expected of [
-    '- 4 proposal(s) withheld: their quotes did not match the record.',
-    '- 1 item(s) the challengers could not settle.',
-    '- 1 decision(s) whose authority could not be determined (shown with not-checked cells).',
-  ]) assert.ok(lines.includes(expected), `missing "${expected}" in:\n${lines.join('\n')}`);
-  // M33 G4: the one unchecked value here was never proposed (value null), so no check on it ran and
-  // nothing about it was inconclusive; its card says no value was proposed. A proposed value that
-  // did not check out is still counted (test/m33-g4-evidence.test.js).
-  assert.ok(!lines.some((l) => /adopted value was not confirmed/.test(l)), lines.join('\n'));
-  // The window's receipts that did not verify are listed here, among the inconclusive — not as unchecked.
-  assert.ok(lines.some((l) => /^- window 1: \d+ of \d+ receipts did not verify\.$/.test(l)), lines.join('\n'));
-  assert.equal(section(md, '### What was not checked'), null, 'nothing was left unchecked');
-  assert.ok(!md.split('\n').some((l) => l.startsWith('Not covered:')), 'the header names no not-run cause, because there is none');
-  // D71 (a): the code review did not run, so Sonah's review is incomplete; the session review completed. No status.
-  assert.ok(md.includes("Sonah's review did not complete"), 'premise: the code review did not run');
-  assert.match(md, /Session review: \*\*complete\*\*/);
-  for (const word of Object.values(NEVER)) assert.ok(!md.includes(word), `${word} reached the report`);
-  assert.doesNotMatch(md, /undefined|NaN/);
+  assert.deepEqual(report.withheld, { proposals: 4, unsettled: 1 });
+  assert.equal(report.decisions.filter((d) => d.column == null).length, 1, 'one decision whose authority is not checked');
+  // The window's receipts that did not verify are counted with the inconclusive, not as unchecked.
+  assert.ok(report.windowResults[0].shortfall.grounding.rejected > 0);
+  assert.deepEqual(coverageCauses(report), [], 'no cause is named, because nothing failed to run');
+  // D71 (a): the code review did not run, so Sonah's review is incomplete; the session review completed.
+  assert.equal(ledger.reviewRunState(report), 'incomplete', 'premise: the code review did not run');
+  assert.equal(report.sessionReview, 'complete');
+  for (const word of Object.values(NEVER)) assert.ok(!published(report).includes(word), `${word} reached the report`);
 });
 
-test('W3d-3 "Not covered:" lists only not-run causes; the withheld section stands beside it', async () => {
+test('W3d-3 the causes list only what did not run; the withheld counts stand beside them', async () => {
   const two = windowedSession(2);
   const report = await runReview({ session: two, pr: prOf(2), judge: async (request) => {
     if (!request.challenge && windowOf(request.label) === 2)
       throw Object.assign(new Error('synthetic transport failure'), { code: 'model_unavailable' });
     return reviewer({ uncertain: unsettledDecision })(request);
   } });
-  const md = renderReview(report);
-  const header = md.split('\n').find((l) => l.startsWith('Not covered:'));
-  assert.equal(header, 'Not covered: 1 of 2 review windows did not complete.', 'only the window whose call failed');
-  assert.ok(section(md, WITHHELD_HEADING)?.includes('- 1 item(s) the challengers could not settle.'));
-  const unchecked = section(md, '### What was not checked');
-  assert.ok(unchecked.includes('- window 2: the model could not be reached.'));
-  assert.ok(!unchecked.some((l) => l.startsWith('- ') && /receipts did not verify|could not settle|withheld/.test(l)),
-    `an inconclusive item is listed as unchecked:\n${unchecked.join('\n')}`);
+  assert.deepEqual(coverageCauses(report), [['windows_incomplete', { n: 1, m: 2 }]], 'only the window whose call failed');
+  assert.equal(report.withheld.unsettled, 1);
+  assert.equal(report.windowResults[1].shortfall.narrative, 'model_unavailable');
   assert.equal(report.sessionStatus, 'UNCHECKED');
 });
 
@@ -535,17 +505,15 @@ test('W3d-3 a stored answer is never trusted: one whose quote no longer matches 
 
 // ---- the invariant suite -------------------------------------------------------------------
 
-test('W3d-3 a window with only inconclusive items can be CLEAN, and says what it withheld', async () => {
+test('W3d-3 a window with only inconclusive items can be CLEAN, and counts what it withheld', async () => {
   const report = await runReview({ session: session1, pr: prOf(1), judge: reviewer({ uncertain: unsettledDecision }) });
   const joined = { ...report, codeCoverage: 'complete' };
   Object.assign(joined, honestStatuses(joined));
   assert.equal(joined.sessionStatus, 'CLEAN');
   assert.equal(joined.reviewStatus, 'CLEAN');
-  const md = renderReview(joined);
-  // D71 (a): rendered, the review ran to completion — never "CLEAN" or a headline that says the work is fine.
-  assert.ok(md.includes("Sonah's review ran to completion."));
-  assert.doesNotMatch(md, /\b(CLEAN|UNCHECKED|NO_FINDINGS|DECIDE|FYI)\b|Nothing found/);
-  assert.ok(section(md, WITHHELD_HEADING)?.length >= 4, 'the withheld counts are rendered beside it');
+  // D71 (a): the review ran to completion; no reader shows the status token.
+  assert.equal(ledger.reviewRunState(joined), 'complete');
+  assert.deepEqual(joined.withheld, { proposals: 4, unsettled: 1 }, 'the withheld counts are kept beside it');
 });
 
 // M33 (C-06): the window ran and completed; the missing child is a declared recorder limit, not a
@@ -560,10 +528,9 @@ test('W3d-3 the same, plus one declared recorder gap, is NO_FINDINGS, never CLEA
   assert.equal(joined.coverage, 'partial');
   assert.equal(joined.sessionStatus, 'NO_FINDINGS');
   assert.equal(joined.reviewStatus, 'NO_FINDINGS');
-  const md = renderReview(joined);
-  assert.ok(!md.includes('**Nothing found, and the evidence was complete enough to say so.**'));
-  assert.match(md, /Not covered: 1 delegation\(s\) have no verified child evidence/);
-  assert.ok(section(md, WITHHELD_HEADING), 'the withheld counts are still reported');
+  assert.deepEqual(coverageCauses(joined).find(([cause]) => cause === 'delegations_unlinked'),
+    ['delegations_unlinked', { n: 1 }]);
+  assert.ok(joined.withheld.unsettled > 0, 'the withheld counts are still kept');
 });
 
 test('W3d-3 a challenge pass whose reply omitted an item even after the re-ask is UNCHECKED', async () => {
@@ -602,5 +569,4 @@ test('W3d-3 nine windows, 1 in 10 first replies omitting an item, 1 in 5 items v
   assert.equal(report.coverage, 'complete');
   assert.equal(report.sessionStatus, 'CLEAN');
   assert.equal(report.decisions.length + report.requirements.length, 3 * COUNT - 5, 'the five unsettled items are withheld');
-  assert.ok(section(renderReview(report), WITHHELD_HEADING)?.includes('- 5 item(s) the challengers could not settle.'));
 });

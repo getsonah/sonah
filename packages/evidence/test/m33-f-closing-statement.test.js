@@ -8,7 +8,8 @@
 // D68 (E) (owner decision 2026-10-07): what the agent produced is kept whole, so redaction bounds no statement any
 // more; a statement an earlier Sonah bounded (its marker on a line of its own) is still read, split and declared here.
 //
-// End to end, a token straddling either cut reaches neither the ledger, the session nor a review request.
+// End to end, a token where either retired cut fell reaches the ledger, the session and a review request whole (D90,
+// owner decision 2026-10-15: nothing is masked).
 //
 // Synthetic Codex rollouts and synthetic ledgers only. No recording, no model, no network. Nothing prints.
 import test from 'node:test';
@@ -19,7 +20,7 @@ import { join } from 'node:path';
 import { sessionFromLedger, CLOSING_STATEMENT_CLIPPED_NOTE, HELPER_REPORT_CLIPPED_NOTE } from '../adapters/sonah-ledger.js';
 import { verifyReceipt } from '../src/session.js';
 import { buildLedger } from '../src/ledger.js';
-import { coverageCauses, renderReview, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { planWindowRequests } from '../src/run-review.js';
 import { sliceLineage } from '../../slicer/index.js';
 import { redact, STATEMENT_OMISSION } from '../../redact/index.js';
@@ -29,11 +30,12 @@ const STATEMENT_CAP = Object.freeze({ chars: 8000, head: 6000, tail: 2000 });
 /** A statement as an earlier Sonah persisted it: its first and last lines around the marker on a line of its own. */
 const persistedBound = (lines, head = 150, tail = 50) => [...lines.slice(0, head), STATEMENT_OMISSION, ...lines.slice(-tail)].join('\n');
 import { SECRET, rootMeta, ask, said, jsonl } from './m33-f-final-answer-fixture.js';
+/** Whether the report declares a gap of `code` with `note` (on its own list or the session's). */
+const declaredNote = (built, code, note) => [...(built.gaps ?? []), ...(built.session?.adapterGaps ?? [])]
+  .some((gap) => gap?.code === code && gap.note === note);
 
 const repo = { host: 'local', id: 'synthetic' };
 const GHP = `ghp_${'Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2Yz'.slice(0, 36)}`;
-const leaks = (text, token) => Array.from({ length: token.length - 7 }, (_, i) => token.slice(i, i + 8))
-  .filter((fragment) => text.includes(fragment));
 const LINE = 'checked the parser module and left it as it was';
 const prose = (n) => {
   let out = '';
@@ -80,17 +82,14 @@ test('M33 F repair 3 a statement cut before review: its marker is never quotable
     [['statements_capped', { n: 1 }]]);
   assert.equal(COVERAGE_CAUSES.indexOf('statements_capped'), COVERAGE_CAUSES.indexOf('reports_capped') + 1);
   assert.equal(COVERAGE_SENTENCE.statements_capped({ n: 1 }),
-    '1 closing statement was capped before review, so its elided middle cannot be quoted');
+    'Sonah cut the middle out of 1 closing message of the agent before its review, so it cannot quote that part');
   assert.equal(COVERAGE_SENTENCE.statements_capped({ n: 2 }),
-    '2 closing statements were capped before review, so their elided middle cannot be quoted');
-  const text = renderReview(built);
-  assert.match(text, /1 closing statement was capped before review, so its elided middle cannot be quoted/);
-  const line = text.split('\n').find((row) => row.startsWith('- `source_clipped`'));
-  assert.ok(line && line.includes(CLOSING_STATEMENT_CLIPPED_NOTE), text);
-  assert.doesNotMatch(line, /recorder/);
+    'Sonah cut the middle out of 2 closing messages of the agent before its review, so it cannot quote that part');
+  assert.ok(declaredNote(built, 'source_clipped', CLOSING_STATEMENT_CLIPPED_NOTE), 'the cut is declared with its own note');
+  assert.doesNotMatch(CLOSING_STATEMENT_CLIPPED_NOTE, /recorder/);
   // A clipped commentary gap declared without that note keeps the cause it always had.
   assert.equal(COVERAGE_SENTENCE.source_clipped({ n: 1 }),
-    '1 recorded text(s) were cut short by the recorder, so what was cut cannot be quoted');
+    'the recorder shortened 1 recorded text, so Sonah cannot quote what it left out');
 });
 
 test('M33 F repair 3 a side the bound left empty emits nothing, and the cut is still declared', () => {
@@ -107,7 +106,7 @@ test('M33 F repair 3 an older ledger\'s pre-redaction cut is still split, never 
     .map((gap) => [gap.channel, gap.count, gap.note]), [['commentary', 1, CLOSING_STATEMENT_CLIPPED_NOTE]]);
 });
 
-test('M33 F repair 3, D68 (E) end to end: a token at either retired cut reaches no ledger, session or review request', async (t) => {
+test('M33 F repair 3, D68 (E), D90 end to end: a token at either retired cut reaches the ledger, the session and the review request whole', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'sonah-m33-f-statement-e2e-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   let n = 0;
@@ -121,17 +120,17 @@ test('M33 F repair 3, D68 (E) end to end: a token at either retired cut reaches 
         await writeFile(file, jsonl([rootMeta(), ask(), said(statement)]));
         const ledger = redact(await sliceLineage([file])).ledger;
         const session = sessionFromLedger(ledger, { sessionKey: `e2e-${n}` });
-        assert.deepEqual(leaks(JSON.stringify(ledger), token), [], `${where}: ledger`);
-        assert.deepEqual(leaks(JSON.stringify(session.blobs), token), [], `${where}: session`);
-        assert.deepEqual(leaks(promptsOf(session), token), [], `${where}: review requests`);
-        // The whole statement is the block that carries it (scrubbed): one event, no duplicate, nothing clipped.
+        assert.ok(JSON.stringify(ledger).includes(token), `${where}: ledger`);
+        assert.ok(JSON.stringify(session.blobs).includes(token), `${where}: session`);
+        assert.ok(promptsOf(session).includes(token), `${where}: review requests`);
+        // The whole statement is the block that carries it: one event, no duplicate, nothing clipped.
         // (C-01 event identity: told apart by kind and phase, never by an id's shape.)
         assert.deepEqual(session.events.filter((event) => event.kind === 'commentary').map((event) => event.phase), ['final'], where);
         assert.equal(session.adapterGaps.some((gap) => gap.code === 'source_clipped'), false, where);
         // A ledger whose statement no block carries (compact) keeps it too, whole: nothing clipped.
         const alone = sessionFromLedger(redact(compact(statement)).ledger, { sessionKey: `alone-${n}` });
-        assert.deepEqual(leaks(JSON.stringify(alone.blobs), token), [], `${where}: compact session`);
-        assert.deepEqual(leaks(promptsOf(alone), token), [], `${where}: compact review requests`);
+        assert.ok(JSON.stringify(alone.blobs).includes(token), `${where}: compact session`);
+        assert.ok(promptsOf(alone).includes(token), `${where}: compact review requests`);
         assert.equal(alone.adapterGaps.some((gap) => gap.code === 'source_clipped'), false, `${where}: compact`);
       }
     }

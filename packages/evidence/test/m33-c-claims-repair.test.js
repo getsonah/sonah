@@ -532,7 +532,11 @@ test('M33 C repair: the challenger judges a support item on its own, and refutes
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42', 'still one version bump for M33 C');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44', 'still one version bump for M33 C');
   const system = challenge.challengeSystem().replace(/\s+/g, ' ');
   for (const phrase of [/A support candidate names a claim/, /earlier recorded result of the same measurement/,
     /cite the result that candidate cites/])
@@ -562,8 +566,9 @@ test('M33 C repair: the challenger judges a support item on its own, and refutes
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36', 'still one version bump');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37', 'still one version bump');
   const built = prompt.buildNarrativePrompt({ session: supportedSession(), window: { index: 0, events: supportedSession().events } });
   const task = built.prompt.replace(built.evidencePrompt, '').replace(/\s+/g, ' ');
   assert.match(task, /A claim an earlier RESULT already contradicts takes contradictedBy, never supportedBy/);

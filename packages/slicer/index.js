@@ -193,9 +193,7 @@ export async function sliceLineage(files, opts = {}) {
     // D69 (b): the recording's home, from the path form its recorder wrote it at — the recording's own name
     // (`lineageFiles`, when the bytes were read from a copy) — never from its contents; null fails closed.
     home: recordingHome(Array.isArray(opts.lineageFiles) && opts.lineageFiles.length === files.length
-      ? opts.lineageFiles : files),
-    // D84: `mask: false` is a session review's load (the model reads the session unredacted); the default masks.
-    mask: opts.mask !== false });
+      ? opts.lineageFiles : files) });
   if (instructionCapture.nonTextExcluded > 0 || instructionCapture.unclassifiedRows > 0) {
     capture ??= { calls: 0, wrappers: 0, captured: 0, unsupported: 0, missing: 0,
       unmapped: 0, reasons: [], incomplete: false };
@@ -356,7 +354,7 @@ export async function sliceLineage(files, opts = {}) {
     ...(interjections.length ? { interjections } : {}),
     // D71 (g), owner decision 2026-10-08: the project's own instruction files the harness gave the agent (events.js
     // `projectInstructions`), at their rows. Present only when there is one, so every other ledger keeps its bytes;
-    // redaction scrubs each whole before slice_hash, and the evidence adapter places them beside the session's events.
+    // redaction validates each before slice_hash, and the evidence adapter places them beside the session's events.
     ...(projectInstructions.length ? { projectInstructions } : {}),
     ledger: events,
     claim,

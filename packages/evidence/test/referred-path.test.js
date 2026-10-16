@@ -1,6 +1,6 @@
 // Fix 1 made safe to share: "Referred from <path>" names a project instruction file by the path the
 // recording carries only when that path lies inside the working tree as written. An absolute path, a home-relative one
-// or one that climbs out of the tree is named by its file name alone, on the page, in the story and in the report
+// or one that climbs out of the tree is named by its file name alone, on the page, in the report .md and in the report
 // (session.js `referredPath`), never by a home or absolute path. Structure only: the path's segments, no file system.
 // Every recording here is synthetic (invented asks, rules, paths and code); no model is called — the judges are code.
 import test from 'node:test';
@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { row, humanAsk, call, result, said, load } from './m33-u-unasked-fixture.js';
 import { runReview } from '../src/run-review.js';
 import { referredPath } from '../src/session.js';
-import { renderReview } from '../src/review.js';
-import { renderSessionPage, checkedWithFiles } from '../../render/session-page.js';
-import { renderSessionStory } from '../../render/session-story.js';
+import { renderSessionPage } from '../../render/session-page.js';
+import { REPORT_ITEM_WORDS } from '../../render/report-words.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
 
 const ASK = 'Write the parser in src/parser.js.';
 const RULE = 'Trim every input with s.trim() before parsing it.';
@@ -57,8 +57,8 @@ const unaskedReview = (session, write, ask, file) => reviewWith(session, write, 
     { instruction: fileQuote(file), relevant: false,
       explanation: 'SYNTHETIC: the project file says nothing that covers this choice.' }] } }), codeQuote(write));
 const label = (text) => `<span class="label">${text}</span>`;
-const heading = (name) => `**Referred from ${name}** (the project's instruction file the agent was given, not said in`
-  + ' this session).';
+/** D97: the page names a project instruction file by the words it labels the file's quote with. */
+const fileLabel = (name) => label(REPORT_ITEM_WORDS.referredFrom(name));
 
 test('referred path: inside the working tree as written it reads as recorded; else only its file name', () => {
   for (const inside of ['CLAUDE.md', 'docs/AGENTS.md', './CLAUDE.md', 'docs/../CLAUDE.md', 'a/b/../../CLAUDE.md'])
@@ -94,19 +94,17 @@ for (const [kind, path, dir] of [
     assert.equal(d.column, 'asked-settled');
     assert.equal(d.constrainedBy.referredFrom, path, 'the row keeps the recorded path; only what a person reads moves');
     const html = renderSessionPage(session, report);
-    assert.ok(html.includes(`${label('Referred from CLAUDE.md')}<blockquote>`), 'the page names the file');
-    const story = renderSessionStory(session, report);
-    assert.ok(story.includes('you settled (referred from `CLAUDE.md`)'), 'the story names the file');
-    const markdown = renderReview(report);
-    assert.ok(markdown.includes(heading('CLAUDE.md')), 'the report names the file');
+    assert.ok(html.includes(`${fileLabel('CLAUDE.md')} <q class="said">`), 'the page names the file');
+    // D97: the report .md (the story since /32) lists the decision you settled with the file's words under its name.
+    const story = renderReportMarkdown(session, report);
+    assert.ok(story.includes(`${REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')} “`), 'the report .md names the file');
     // The unasked decision's check names the file the same way, in its sentence and its folded quote.
     const unasked = await unaskedReview(session, write, ask, file);
     assert.equal(unasked.decisions[0].column, 'unasked');
     const checked = renderSessionPage(session, unasked);
-    assert.ok(checked.includes(checkedWithFiles(1, ['CLAUDE.md']).replace(/'/g, '&#39;')), 'the sentence');
-    assert.ok(checked.includes(`${label('Referred from CLAUDE.md')} <q class="said">`), 'the folded quote');
-    for (const [where, text] of [['page', html], ['story', story], ['report', markdown], ['unasked page', checked],
-      ['unasked story', renderSessionStory(session, unasked)], ['unasked report', renderReview(unasked)]])
+    assert.ok(checked.includes(REPORT_ITEM_WORDS.checkedAgainst(1, ['CLAUDE.md'])), 'the sentence');
+    for (const [where, text] of [['page', html], ['story', story], ['unasked page', checked],
+      ['unasked story', renderReportMarkdown(session, unasked)]])
       assert.ok(!text.includes(dir), `the ${where} never shows where the file lies`);
   });
 }
@@ -115,7 +113,6 @@ test('referred path: a project file inside the working tree is named by the path
   const { session, write, file } = await fixture(t, '/repo/docs/AGENTS.md');
   assert.equal(file.path, 'docs/AGENTS.md', 'premise: the slicer spells it under the recorder\'s working directory');
   const report = await settledReview(session, write, file);
-  assert.ok(renderSessionPage(session, report).includes(`${label('Referred from docs/AGENTS.md')}<blockquote>`));
-  assert.ok(renderSessionStory(session, report).includes('you settled (referred from `docs/AGENTS.md`)'));
-  assert.ok(renderReview(report).includes(heading('docs/AGENTS.md')));
+  assert.ok(renderSessionPage(session, report).includes(`${fileLabel('docs/AGENTS.md')} <q class="said">`));
+  assert.ok(renderReportMarkdown(session, report).includes(`${REPORT_ITEM_WORDS.referredFrom('docs/AGENTS.md')} “`));
 });

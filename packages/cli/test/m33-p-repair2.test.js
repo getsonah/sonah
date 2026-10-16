@@ -378,5 +378,6 @@ test('M33 P second repair N57: a Codex session linking no helper records no deli
   for (const note of Object.values(HELPER_DELIVERY_GAP_NOTES))
     assert.deepEqual(gapsOf(session, note), [], note);
   assert.equal(typeof sliceHash(ledger), 'string');
-  assert.equal(JSON.stringify(ledger).includes(TOKENS.message), false);
+  // D90 (owner decision 2026-10-15): the send_message's recorded input is the action's own, kept as recorded.
+  assert.ok(ledger.ledger.some((event) => String(event.argsExcerpt ?? '').includes(TOKENS.message)));
 });

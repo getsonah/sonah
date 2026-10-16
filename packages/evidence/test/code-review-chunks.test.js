@@ -5,7 +5,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runCodeReview } from '../src/code-review.js';
 import { runReview, NARRATIVE_SHORTFALL, CHALLENGE_SHORTFALL } from '../src/run-review.js';
-import { renderReview, SHORTFALL_SENTENCE } from '../src/review.js';
 import { FILE_STATES } from '../src/code-review-prompt.js';
 import { Session } from '../src/session.js';
 import { MAX_REVIEW_INPUT_BYTES } from '../src/challenge.js';
@@ -198,10 +197,7 @@ test('M29 a failed first chunk can be recovered by its one bounded code retry', 
   assert.equal(report.codeJudgment.attemptedCalls, 3);
 });
 
-test('M66/W3-1: the shortfall phrasebooks and the frozen shortfall lists are the same sets', () => {
-  assert.deepEqual(Object.keys(SHORTFALL_SENTENCE).sort(),
-    NARRATIVE_SHORTFALL.filter((token) => token !== 'ok').sort(),
-    'a shortfall token with no sentence renders as nothing; a sentence with no token is dead text');
+test('M66/W3-1: the frozen shortfall lists hold bare tokens', () => {
   for (const token of [...NARRATIVE_SHORTFALL, ...CHALLENGE_SHORTFALL, ...Object.keys(FILE_STATES)])
     assert.match(token, /^[a-z][a-z_]*$/, `${token} is not a bare token`);
 });
@@ -253,7 +249,7 @@ function twoWindowSession() {
 
 const emptyNarrative = () => ({ decisions: [], pivots: [], claims: [], requirements: [] });
 
-test('a window that returned no parseable JSON records shortfall.narrative = no_json and says so', async () => {
+test('a window that returned no parseable JSON records shortfall.narrative = no_json', async () => {
   const session = twoWindowSession();
   const report = await runReview({ session, pr: redisPivotPr(), judge: async (request) => {
     if (request.challenge) return { votes: request.challenge.items.map(({ key }) => ({ key,
@@ -263,7 +259,6 @@ test('a window that returned no parseable JSON records shortfall.narrative = no_
   assert.equal(report.windowResults.length, 2);
   assert.equal(report.windowResults[0].shortfall.narrative, 'ok');
   assert.equal(report.windowResults[1].shortfall.narrative, 'no_json');
-  assert.match(renderReview(report), /window 2: the model returned no parseable JSON/);
 });
 
 test('a window whose JSON is outside the contract is schema, not no_json', async () => {
@@ -271,7 +266,6 @@ test('a window whose JSON is outside the contract is schema, not no_json', async
     judge: async (request) => request.window.index === 1
       ? { decisions: 'not an array', pivots: [], claims: [], requirements: [] } : emptyNarrative() });
   assert.equal(report.windowResults[1].shortfall.narrative, 'schema');
-  assert.match(renderReview(report), /window 2: the model returned JSON outside the response contract/);
 });
 
 test('a declared transport failure keeps its own shortfall word', async () => {
@@ -305,7 +299,7 @@ test('challenge shortfall counts the votes that were actually valid, and groundi
   assert.equal(shortfall.grounding.repaired, 0);
 });
 
-test('a window whose receipts did not verify is counted and rendered from the closed phrasebook', async () => {
+test('a window whose receipts did not verify is counted', async () => {
   const session = redisPivotSession();
   const lying = { text: 'A claim with a quote no source contains.',
     stated: { eventId: 'E2', role: 'commentary', quote: 'SYNTHETIC_QUOTE_THAT_IS_NOT_IN_ANY_SOURCE' },
@@ -321,7 +315,6 @@ test('a window whose receipts did not verify is counted and rendered from the cl
   const shortfall = report.windowResults[0].shortfall;
   assert.equal(shortfall.grounding.receipts, 1);
   assert.equal(shortfall.grounding.rejected, 1);
-  assert.match(renderReview(report), /window 1: 1 of 1 receipts did not verify/);
 });
 
 // ---- F92: the fabrication check is per request ------------------------------------------

@@ -59,10 +59,8 @@ export const FINAL_ANSWER_ATTRIBUTION = Object.freeze({
 });
 
 /*
- * A report is kept WHOLE here, exactly as the row recorded its payload. The slicer never cuts it: redaction scrubs the
- * whole report as tool output and, since D68 (E), bounds nothing: a helper's report is what it produced, kept whole.
- * A cut made before redaction would hand the redactor a tail whose secret-named key or key-block header was cut away
- * (M33 F placement / redaction repair).
+ * A report is kept WHOLE here, exactly as the row recorded its payload. The slicer never cuts it, and since D68 (E)
+ * nothing bounds it: a helper's report is what it produced, kept whole (D90: and nothing masks it).
  */
 
 /** The record kind the Codex reader emits for a final report, joined in `collectDelegationEvidence`. */

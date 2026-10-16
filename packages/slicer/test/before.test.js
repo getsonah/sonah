@@ -92,7 +92,7 @@ test('the source ladder: originalFile beats a read beats a write body; update-ty
   assert.ok(events.every((e) => !('_orig' in e) && !('_writeType' in e) && !('_readMeta' in e)));
 });
 
-test('withheld: credential-shaped paths are declared, never shown; a long or JSON-looking read is a prior state; the tool window sets partial', () => {
+test('D90: a credential-shaped path gets its prior state as any path does; a long or JSON-looking read is a prior state; the tool window sets partial', () => {
   const events = [
     { turn: 1, seq: 0, kind: 'read', path: '.env', _readText: 'KEY=1' },
     { turn: 1, seq: 1, kind: 'edit', path: '.env', diff: '+KEY=2' },
@@ -102,7 +102,9 @@ test('withheld: credential-shaped paths are declared, never shown; a long or JSO
     { turn: 1, seq: 5, kind: 'edit', path: 'j.py', diff: '+q' },
   ];
   attachBefore(events);
-  assert.deepEqual(events[1].before, { withheld: 'credential-shaped path' });
+  // D90 (owner decision 2026-10-15): nothing is withheld for its path (D68 R withheld a credential-shaped one's).
+  assert.equal(events[1].before.withheld, undefined);
+  assert.deepEqual([events[1].before.source, events[1].before.text], ['read', 'KEY=1']);
   assert.equal(events[3].before.partial, true); assert.deepEqual(events[3].before.window, { from: 10, to: 12, total: 100 });
   // D69 review (F6): no prior state is withheld for what its text looks like (`looksUnreadable`, deleted: a `{"type"`
   // opening or one line over 2,000 characters, a rule no recorder documents). The read text is the prior state, as recorded.

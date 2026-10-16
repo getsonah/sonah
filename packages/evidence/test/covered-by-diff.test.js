@@ -27,7 +27,7 @@ import { honestStatuses, unrecordedCover, UNRECORDED_COVER } from '../src/ledger
 // shown with the partial coverage and its causes. Before M33 it read UNCHECKED, which now means
 // the review itself did not complete.
 const RECORDER_LIMITED = 'NO_FINDINGS';
-import { renderReview, coverageCauses, UNRECORDED_COVER_SENTENCE } from '../src/review.js';
+import { coverageCauses } from '../src/review.js';
 
 const repo = { host: 'github.com', id: '10' };
 const EMPTY = { decisions: [], pivots: [], claims: [], requirements: [] };
@@ -147,13 +147,8 @@ test('M29 placed diff cannot cover any missing historical shell body', async () 
     ['write_outcome_unknown', { n: 2 }]],
   'missing historical bodies and the two unproved outcomes both cap');
 
-  const md = renderReview(report);
-  // D71 (a): rendered, a completed session review over the recorder's limits — never a status.
-  assert.ok(md.includes('Session review: **complete**') && !md.includes('NO_FINDINGS'));
-  assert.ok(md.includes('- `unrecorded_body`'), 'the covered writes stay listed under what was not checked');
-  assert.ok(md.includes(`  - 3 ${UNRECORDED_COVER_SENTENCE.none}.`), 'and counted as unreviewed');
-  assert.ok(!md.includes(UNRECORDED_COVER_SENTENCE.diff));
-  // The published verdict and a re-render agree: the renderer recomputes from the same facts.
+  assert.equal(report.sessionReview, 'complete');
+  // The published verdict and a recomputation agree: every reader recomputes from the same facts.
   assert.equal(honestStatuses(report).reviewStatus, RECORDER_LIMITED);
 });
 
@@ -174,10 +169,6 @@ test('W3c-10 one shell write to a repository file not in the PR caps the session
   assert.equal(report.reviewStatus, RECORDER_LIMITED);
   assert.deepEqual(coverageCauses(report), [['unrecorded_body', { n: 3 }],
     ['write_outcome_unknown', { n: 2 }]], 'the header counts distinct body and outcome losses');
-
-  const md = renderReview(report);
-  assert.ok(md.includes('Not covered: 3 write(s) have no recorded body'));
-  assert.ok(md.includes(`  - 3 ${UNRECORDED_COVER_SENTENCE.none}.`));
 });
 
 // ---- 3. one of them is to a path outside the repository ---------------------------------------
@@ -198,10 +189,8 @@ test('W3c-10 a shell write to /tmp is listed as outside the repository and does 
   assert.equal(report.coverage, 'partial', 'the two internal piped writes still lack outcomes');
   assert.equal(report.sessionStatus, RECORDER_LIMITED);
   assert.equal(report.reviewStatus, RECORDER_LIMITED);
-
-  const md = renderReview(report);
-  assert.ok(md.includes(`  - 1 ${UNRECORDED_COVER_SENTENCE.outside}.`));
-  assert.ok(md.includes(`  - 2 ${UNRECORDED_COVER_SENTENCE.none}.`));
+  assert.deepEqual(coverageCauses(report).find(([cause]) => cause === 'unrecorded_body'), ['unrecorded_body', { n: 2 }],
+    'the write outside the repository is not counted among the causes');
 });
 
 test('W3c-10 an outside-the-repository write does not cap even with no code review at all', async () => {

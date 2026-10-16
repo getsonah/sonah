@@ -31,8 +31,11 @@ const BEGIN = ['-----BEGIN', 'RSA', 'PRIVATE', 'KEY-----'].join(' ');
 const END = ['-----END', 'RSA', 'PRIVATE', 'KEY-----'].join(' ');
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const keyLine = (i) => Array.from({ length: 64 }, (_, k) => B64[(i * 29 + k * 37 + ((k * k) % 11)) % 64]).join('');
-/** An ask that is only a pasted key block: redaction leaves nothing of it. */
+/** An ask that is only a pasted key block. */
 const KEY_ASK = [BEGIN, keyLine(0), keyLine(1), END].join('\n');
+/** That ask as an earlier Sonah's redactor left it: no word of it (W3e-3). D90 (owner decision 2026-10-15): no Sonah
+ *  withholds an ask now (`redact` keeps KEY_ASK as recorded, below); a ledger an earlier one wrote is still read. */
+const withheld = (turn) => ({ turn, text: '', redacted: true, redactedLines: 4 });
 /** An ask whose pasted code block was stripped: its middle is a stub, not the human's words. M33 R repair: the strip is
  *  Sonah's (the recorder kept the whole ask), declared as stripped before review. */
 const ELIDED_ASK = { text: 'Fix the parser.\n[code block, 40 lines, 1200 chars]\nKeep the tests green.',
@@ -51,9 +54,10 @@ const instructionGaps = (session) => session.adapterGaps.filter((g) => g.channel
 // ---- F204 ----------------------------------------------------------------------------------------
 
 test('F204 an ask redaction withheld makes the instruction scope incomplete, on the session and in a gap', () => {
-  const session = sessionOf([{ turn: 1, text: 'keep the public API stable' }, { turn: 2, text: KEY_ASK }]);
-  const withheld = session.events.find((e) => e.id === 'I2');
-  assert.ok(withheld.omitted && withheld.redacted, 'premise: the ask was redacted away (W3e-3)');
+  const session = sessionOf([{ turn: 1, text: 'keep the public API stable' }, withheld(2)]);
+  const event = session.events.find((e) => e.id === 'I2');
+  assert.ok(event.omitted && event.redacted, 'premise: the ask was redacted away (W3e-3)');
+  assert.equal(redact(led({ ask: [{ turn: 2, text: KEY_ASK }] })).ledger.ask[0].text, KEY_ASK, 'D90: as recorded today');
   assert.equal(session.instructionScopeIncomplete, true, 'the session flag says so');
   assert.deepEqual(instructionGaps(session), [{ code: 'incomplete_inventory', channel: 'instructions', scope: 'session',
     count: 1, eventIds: ['I2'], sessionKey: session.sessionKey,
@@ -62,7 +66,7 @@ test('F204 an ask redaction withheld makes the instruction scope incomplete, on 
 });
 
 test('F204 "recorder shortened" and "redaction withheld" are two declarations, each counting its own asks', () => {
-  const session = sessionOf([{ turn: 1, ...SHORTENED_ASK }, { turn: 2, text: KEY_ASK }, { turn: 3, text: KEY_ASK }]);
+  const session = sessionOf([{ turn: 1, ...SHORTENED_ASK }, withheld(2), withheld(3)]);
   const gaps = instructionGaps(session);
   // OWNER DECISION B (2026-10-01): the recorder-shortened gap names its ask too, as the withheld one always did, so it
   // carries no loss ordinal; the two stay distinct identities by their closed notes (`gapKey`).
@@ -75,7 +79,7 @@ test('F204 "recorder shortened" and "redaction withheld" are two declarations, e
   assert.equal(new Set(gaps.map(gapKey)).size, 2, 'distinct identities: a reader that de-duplicates by gapKey keeps both');
   assert.equal(session.instructionScopeIncomplete, true);
   // M33 R repair: an ask whose pasted material Sonah stripped is declared by its own note, never the recorder's.
-  const stripped = sessionOf([{ turn: 1, ...ELIDED_ASK }, { turn: 2, text: KEY_ASK }]);
+  const stripped = sessionOf([{ turn: 1, ...ELIDED_ASK }, withheld(2)]);
   assert.deepEqual(instructionGaps(stripped).map((gap) => [gap.count, gap.note]),
     [[1, NOTES().stripped_before_review], [1, NOTES().redaction_withheld]]);
   assert.equal(stripped.instructionScopeIncomplete, true);
@@ -100,7 +104,7 @@ test('F204 the notes come from one closed table, and the recorder\'s note is unc
   assert.equal(notes.recorder_shortened, 'instruction text was elided by the recorder');
   assert.notEqual(notes.redaction_withheld, notes.recorder_shortened);
   const elidedOnly = sessionOf([{ turn: 1, ...ELIDED_ASK }]);
-  for (const gap of [...instructionGaps(elidedOnly), ...instructionGaps(sessionOf([{ turn: 1, text: KEY_ASK }]))])
+  for (const gap of [...instructionGaps(elidedOnly), ...instructionGaps(sessionOf([withheld(1)]))])
     assert.ok(Object.values(notes).includes(gap.note), gap.note);
   // A session nothing was withheld from declares nothing on the channel.
   const whole = sessionOf([{ turn: 1, text: 'keep the public API stable' }]);
@@ -113,7 +117,7 @@ test('F204 the notes come from one closed table, and the recorder\'s note is unc
 const WITHHELD = () => prompts.INSTRUCTION_WITHHELD ?? {};
 
 test('F205 a withheld instruction is rendered with its header and one fixed line, never an empty fence', () => {
-  const session = sessionOf([{ turn: 1, text: 'keep the public API stable' }, { turn: 2, text: KEY_ASK }]);
+  const session = sessionOf([{ turn: 1, text: 'keep the public API stable' }, withheld(2)]);
   const [window] = planWindows(session);
   const { prompt, sourceMap } = buildNarrativePrompt({ session, window });
   const line = WITHHELD().redacted;

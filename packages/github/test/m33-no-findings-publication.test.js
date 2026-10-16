@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPublicationPlan, publicCommentText } from '../index.js';
+import { ATTENTION_WORDS, FOLDED_SECTION_WORDS } from '../../evidence/src/review.js';
 
 const BASE = 'b'.repeat(40), HEAD = 'a'.repeat(40);
 const pr = () => ({ repo: { host: 'github.com', id: '42' }, number: 7, baseOid: BASE, headOid: HEAD,
@@ -23,12 +24,13 @@ const STATUS_WORDS = /DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED|needs your decision
 test('D71 a completed review over partial coverage publishes a neutral check with its causes and no status', () => {
   const published = plan(report());
   assert.equal(published.check.conclusion, 'neutral');
-  assert.equal(published.check.output.title, 'Advisory review ran to completion');
+  assert.equal(published.check.output.title, 'Sonah finished its advisory review');
   const body = published.review.body;
-  assert.ok(body.includes("Sonah's review ran to completion. It lists what to check; it never says the work is right."));
-  // Every fact-derived sentence is escaped for the public surface (parentheses included).
-  assert.ok(body.includes('1 instruction\\(s\\) were elided by the recorder'), body);
-  assert.ok(body.includes('2 delegation\\(s\\) have no verified child evidence'), body);
+  assert.ok(body.includes('Sonah finished its review. It lists what you should check. It never says that the work is '
+    + 'correct.'));
+  // Every fact-derived sentence is escaped for the public surface (the hostile values below); these hold no mark.
+  assert.ok(body.includes('the recorder shortened 1 message of yours'), body);
+  assert.ok(body.includes('Sonah found no checked recording for 2 delegations to a helper'), body);
   assert.doesNotMatch(body, STATUS_WORDS);
   assert.doesNotMatch(body, /approved for merge|ready to merge/i);
   assert.ok(published.check.output.summary.includes('Not covered:'), 'the check carries the causes too');
@@ -38,7 +40,7 @@ test('D71 a completed review over partial coverage publishes a neutral check wit
 test('D71 a session-only review beside a code review that did not run is neutral and incomplete', () => {
   const published = plan(report({ codeStatus: 'UNCHECKED', reviewStatus: 'UNCHECKED', codeCoverage: 'missing' }));
   assert.equal(published.check.conclusion, 'neutral');
-  assert.equal(published.check.output.title, 'Advisory review did not complete');
+  assert.equal(published.check.output.title, 'Sonah did not finish its advisory review');
   assert.match(published.review.body, /Not covered: /);
   assert.doesNotMatch(published.review.body, STATUS_WORDS);
 });
@@ -47,7 +49,7 @@ test('D71 a partial coverage no declared cause explains is published as an incom
   // The coverage is recomputed before planning: with no declared recorder limit the partial coverage is not shown to
   // be the recording's, so the session review is not shown to have completed.
   const bare = plan(report({ coverageFacts: { ...FACTS, instructionsElided: 0, delegationsUnlinked: 0 } }));
-  assert.ok(bare.review.body.includes("Sonah's review did not complete"), bare.review.body);
+  assert.ok(bare.review.body.includes('Sonah did not finish its review'), bare.review.body);
   assert.ok(bare.review.body.includes('names no cause'), bare.review.body);
   assert.doesNotMatch(bare.review.body, STATUS_WORDS);
   assert.equal(bare.check.conclusion, 'neutral');
@@ -56,11 +58,11 @@ test('D71 a partial coverage no declared cause explains is published as an incom
 test('D71 the run state is recomputed before planning: a stated status the facts do not support changes nothing', () => {
   // A failed window: the session review did not complete, whatever the report says.
   const failed = plan(report({ coverageFacts: { ...FACTS, windowsFailed: 1 } }));
-  assert.ok(failed.review.body.includes("Sonah's review did not complete"));
+  assert.ok(failed.review.body.includes('Sonah did not finish its review'));
   assert.doesNotMatch(failed.review.body, STATUS_WORDS);
   // A report that says CLEAN over the same limits is published as what its facts are: a completed review with causes.
   const claimedClean = plan(report({ sessionStatus: 'CLEAN', reviewStatus: 'CLEAN' }));
-  assert.ok(claimedClean.review.body.includes("Sonah's review ran to completion"));
+  assert.ok(claimedClean.review.body.includes('Sonah finished its review'));
   assert.match(claimedClean.review.body, /Not covered: /);
   assert.doesNotMatch(claimedClean.review.body, STATUS_WORDS);
 });
@@ -96,7 +98,7 @@ test('M33 statuses are checked as the report\'s shape only, and none is publishe
   // Over complete coverage nothing about coverage is added, and no status is published.
   const clean = plan(report({ sessionStatus: 'CLEAN', reviewStatus: 'CLEAN', coverage: 'complete',
     coverageFacts: { ...FACTS, instructionsElided: 0, delegationsUnlinked: 0 } }));
-  assert.ok(clean.review.body.includes("Sonah's review ran to completion"));
+  assert.ok(clean.review.body.includes('Sonah finished its review'));
   assert.equal(clean.check.conclusion, 'neutral');
   assert.doesNotMatch(clean.review.body, /Not covered:/);
   assert.doesNotMatch(clean.review.body, STATUS_WORDS);
@@ -108,10 +110,10 @@ test('D82 step 10 a session review\'s report: its checklist\'s attention lines, 
     requirements: [{ text: 'SYNTHETIC_PRIVATE_ASK', status: 'not-done' }],
     decisions: [{ dimension: 'SYNTHETIC_PRIVATE_DECISION', column: 'unasked', columnState: 'grounded' }] });
   const published = plan(session);
-  assert.ok(published.review.body.includes("Sonah's review ran to completion"), 'a session-only review needs no code');
+  assert.ok(published.review.body.includes('Sonah finished its review'), 'a session-only review needs no code');
   // D88: the agent's judgment first, then the settled problems.
-  assert.match(published.review.body, /Where your attention is needed:\n- 1 decision made without asking you/);
-  assert.match(published.review.body, /\n- 1 ask of yours shown not done or partly done/);
+  assert.match(published.review.body, /What needs your attention:\n- 1 decision that you did not ask for/);
+  assert.match(published.review.body, /\n- 1 ask that the session review marks not done or partly done/);
   assert.doesNotMatch(JSON.stringify(published), /SYNTHETIC_PRIVATE/);
   // Case-sensitive here: the checklist's own heading "What the agent decided" is no status.
   assert.doesNotMatch(published.review.body, /\b(?:DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/);
@@ -128,17 +130,17 @@ test('D82 step 10 the comment for a synthetic session review, word for word: no 
   const expected = [
     'Sonah advisory review',
     '',
-    "Sonah's review ran to completion. It lists what to check; it never says the work is right.",
+    'Sonah finished its review. It lists what you should check. It never says that the work is correct.',
     '',
-    'Not covered: 1 instruction\\(s\\) were elided by the recorder; 2 delegation\\(s\\) have no verified child '
-      + 'evidence.',
+    'Not covered: the recorder shortened 1 message of yours · Sonah found no checked recording for 2 delegations to a '
+      + 'helper.',
     '',
-    'Where your attention is needed:',
-    '- 1 decision made without asking you — under What the agent decided\\.',
-    '- 1 ask of yours shown not done or partly done — under What you asked\\.',
-    '- What the review could not cover — the Not covered line at the top\\.',
+    'What needs your attention:',
+    '- 1 decision that you did not ask for: see What the agent decided\\.',
+    '- 1 ask that the session review marks not done or partly done: see What you asked\\.',
+    '- What Sonah could not cover: see the Not covered line at the top\\.',
     '',
-    'This is an advisory COMMENT review. It does not approve changes or permit merging. Read it before you share it.',
+    'This is an advisory COMMENT review. It does not approve the change or allow a merge. Read it before you share it.',
   ].join('\n');
   assert.deepEqual(publicCommentText(session), { run: 'complete', summary: expected });
   const published = plan(session);
@@ -152,5 +154,17 @@ test('D82 step 10 the comment for a synthetic session review, word for word: no 
     promises: [{ text: 'SYNTHETIC_PRIVATE_CLAIM', status: 'open' }] });
   assert.equal(publicCommentText(folded).summary, expected.replace(
     '\n\nThis is an advisory COMMENT review.',
-    '\n\n2 rows Sonah could not check — folded under What Sonah could not check\\.\n\nThis is an advisory COMMENT review.'));
+    '\n\n2 items that Sonah could not check: see What Sonah could not check\\.\n\nThis is an advisory COMMENT review.'));
+});
+
+test('one term a thing: in the attention list, only the line for the folded items names their section', () => {
+  // The coverage line (what Sonah could not cover) and the folded line (the items it could not check, under the section
+  // of that name) stand in one list, so they never share the section's name.
+  const heading = FOLDED_SECTION_WORDS.heading;
+  assert.ok(ATTENTION_WORDS.folded(2).includes(heading));
+  for (const [key, words] of Object.entries(ATTENTION_WORDS)) {
+    if (key === 'folded') continue;
+    const text = typeof words === 'function' ? words(2) : words;
+    assert.ok(!text.includes(heading), `${key}: ${text}`);
+  }
 });

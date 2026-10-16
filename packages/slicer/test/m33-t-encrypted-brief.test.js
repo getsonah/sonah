@@ -1,10 +1,9 @@
 // M33 T (helper briefs). A Codex hand-off (`spawn_agent`, `collaboration.spawn_agent`, `followup_task`)
 // whose `message` is one encrypted token — whitespace-free, >= 100 base64url characters, optional `=`
 // padding, the recorder's shape (one lowercase letter then three uppercase, as Codex's "gAAAAA…"), and as
-// unreadable as the redactor's entropy floor — carries no readable brief. The slicer records that the brief exists but the recorder encrypted
-// it (`parentInstruction: { tool, field, encrypted: true }`, no text), and never keeps, hashes or prints the
-// token. A plaintext message keeps today's behaviour exactly: it is carried as text and scrubbed by
-// redaction as agent prose.
+// unreadable as the entropy floor (redact/index.js `ENTROPY_MIN`) — carries no readable brief. The slicer records that
+// the brief exists but the recorder encrypted it (`parentInstruction: { tool, field, encrypted: true }`, no text), and
+// never keeps, hashes or prints the token. A plaintext message is carried as text, as recorded (D90: nothing masks it).
 //
 // Synthetic Codex rollouts only: every byte is invented. No recording, no model, no network.
 import { test } from 'node:test';
@@ -135,17 +134,15 @@ test('M33 T a plaintext message keeps today\'s behaviour exactly', async (t) => 
   assert.equal(clean.delegations[0].taskName, '/root/fix_parser');
 });
 
-test('M33 T a plaintext message carrying a secret is still redacted at token level, as agent prose', async (t) => {
+test('M33 T, D90 a plaintext message carrying a secret is kept as recorded', async (t) => {
   const brief = `Call the staging API with ${SECRET} and report the parser errors.`;
   const { raw, clean } = await slice(t, [spawn('spawn-1', { message: brief, task_name: 'fix_parser' }),
     output('spawn-1', { agent_id: 'child-1', task_name: '/root/fix_parser' })]);
   assert.equal(raw.delegations[0].parentInstruction.text, brief, 'the slicer carries plaintext as text');
   const instruction = clean.delegations[0].parentInstruction;
   assert.equal(instruction.encrypted, undefined);
-  assert.equal(instruction.redacted, true);
-  assert.equal(everywhere(clean).includes(SECRET), false);
-  assert.match(instruction.text, /^Call the staging API with ‹/);
-  assert.match(instruction.text, /› and report the parser errors\.$/);
+  assert.equal(instruction.redacted, undefined);
+  assert.equal(instruction.text, brief);
 });
 
 test('M33 T a short or whitespace-bearing message that merely looks base64-ish is plaintext', async (t) => {
@@ -158,13 +155,8 @@ test('M33 T a short or whitespace-bearing message that merely looks base64-ish i
     assert.deepEqual(raw.delegations[0].parentInstruction, { text: message, tool: 'spawn_agent', field: 'message' });
     const instruction = clean.delegations[0].parentInstruction;
     assert.equal(instruction.encrypted, undefined, 'plaintext is never marked encrypted');
-    assert.equal(typeof instruction.text, 'string', 'plaintext keeps a text field for redaction to scrub');
+    assert.equal(instruction.text, message, 'plaintext keeps its text, as recorded (D90)');
   }
-  // What redaction does with the spaced one is today's token-level rule, unchanged.
-  const { clean } = await slice(t, [spawn('spawn-1', { message: spaced, task_name: 'fix_parser' }),
-    output('spawn-1', { agent_id: 'child-1', task_name: '/root/fix_parser' })]);
-  assert.equal(clean.delegations[0].parentInstruction.redacted, true);
-  assert.equal(everywhere(clean).includes(spaced.slice(0, 40)), false);
 });
 
 test('M33 T a readable whitespace-free brief of 100+ characters stays text, exactly as before', async (t) => {
@@ -184,7 +176,7 @@ test('M33 T a readable whitespace-free brief of 100+ characters stays text, exac
   }
 });
 
-test('M33 T a random token without the recorder\'s shape stays in redaction\'s hands and is dropped, as before', async (t) => {
+test('M33 T, D90 a random token without the recorder\'s shape is plaintext, kept as recorded', async (t) => {
   const token = `Q${syntheticToken('no recorder shape', 400).slice(1)}`;
   assert.equal(isEncryptedBrief(token), false);
   const { raw, clean } = await slice(t, [spawn('spawn-1', { message: token, task_name: 'fix_parser' }),
@@ -192,6 +184,6 @@ test('M33 T a random token without the recorder\'s shape stays in redaction\'s h
   assert.deepEqual(raw.delegations[0].parentInstruction, { text: token, tool: 'spawn_agent', field: 'message' });
   const instruction = clean.delegations[0].parentInstruction;
   assert.equal(instruction.encrypted, undefined);
-  assert.equal(instruction.redacted, true, 'fails closed, as a redaction');
-  assert.equal(everywhere(clean).includes(token.slice(0, 32)), false);
+  assert.equal(instruction.redacted, undefined);
+  assert.equal(instruction.text, token);
 });

@@ -1,23 +1,24 @@
-// The code step's diff, read with git: the session's start commit
-// placed by structure (the commit a recording names, else the HEAD reflog entry in effect at the recording's first
-// timestamp, else the newest first-parent commit made by then), every path that differs from it, git's own patch of
-// each, an unrecorded change marked, the withholding rules before any line is read, nothing written to the repository;
-// and the reuse dry run: a dry run with --code-pass and --state-dir that reuses the stored session answers with no
-// call and writes nothing.
+// The code step's diff, read with git (the agentic code step's starting map since code-snapshot/9): the session's start
+// commit placed by structure (the commit a recording names, else the HEAD reflog entry in effect at the recording's
+// first timestamp, else the newest first-parent commit made by then), every path that differs from it, git's own patch
+// of each, an unrecorded change marked, nothing written to the repository, and the repository's state; D90: nothing withheld for privacy's sake (a harness home, a credential-shaped path and the home
+// folder as the repository are paths like any other); and the reuse dry run: a dry run with --code-pass and
+// --state-dir that reuses the stored session answers with no call and writes nothing.
 //
 // Throwaway repositories in temporary folders, synthetic sessions, a deterministic fake reviewer: no recording, no
 // model, no network. Every commit date is fixed, so the reflog's times are too.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, utimes, writeFile }
+  from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { readCodeSnapshot, recordingStart, runGit, startCommit, snapshotTexts } from '../src/code-snapshot.js';
-import { runSessionReviewCommand } from '../src/session-review-command.js';
-import { claudeProjectFolder } from '../src/claude-home.js';
-import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, codeJudge, contradictClaim, findEmptyInput, sha256,
-  parseFinding } from './code-pass-fixture.js';
+import { join, resolve } from 'node:path';
+import { createRepositoryReader, readCodeSnapshot, recordingStart, repositoryState, startCommit, snapshotTexts }
+  from '../src/code-snapshot.js';
+import { runSessionReviewCommand, STATE_FOLDER_ENTRIES } from '../src/session-review-command.js';
+import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, codeJudge, contradictClaim, reviewFinding, sha256 }
+  from './code-pass-fixture.js';
 
 const BASE_PARSE = CODE_FILES['src/parse.js'].replace('split(",")', 'split(";")');
 const START = '2030-01-01T00:00:00.000Z';
@@ -88,34 +89,45 @@ test('code step git: the start commit is the one HEAD held when the session bega
 test('code step git: every differing path, its base and git\'s patch, checked; unrecorded changes marked; nothing written', async (t) => {
   const { root, git } = await repository(t, { after: { 'src/parse.js': CODE_FILES['src/parse.js'],
     'gen.js': 'export const generated = 2;\n', '.env': 'API_KEY=SYNTHETIC_not_a_real_key\n' } });
-  // The session wrote parse.js and read util.js and .env; gen.js changed with no recorded edit (a generator).
+  // The session wrote parse.js and read util.js and .env; gen.js changed with no recorded edit (a generator). What the
+  // session only read is no part of the change (the review agent reads any file itself).
   const session = codeSession();
   const recording = await recordingAt(t, [{ timestamp: START }]);
   const index = await stat(join(root, '.git', 'index'));
-  const snapshot = await readCodeSnapshot(session, { root, home: null, maxBytes: 1_000_000, recording });
+  const snapshot = await readCodeSnapshot(session, { root, maxBytes: 1_000_000, recording });
   assert.deepEqual(snapshot.base.kind, 'git');
   assert.equal(snapshot.base.how, 'reflog');
   // An untracked file no recorded edit wrote and that did not change after the session began is not part of the diff.
   assert.deepEqual(snapshot.files.map((f) => [f.path, f.state, f.type ?? null, f.diff ?? null]), [
-    ['src/parse.js', 'readable', 'modified', 'recorded'], ['gen.js', 'readable', 'modified', 'unrecorded_change'],
-    ['src/util.js', 'readable', null, null], ['.env', 'credential_path', null, null]]);
+    ['src/parse.js', 'readable', 'modified', 'recorded'], ['gen.js', 'readable', 'modified', 'unrecorded_change']]);
   const parse = snapshot.files[0];
   assert.equal(parse.base.text, BASE_PARSE);
   assert.ok(parse.hunks[0].rows.some((r) => r.type === '-' && r.text === '  const parts = input.split(";");'));
   assert.ok(parse.hunks[0].rows.some((r) => r.type === '+' && r.text === '  const parts = input.split(",");'));
-  // Changed after the session began, it is: an added path, withheld, its lines never read, before or after.
+  // The repository's state: over every file git lists (tracked, or untracked and not ignored) and the start commit.
+  assert.match(snapshot.repoState, /^[0-9a-f]{64}$/);
+  assert.equal(snapshot.repoState, await repositoryState({ top: snapshot.top, commit: snapshot.base.commit }));
+  // Changed after the session began, it is an added path — D90: a credential-shaped one like any other, its hunks shown.
   const later = new Date('2031-01-01T00:00:00Z');
   await utimes(join(root, '.env'), later, later);
-  const fresh = await readCodeSnapshot(session, { root, home: null, maxBytes: 1_000_000, recording });
+  const fresh = await readCodeSnapshot(session, { root, maxBytes: 1_000_000, recording });
   const env = fresh.files.find((f) => f.path === '.env');
-  assert.deepEqual([env.state, env.type, env.diff, env.text, env.hunks, env.base], ['credential_path', 'added', 'withheld',
-    undefined, [], null]);
+  assert.deepEqual([env.state, env.type, env.diff, env.text, env.hunks.length], ['readable', 'added', 'unrecorded_change',
+    'API_KEY=SYNTHETIC_not_a_real_key\n', 1]);
+  assert.equal(fresh.repoState, snapshot.repoState, 'a file\'s time is no part of the state');
+  // The reader the grounding reads through: any file of the repository, now and at the start commit.
+  const repo = createRepositoryReader({ root, top: fresh.top, commit: fresh.base.commit, maxBytes: 1_000_000 });
+  assert.equal(repo.read('README.md').text, '# readme\n', 'a file outside the change');
+  assert.equal(repo.read('.env').text, 'API_KEY=SYNTHETIC_not_a_real_key\n');
+  assert.equal(repo.base('src/parse.js').text, BASE_PARSE);
+  assert.equal(repo.base('.env'), null, 'not at the start commit');
+  assert.equal(repo.base('../outside.js'), null);
   // git wrote nothing: the index is as it was.
   assert.equal((await stat(join(root, '.git', 'index'))).mtimeMs, index.mtimeMs);
   assert.equal(git(['status', '--porcelain']).includes('.env'), true, 'the untracked file stays untracked');
 });
 
-test('code step git: through the CLI, the lens requests carry git\'s hunks and the run is the same with the same tree', async (t) => {
+test('code step git: through the CLI, the review agent\'s request carries git\'s hunks and the run is the same with the same tree', async (t) => {
   const { root } = await repository(t);
   const recording = await recordingAt(t, [{ timestamp: START }]);
   const dir = await mkdtemp(join(tmpdir(), 'sonah-code-step-run-'));
@@ -123,7 +135,7 @@ test('code step git: through the CLI, the lens requests carry git\'s hunks and t
   const once = async (state, argv = []) => {
     const calls = [];
     let out = '';
-    const judge = codeJudge({ check: contradictClaim, pass: findEmptyInput });
+    const judge = codeJudge();
     const code = await runSessionReviewCommand([recording, '--concurrency', '1', '--state-dir', state, '--format', 'md',
       '--output', join(dir, `story-${Math.random().toString(16).slice(2)}.md`), '--no-open', '--code-pass', ...argv], {
       stdout: { write: (text) => { out += text; } }, stderr: { write: () => {} }, cwd: root,
@@ -141,28 +153,31 @@ test('code step git: through the CLI, the lens requests carry git\'s hunks and t
   const state = join(dir, 'state');
   const first = await once(state);
   assert.equal(first.code, 0);
-  const lens = first.calls.find((r) => r.label === 'code-pass:behaviour');
-  assert.match(lens.prompt, /^- gen\.js → lines \d+-\d+ · modified · not written by a recorded edit$/m);
-  assert.match(lens.prompt, /^\| {4}2 \| {6}\| - \| {3}const parts = input\.split\(";"\);$/m);
-  assert.match(lens.prompt, /^@@ -1,4 \+1,4 @@/m);
+  const review = first.calls.find((r) => r.label === 'code-review:agent');
+  assert.match(review.prompt, /^- gen\.js → lines \d+-\d+ · modified · not written by a recorded edit$/m);
+  assert.match(review.prompt, /^\| {4}2 \| {6}\| - \| {3}const parts = input\.split\(";"\);$/m);
+  assert.match(review.prompt, /^@@ -1,4 \+1,4 @@/m);
+  assert.deepEqual(review.agent.addDirs, [], 'the working directory is the repository\'s top folder');
   const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
   assert.equal(report.codePass.base.kind, 'git');
   assert.equal(report.codePass.findings.length, 1);
-  assert.deepEqual(report.codePass.files.find((f) => f.path === 'gen.js').diff, 'unrecorded_change');
+  // code-pass/10: a shown file's added and removed lines, the + and - rows of git's hunks.
+  assert.deepEqual(report.codePass.files.find((f) => f.path === 'gen.js'), { path: 'gen.js', type: 'modified',
+    state: 'shown', sha256: sha256('export const generated = 2;\n'), hunks: 1, added: 1, removed: 1 });
   // The reuse dry run: the stored session answers would all be reused; no call, nothing written.
   const before = await listing(state);
   const dry = await once(state, ['--dry-run']);
   assert.equal(dry.code, 0);
   assert.deepEqual(dry.calls, []);
-  const reused = /^Stored session answers: (\d+) of (\d+) requests answered from the store \(no call\)\.$/m.exec(dry.out);
+  const reused = /^Stored session answers: the store answers (\d+) of (\d+) session calls, with no new call\.$/m.exec(dry.out);
   assert.ok(reused && Number(reused[1]) > 0 && reused[1] === reused[2], dry.out);
-  assert.match(dry.out, /^Code step: it would first send 5 requests \(code-check \d+ KB, code-pass:behaviour \d+ KB, code-pass:tests \d+ KB, code-pass:contracts \d+ KB, code-pass:ask \d+ KB\), then three checking passes for each answer and finding they give\.$/m);
-  assert.match(dry.out, /The diff starts at the session's start commit [0-9a-f]{12} \(reflog\): 2 paths differ, 1 not written by a recorded edit\./);
+  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\)\. Then it would send one check for each finding and one for its questions\.$/m);
+  assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 2 paths differ, and no recorded edit wrote 1 of them\./);
   assert.deepEqual(await listing(state), before, 'the dry run wrote nothing, and touched no stored answer');
   // A state with no stored answers: they are counted as asked live, still with no call.
   const empty = await once(join(dir, 'empty-state'), ['--dry-run']);
   assert.deepEqual(empty.calls, []);
-  assert.match(empty.out, /^Stored session answers: 0 of (\d+) requests answered from the store \(no call\); at least \1 would be asked live\.$/m);
+  assert.match(empty.out, /^Stored session answers: the store answers 0 of (\d+) session calls, with no new call\. A review would make at least \1 new calls?\.$/m);
 });
 
 /** Every file under `dir` with its size and modification time: what a dry run must leave as it was. */
@@ -182,31 +197,34 @@ async function listing(dir) {
 // ---- the review of the code step (FAIL, 2026-10-14): the reviewer's probes, with real git -----------------------------
 
 /** One `sonah review --code-pass` run over `session` with its files under `root` (the recording's working directory),
- *  the state under `state`; `env` adds to the run's environment. Every request is kept. */
-async function reviewIn(t, { root, recording, state, session = codeSession(), judge, argv = [], env = {}, format = 'md' }) {
+ *  the state under `state` (null: none given, the default under Sonah's home); `env` adds to the run's environment (a
+ *  value undefined unsets it); `inject` adds to the command's own boundaries. Every request is kept. */
+async function reviewIn(t, { root, recording, state, session = codeSession(), judge, argv = [], env = {}, format = 'md',
+  inject = {}, codePass = '--code-pass' }) {
   const dir = await mkdtemp(join(tmpdir(), 'sonah-code-step-review-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const calls = [];
-  let out = '';
+  let out = '', err = '';
   const output = join(dir, `story.${format === 'html' ? 'html' : 'md'}`);
-  const code = await runSessionReviewCommand([recording, '--concurrency', '1', '--state-dir', state, '--format', format,
-    '--output', output, '--no-open', '--code-pass', ...argv], {
-    stdout: { write: (text) => { out += text; } }, stderr: { write: () => {} }, cwd: root,
-    env: { HOME: join(dir, 'home'), SONAH_HOME: join(dir, '.sonah'), CODEX_HOME: join(dir, 'codex'),
-      SONAH_CLAUDE_PROJECTS: join(dir, 'claude'), ...env },
+  const runEnv = { HOME: join(dir, 'home'), SONAH_HOME: join(dir, '.sonah'), CODEX_HOME: join(dir, 'codex'),
+    SONAH_CLAUDE_PROJECTS: join(dir, 'claude'), ...env };
+  const code = await runSessionReviewCommand([recording, '--concurrency', '1', ...(state ? ['--state-dir', state] : []),
+    '--format', format, '--output', output, '--no-open', codePass, ...argv], {
+    stdout: { write: (text) => { out += text; } }, stderr: { write: (text) => { err += text; } }, cwd: root, env: runEnv,
     installSignals: false, loadReviews: async () => new Map(), openPage: async () => {},
     loadSession: async () => ({ session, hash: sha256('synthetic'), cwd: root }),
     createJudge: ({ onResult }) => async (request) => {
       calls.push(request);
       onResult({ ok: true, backend: 'claude-cli', attestation: 'attested', contextWindow: 1_000_000 });
       return judge(request);
-    } });
+    }, ...inject });
+  const stateDir = state ?? join(runEnv.SONAH_HOME ?? join(runEnv.HOME, '.sonah'), 'session-reviews', sha256(recording));
   const written = await readFile(output, 'utf8').catch(() => null);
-  const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8').catch(() => 'null'));
-  return { code, calls, out, written, report };
+  const report = JSON.parse(await readFile(join(stateDir, 'review', 'report.private.json'), 'utf8').catch(() => 'null'));
+  return { code, calls, out, err, written, report };
 }
-/** The part of a request it showed (a receipt repair appends the reviewer's own failed answers after it). */
-const shownOf = (request) => request.prompt.split('\n\n## Receipt repair — one attempt only\n')[0];
+/** The part of a request it showed (a repair appends its note after it). */
+const shownOf = (request) => request.prompt.split('\n\n## Repair — one attempt only\n')[0];
 
 test('review of the code step (high, the probe): a staged file under a -diff attribute is binary, never shown, never published', async (t) => {
   const SQL = 'DELETE FROM users WHERE id = $1;';
@@ -219,25 +237,25 @@ test('review of the code step (high, the probe): a staged file under a -diff att
   const later = new Date('2031-01-01T00:00:00Z');
   await utimes(join(root, 'db', 'untracked.sql'), later, later);
   // Read with git: the staged file, the modified one and the untracked one are each binary; no text of them is kept.
-  const snapshot = await readCodeSnapshot(codeSession(), { root, home: null, maxBytes: 1_000_000, recording });
+  const snapshot = await readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording });
   for (const path of ['db/migrate.sql', 'db/seed.sql', 'db/untracked.sql']) {
     const file = snapshot.files.find((f) => f.path === path);
     assert.deepEqual([file.state, file.diff, file.text, file.hunks], ['binary', 'withheld', undefined, []], path);
   }
   assert.ok(!snapshotTexts(snapshot).some((text) => text.includes(SQL)));
-  // The probe's finding, quoting the staged file: never grounded, never checked, never published; coverage partial.
-  const finding = parseFinding({ anchor: { path: 'db/migrate.sql', side: 'new', startLine: 1, endLine: 1 },
-    trace: [{ step: 'It deletes a user.', source: 'file', path: 'db/migrate.sql', side: 'new', startLine: 1, endLine: 1,
-      quote: SQL }] });
-  const judge = codeJudge({ check: contradictClaim, pass: (prompt, files, lens) => (lens === 'behaviour' ? [finding] : []) });
+  // The probe's finding, anchored in the staged file: the agent may read the file (D90), but no line of it is a line
+  // the change block shows changed, so the finding is out of scope — never checked, never published; coverage partial.
+  const finding = reviewFinding({ anchor: { path: 'db/migrate.sql', side: 'new', startLine: 1, endLine: 1 },
+    trace: [{ step: 'It deletes a user.', path: 'db/migrate.sql', side: 'new', startLine: 1, endLine: 1, quote: SQL }] });
+  const judge = codeJudge({ review: () => ({ findings: [finding], questions: [] }) });
   const { code, calls, report, written, out } = await reviewIn(t, { root, recording, judge,
     state: join(await mkdtemp(join(tmpdir(), 'sonah-code-step-bin-')), 'state') });
   // The code step did not cover the whole change: the run says so, and is incomplete (never "complete").
   assert.equal(code, 1);
-  assert.match(out, /code pass did not read every file it showed/);
+  assert.match(out, /code review did not cover all of the change and its checks/);
   assert.deepEqual(report.codePass.findings, []);
-  assert.ok(report.codePass.rejected.some((r) => r.reason === 'evidence_grounding_failed' && r.cause === 'file_not_shown'));
-  assert.equal(calls.filter((r) => r.label.startsWith('challenge:code-finding')).length, 0);
+  assert.deepEqual(report.codePass.withheld.map((w) => [w.reason, w.cause]), [['out_of_scope', 'out_of_scope']]);
+  assert.equal(calls.filter((r) => r.label.startsWith('code-verify:')).length, 0);
   for (const request of calls) {
     assert.ok(!shownOf(request).includes(SQL), request.label);
     assert.ok(!shownOf(request).includes('SYNTHETIC_UNTRACKED'), request.label);
@@ -248,150 +266,76 @@ test('review of the code step (high, the probe): a staged file under a -diff att
   assert.ok(!written.includes(SQL));
 });
 
-test('review of the code step (low, privacy, the probe): from a folder of a repository, no path outside it is named', async (t) => {
+// ---- D90 (owner decision 2026-10-15): privacy is not a design constraint; the code step may see everything --------
+
+test('D90: from a folder of a repository, git\'s lists stop at the working directory; the paths outside are counted, and the agents may read the whole repository', async (t) => {
   const { root: top } = await repository(t, {
     base: { 'app/src/parse.js': BASE_PARSE, 'app/src/util.js': CODE_FILES['src/util.js'],
-      'other-team/secret-project-name/plan.md': 'plan 1\n', 'agentcfg/settings.json': '{"a":1}\n',
-      'app/cfg/settings.json': '{"b":1}\n' },
-    after: { 'app/src/parse.js': CODE_FILES['src/parse.js'], 'other-team/secret-project-name/plan.md': 'plan 2\n',
+      'other-team/project/plan.md': 'plan 1\n', 'agentcfg/settings.json': '{"a":1}\n', 'app/cfg/settings.json': '{"b":1}\n' },
+    after: { 'app/src/parse.js': CODE_FILES['src/parse.js'], 'other-team/project/plan.md': 'plan 2\n',
       'agentcfg/settings.json': '{"a":2}\n', 'app/cfg/settings.json': '{"b":2}\n', 'loose.txt': 'new\n' } });
   const root = join(top, 'app');
   const recording = await recordingAt(t, [{ timestamp: START }]);
-  const later = new Date('2031-01-01T00:00:00Z');
-  await utimes(join(top, 'loose.txt'), later, later);
-  // git's lists stop at the working directory: the two tracked paths changed outside it are counted, never listed.
-  const snapshot = await readCodeSnapshot(codeSession(), { root, home: null, harness: [join(root, 'cfg')],
-    maxBytes: 1_000_000, recording });
+  const snapshot = await readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording });
+  // Two tracked paths changed outside the working directory: counted. A configuration folder under it (once withheld as a
+  // harness home when CLAUDE_CONFIG_DIR named it): a path of the change like any other.
   assert.equal(snapshot.base.outside, 2);
-  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state]), [['src/parse.js', 'readable'],
-    ['cfg/settings.json', 'harness_home'], ['src/util.js', 'readable'], ['.env', 'credential_path']]);
+  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state, f.diff]), [['src/parse.js', 'readable', 'recorded'],
+    ['cfg/settings.json', 'readable', 'unrecorded_change']]);
+  assert.equal(snapshot.top, await realpath(top));
   const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-sub-')), 'state');
-  const run = await reviewIn(t, { root, recording, state, env: { CLAUDE_CONFIG_DIR: join(root, 'cfg') },
-    judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-  // A changed path in the harness home under it was withheld, so the code step is partial and the run incomplete.
-  assert.equal(run.code, 1);
-  assert.equal(run.report.codePass.coverage, 'partial');
-  assert.equal(run.report.codePass.findings.length, 1);
-  const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-  assert.ok(code.length > 5);
-  for (const request of code)
-    for (const name of ['secret-project-name', 'other-team', 'agentcfg', 'loose.txt', 'cfg/settings.json', top])
-      assert.ok(!request.prompt.includes(name), `${request.label}: ${name}`);
-  const lens = code.find((r) => r.label === 'code-pass:behaviour').prompt;
-  assert.match(lens, /^- and 1 more differing path outside the working directory or in a harness home: not named, no hunk shown$/m);
-  assert.match(lens, /^- and 2 more paths differ from the start commit outside the working directory: not reviewed, not named$/m);
-  assert.equal(run.report.codePass.base.outside, 2);
-  assert.match(run.written, /2 paths outside the working directory also differ from where the session started: not reviewed, and not named/);
-  // The dry run says the count, and names nothing outside.
-  const dry = await reviewIn(t, { root, recording, state, argv: ['--dry-run'], env: { CLAUDE_CONFIG_DIR: join(root, 'cfg') },
-    judge: codeJudge({}) });
-  assert.match(dry.out, /: 2 paths differ; 2 more outside the working directory, counted and not named\./);
-  assert.ok(!dry.out.includes('secret-project-name'));
+  t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
+  const run = await reviewIn(t, { root, recording, state, env: { CLAUDE_CONFIG_DIR: join(root, 'cfg') }, judge: codeJudge() });
+  assert.equal(run.code, 0);
+  assert.equal(run.report.codePass.coverage, 'complete');
+  const review = run.calls.find((r) => r.label === 'code-review:agent');
+  assert.match(review.prompt, /^- cfg\/settings\.json → lines \d+-\d+ · modified · not written by a recorded edit$/m);
+  assert.match(review.prompt, /^- and 2 more paths differ from the start commit outside the working directory: not part of the change reviewed$/m);
+  assert.deepEqual(review.agent.addDirs, [await realpath(top)]);
+  // The repository reader reads a file elsewhere in the repository, by a path from the working directory.
+  const repo = createRepositoryReader({ root, top: snapshot.top, commit: snapshot.base.commit, maxBytes: 1_000_000 });
+  assert.equal(repo.read('../other-team/project/plan.md').text, 'plan 2\n');
+  assert.equal(repo.read('../other-team/project/plan.md').path, '../other-team/project/plan.md');
+  assert.equal(repo.base('../other-team/project/plan.md').text, 'plan 1\n');
+  // And by a path from the top folder, when the working directory holds no such path: named from the working directory.
+  assert.deepEqual([repo.read('other-team/project/plan.md')?.text, repo.read('other-team/project/plan.md')?.path],
+    ['plan 2\n', '../other-team/project/plan.md']);
+  assert.equal(repo.base('other-team/project/plan.md')?.text, 'plan 1\n');
+  assert.equal(repo.read('src/parse.js').path, 'src/parse.js', 'the working directory first');
 });
 
-test('second review of the code step (low, privacy, the probe): with HOME the repository, a credential-shaped harness file is never named', async (t) => {
-  // A dotfiles repository: the working directory is the user's home, so its .claude and .codex are the harness homes.
+test('D90: with HOME the repository, the harness\'s own files are paths like any other — listed, read and shown', async (t) => {
+  // A dotfiles repository: the working directory is the user's home, holding Claude Code's and Codex's folders and
+  // Claude Code's state file. Once withheld and never named (harness_home), now part of the change like any file.
   const { root } = await repository(t, {
     base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'], '.claude/settings.json': '{"a":1}\n',
-      '.claude/secrets.json': '{"token":"one"}\n', '.codex/config.toml': 'model = "one"\n',
-      '.claude/credentials.json': '{"token":"old"}\n' },
+      '.codex/config.toml': 'model = "one"\n', '.claude.json': '{"projects":{}}\n', '.zsh_history': 'old\n' },
     after: { 'src/parse.js': CODE_FILES['src/parse.js'], '.claude/settings.json': '{"a":2}\n',
-      '.claude/secrets.json': '{"token":"two"}\n', '.codex/config.toml': 'model = "two"\n' } });
-  // A credential-shaped harness file deleted since the start commit: no real path to resolve, its name decides.
-  await rm(join(root, '.claude', 'credentials.json'));
+      '.codex/config.toml': 'model = "two"\n', '.claude.json': '{"projects":{"x":1}}\n', '.zsh_history': 'new\n',
+      '.claude.json.backup': '{"projects":{"x":0}}\n' } });
+  const later = new Date('2031-01-01T00:00:00Z');
+  await utimes(join(root, '.claude.json.backup'), later, later);
+  await symlink(join(root, '.claude', 'settings.json'), join(root, 'linked.json'));
   const recording = await recordingAt(t, [{ timestamp: START }]);
-  // The session also read two links whose real files are in the harness home: one named plainly, one with a
-  // credential-shaped name of its own. The release review: with the home folder as the repository only the paths the
-  // session recorded are read, so it read the harness files too (a path it did not record is never named at all).
-  await symlink(join(root, '.claude', 'secrets.json'), join(root, 'linked.json'));
-  await symlink(join(root, '.claude', 'settings.json'), join(root, 'secrets.yaml'));
-  const session = codeSession({ reads: ['linked.json', 'secrets.yaml', '.claude/settings.json', '.claude/secrets.json',
-    '.codex/config.toml', '.claude/credentials.json'] });
-  const snapshot = await readCodeSnapshot(session, { root, home: root,
-    harness: [join(root, '.claude'), join(root, '.codex')], maxBytes: 1_000_000, recording });
-  // In a harness home before any other rule: a credential-shaped file there is harness_home, never credential_path, by
-  // its own name or by where a link really leads.
-  const states = Object.fromEntries(snapshot.files.map((f) => [f.path, f.state]));
-  assert.equal(states['.claude/secrets.json'], 'harness_home');
-  assert.equal(states['.claude/credentials.json'], 'harness_home');
-  assert.equal(states['linked.json'], 'harness_home');
-  assert.equal(states['secrets.yaml'], 'harness_home');
-  assert.equal(states['.claude/settings.json'], 'harness_home');
-  assert.equal(states['.codex/config.toml'], 'harness_home');
-  // A credential-shaped file outside a harness home is still named by its state, its content never read.
-  assert.equal(states['.env'], 'credential_path');
+  const snapshot = await readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording });
+  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state]).sort(), [['.claude.json', 'readable'],
+    ['.claude.json.backup', 'readable'], ['.claude/settings.json', 'readable'], ['.codex/config.toml', 'readable'],
+    ['.zsh_history', 'readable'], ['src/parse.js', 'readable']]);
+  assert.equal(snapshot.base.homeRepository, undefined, 'no home-folder limit');
   const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-home-')), 'state');
-  const run = await reviewIn(t, { root, recording, state, session, env: { HOME: root },
-    judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-  const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-  assert.ok(code.length > 5);
-  for (const request of code)
-    for (const name of ['secrets.json', '.claude', '.codex', 'settings.json', 'config.toml', 'linked.json',
-      'credentials.json', 'secrets.yaml'])
-      assert.ok(!request.prompt.includes(name), `${request.label}: ${name}`);
-  const lens = code.find((r) => r.label === 'code-pass:behaviour').prompt;
-  assert.match(lens, /^- and 4 more differing paths outside the working directory or in a harness home: not named, no hunk shown$/m);
-  assert.match(lens, /^- \.env · withheld: a credential-shaped path$/m);
-  assert.deepEqual(run.report.codePass.files.filter((f) => f.state === 'harness_home').map((f) => f.path).sort(),
-    ['.claude/credentials.json', '.claude/secrets.json', '.claude/settings.json', '.codex/config.toml', 'linked.json',
-      'secrets.yaml']);
-  // Withheld changed paths under the working directory: the code step is partial and the run incomplete.
-  assert.equal(run.report.codePass.coverage, 'partial');
-  assert.equal(run.code, 1);
+  t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
+  const run = await reviewIn(t, { root, recording, state, env: { HOME: root }, judge: codeJudge() });
+  assert.equal(run.code, 0);
+  assert.equal(run.report.codePass.coverage, 'complete');
+  const review = run.calls.find((r) => r.label === 'code-review:agent');
+  for (const text of ['- .claude/settings.json → lines', '- .claude.json → lines', '- .codex/config.toml → lines',
+    '{"projects":{"x":1}}', 'model = "two"']) assert.ok(review.prompt.includes(text), text);
+  const repo = createRepositoryReader({ root, top: snapshot.top, commit: snapshot.base.commit, maxBytes: 1_000_000 });
+  assert.equal(repo.read('linked.json').text, '{"a":2}\n');
+  assert.equal(repo.base('.claude/settings.json').text, '{"a":1}\n');
 });
 
-test('third review of the code step (medium, probes G1 and G2): a file deleted from a set or linked harness home is never named or sent', async (t) => {
-  // The reviewer's probes, with real git and a temporary HOME outside the repository. G1: Claude Code's home is set
-  // (CLAUDE_CONFIG_DIR) to a folder of the repository. G2: the home's ~/.claude is a link to a folder of the
-  // repository, as in a dotfiles repository. In each, tracked files of that home were deleted since the start commit.
-  // G3: as G2, with Claude Code's home set elsewhere, and every file of the linked folder deleted, so the default home
-  // is a link that leads nowhere now: it is still a harness home, placed where it leads.
-  const LINES = ['RR2_TRANSCRIPT_LINE', 'RR2_CRED_LINE', 'RR2_HISTORY_LINE'];
-  const DELETED = ['projects/-Users-x-RR2SECRETPROJ/sess.jsonl', '.credentials.json', 'history.jsonl'];
-  for (const [probe, folder] of [['G1', 'agentcfg'], ['G2', 'claude'], ['G3', 'claude']]) {
-    const { root } = await repository(t, {
-      base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
-        [`${folder}/${DELETED[0]}`]: `{"line":"${LINES[0]}"}\n`,
-        [`${folder}/${DELETED[1]}`]: `{"claudeAiOauth":{"accessToken":"${LINES[1]}"}}\n`,
-        [`${folder}/${DELETED[2]}`]: `{"display":"${LINES[2]}"}\n`, [`${folder}/settings.json`]: '{"a":1}\n' },
-      after: { 'src/parse.js': CODE_FILES['src/parse.js'] } });
-    for (const path of [...DELETED, ...(probe === 'G3' ? ['settings.json'] : [])]) await rm(join(root, folder, path));
-    if (probe === 'G3') await rm(join(root, folder), { recursive: true });
-    const home = await mkdtemp(join(tmpdir(), `sonah-code-step-home-${probe}-`));
-    t.after(() => rm(home, { recursive: true, force: true }));
-    const env = probe === 'G1' ? { HOME: home, CLAUDE_CONFIG_DIR: join(root, folder) }
-      : probe === 'G3' ? { HOME: home, CLAUDE_CONFIG_DIR: join(home, 'cfg') } : { HOME: home };
-    if (probe !== 'G1') await symlink(join(root, folder), join(home, '.claude'));
-    const recording = await recordingAt(t, [{ timestamp: START }]);
-    // Read as the CLI reads it: each deleted file of the home is harness_home, never deleted, and no line of it, at
-    // the start commit or now, is read.
-    const harness = [env.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), join(home, '.codex')];
-    const snapshot = await readCodeSnapshot(codeSession(), { root, home, harness, maxBytes: 1_000_000, recording });
-    const states = Object.fromEntries(snapshot.files.map((f) => [f.path, f.state]));
-    for (const path of DELETED) assert.equal(states[`${folder}/${path}`], 'harness_home', `${probe} ${path}`);
-    for (const file of snapshot.files.filter((f) => f.state === 'harness_home'))
-      assert.deepEqual([file.text, file.hunks, file.base], [undefined, [], null], `${probe} ${file.path}`);
-    for (const text of snapshotTexts(snapshot)) for (const line of LINES) assert.ok(!text.includes(line), `${probe} ${line}`);
-    // Through the CLI: no request of the code step names a file of the home or holds a line of it.
-    const state = join(await mkdtemp(join(tmpdir(), `sonah-code-step-${probe}-`)), 'state');
-    t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    const run = await reviewIn(t, { root, recording, state, env, judge: codeJudge({ check: contradictClaim,
-      pass: findEmptyInput }) });
-    const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-    assert.ok(code.length > 5, probe);
-    for (const request of code)
-      for (const name of [`${folder}/`, 'RR2SECRETPROJ', '.credentials.json', 'history.jsonl', 'sess.jsonl', ...LINES])
-        assert.ok(!request.prompt.includes(name), `${probe} ${request.label}: ${name}`);
-    for (const path of DELETED)
-      assert.equal(run.report.codePass.files.find((f) => f.path === `${folder}/${path}`)?.state, 'harness_home', probe);
-    assert.ok(!run.written.includes('RR2'), probe);
-    // Withheld changed paths under the working directory: the code step is partial and the run incomplete.
-    assert.equal(run.report.codePass.coverage, 'partial', probe);
-    assert.equal(run.code, 1, probe);
-  }
-});
-
-test('second review of the code step (low, the probe): a recorded edit to a sibling folder of the repository keeps coverage partial', async (t) => {
+test('second review of the code step (low, the probe): a recorded edit to a sibling folder in the repository keeps coverage partial', async (t) => {
   const SIBLING = 'export const SYNTHSIBLING = 2;\n';
   const { root: top } = await repository(t, {
     base: { 'app/src/parse.js': BASE_PARSE, 'app/src/util.js': CODE_FILES['src/util.js'], 'lib/SYNTHSIBLING.js': 'x\n' },
@@ -408,308 +352,437 @@ test('second review of the code step (low, the probe): a recorded edit to a sibl
     { id: 'W2-r', kind: 'observation', invocation: 'W2', blob: 'wrote', ...T1 },
     { id: 'C1', kind: 'commentary', blob: 'claim', ...T1 }]);
   const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-sibling-')), 'state');
-  const run = await reviewIn(t, { root, recording, state, session,
-    judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-  // Everything under the working directory was shown; the sibling edit was not: partial, and the run incomplete.
+  const run = await reviewIn(t, { root, recording, state, session, judge: codeJudge() });
+  // Everything under the working directory was shown; the sibling edit, a part of the repository's change, was not: it
+  // is named in the footer, the coverage partial, and the run incomplete.
   assert.equal(run.report.codePass.findings.length, 1);
   assert.deepEqual(run.report.codePass.files.filter((f) => f.state === 'outside_root').map((f) => f.path),
     [join(top, 'lib', 'SYNTHSIBLING.js')]);
+  assert.deepEqual(run.report.codePass.footer, [{ kind: 'withheld', path: join(top, 'lib', 'SYNTHSIBLING.js') }]);
   assert.equal(run.report.codePass.coverage, 'partial');
   assert.equal(run.code, 1);
-  // Never named in a request.
-  for (const request of run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label)))
-    assert.ok(!request.prompt.includes('SYNTHSIBLING'), request.label);
+  // The agents may read the whole repository: its top folder is added to where they read, and named.
+  const review = run.calls.find((r) => r.label === 'code-review:agent');
+  assert.deepEqual(review.agent.addDirs, [await realpath(top)]);
+  assert.ok(review.prompt.includes(`The repository's top folder: ${await realpath(top)}`));
+  // A recorded write outside the repository (an agent's scratch file) is only counted: the coverage is not lowered.
+  const scratch = await mkdtemp(join(tmpdir(), 'sonah-code-step-scratch-'));
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  await writeFile(join(scratch, 'notes.md'), 'scratch\n');
+  const outside = buildCodeSession('s-scratch', { ...CODE_TEXT, scratch: 'scratch\n' }, [
+    { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
+    { id: 'W1', kind: 'invocation', write: 'src/parse.js', blob: 'body', ...T1 },
+    { id: 'W1-r', kind: 'observation', invocation: 'W1', blob: 'wrote', ...T1 },
+    { id: 'W2', kind: 'invocation', write: join(scratch, 'notes.md'), blob: 'scratch', ...T1 },
+    { id: 'C1', kind: 'commentary', blob: 'claim', ...T1 }]);
+  const counted = await reviewIn(t, { root, recording, state: join(state, '..', 'scratch-state'), session: outside,
+    judge: codeJudge() });
+  assert.deepEqual(counted.report.codePass.footer, [{ kind: 'outside_root', count: 1 }]);
+  assert.equal(counted.report.codePass.coverage, 'complete');
+  assert.equal(counted.code, 0);
 });
 
-test('review of the code step (M14): a secret only in the start commit\'s text is masked wherever the reviewer restates it', async (t) => {
+test('D90: a secret only in the start commit\'s text is shown wherever the reviewer restates it, as the model read it', async (t) => {
   const SECRET = 'Qm7Lw2Xp9Rk4Tz8Vb3Ny';
   const baseUtil = ['export const SEPARATOR = ",";', 'export const settings = {', `  password: "${SECRET}",`, '};', ''].join('\n');
   const { root } = await repository(t, { base: { 'src/parse.js': BASE_PARSE, 'src/util.js': baseUtil },
     after: { 'src/parse.js': CODE_FILES['src/parse.js'], 'src/util.js': 'export const SEPARATOR = ",";\n' } });
   const recording = await recordingAt(t, [{ timestamp: START }]);
-  const snapshot = await readCodeSnapshot(codeSession(), { root, home: null, maxBytes: 1_000_000, recording });
-  assert.ok(snapshotTexts(snapshot).includes(baseUtil), 'the start commit\'s text is scanned with the files now');
+  const snapshot = await readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording });
+  assert.ok(snapshotTexts(snapshot).includes(baseUtil), 'the snapshot holds the start commit\'s text');
   // A finding on the removed line, restating the value in the reviewer's own words.
-  const finding = { kind: 'bug', title: `The password ${SECRET} was removed`, explanation: `It held ${SECRET}.`,
-    input: `login("${SECRET}")`, trace: [{ step: `The old code set ${SECRET}.`, source: 'base', path: 'src/util.js',
-      side: 'old', startLine: 3, endLine: 3, quote: `password: "${SECRET}",` }],
-    anchor: { path: 'src/util.js', side: 'old', startLine: 3, endLine: 3 }, leadsFrom: [] };
+  const finding = reviewFinding({ title: `The password ${SECRET} was removed`, claims: [`It held ${SECRET}.`],
+    input: `login("${SECRET}")`, trace: [{ step: `The old code set ${SECRET}.`, path: 'src/util.js', side: 'old',
+      startLine: 3, endLine: 3, quote: `password: "${SECRET}",` }],
+    anchor: { path: 'src/util.js', side: 'old', startLine: 3, endLine: 3 } });
   for (const format of ['md', 'html']) {
     const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-secret-')), 'state');
     t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    const run = await reviewIn(t, { root, recording, state, format, judge: codeJudge({ check: contradictClaim,
-      pass: (prompt, files, lens) => (lens === 'behaviour' ? [finding] : []) }) });
+    const run = await reviewIn(t, { root, recording, state, format,
+      judge: codeJudge({ review: () => ({ findings: [finding], questions: [] }) }) });
     assert.equal(run.code, 0, format);
     assert.equal(run.report.codePass.findings.length, 1, format);
-    for (let at = 0; at + 8 <= SECRET.length; at++) assert.ok(!run.written.includes(SECRET.slice(at, at + 8)), format);
+    // D90 (owner decision 2026-10-15): nothing is masked for a person; the finding is shown in the reviewer's words.
+    assert.ok(run.written.replace(/\\(.)/g, '$1').includes(`The password ${SECRET} was removed`), format);
+    assert.doesNotMatch(run.written, /‹(?:redacted|dropped)/, format);
   }
 });
 
-test('fourth review of the code step (medium, probe H1): with HOME the repository, Claude Code\'s ~/.claude.json and its backups are never named or sent', async (t) => {
-  // The reviewer's probe, with real git and a temporary HOME that is the repository: Claude Code's own state file lies
-  // outside ~/.claude, beside it. It is tracked and changed; a backup of it is new and untracked; an older backup was
-  // deleted since the start commit; and the session read a link to it under another name.
-  const LINES = ['RR4_OAUTH_EMAIL_synthetic@example.invalid', 'RR4_PROMPT_HISTORY_LINE', 'RR4_BACKUP_LINE', 'RR4_OLD_BACKUP'];
-  const { root } = await repository(t, {
-    base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
-      '.claude.json': `{"oauthAccount":{"emailAddress":"${LINES[0]}"}}\n`,
-      '.claude.json.backup.1700000000000': `{"history":["${LINES[3]}"]}\n` },
-    after: { 'src/parse.js': CODE_FILES['src/parse.js'],
-      '.claude.json': `{"oauthAccount":{"emailAddress":"${LINES[0]}"},"projects":{"history":["${LINES[1]}"]}}\n`,
-      '.claude.json.backup': `{"history":["${LINES[2]}"]}\n` } });
-  await rm(join(root, '.claude.json.backup.1700000000000'));
-  const later = new Date('2031-01-01T00:00:00Z');
-  await utimes(join(root, '.claude.json.backup'), later, later);
-  await symlink(join(root, '.claude.json'), join(root, 'state-copy.json'));
+// ---- what the review itself writes, and what the coding agents do while it runs -------------------------------------
+
+/** Every file under `dir` dated `when`: as a review's own writes look to the next review of a session that began before
+ *  them. */
+async function dateAll(dir, when) {
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) await dateAll(path, when); else await utimes(path, when, when);
+  }
+}
+const LATER = new Date('2031-01-01T00:00:00Z');
+/** A `readCode` that keeps each snapshot's repository state. */
+const keepingStates = (states) => async (session, options) => {
+  const snapshot = await readCodeSnapshot(session, options);
+  states.push(snapshot.repoState);
+  return snapshot;
+};
+
+test('agentic code step: a state folder inside the repository is no part of the change or of its state; a second review asks nothing', async (t) => {
+  const { root } = await repository(t);
   const recording = await recordingAt(t, [{ timestamp: START }]);
-  // The release review: with the home folder as the repository only the paths the session recorded are read, so the
-  // session also read the file and its backups (a path it did not record is never named at all).
-  const session = codeSession({ reads: ['state-copy.json', '.claude.json', '.claude.json.backup',
-    '.claude.json.backup.1700000000000'] });
-  const NAMES = ['.claude.json', '.claude.json.backup', '.claude.json.backup.1700000000000', 'state-copy.json'];
-  const snapshot = await readCodeSnapshot(session, { root, home: root,
-    harness: [join(root, '.claude'), join(root, '.codex')], maxBytes: 1_000_000, recording });
-  const states = Object.fromEntries(snapshot.files.map((f) => [f.path, f.state]));
-  for (const name of NAMES) assert.equal(states[name], 'harness_home', name);
-  for (const file of snapshot.files.filter((f) => f.state === 'harness_home'))
-    assert.deepEqual([file.text, file.hunks ?? [], file.base ?? null], [undefined, [], null], file.path);
-  for (const text of snapshotTexts(snapshot)) for (const line of LINES) assert.ok(!text.includes(line), line);
-  // Through the CLI, as the reviewer ran it: no request names a harness file or holds a line of one; partial, exit 1.
-  const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-h1-')), 'state');
-  t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-  const run = await reviewIn(t, { root, recording, state, session, env: { HOME: root },
-    judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-  const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-  assert.ok(code.length > 5);
-  for (const request of code)
-    for (const text of ['.claude.json', 'state-copy.json', ...LINES])
-      assert.ok(!request.prompt.includes(text), `${request.label}: ${text}`);
-  for (const name of NAMES)
-    assert.equal(run.report.codePass.files.find((f) => f.path === name)?.state, 'harness_home', name);
-  assert.ok(!LINES.some((line) => run.written.includes(line)));
-  assert.equal(run.report.codePass.coverage, 'partial');
-  assert.equal(run.code, 1);
+  const state = join(root, 'review-state');
+  const states = [];
+  const first = await reviewIn(t, { root, recording, state, judge: codeJudge(), inject: { readCode: keepingStates(states) } });
+  assert.equal(first.code, 0, first.out);
+  assert.deepEqual([first.report.codePass.footer, first.report.codePass.coverage], [[], 'complete'],
+    'what the review wrote while it ran is no change of the repository');
+  // What the first review stored, as it looks when the session began before it.
+  await dateAll(state, LATER);
+  const second = await reviewIn(t, { root, recording, state, judge: codeJudge(), inject: { readCode: keepingStates(states) } });
+  assert.deepEqual(second.calls, [], 'nothing is asked again');
+  assert.equal(states[1], states[0], 'the same repository state');
+  assert.deepEqual(second.report.codePass.files.map((f) => f.path), first.report.codePass.files.map((f) => f.path));
+  assert.ok(!second.report.codePass.files.some((f) => f.path.startsWith('review-state')));
+  // Read without naming it Sonah's, the folder is a part of the change and of the state.
+  await dateAll(state, LATER);
+  const unnamed = await readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording });
+  assert.ok(unnamed.files.some((f) => f.path.startsWith('review-state/')));
+  assert.notEqual(unnamed.repoState, states[0]);
 });
 
-test('fourth review of the code step (low, probe L1): a tracked link into ~/.claude, deleted or retargeted since the start commit, never names its target', async (t) => {
-  // The reviewer's probe: HOME is outside the repository; a link the repository tracked at the start commit led into
-  // ~/.claude/projects. A link's text at the start commit is its target, which git's patch shows as a removed line.
-  for (const probe of ['deleted', 'retargeted']) {
-    const home = await mkdtemp(join(tmpdir(), `sonah-code-step-home-L1-${probe}-`));
-    t.after(() => rm(home, { recursive: true, force: true }));
-    const target = join(home, '.claude', 'projects', '-Users-x-RR4PROJ', 'RR4NAME.jsonl');
-    await mkdir(join(target, '..'), { recursive: true });
-    await writeFile(target, '{"line":"RR4_TRANSCRIPT"}\n');
-    const { root, git } = await repository(t, { after: { 'src/parse.js': CODE_FILES['src/parse.js'] } });
-    await symlink(target, join(root, 'transcript.jsonl'));
-    git(['add', 'transcript.jsonl']);
-    git(['commit', '-q', '-m', 'link'], '2029-06-01T00:00:00Z');
-    await rm(join(root, 'transcript.jsonl'));
-    if (probe === 'retargeted') await symlink(join(root, 'src', 'util.js'), join(root, 'transcript.jsonl'));
+test('agentic code step: with HOME the repository, the default state and the coding agents\' homes are no part of its state', async (t) => {
+  const { root } = await repository(t);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  // The review agent's harness writes its own files while the step runs: Claude Code's folder and state file, Codex's.
+  let runs = 0;
+  const harness = async (prompt) => {
+    runs += 1;
+    await mkdir(join(root, '.claude', 'statsig'), { recursive: true });
+    await writeFile(join(root, '.claude', 'statsig', 'cache'), `run ${runs}\n`);
+    await writeFile(join(root, '.claude.json'), `{"numStartups":${runs}}\n`);
+    await mkdir(join(root, '.codex'), { recursive: true });
+    await writeFile(join(root, '.codex', 'history.jsonl'), `{"run":${runs}}\n`);
+    return contradictClaim(prompt);
+  };
+  const env = { HOME: root, SONAH_HOME: undefined, CODEX_HOME: undefined };
+  const states = [];
+  const first = await reviewIn(t, { root, recording, state: null, env, judge: codeJudge({ review: harness }),
+    inject: { readCode: keepingStates(states) } });
+  assert.equal(first.code, 0, first.out);
+  assert.equal(runs, 1);
+  assert.deepEqual([first.report.codePass.footer, first.report.codePass.coverage], [[], 'complete']);
+  assert.ok((await stat(join(root, '.sonah', 'session-reviews'))).isDirectory(), 'the state is in the repository');
+  await dateAll(join(root, '.sonah'), LATER);
+  const second = await reviewIn(t, { root, recording, state: null, env, judge: codeJudge({ review: harness }),
+    inject: { readCode: keepingStates(states) } });
+  assert.deepEqual(second.calls, []);
+  assert.equal(states[1], states[0]);
+  assert.ok(!second.report.codePass.files.some((f) => f.path.startsWith('.sonah')));
+  // A write anywhere else in the repository while the step runs is still said.
+  const edited = await reviewIn(t, { root, recording, state: null, env, argv: ['--code-model', 'claude-opus-5-5'],
+    judge: codeJudge({ review: async (prompt) => { await writeFile(join(root, 'README.md'), 'edited\n');
+      return contradictClaim(prompt); } }) });
+  assert.deepEqual(edited.report.codePass.footer, [{ kind: 'source_changed' }]);
+});
+
+test('agentic code step: the repository\'s state — the start commit, each file\'s bytes as they are, its mode, a link\'s target, and the places left out', async (t) => {
+  const { root, baseCommit } = await repository(t, { after: {} });
+  const top = await realpath(root);
+  const state = (over = {}) => repositoryState({ top, commit: baseCommit, ...over });
+  const start = await state();
+  assert.match(start, /^[0-9a-f]{64}$/);
+  assert.equal(await state(), start, 'the same repository, the same state');
+  assert.notEqual(await state({ commit: 'b'.repeat(40) }), start, 'the start commit is part of it');
+  // The bytes as they are, never as a filter of git's would store them: a line ending alone is another state.
+  await writeFile(join(root, '.gitattributes'), '* text=auto\n');
+  const lf = await state();
+  await writeFile(join(root, 'README.md'), '# readme\r\n');
+  assert.notEqual(await state(), lf, 'CRLF is not LF');
+  await writeFile(join(root, 'README.md'), '# readme\n');
+  assert.equal(await state(), lf);
+  // A file's mode.
+  await chmod(join(root, 'gen.js'), 0o755);
+  assert.notEqual(await state(), lf, 'executable');
+  await chmod(join(root, 'gen.js'), 0o644);
+  assert.equal(await state(), lf);
+  // A link: its target, not the file it leads to.
+  await symlink('README.md', join(root, 'link'));
+  const linked = await state();
+  assert.notEqual(linked, lf);
+  await rm(join(root, 'link'));
+  await symlink('gen.js', join(root, 'link'));
+  assert.notEqual(await state(), linked, 'another target');
+  await rm(join(root, 'link'));
+  assert.equal(await state(), lf);
+  // A tracked file in a left-out place (a home folder kept in git that tracks a harness's state file): its edits are no
+  // part of the state either.
+  const tracked = [join(root, 'gen.js')];
+  const genText = await readFile(join(root, 'gen.js'), 'utf8');
+  const withoutGen = await state({ omit: tracked });
+  await writeFile(join(root, 'gen.js'), 'export const generated = 9;\n');
+  assert.notEqual(await state(), lf);
+  assert.equal(await state({ omit: tracked }), withoutGen, 'a tracked file in a left-out place');
+  await writeFile(join(root, 'gen.js'), genText);
+  assert.equal(await state(), lf);
+  // The places a review writes, when they lie in the repository: left out, a folder not made yet by where it will be;
+  // a place elsewhere, or the top folder itself, leaves nothing out.
+  const omit = [join(root, 'review-state'), join(root, '.home-state.json'), join(tmpdir(), 'elsewhere')];
+  await mkdir(join(root, 'review-state', 'answers'), { recursive: true });
+  await writeFile(join(root, 'review-state', 'answers', 'a.json'), '{}\n');
+  await writeFile(join(root, '.home-state.json'), '{}\n');
+  assert.equal(await state({ omit }), lf);
+  const all = await state();
+  assert.notEqual(all, lf);
+  assert.equal(await state({ omit: [root] }), all, 'the top folder is never left out');
+  await writeFile(join(root, 'review-state-notes.txt'), 'x\n');
+  assert.notEqual(await state({ omit }), lf, 'a name that only begins like a left-out folder is no part of it');
+  await rm(join(root, 'review-state-notes.txt'));
+  // A file git cannot read leaves the state known: hashed here, or named unreadable.
+  if (process.getuid?.() !== 0) {
+    await chmod(join(root, 'gen.js'), 0o000);
+    t.after(() => chmod(join(root, 'gen.js'), 0o644).catch(() => {}));
+    const hidden = await state({ omit });
+    assert.match(hidden, /^[0-9a-f]{64}$/);
+    assert.equal(await state({ omit }), hidden);
+    assert.notEqual(hidden, lf);
+    // An unreadable file is named in the state, never skipped: it is not the same state as the file gone.
+    await chmod(join(root, 'README.md'), 0o000);
+    t.after(() => chmod(join(root, 'README.md'), 0o644).catch(() => {}));
+    const both = await state({ omit });
+    const away = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-away-')), 'README.md');
+    t.after(() => rm(join(away, '..'), { recursive: true, force: true }));
+    await rename(join(root, 'README.md'), away);
+    assert.notEqual(await state({ omit }), both, 'unreadable is not gone');
+    await rename(away, join(root, 'README.md'));
+    await chmod(join(root, 'README.md'), 0o644);
+    await chmod(join(root, 'gen.js'), 0o644);
+    assert.equal(await state({ omit }), lf);
+  }
+});
+
+// ---- the second review of the fix round: only what Sonah writes is left out, never the change itself ---------------
+
+test('agentic code step: a state folder that is the working directory, or holds it, is refused before anything is read; without the code step it is used', async (t) => {
+  // --state-dir . from a folder below the top folder, --state-dir .. from there (the top folder), --state-dir . at the
+  // top folder, and a working directory named like one of the state folder's entries (review/) under it: what Sonah
+  // writes there would be the next review's change, and a project folder named like an entry would be out of sight.
+  for (const { below, given } of [{ below: 'app', given: '.' }, { below: 'app', given: '..' }, { below: '', given: '.' },
+    { below: 'review', given: '..' }]) {
+    const at = below ? `${below}/` : '';
+    const { root: top } = await repository(t, {
+      base: { [`${at}src/parse.js`]: BASE_PARSE, [`${at}src/util.js`]: CODE_FILES['src/util.js'], 'README.md': '# readme\n' },
+      after: { [`${at}src/parse.js`]: CODE_FILES['src/parse.js'] } });
+    const root = below ? join(top, below) : top;
+    const state = resolve(root, given);
+    const label = `${below || 'the top folder'}, --state-dir ${given}`;
     const recording = await recordingAt(t, [{ timestamp: START }]);
-    const harness = [join(home, '.claude'), join(home, '.codex')];
-    const snapshot = await readCodeSnapshot(codeSession(), { root, home, harness, maxBytes: 1_000_000, recording });
-    const link = snapshot.files.find((f) => f.path === 'transcript.jsonl');
-    assert.deepEqual([link?.state, link?.text, link?.hunks, link?.base], ['harness_home', undefined, [], null], probe);
-    for (const text of snapshotTexts(snapshot)) assert.ok(!text.includes('RR4'), probe);
-    const state = join(await mkdtemp(join(tmpdir(), `sonah-code-step-L1-${probe}-`)), 'state');
-    t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    const run = await reviewIn(t, { root, recording, state, env: { HOME: home },
-      judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-    const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-    assert.ok(code.length > 5, probe);
-    for (const request of code)
-      for (const text of ['RR4', '.claude', 'transcript.jsonl', home])
-        assert.ok(!request.prompt.includes(text), `${probe} ${request.label}: ${text}`);
-    assert.equal(run.report.codePass.files.find((f) => f.path === 'transcript.jsonl')?.state, 'harness_home', probe);
-    assert.equal(run.report.codePass.coverage, 'partial', probe);
-    assert.equal(run.code, 1, probe);
+    const read = [];
+    const run = await reviewIn(t, { root, recording, state, judge: codeJudge(),
+      inject: { readCode: async (...args) => { read.push(args); return readCodeSnapshot(...args); } } });
+    assert.equal(run.code, 2, label);
+    assert.match(run.err, /^Review could not complete: state_dir_holds_root\.\nFix: The --state-dir that you gave is the folder that the session worked in, or holds it/, label);
+    assert.deepEqual([run.calls, read], [[], []], `${label}: nothing read or sent`);
+    // Nothing written: no entry Sonah makes (a project folder named review/ is the project's), no record of a review.
+    assert.deepEqual((await readdir(state)).filter((name) => STATE_FOLDER_ENTRIES.includes(name) && name !== below), [],
+      `${label}: nothing written`);
+    for (const record of ['progress.json', 'report.private.json'])
+      await assert.rejects(stat(join(state, 'review', record)), { code: 'ENOENT' }, `${label}: ${record}`);
   }
+  // Without the code step nothing is read from the repository, so such a folder is the review's like any other.
+  const { root } = await repository(t);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const off = await reviewIn(t, { root, recording, state: root, judge: codeJudge(), codePass: '--no-code-pass' });
+  assert.equal(off.code, 0, off.err);
+  assert.ok(off.calls.length > 0 && !off.calls.some((r) => /^code-/.test(r.label)));
+  assert.ok((await readdir(root)).includes('review'));
+  // A state folder inside the working directory, holding none of it, is used, and what it holds is Sonah's alone.
+  const inside = await reviewIn(t, { root, recording, state: join(root, 'sonah-state'), judge: codeJudge() });
+  assert.equal(inside.code, 0, inside.err);
+  assert.deepEqual(inside.report.codePass.files.map((f) => f.path).sort(), ['gen.js', 'src/parse.js']);
 });
 
-// ---- the release review (2026-10-14): with the home folder as the repository, only what the session recorded --------
-
-test('release review (medium): with HOME the repository, only the paths the session recorded changing or reading are read; the rest counted, never named or sent', async (t) => {
-  // The reviewer's probe, with real git and a temporary HOME that is the repository. Tracked dotfiles changed since the
-  // start commit, and untracked files (Sonah's own stores, another harness's settings and chats, a shell history) made
-  // after the session began: none was written or read by the session, so none may be named, read or sent. The session
-  // wrote parse.js and a new untracked file, and read util.js and an untracked file made after it began.
-  const SECRETS = { '.zsh_history': 'RR5_SHELL_HISTORY', '.config/gh/hosts.yml': 'RR5_GH_OAUTH_TOKEN',
-    '.git-credentials': 'RR5_GIT_CREDENTIAL', '.docker/config.json': 'RR5_DOCKER_AUTH' };
-  const UNTRACKED = { '.sonah/session-reviews/abc/answers/one.json': 'RR5_STORED_ANSWER',
-    '.sonah/session-reviews/abc/review/report.private.json': 'RR5_PRIVATE_REPORT', '.sonah/outcomes/one.json': 'RR5_OUTCOME',
-    '.cursor/mcp.json': 'RR5_CURSOR_MCP', '.cursor/chats/other-project.json': 'RR5_OTHER_CHAT',
-    '.gemini/settings.json': 'RR5_GEMINI', 'Documents/notes.txt': 'RR5_DOCUMENT' };
-  const { root } = await repository(t, {
-    base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
-      ...Object.fromEntries(Object.keys(SECRETS).map((path) => [path, 'old\n'])) },
-    after: { 'src/parse.js': CODE_FILES['src/parse.js'], 'src/new.js': 'export const added = 1;\n',
-      'scratch/read-me.txt': 'read by the session\n',
-      ...Object.fromEntries(Object.entries(SECRETS).map(([path, line]) => [path, `${line}\n`])),
-      ...Object.fromEntries(Object.entries(UNTRACKED).map(([path, line]) => [path, `${line}\n`])) } });
-  const later = new Date('2031-01-01T00:00:00Z');
-  for (const path of ['src/new.js', 'scratch/read-me.txt', ...Object.keys(UNTRACKED)])
-    await utimes(join(root, path), later, later);
+test('agentic code step: a place that holds the working directory is never left out, of the change or of the state', async (t) => {
+  const { root: top } = await repository(t, {
+    base: { 'app/src/parse.js': BASE_PARSE, 'app/src/util.js': CODE_FILES['src/util.js'] },
+    after: { 'app/src/parse.js': CODE_FILES['src/parse.js'] } });
+  const root = join(top, 'app');
   const recording = await recordingAt(t, [{ timestamp: START }]);
+  const read = (over = {}) => readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording, ...over });
+  const differing = (snapshot) => snapshot.files.filter((f) => f.diff !== undefined).map((f) => f.path);
+  const plain = await read();
+  assert.deepEqual(differing(plain), ['src/parse.js']);
+  // The working directory, or the top folder above it, named as Sonah's or a harness's place: nothing is left out.
+  for (const place of [root, top]) {
+    const named = await read({ own: [place], harnessHomes: [place] });
+    assert.deepEqual(differing(named), ['src/parse.js'], place);
+    assert.equal(named.repoState, plain.repoState, place);
+    assert.equal(await repositoryState({ top: named.top, commit: named.base.commit, omit: named.stateOmits, root }),
+      plain.repoState, `${place}: the state taken again`);
+  }
+  // A place inside it is left out of the state like any other; of the change, only what git does not track and no
+  // recorded edit wrote: src/parse.js is both, so it is reviewed.
+  const inner = await read({ own: [join(root, 'src')] });
+  assert.deepEqual(differing(inner), ['src/parse.js']);
+  assert.notEqual(inner.repoState, plain.repoState);
+  // Through the CLI: Claude Code's folder is the working directory (CLAUDE_CONFIG_DIR); the state taken after the step
+  // keeps it too, so an unchanged repository reads unchanged.
+  const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-holds-')), 'state');
+  t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
+  const run = await reviewIn(t, { root, recording, state, env: { CLAUDE_CONFIG_DIR: root }, judge: codeJudge() });
+  assert.deepEqual([run.code, run.report.codePass.footer, run.report.codePass.coverage], [0, [], 'complete']);
+  assert.deepEqual(run.report.codePass.files.map((f) => f.path), ['src/parse.js']);
+});
+
+test('agentic code step: of a place Sonah writes, only what git does not track and no recorded edit wrote is left out of the change', async (t) => {
+  const { root: top } = await repository(t, {
+    base: { 'app/src/parse.js': BASE_PARSE, 'app/src/util.js': CODE_FILES['src/util.js'],
+      'app/state/answers/kept.json': '{"a":1}\n', 'state/answers/kept.json': '{"b":1}\n', 'lib/other.js': 'x\n' },
+    after: { 'app/src/parse.js': CODE_FILES['src/parse.js'], 'app/state/answers/kept.json': '{"a":2}\n',
+      'state/answers/kept.json': '{"b":2}\n', 'lib/other.js': 'y\n', 'app/state/answers/stored.json': '{}\n' } });
+  const root = join(top, 'app');
+  await utimes(join(root, 'state', 'answers', 'stored.json'), LATER, LATER);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const read = (own) => readCodeSnapshot(codeSession(), { root, maxBytes: 1_000_000, recording, own });
+  const differing = (snapshot) => snapshot.files.filter((f) => f.diff !== undefined).map((f) => f.path).sort();
+  // Named as Sonah's: the untracked file it could have written is left out; the files git tracks there stay part of the
+  // change (Sonah never adds a file to git), and one outside the working directory is counted.
+  const named = await read([join(root, 'state', 'answers'), join(top, 'state', 'answers')]);
+  assert.deepEqual([differing(named), named.base.outside], [['src/parse.js', 'state/answers/kept.json'], 2]);
+  const unnamed = await read([]);
+  assert.deepEqual([differing(unnamed), unnamed.base.outside],
+    [['src/parse.js', 'state/answers/kept.json', 'state/answers/stored.json'], 2]);
+});
+
+test('agentic code step: a project folder named like a state folder\'s entry is reviewed — the session\'s write in it and a tracked file changed beside it', async (t) => {
+  // The state folder (pkg) holds no part of the working directory (the top folder), but its entry review/ is a folder of
+  // the project: the session wrote pkg/review/parse.js and a new pkg/review/added.js (git does not track it), and
+  // pkg/review/check.js changed with no recorded edit.
+  const { root } = await repository(t, {
+    base: { 'pkg/review/parse.js': BASE_PARSE, 'pkg/review/check.js': 'export const checked = 1;\n',
+      'src/util.js': CODE_FILES['src/util.js'] },
+    after: { 'pkg/review/parse.js': CODE_FILES['src/parse.js'], 'pkg/review/check.js': 'export const checked = 2;\n',
+      'pkg/review/added.js': 'export const added = 1;\n' } });
   const T1 = { turn: 'T1' };
-  const blobs = { ...CODE_TEXT, added: 'export const added = 1;\n', scratch: 'scratch/read-me.txt' };
-  const session = buildCodeSession('s-home', blobs, [
+  const session = buildCodeSession('sess-review-folder', { ...CODE_TEXT, added: 'export const added = 1;\n' }, [
+    { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
+    { id: 'W1', kind: 'invocation', write: 'pkg/review/parse.js', blob: 'body', ...T1 },
+    { id: 'W1-r', kind: 'observation', invocation: 'W1', blob: 'wrote', ...T1 },
+    { id: 'W2', kind: 'invocation', write: 'pkg/review/added.js', blob: 'added', ...T1 },
+    { id: 'W2-r', kind: 'observation', invocation: 'W2', blob: 'wrote', ...T1 },
+    { id: 'C1', kind: 'commentary', blob: 'claim', ...T1 },
+    { id: 'C2', kind: 'commentary', blob: 'final', phase: 'final', ...T1 }]);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const state = join(root, 'pkg');
+  const nothing = () => ({ findings: [], questions: [] });
+  const first = await reviewIn(t, { root, recording, state, session, judge: codeJudge({ review: nothing }) });
+  assert.equal(first.code, 0, first.err);
+  const project = ['pkg/review/added.js', 'pkg/review/check.js', 'pkg/review/parse.js'];
+  assert.deepEqual(first.report.codePass.files.map((f) => f.path).sort(), project);
+  const asked = first.calls.find((r) => r.label === 'code-review:agent');
+  assert.ok(asked && project.every((path) => asked.prompt.includes(path)));
+  assert.deepEqual([first.report.codePass.footer, first.report.codePass.coverage], [[], 'complete']);
+  // What the review wrote in pkg/review/ beside them is Sonah's: the next review of the same tree asks nothing.
+  for (const entry of STATE_FOLDER_ENTRIES) await dateAll(join(state, entry), LATER);
+  const second = await reviewIn(t, { root, recording, state, session, judge: codeJudge({ review: nothing }) });
+  assert.deepEqual(second.calls, [], 'nothing is asked again');
+  assert.deepEqual(second.report.codePass.files.map((f) => f.path).sort(), project);
+});
+
+test('agentic code step: with HOME the repository, another review writing in Sonah\'s home is no change of the repository', async (t) => {
+  const { root } = await repository(t);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  // While this review's agent works, a review of another recording writes its own state under Sonah's home.
+  let runs = 0;
+  const alongside = async (prompt) => {
+    runs += 1;
+    const answers = join(root, '.sonah', 'session-reviews', 'another', 'answers');
+    await mkdir(answers, { recursive: true });
+    await writeFile(join(answers, `${runs}.json`), '{}\n');
+    return contradictClaim(prompt);
+  };
+  const env = { HOME: root, SONAH_HOME: undefined, CODEX_HOME: undefined };
+  const states = [];
+  const first = await reviewIn(t, { root, recording, state: null, env, judge: codeJudge({ review: alongside }),
+    inject: { readCode: keepingStates(states) } });
+  assert.equal(runs, 1);
+  assert.deepEqual([first.code, first.report.codePass.footer, first.report.codePass.coverage], [0, [], 'complete']);
+  await dateAll(join(root, '.sonah'), LATER);
+  const second = await reviewIn(t, { root, recording, state: null, env, judge: codeJudge({ review: alongside }),
+    inject: { readCode: keepingStates(states) } });
+  assert.deepEqual(second.calls, [], 'nothing is asked again');
+  assert.equal(states[1], states[0]);
+  assert.ok(!second.report.codePass.files.some((f) => f.path.startsWith('.sonah')));
+});
+
+// ---- a file changed after the session's last recorded edit (D90: never blank what the reviewer needs) -------------
+
+/** The session: the ask, a write of `src/parse.js`, a delete of `src/gone.js` (each with its result), the claim. */
+function writeThenDeleteSession() {
+  const T1 = { turn: 'T1' };
+  return buildCodeSession('s-changed-since', { ...CODE_TEXT }, [
     { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
     { id: 'W1', kind: 'invocation', write: 'src/parse.js', blob: 'body', ...T1 },
     { id: 'W1-r', kind: 'observation', invocation: 'W1', blob: 'wrote', ...T1 },
-    { id: 'W2', kind: 'invocation', write: join(root, 'src', 'new.js'), blob: 'added', ...T1 },
-    { id: 'W2-r', kind: 'observation', invocation: 'W2', blob: 'wrote', ...T1 },
-    { id: 'R1', kind: 'invocation', read: 'src/util.js', blob: 'readUtil', ...T1 },
-    { id: 'R1-r', kind: 'observation', invocation: 'R1', blob: 'readOut', ...T1 },
-    { id: 'R2', kind: 'invocation', read: 'scratch/read-me.txt', blob: 'scratch', ...T1 },
-    { id: 'C1', kind: 'commentary', blob: 'claim', ...T1 },
-    { id: 'C2', kind: 'commentary', blob: 'final', phase: 'final', ...T1 }]);
-  // git is asked about untracked files only by the recorded paths, never over the whole home folder.
-  const asked = [];
-  const git = (args, options) => { asked.push(args); return runGit(args, options); };
-  const NAMES = [...Object.keys(SECRETS), ...Object.keys(UNTRACKED)];
-  const LINES = [...Object.values(SECRETS), ...Object.values(UNTRACKED)];
-  const snapshot = await readCodeSnapshot(session, { root, home: root, harness: [join(root, '.claude'),
-    join(root, '.codex')], maxBytes: 1_000_000, recording, git });
-  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state, f.type ?? null]).sort(), [
-    ['scratch/read-me.txt', 'readable', 'added'], ['src/new.js', 'readable', 'added'],
-    ['src/parse.js', 'readable', 'modified'], ['src/util.js', 'readable', null]]);
-  assert.deepEqual([snapshot.base.homeRepository, snapshot.base.unrecorded], [true, Object.keys(SECRETS).length]);
-  for (const text of snapshotTexts(snapshot)) for (const line of LINES) assert.ok(!text.includes(line), line);
-  const untracked = asked.filter((args) => args.includes('ls-files'));
-  assert.ok(untracked.length >= 1);
-  for (const args of untracked) {
-    const specs = args.slice(args.indexOf('--') + 1);
-    assert.ok(specs.length > 0 && specs.every((spec) => spec.startsWith(':(top,literal)')), args.join(' '));
-    assert.deepEqual(specs.map((spec) => spec.slice(':(top,literal)'.length)).sort(),
-      ['scratch/read-me.txt', 'src/new.js', 'src/parse.js', 'src/util.js']);
-  }
-  // HOME held by the repository (its top folder is HOME's parent), with the working directory under HOME: the same.
-  const home = join(root, 'Documents');
-  const nested = await readCodeSnapshot(session, { root, home, maxBytes: 1_000_000, recording });
-  assert.deepEqual(nested.files.map((f) => f.path).sort(), ['scratch/read-me.txt', 'src/new.js', 'src/parse.js',
-    'src/util.js']);
-  assert.equal(nested.base.homeRepository, true);
-  // HOME elsewhere: the repository is a project as before, its fresh untracked files and changed paths all read.
-  const elsewhere = await mkdtemp(join(tmpdir(), 'sonah-code-step-home-else-'));
-  t.after(() => rm(elsewhere, { recursive: true, force: true }));
-  const project = await readCodeSnapshot(session, { root, home: elsewhere, maxBytes: 1_000_000, recording });
-  assert.equal(project.base.homeRepository, undefined);
-  for (const path of ['.zsh_history', '.cursor/mcp.json', 'Documents/notes.txt'])
-    assert.ok(project.files.some((f) => f.path === path), path);
-  // Through the CLI, as the reviewer ran it (HOME the repository, the step on by default): no request names a path the
-  // session did not record or holds a line of one; the page counts them and says why.
-  for (const format of ['md', 'html']) {
-    const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-home-run-')), 'state');
-    t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    const run = await reviewIn(t, { root, recording, state, session, format, env: { HOME: root },
-      judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-    const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-    assert.ok(code.length > 5, format);
-    for (const request of code)
-      for (const text of [...NAMES, ...LINES, '.sonah', '.cursor', '.gemini', 'Documents'])
-        assert.ok(!request.prompt.includes(text), `${format} ${request.label}: ${text}`);
-    assert.deepEqual(run.report.codePass.base.homeRepository, true);
-    assert.equal(run.report.codePass.base.unrecorded, Object.keys(SECRETS).length);
-    assert.deepEqual(run.report.codePass.files.map((f) => f.path).sort(), ['scratch/read-me.txt', 'src/new.js',
-      'src/parse.js', 'src/util.js']);
-    for (const text of [...NAMES, ...LINES]) assert.ok(!run.written.includes(text), `${format}: ${text}`);
-    assert.ok(run.written.includes('The repository is your home folder, so only the files the session changed or read '
-      + 'were read; 4 other paths that differ from where the session started were not read, named or sent, and '
-      + 'untracked files it did not change or read were not looked for'), format);
-  }
-  // The dry run says so too.
-  const dry = await reviewIn(t, { root, recording, state: join(root, '..', 'no-state'), session, argv: ['--dry-run'],
-    env: { HOME: root }, judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-  assert.match(dry.out, / The repository is your home folder, so only the files the session changed or read are read; 4 other paths differ, counted and not named\./);
+    { id: 'D1', kind: 'invocation', callKey: 'D1', tool: 'Bash', operation: 'delete', paths: [{ path: 'src/gone.js' }],
+      command: [], input: [], changes: [{ path: 'src/gone.js', before: [], after: [], diff: [] }], ...T1 },
+    { id: 'D1-r', kind: 'observation', invocation: 'D1', blob: 'wrote', ...T1 },
+    { id: 'C1', kind: 'commentary', blob: 'claim', ...T1 }]);
+}
+
+test('a file changed after the session\'s last recorded edit: its hunks are in the request, a finding on a changed line is in scope, the footer says so and coverage stays complete; a deleted file keeps its treatment', async (t) => {
+  // The session wrote parse.js; then one line of it changed (a formatter rewrote `trim()`) after its last recorded
+  // edit.
+  const DRIFTED = CODE_FILES['src/parse.js'].replace('part.trim()', 'part.trimEnd()');
+  const GONE = 'export const SYNTHETIC_GONE = 1;\n';
+  const { root } = await repository(t, { base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
+    'src/gone.js': GONE }, after: { 'src/parse.js': DRIFTED } });
+  await rm(join(root, 'src', 'gone.js'));
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const session = writeThenDeleteSession();
+  // A finding of a kind that must anchor on a changed line: parse.js line 2, which the change modified.
+  const judge = codeJudge({ review: () => ({ findings: [reviewFinding()], questions: [] }) });
+  const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-since-')), 'state');
+  const { code, calls, report, written } = await reviewIn(t, { root, recording, state, session, judge });
+  const review = calls.find((r) => r.label === 'code-review:agent');
+  // The request holds the file's hunks, git's own, from the start commit to now: the agent's line and the later one.
+  assert.match(review.prompt, /^- src\/parse\.js → lines \d+-\d+ · modified · changed after the session's last recorded edit, so its lines now may not all be the agent's/m);
+  assert.match(review.prompt, /^\| {4}2 \| {6}\| - \| {3}const parts = input\.split\(";"\);$/m);
+  assert.match(review.prompt, /^\| {6}\| {4}2 \| \+ \| {3}const parts = input\.split\(","\);$/m);
+  assert.match(review.prompt, /^\| {6}\| {4}3 \| \+ \| {3}return parts\.map\(\(part\) => part\.trimEnd\(\)\);$/m);
+  assert.ok(!review.prompt.includes('no longer holds what the session last wrote'));
+  // The finding on the changed line is in scope: checked, and published.
+  assert.deepEqual(calls.filter((r) => r.label.startsWith('code-verify:')).map((r) => r.label), ['code-verify:F1']);
+  assert.deepEqual(report.codePass.findings.map((f) => [f.kind, f.anchor.path, f.anchor.startLine]),
+    [['bug', 'src/parse.js', 2]]);
+  assert.deepEqual(report.codePass.withheld, []);
+  // The drift is a fact: the file's state names it; nothing is withheld; the coverage is complete and the run too.
+  const parse = report.codePass.files.find((f) => f.path === 'src/parse.js');
+  assert.deepEqual(parse, { path: 'src/parse.js', type: 'modified', state: 'changed_since_session',
+    sha256: sha256(DRIFTED), hunks: 1, added: 2, removed: 2 });
+  assert.deepEqual([report.codePass.footer, report.codePass.coverage, code], [[], 'complete', 0]);
+  assert.ok(written.includes('1 file changed after the session\'s last recorded edit, so Sonah cannot tell whether all '
+    + 'of its lines are the agent\'s: src/parse.js'), written);
+  assert.ok(written.includes('The change covers 2 files, and the code review saw the change of 2.'), written);
+  // The deleted file keeps its treatment: not there, its change its removed lines only, no note of its own.
+  const gone = report.codePass.files.find((f) => f.path === 'src/gone.js');
+  assert.deepEqual(gone, { path: 'src/gone.js', type: 'deleted', state: 'deleted', hunks: 1, added: 0, removed: 1 });
+  assert.match(review.prompt, /^- src\/gone\.js → lines \d+-\d+ · deleted( · S\d+)*$/m);
+  assert.match(review.prompt, /^\| {4}1 \| {6}\| - \| export const SYNTHETIC_GONE = 1;$/m);
 });
 
-test('release review (low): the harness home that wrote the recording is one, by where the recording lies, with no variable set now', async (t) => {
-  // The reviewer's probe: Claude Code's home was a second folder (CLAUDE_CONFIG_DIR=~/.claude-2) when the session ran,
-  // and the variable is unset when Sonah runs. The recording lies at <that home>/projects/<project>/<session>.jsonl, so
-  // that folder is a harness home: no file of it is named or sent, by any name. Two layouts: HOME the repository with
-  // the folder ~/.claude-2 (the session read files there), and a project that holds the folder it ran Claude Code from
-  // (`agentcfg`, as the third review's G1, here with the variable unset), whose changed files no session recorded.
-  const LINES = ['RR6_OAUTH_ACCOUNT', 'RR6_SETTINGS_LINE', 'RR6_OTHER_TRANSCRIPT'];
-  for (const [probe, folder] of [['home', '.claude-2'], ['project', 'agentcfg']]) {
-    const { root } = await repository(t, {
-      base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
-        [`${folder}/.claude.json`]: '{"a":1}\n', [`${folder}/settings.json`]: '{"b":1}\n' },
-      after: { 'src/parse.js': CODE_FILES['src/parse.js'],
-        [`${folder}/.claude.json`]: `{"oauthAccount":"${LINES[0]}"}\n`, [`${folder}/settings.json`]: `{"b":"${LINES[1]}"}\n`,
-        [`${folder}/projects/-other-project/other.jsonl`]: `{"line":"${LINES[2]}"}\n` } });
-    const later = new Date('2031-01-01T00:00:00Z');
-    await utimes(join(root, folder, 'projects', '-other-project', 'other.jsonl'), later, later);
-    await symlink(join(root, folder, 'settings.json'), join(root, 'cfg-link.json'));
-    // Claude Code's own layout: the project's folder is its name for the working directory the recording states.
-    const recording = join(root, folder, 'projects', claudeProjectFolder(root), 'session.jsonl');
-    await mkdir(join(recording, '..'), { recursive: true });
-    await writeFile(recording, `${JSON.stringify({ timestamp: START })}\n`);
-    const home = probe === 'home' ? root : await mkdtemp(join(tmpdir(), 'sonah-code-step-home-rr6-'));
-    if (probe !== 'home') t.after(() => rm(home, { recursive: true, force: true }));
-    const session = codeSession({ reads: ['cfg-link.json', `${folder}/.claude.json`, `${folder}/settings.json`] });
-    const NAMES = ['cfg-link.json', `${folder}/`, '.claude.json', 'settings.json', 'other.jsonl'];
-    const state = join(await mkdtemp(join(tmpdir(), `sonah-code-step-rr6-${probe}-`)), 'state');
-    t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    // No CLAUDE_CONFIG_DIR: the default homes are under a HOME that holds no such folder by that name.
-    const run = await reviewIn(t, { root, recording, state, session, env: { HOME: home },
-      judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-    const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-    assert.ok(code.length > 5, probe);
-    for (const request of code)
-      for (const text of [...NAMES, ...LINES]) assert.ok(!request.prompt.includes(text), `${probe} ${request.label}: ${text}`);
-    const states = Object.fromEntries(run.report.codePass.files.map((f) => [f.path, f.state]));
-    for (const path of ['cfg-link.json', `${folder}/.claude.json`, `${folder}/settings.json`])
-      assert.equal(states[path], 'harness_home', `${probe} ${path}`);
-    if (probe === 'project') assert.equal(states[`${folder}/projects/-other-project/other.jsonl`], 'harness_home');
-    for (const line of LINES) assert.ok(!run.written.includes(line), `${probe} ${line}`);
-  }
-});
-
-// ---- the second release review (2026-10-15): a harness home only in its recorder's own layout ----------------------
-
-test('second release review (medium): a recording kept in a folder named projects never makes the home folder a harness home', async (t) => {
-  // The reviewer's probes, with the variable unset: G1, the repository at ~/projects/app with its recording kept in it
-  // (~/projects/app/session.jsonl); G2, the recording kept with others at ~/projects/recordings/session.jsonl and the
-  // project at ~/code/app. Neither folder is Claude Code's name for the working directory, so neither names a harness
-  // home: the session's files are read and the code step runs, by default and in the dry run. Control: the same session
-  // with its recording in Claude Code's own layout under a second config folder (~/.claude-2/projects/<the working
-  // directory, as Claude Code names it>/session.jsonl) still makes that folder a harness home.
-  for (const probe of ['G1', 'G2', 'layout']) {
-    const home = await mkdtemp(join(tmpdir(), `sonah-code-step-home-${probe}-`));
-    t.after(() => rm(home, { recursive: true, force: true }));
-    const at = probe === 'G1' ? join(home, 'projects', 'app') : join(home, 'code', 'app');
-    const { root } = await repository(t, { at, base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
-      '.claude-2/settings.json': '{"b":1}\n' }, after: { 'src/parse.js': CODE_FILES['src/parse.js'],
-      '.claude-2/settings.json': '{"b":"RR7_SETTINGS_LINE"}\n' } });
-    const recording = probe === 'G1' ? join(root, 'session.jsonl')
-      : probe === 'G2' ? join(home, 'projects', 'recordings', 'session.jsonl')
-        : join(root, '.claude-2', 'projects', claudeProjectFolder(root), 'session.jsonl');
-    await mkdir(join(recording, '..'), { recursive: true });
-    await writeFile(recording, `${JSON.stringify({ timestamp: START })}\n`);
-    const session = codeSession({ reads: ['.claude-2/settings.json'] });
-    const state = join(await mkdtemp(join(tmpdir(), `sonah-code-step-${probe}-`)), 'state');
-    t.after(() => rm(join(state, '..'), { recursive: true, force: true }));
-    const run = await reviewIn(t, { root, recording, state, session, env: { HOME: home },
-      judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-    const states = Object.fromEntries(run.report.codePass.files.map((f) => [f.path, f.state]));
-    const code = run.calls.filter((r) => /^(code-|challenge:code-)/.test(r.label));
-    assert.ok(code.length > 5, probe);
-    for (const path of ['src/parse.js', 'src/util.js']) assert.equal(states[path], 'shown', `${probe} ${path}`);
-    assert.ok(code.some((request) => request.prompt.includes('src/parse.js')), probe);
-    if (probe === 'layout') {
-      assert.equal(states['.claude-2/settings.json'], 'harness_home');
-      for (const request of code) assert.ok(!request.prompt.includes('RR7_SETTINGS_LINE'), request.label);
-      continue;
-    }
-    // Not a harness home: the file the session read in the working directory is read as any other.
-    assert.equal(states['.claude-2/settings.json'], 'shown', probe);
-    assert.ok(!Object.values(states).includes('harness_home'), probe);
-    assert.equal(run.report.codePass.coverage, 'complete', probe);
-    assert.equal(run.code, 0, probe);
-    const dry = await reviewIn(t, { root, recording, state: join(state, '..', 'dry'), session, argv: ['--dry-run'],
-      env: { HOME: home }, judge: codeJudge({ check: contradictClaim, pass: findEmptyInput }) });
-    assert.doesNotMatch(dry.out, /harness_home/, probe);
-    assert.match(dry.out, /Code step: on/, probe);
-  }
+test('a file the session deleted that is there again is still not shown: listed by name, no line of it sent', async (t) => {
+  const GONE = 'export const SYNTHETIC_GONE = 1;\n';
+  const BACK = 'export const SYNTHETIC_BACK = 2;\n';
+  const { root } = await repository(t, { base: { 'src/parse.js': BASE_PARSE, 'src/util.js': CODE_FILES['src/util.js'],
+    'src/gone.js': GONE }, after: { 'src/parse.js': CODE_FILES['src/parse.js'], 'src/gone.js': BACK } });
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const judge = codeJudge({ review: () => ({ findings: [], questions: [] }) });
+  const state = join(await mkdtemp(join(tmpdir(), 'sonah-code-step-back-')), 'state');
+  const { calls, report } = await reviewIn(t, { root, recording, state, session: writeThenDeleteSession(), judge });
+  const review = calls.find((r) => r.label === 'code-review:agent');
+  assert.match(review.prompt, /^- src\/gone\.js · modified · it no longer holds what the session last wrote to it: no hunk shown/m);
+  for (const request of calls) assert.ok(!request.prompt.includes('SYNTHETIC_BACK'), request.label);
+  assert.deepEqual(report.codePass.files.find((f) => f.path === 'src/gone.js'), { path: 'src/gone.js', type: 'modified',
+    state: 'changed_since_session', hunks: 0 });
+  assert.deepEqual([report.codePass.footer, report.codePass.coverage], [[{ kind: 'withheld', path: 'src/gone.js' }],
+    'partial']);
 });

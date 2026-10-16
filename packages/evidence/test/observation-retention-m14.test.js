@@ -87,7 +87,7 @@ test('an opaque base64 object never becomes quotable observation text', () => {
     && gap.code === 'incomplete_inventory' && gap.note.includes('nontext')));
 });
 
-test('D68 (R): credential and harness file results are withheld with named observation gaps; other folders are shown', () => {
+test('D90: credential and harness file results are shown as every other folder\'s; external still marks the write scope', () => {
   const built = buildEvents([
     assistant(call('credential', 'Read', { file_path: '/repo/.env' }),
       call('external', 'Read', { file_path: '/tmp/external.txt' }),
@@ -109,22 +109,20 @@ test('D68 (R): credential and harness file results are withheld with named obser
       result('scratch', 'SYNTHETIC_SCRATCH_BODY')),
   ], { cwd: '/repo' });
   assert.equal(built.events.length, 9);
-  const withheld = built.events.filter((event) => event.observationWithheld === true);
-  assert.deepEqual(withheld.map((event) => event.tailLines), [undefined, undefined, undefined]);
-  assert.equal(withheld.length, 3, 'the credential path and the two harness files only');
-  // Every other one is shown: lying outside the session folder or in a scratchpad is no reason to withhold (D68 R);
-  // `external` still marks it outside the write scope.
-  const shown = built.events.filter((event) => event.observationWithheld !== true);
-  assert.deepEqual(shown.map((event) => event.tailLines[0]), ['SYNTHETIC_EXTERNAL_BODY', 'SYNTHETIC_RELATIVE_BODY',
-    'SYNTHETIC_NESTED_BODY', 'SYNTHETIC_ABSOLUTE_BODY', 'SYNTHETIC_WINDOWS_BODY', 'SYNTHETIC_SCRATCH_BODY']);
-  assert.ok(shown.every((event) => event.external === true));
+  // D90 (owner decision 2026-10-15): no result is withheld for the file it read (D68 R withheld a credential-shaped
+  // file's, D69 b a harness home folder's): the reviewer sees what the agent saw.
+  assert.equal(built.events.filter((event) => event.observationWithheld === true).length, 0);
+  assert.deepEqual(built.events.map((event) => event.tailLines[0]), ['SYNTHETIC_CREDENTIAL_BODY',
+    'SYNTHETIC_EXTERNAL_BODY', 'SYNTHETIC_RELATIVE_BODY', 'SYNTHETIC_NESTED_BODY', 'SYNTHETIC_HOME_BODY',
+    'SYNTHETIC_HARNESS_BODY', 'SYNTHETIC_ABSOLUTE_BODY', 'SYNTHETIC_WINDOWS_BODY', 'SYNTHETIC_SCRATCH_BODY']);
+  // `external` still marks what lies outside the write scope: all but the project's own file.
+  assert.deepEqual(built.events.map((event) => event.external === true), [false, true, true, true, true, true, true, true,
+    true]);
   const session = sessionOf(built.events);
   const output = session.events.filter((event) => event.kind === 'observation');
   assert.equal(output.length, 9);
-  assert.equal(output.filter((event) => event.output.length === 0).length, 3);
-  assert.ok(session.adapterGaps.some((gap) => gap.channel === 'observations'
-    && gap.code === 'incomplete_inventory' && gap.count === 3
-    && gap.note.includes('withheld')));
+  assert.equal(output.filter((event) => event.output.length === 0).length, 0);
+  assert.ok(!session.adapterGaps.some((gap) => gap.channel === 'observations' && gap.note.includes('withheld')));
 });
 
 test('a Windows path inside a Windows workspace retains the visible result', () => {

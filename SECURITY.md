@@ -19,30 +19,39 @@ Sonah is a beta: fixes go into the latest release only.
 
 ## Never attach session recordings
 
-Session recordings (transcripts) and Sonah's review pages and reports can hold credentials: an agent can print a key,
-a token or a password into the session, the reviewer reads the session as recorded (its answers under `~/.sonah` can
-quote one), and Sonah masks only the secrets its scan recognises in what it writes for you. Never attach a real
-recording or a review page to a report. If the problem needs one, describe it, or build a small synthetic session that
+Session recordings (transcripts), and Sonah's review pages, Markdown stories and reports, can hold credentials: an
+agent can print a key, a token or a password into the session, and Sonah sends, shows and stores the session as it was
+recorded, masking nothing (its answers under `~/.sonah` can quote one). Never attach a real recording, a review page or
+a Sonah report to a vulnerability report. If the problem needs one, describe it, or build a small synthetic session that
 shows it, and check it for secrets first.
 
 ## What counts
 
-Anything that can make Sonah send, store or show what it should not: a secret shown unmasked on the page, in the
-Markdown, on the terminal or in a PR comment, a file outside what [docs/PRIVACY.md](docs/PRIVACY.md) describes being
-sent, review files readable by other users, or the masking step being skipped instead of failing closed. Also a
-recording that makes Sonah, or the reviewer it starts, run code, read files or reach the network (see below).
+Anything that can make Sonah send, store or show what it should not: a file sent outside what
+[docs/PRIVACY.md](docs/PRIVACY.md) describes (such as a code-step agent reading outside your repository), review files
+readable by other users, a PR comment that carries a quote, a path or a file's text, or a network request beyond those
+PRIVACY.md lists. Also a recording or a repository that makes Sonah, or the reviewer or agents it starts, run code,
+write files, read outside what PRIVACY.md describes, or reach the network (see below).
+
+Masking is not a security boundary: Sonah masks nothing, by design. A secret from your session shown on the page, in
+the Markdown or on the terminal is the session as recorded, not a vulnerability; protect those files as you protect
+the recording.
 
 ## Threat model
 
-A recording is untrusted input. It holds tool output, web pages the agent fetched and files of the repository, and any
-of them can carry text written to steer the reviewer model.
+A recording is untrusted input, and so is your repository. They hold tool output, web pages the agent fetched and
+files of the repository, and any of them can carry text written to steer the reviewer model or the code step's agents.
 
 - Such text can bias what the review lists or leaves out. That is a limit of any review a model writes; every row
   shows its evidence so you can check it.
-- It must not be able to make Sonah or the reviewer run code, read files or reach the network. The `claude` reviewer
-  runs in an empty private folder with its tools, MCP servers, settings and slash commands switched off, and receives
-  the session on standard input. The Codex reviewer runs read-only with its tools and web search off. Every quote the
-  reviewer gives is checked by code against the recording. The page runs no script, loads nothing from the network
-  and escapes every text it shows.
+- It must not be able to make Sonah, the reviewer or its agents run code, write files, read outside what PRIVACY.md
+  describes or reach the network. For the session review, the `claude` reviewer runs in an empty private folder with
+  its tools, MCP servers, settings and slash commands switched off, and receives the session on standard input. The
+  code step's agents run in your working directory with three read-only tools (Read, Grep and Glob) and nothing else:
+  no MCP servers, settings or slash commands, your project's `CLAUDE.md` files not loaded as their instructions, and
+  Claude Code's restricted mode confining them to the working directory and the repository it lies in; a call that
+  uses any other tool fails and is not used. The Codex reviewer runs read-only with its tools and web search off.
+  Every quote the reviewer or an agent gives is checked by code against the recording or the file it names. The page
+  runs no script, loads nothing from the network and escapes every text it shows.
 
-A recording that gets past any of this is a vulnerability: please report it as above.
+A recording or a repository that gets past any of this is a vulnerability: please report it as above.

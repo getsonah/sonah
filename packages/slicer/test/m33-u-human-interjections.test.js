@@ -133,24 +133,22 @@ test('U an answer that is not exactly the typed record of this call stays unreso
   assert.equal(raw.interjections, undefined);
 });
 
-test('U what a queued prompt or an answer says is scrubbed whole, and only then cut, exactly as an ask', async (t) => {
+test('U, D90 what a queued prompt or an answer says is kept as recorded and never cut, exactly as an ask', async (t) => {
   const secret = `Use the token ${GH} for the registry.`;
   const { ledger } = await load(t, claudeRows({ queuedPrompt: secret }));
-  assert.ok(!JSON.stringify(ledger).includes(GH));
-  assert.match(ledger.interjections[0].text, /‹redacted/);
-  assert.equal(ledger.interjections[0].redacted, true);
+  assert.equal(ledger.interjections[0].text, secret);
+  assert.equal(ledger.interjections[0].redacted, undefined);
   const answer = await load(t, claudeRows({ ask: true, sidecar: { questions: [QUESTION], answers: { [QUESTION.question]: secret } } }).map(
     (r) => (r.message?.content?.[0]?.tool_use_id === 'q1' ? { ...r, message: { ...r.message, content: [{ ...r.message.content[0],
       content: answeredText([[QUESTION.question, secret]]) }] } } : r)));
-  assert.ok(!JSON.stringify(answer.ledger).includes(GH));
-  assert.match(answer.ledger.interjections[0].text, /‹redacted/);
-  // Windowing (M35): over the retired ask budget, a queued prompt is kept in full — scrubbed whole, never cut.
+  assert.ok(answer.ledger.interjections[0].text.includes(secret));
+  // Windowing (M35): over the retired ask budget, a queued prompt is kept in full — never cut.
   const long = `${secret}\n${'Keep the parser small. '.repeat(1200)}\nEnd of the queued note.`;
   const whole = await load(t, claudeRows({ queuedPrompt: long }));
   assert.equal(Object.hasOwn(whole.raw.interjections[0], 'elided'), false);
   assert.ok(!whole.ledger.interjections[0].text.includes(ASK_OMISSION));
   assert.ok(whole.ledger.interjections[0].text.endsWith('End of the queued note.'));
-  assert.ok(!JSON.stringify(whole.ledger).includes(GH));
+  assert.ok(whole.ledger.interjections[0].text.startsWith(secret));
 });
 
 test('U a recording with neither shape keeps its ledger bytes: no interjections member at all', async (t) => {

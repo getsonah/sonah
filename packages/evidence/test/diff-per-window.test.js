@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runCodeReview, snapshotDiff, validateAnchor } from '../src/code-review.js';
-import { renderReview } from '../src/review.js';
+import { coverageCauses } from '../src/review.js';
 import { Session } from '../src/session.js';
 import { MAX_REVIEW_INPUT_BYTES } from '../src/challenge.js';
 import { touchedPaths } from '../src/code-review-prompt.js';
@@ -129,7 +129,7 @@ test('W3-1: one file whose hunks alone exceed the cap is declared, never sent, n
   const gap = report.gaps.find((g) => g.code === 'code_unreviewable' && g.channel === 'code' && g.scope === 'pr');
   assert.ok(gap, 'an unreviewable file must be declared as a gap');
   assert.match(gap.note, /^1 changed file\(s\) could not be reviewed: 1 over the request budget$/);
-  assert.ok(renderReview(report).includes(gap.note), 'the reader is told what was not reviewed');
+  assert.ok(coverageCauses(report).some(([cause]) => cause === 'code_unreviewable'), 'the reader is told what was not reviewed');
 });
 
 test('W3-4: a binary file is declared, its bytes never reach a prompt, and it cannot host an anchor', async () => {
@@ -265,5 +265,5 @@ test('F87: the review reads files 1 and 3, declares file 2 in the manifest and t
   assert.ok(gap, 'an unparsed file is declared as a gap');
   assert.equal(gap.count, 1);
   assert.match(gap.note, /^1 changed file\(s\) could not be reviewed: 1 whose diff did not parse$/);
-  assert.ok(renderReview(report).includes(gap.note), 'the reader is told what was not reviewed');
+  assert.ok(coverageCauses(report).some(([cause]) => cause === 'code_unreviewable'), 'the reader is told what was not reviewed');
 });

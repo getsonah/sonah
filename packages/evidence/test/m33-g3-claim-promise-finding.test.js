@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 // A namespace import, so each test fails on its own against code that predates it.
 import * as reviewRun from '../src/run-review.js';
-import { renderReview } from '../src/review.js';
+import { listedPromises } from '../src/review.js';
 import { runCodeReview } from '../src/code-review.js';
 
 const { runReview, mergeWindowOutputs } = reviewRun;
@@ -49,19 +49,6 @@ const judge = (claims) => async (request) => request.challenge
 const reviewOf = (claims) => runReview({ session: session(), pr: null, reviewScope: 'session-only', judge: judge(claims) });
 // The claims listed as open (or unchecked) under the claims heading. M33 G5: when every claim became
 // its finding, that heading still states how many (`counts.promisesAsFindings`), and lists none.
-const listedClaims = (md) => {
-  const lines = md.split('\n');
-  // D88: a claim confirmed by a recorded result is listed under what the agent told you; one not checked under What
-  // Sonah could not check.
-  return ['### What the agent told you', '### What Sonah could not check'].flatMap((heading) => {
-    const start = lines.findIndex((line) => line.startsWith(heading));
-    if (start < 0) return [];
-    const end = lines.findIndex((line, at) => at > start && (line.startsWith('### ') || line === '---'));
-    // M33 C: a listed claim reads "not checked" or "confirmed by a later result", never "open".
-    return lines.slice(start + 1, end < 0 ? undefined : end)
-      .filter((line) => /^- \*\*(not checked|confirmed by a later result)\*\*/.test(line));
-  });
-};
 
 test('M33 G3 in one window, a claim a surviving claim_contradicted finding cites is that finding, not an open promise', async () => {
   const report = await reviewOf([
@@ -71,10 +58,8 @@ test('M33 G3 in one window, a claim a surviving claim_contradicted finding cites
   assert.deepEqual(report.findings.map((f) => f.kind), ['claim_contradicted'], 'premise: the finding survived');
   assert.deepEqual(report.promises, [], 'the same claim is not also published as an open promise');
   assert.equal(report.counts.promisesAsFindings, 1, 'counted, never silently discarded');
-  const md = renderReview(report);
-  assert.deepEqual(listedClaims(md), [], 'not listed as an open claim');
-  assert.ok(md.includes('`claim\\_contradicted`'), 'the claim is shown once, as its finding');
-  assert.ok(!md.includes('· DECIDE'), 'D71 (a): never with a status');
+  assert.deepEqual(listedPromises(report), [], 'not listed as an open claim');
+  assert.deepEqual(report.findings.map((f) => f.kind), ['claim_contradicted'], 'the claim is shown once, as its finding');
 });
 
 test('M33 G3 a claim with its own stated receipt stays an open promise beside the finding', async () => {
@@ -143,9 +128,9 @@ test('M33 G3 the renderer never lists a claim that a published claim_contradicte
   const report = await reviewOf([{ text: CLAIM, stated: STATED, contradictedBy: null }]);
   assert.equal(report.promises.length, 1, 'premise: an open promise');
   const contradicted = { ...report, findings: [finding('claim_contradicted', [STATED, AGAINST])], reviewStatus: 'DECIDE' };
-  assert.deepEqual(listedClaims(renderReview(contradicted)), []);
+  assert.deepEqual(listedPromises(contradicted), []);
   const otherKind = { ...report, findings: [{ ...finding('edit_not_asked_for', [STATED]), status: 'FYI' }] };
-  assert.equal(listedClaims(renderReview(otherKind)).length, 1, 'another kind leaves the claim open');
+  assert.equal(listedPromises(otherKind).length, 1, 'another kind leaves the claim open');
 });
 
 test('M33 G3 the combined review route does not render one claim as open and contradicted', async () => {
@@ -170,6 +155,5 @@ test('M33 G3 the combined review route does not render one claim as open and con
   };
   const report = await runCodeReview({ session: session(), pr, diff, judge: combinedJudge });
   assert.ok(report.findings.some((f) => f.kind === 'claim_contradicted'), 'premise: the finding survived');
-  const md = renderReview(report);
-  assert.deepEqual(listedClaims(md), [], 'the claim is shown once, as the finding');
+  assert.deepEqual(listedPromises(report), [], 'the claim is shown once, as the finding');
 });

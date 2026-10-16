@@ -142,35 +142,57 @@ test('raw: two assistant records in one turn -> the saying matches the LAST reco
   assert.equal(groundingCount(session, 'CLOSING-STATEMENT about the result'), 1);
 });
 
-// A PEM block is the one shape that makes redaction DROP lines out of agent prose (redact
-// index.js scrubLines) and append a trailer declaring the count. The saying and the blocks are
-// redacted separately, so a two-block record produces trailers that disagree (3 + 4 vs 7) and
-// the saying used to read as a statement fused from text recorded nowhere.
+// A PEM block was the one shape that made redaction DROP lines out of agent prose (redact
+// index.js scrubLines) and leave a note declaring the count. The saying and the blocks were
+// redacted separately, so a two-block record carried notes that disagreed with the saying's count (3 + 4 vs 7)
+// and the saying used to read as a statement fused from text recorded nowhere. D90 (owner decision 2026-10-15):
+// the production path masks nothing, so the record is kept as written; a ledger an earlier Sonah persisted with the
+// notes is still read as its record's twin (`persistedRedacted`, the notes as that redactor wrote them).
 const PEM = (bodyLines) => ['-----BEGIN PRIVATE KEY-----',
   ...bodyLines, '-----END PRIVATE KEY-----'].join('\n');
+/** The note an earlier Sonah's redactor left in place of a dropped key block of `n` lines. */
+const KEY_NOTE = (n) => `[… ${n} line(s) dropped: private key block …]`;
+/** `ledger` as an earlier Sonah persisted it: each text with `key` replaced by its note, and the count declared. */
+function persistedRedacted(ledger, keys) {
+  const out = structuredClone(ledger);
+  const masked = (text) => keys.reduce((t, key) => t.replace(key, KEY_NOTE(key.split('\n').length)), text);
+  const count = (text) => keys.filter((key) => text.includes(key)).reduce((n, key) => n + key.split('\n').length, 0);
+  for (const holder of [...out.commentary, ...out.sayings])
+    if (count(holder.text)) Object.assign(holder, { redactedLines: count(holder.text), text: masked(holder.text) });
+  out.claim.finalMessage = masked(out.claim.finalMessage);
+  return out;
+}
 
-test('raw: a redacted multi-block record still deduplicates (no extra event, no gap)', async () => {
-  const { ledger, session } = await throughProductionPath([
+test('raw: a multi-block record holding key blocks deduplicates (no extra event, no gap), and so does its redacted twin', async () => {
+  const keys = [PEM(['QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5']),
+    PEM(['Uk9UQVRFRC1LRVktTUFURVJJQUwtRk9SLVRIRS1URVNU', 'WkVSTy1PTkUtVFdPLVRIUkVFLUZPVVItRklWRS1TSVg='])];
+  const { ledger, session: recorded } = await throughProductionPath([
     userTurn('rotate the deploy keys'),
-    sayBlocks(
-      `Key rotated for the deploy user:\n${PEM(['QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5'])}`,
-      `And the backup key as well:\n${PEM(['Uk9UQVRFRC1LRVktTUFURVJJQUwtRk9SLVRIRS1URVNU', 'WkVSTy1PTkUtVFdPLVRIUkVFLUZPVVItRklWRS1TSVg='])}`),
+    sayBlocks(`Key rotated for the deploy user:\n${keys[0]}`, `And the backup key as well:\n${keys[1]}`),
   ]);
-  // Redaction really did drop lines and really did disagree between the two copies.
+  // D90: kept as written, the key blocks quotable once each.
+  assert.equal(groundingCount(recorded, 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5'), 1);
+  // A ledger an earlier Sonah persisted, the two copies redacted separately: the notes really do disagree.
+  const persisted = persistedRedacted(ledger, keys);
   const trailers = (text) => (String(text).match(/\[… \d+ line\(s\) dropped:/g) ?? []).length;
-  assert.ok((ledger.commentary ?? []).some((c) => trailers(c.text)), 'the blocks carry a redaction trailer');
-  assert.ok((ledger.sayings ?? []).some((s) => trailers(s.text)), 'the saying carries its own trailer');
-  const commentary = commentaryOf(session);
-  assert.equal(commentary.length, 2, 'two blocks; the saying is still recognised as their rebuild');
-  assert.ok(!commentary.some((e) => e.id.startsWith('F')), 'no duplicate final event');
-  assert.ok(!(session.adapterGaps ?? []).some((g) => g.code === 'fused_statement'),
-    'a redaction trailer is not evidence that a statement was fused');
-  assert.equal(groundingCount(session, 'Key rotated for the deploy user:'), 1);
-  assert.equal(groundingCount(session, 'And the backup key as well:'), 1);
-  assert.equal(commentary[1].phase, 'final');
+  assert.ok(persisted.commentary.some((c) => trailers(c.text)), 'the blocks carry a redaction note');
+  assert.ok(persisted.sayings.some((s) => trailers(s.text)), 'the saying carries its own');
+  assert.deepEqual([...persisted.commentary, ...persisted.sayings].map((c) => c.redactedLines), [3, 4, 7]);
+  for (const session of [recorded, sessionFromLedger(persisted, { sessionKey: 'b6-persisted' })]) {
+    const commentary = commentaryOf(session);
+    assert.equal(commentary.length, 2, 'two blocks; the saying is still recognised as their rebuild');
+    assert.ok(!commentary.some((e) => e.id.startsWith('F')), 'no duplicate final event');
+    assert.ok(!(session.adapterGaps ?? []).some((g) => g.code === 'fused_statement'),
+      'a redaction note is not evidence that a statement was fused');
+    assert.equal(groundingCount(session, 'Key rotated for the deploy user:'), 1);
+    assert.equal(groundingCount(session, 'And the backup key as well:'), 1);
+    assert.equal(commentary[1].phase, 'final');
+  }
 });
 
 test('raw: a persisted capped statement whose head was shortened by redaction is still its record, not a second event', async () => {
+  // (D90: the production path keeps the statement whole, key block included; the ledger an earlier Sonah persisted,
+  // its key block dropped by that redactor and the statement bounded around its marker, is built below.)
   // The slicer used to cut at 6000/2000 of the RAW text with redaction afterwards, so the head
   // of a capped saying was shorter than 6000 whenever a line inside it was scrubbed. Recomputing
   // the cap from the redacted blocks then missed, and the duplicate came back as an F event.
@@ -179,16 +201,20 @@ test('raw: a persisted capped statement whose head was shortened by redaction is
   // the bound is still recognised as its record's.
   const key = PEM(['QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5', 'Uk9UQVRFRC1LRVktTUFURVJJQUwtRk9SLVRIRS1URVNU']);
   const filler = Array.from({ length: 300 }, (_, i) => `step ${i}: checked the module and left it alone`).join('\n');
-  const { ledger, session } = await throughProductionPath([
+  const { ledger: recorded, session } = await throughProductionPath([
     userTurn('rotate the key and tidy up'),
     say(`Rotated the deploy key:\n${key}\n${filler}\nAll of that is done.`),
   ]);
+  assert.equal(recorded.sayings[0].text, `Rotated the deploy key:\n${key}\n${filler}\nAll of that is done.`,
+    'D90: the statement as written');
+  const ledger = persistedRedacted(recorded, [key]);
   const said = (ledger.sayings ?? [])[0]?.text ?? '';
-  // D68 (E): redaction keeps the statement whole now; it is its record, as before.
+  // D68 (E): redaction kept the statement whole; it is its record, as before.
   assert.equal(said.includes(STATEMENT_OMISSION), false, 'nothing bounds a statement now');
   assert.equal(said.includes('\n[…]\n'), false, 'the slicer cut nothing before redaction');
-  assert.ok(said.includes('line(s) dropped:'), 'and redaction really did drop a line out of it');
+  assert.ok(said.includes('line(s) dropped:'), 'and that redaction did drop a line out of it');
   assert.equal(commentaryOf(session).length, 1);
+  assert.equal(commentaryOf(sessionFromLedger(ledger, { sessionKey: 'persisted' })).length, 1);
   // A ledger an earlier Sonah persisted with the statement bounded around its marker is still its record's twin.
   const lines = said.split('\n');
   const persisted = structuredClone(ledger);

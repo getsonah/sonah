@@ -109,7 +109,8 @@ const sha256 = (text) => createHash('sha256').update(text).digest('hex');
  * the notification row directly follows the launch result): its agents stand where they stood, so its gaps, review
  * requests and story keep d7226ec's bytes; only its ledger moves (the run record names its receipt). `m` carries the
  * modules of the tree under test: { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests,
- * captureCase, windowNarrative, fixtureJudge, renderSessionStory }. Every value is a digest; nothing prints.
+ * captureCase, windowNarrative, fixtureJudge, renderStory } (`renderStory`: the story's renderer, the report .md's since
+ * `sonah.session-story/32`). Every value is a digest; nothing prints.
  */
 export async function captureReceivedCases(m) {
   const root = await scratch('sonah-m33-w2-bytes-');
@@ -133,7 +134,7 @@ export async function captureReceivedCases(m) {
       const report = await m.runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
         judge: m.fixtureJudge({ narrativeOf: (request) => narrativeOf(session, request) }) });
       cases.push({ name, events: sha256(JSON.stringify(session.events.map((event) => [event.id, event.sequence]))),
-        gaps: sha256(JSON.stringify(session.adapterGaps)), ...requests, story: sha256(m.renderSessionStory(session, report)) });
+        gaps: sha256(JSON.stringify(session.adapterGaps)), ...requests, story: sha256(m.renderStory(session, report)) });
     }
     return cases;
   } finally {

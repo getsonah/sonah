@@ -31,8 +31,10 @@ import { NARRATIVE_SHORTFALL, TRANSPORT_SHORTFALL, WINDOW_FAILURE_CODES,
   windowIncompleteReasons } from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILES, isStandardProfile, requestBoundOf, reviewSpeedProfile } from '../../evidence/src/review-profiles.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
-import { runCodePass, withCodePass } from '../../evidence/src/code-pass.js';
+import { markSourceChanged, runCodePass, withCodePass } from '../../evidence/src/code-pass.js';
+import { withAskCodeLinks } from '../../evidence/src/ask-code-links.js';
 import { memoizeJudge } from './answer-cache.js';
+import { createRepositoryReader, repositoryState } from './code-snapshot.js';
 import { RATE_LIMIT_STATUSES, RATE_LIMIT_TYPES, RATE_LIMIT_WINDOWS, REVIEW_CANCELLED,
   withTransportRetry } from './review-judge.js';
 
@@ -481,36 +483,71 @@ export async function reviewSession({ session, judge, answerCache, store, backen
   }
 }
 
+/** What the code step reads and where its agents work, from the snapshot (code-snapshot.js `readCodeSnapshot`): the
+ *  working directory, the repository's top folder when it is another, the base and the closed gate that stops it. */
+function codeStepPlace(snapshot) {
+  const ran = snapshot?.root === true;
+  const root = ran && typeof snapshot.dir === 'string' ? snapshot.dir : null;
+  const top = ran && typeof snapshot.top === 'string' && typeof snapshot.realRoot === 'string'
+    && snapshot.top !== snapshot.realRoot ? snapshot.top : null;
+  return { ran, root, top, base: snapshot?.base ?? null, gate: typeof snapshot?.gate === 'string' ? snapshot.gate : null };
+}
+/** The repository reader the code step's grounding reads through, made from the snapshot (code-snapshot.js
+ *  `createRepositoryReader`), each file at most `bound` bytes; none when the step does not run. */
+function codeStepReader(snapshot, bound) {
+  const place = codeStepPlace(snapshot);
+  return place.ran && place.root ? createRepositoryReader({ root: place.root, top: snapshot.top,
+    commit: typeof place.base?.commit === 'string' ? place.base.commit : null, maxBytes: bound }) : null;
+}
+
 /**
- * D87 (owner decisions 2026-10-13/14): the code pass over a finished session review (`sonah review --code-pass`),
- * after `reviewSession` returned its report. `snapshot` is the frozen file snapshot (code-snapshot.js
- * `readCodeSnapshot`: `{ root, files }`); with no root the pass does not run (`ran: false`) and every checked row reads
- * not checked in the code. Its calls go through the same bounded, retrying transport as the session's (`boundedJudge`,
- * at the session request bound of `speedProfile` and `backend`) and through its own D60 answer store (`answerCache`,
- * kept apart from the session's so neither prunes the other), so the same files and the same session ask nothing twice.
- * The session part is never asked again here: the report is the one `reviewSession` returned (built, on a rerun, from
- * the session's stored answers). Saves the joined report (`saveReport`) under the store's lock and resolves
+ * D87 (owner decisions 2026-10-13/14): the code pass over a finished session review, after `reviewSession` returned its
+ * report; the agentic code step since code-pass/7 (D90). `snapshot` is the frozen snapshot (code-snapshot.js
+ * `readCodeSnapshot`: `{ root, dir, top, realRoot, base, files, repoState }`); with no root the pass does not run (`ran:
+ * false`), and with a `gate` (`code_step_backend`: the review's backend is not claude-cli) it does not run and says
+ * why. `repo` is the repository reader its grounding reads through (code-snapshot.js `createRepositoryReader`, made
+ * here from the snapshot when none is given). Its calls go through the same bounded, retrying transport as the
+ * session's (`boundedJudge`, at the session request bound of `speedProfile` and `backend`) and through its own D60
+ * answer store (`answerCache`, kept apart from the session's so neither prunes the other, keyed by the repository's
+ * state too: the caller's `createAnswerCache(…, { repoState })`), so the same repository and the same session ask
+ * nothing twice. When the repository's state after the step (`stateNow`, by default `repositoryState` again, leaving out
+ * the places the snapshot's state left out: `stateOmits`) is not the one before it, or cannot be taken, the record says
+ * the repository changed during the review (code-pass.js `markSourceChanged`). The
+ * session part is never asked again here. Saves the joined report (`saveReport`) under the store's lock and resolves
  * `{ report }`; rejects `review_interrupted` when `signal` aborted (nothing is saved).
  *
- * `model` (`--code-model`): the model the code step's calls are on, when it is not the session's — `judge` then sends
- * to it and `answerCache` is keyed by it — recorded as `codePass.model`. With none, the report is as before.
- * `required` (the release review): whether the person asked for the code step on the command line (`--code-pass`),
- * recorded as `codePass.required`; only then does its coverage decide whether the review is complete (ledger.js
- * `reviewRunState`). A step that ran by default or by the setting is `required: false`.
+ * `model` (`--code-model`): the model the code step's calls are on, when it is not the session's, recorded as
+ * `codePass.model`. `required` (the release review): whether the person asked for the code step on the command line
+ * (`--code-pass`), recorded as `codePass.required`; only then does its coverage decide whether the review is complete
+ * (ledger.js `reviewRunState`).
  */
 export async function reviewCodePass({ session, report, snapshot, judge, answerCache, store, backend,
-  speedProfile = undefined, signal = null, model = null, required = true }) {
+  speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null }) {
   const { name: speed } = reviewSpeedProfile(speedProfile);
   const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
   const memo = memoizeJudge(boundedJudge(judge, () => {}, { signal, speedProfile: speed, reviewScope: SESSION_ONLY,
     backend }), answerCache);
+  const place = codeStepPlace(snapshot);
+  const reader = repo ?? codeStepReader(snapshot, bound);
   const release = await store.lock();
   try {
     const result = await runCodePass({ report, session, snapshot: Array.isArray(snapshot?.files) ? snapshot.files : [],
-      bound, judge: memo, ran: snapshot?.root === true, root: typeof snapshot?.dir === 'string' ? snapshot.dir : null,
-      base: snapshot?.base ?? null });
+      repo: reader, bound, judge: memo, ...place });
     if (signal?.aborted === true) throw failure(REVIEW_INTERRUPTED);
-    const joined = withCodePass(report, result);
+    let { codePass } = result;
+    // The repository's state after the step's last request, against its state before the first (code-snapshot.js).
+    if (codePass.ran === true && typeof snapshot?.repoState === 'string') {
+      let after = null;
+      try {
+        after = await (stateNow ?? (() => repositoryState({ top: snapshot.top, commit: place.base?.commit ?? null,
+          omit: Array.isArray(snapshot.stateOmits) ? snapshot.stateOmits : [],
+          root: typeof snapshot.realRoot === 'string' ? snapshot.realRoot : null })))();
+      } catch { after = null; }
+      if (after !== snapshot.repoState) codePass = markSourceChanged(codePass);
+    }
+    // An ask's status never contradicts Sonah's own findings: what the code step tied to each ask is joined beside its
+    // status (ask-code-links.js), never in it.
+    const joined = withAskCodeLinks(withCodePass(report, { ...result, codePass }), session);
     joined.codePass = { ...joined.codePass, ...(typeof model === 'string' && model ? { model } : {}),
       required: required !== false, answers: memo.answers };
     if (typeof answerCache?.prune === 'function') await answerCache.prune();
@@ -526,8 +563,9 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
  * answers stored under the state folder (`answerCache`, which the caller opens read-only) through a store kept in memory
  * and a judge that sends nothing: a request with no stored answer fails there, as a call that did not run, and is
  * counted (a lower bound: what such a failure would have led to is not asked either). Then the code step runs on that
- * report the same way, every request it would send first — step 1, then each lens — counted by its label and size and
- * none sent. Resolves `{ answers: { calls, reused }, codeRequests: [{ label, bytes }] }`.
+ * report the same way: its first request (the review agent) is counted by its label and size and not sent, and the
+ * checking agents, which follow from its answer, are not planned. Resolves `{ answers: { calls, reused }, codeRequests:
+ * [{ label, bytes }] }`.
  */
 export async function dryRunReplay({ session, answerCache, snapshot, backend, model, speedProfile = undefined,
   concurrency = undefined }) {
@@ -539,9 +577,10 @@ export async function dryRunReplay({ session, answerCache, snapshot, backend, mo
   const codeRequests = [];
   if (snapshot) {
     const { name: speed } = reviewSpeedProfile(speedProfile);
-    await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [],
-      bound: requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend), ran: snapshot.root === true,
-      root: typeof snapshot.dir === 'string' ? snapshot.dir : null, base: snapshot.base ?? null,
+    const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
+    // The same request a review would send first: the same reader, so the same project and skill files.
+    await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [], bound,
+      repo: codeStepReader(snapshot, bound), ...codeStepPlace(snapshot),
       judge: async (request) => {
         codeRequests.push({ label: request.label, bytes: Buffer.byteLength(request.system ?? '', 'utf8')
           + Buffer.byteLength(request.prompt ?? '', 'utf8') });
@@ -785,12 +824,13 @@ export const ANSWER_INCOMPLETE_REASONS = Object.freeze(['challenge:votes_invalid
 // W3f-2 / F226. Which window a request belongs to, by the label its builder gave it: the narrative
 // `narrative:wN` (joint `code+narrative:wN`, its one `…:receipt-repair`; M36 phase 3, D68 Q: a session-only window's
 // evidence re-ask `narrative:wN:evidence`, a later one `…:evidenceK`; S3: the re-ask of its refuted requirement K
-// `narrative:wN:restatus:K`; W1 A: the re-ask of its decision K refuted on who decided it `narrative:wN:recolumn:K`), the
+// `narrative:wN:restatus:K`; W1 A: the re-ask of its decision K refuted on who decided it `narrative:wN:recolumn:K`; G2:
+// the re-ask of its choice not to act K whose existence check refuted it `narrative:wN:reanchor:K`), the
 // challenges `challenge:wN:…`, and the joint challenges
 // `challenge:narrative:wN:joint:…`. A code-only chunk (`code+chunk:N`, `challenge:chunk:N:…`) belongs to no window:
 // null.
 const WINDOW_LABEL = new RegExp('^(?:code\\+)?narrative:w([1-9]\\d*)'
-  + '(?::receipt-repair|:evidence(?:[2-9]|[1-9]\\d+)?|:(?:restatus|recolumn):(?:0|[1-9]\\d*))?$'
+  + '(?::receipt-repair|:evidence(?:[2-9]|[1-9]\\d+)?|:(?:restatus|recolumn|reanchor):(?:0|[1-9]\\d*))?$'
   + '|^challenge:(?:narrative:)?w([1-9]\\d*):');
 export function windowOfLabel(label) {
   const match = typeof label === 'string' ? WINDOW_LABEL.exec(label) : null;

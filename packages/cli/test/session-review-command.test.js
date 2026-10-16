@@ -14,8 +14,8 @@ import { requestBoundOf, reviewSpeedProfile } from '../../evidence/src/review-pr
 import { requestFits, reviewInputBytes } from '../../evidence/src/challenge.js';
 import { estimateMinutes } from '../src/review-budget.js';
 import { loadRecordedSessionWithHash } from '../src/recorded-session.js';
-import { DEFAULT_REVIEW_PROFILE, parseSessionReviewArgs, runSessionReviewCommand, sessionReviewUsage }
-  from '../src/session-review-command.js';
+import { DEFAULT_REVIEW_PROFILE, parseSessionReviewArgs, runSessionReviewCommand, sessionReviewUsage,
+  STATE_FOLDER_ENTRIES } from '../src/session-review-command.js';
 
 const ASK = 'Read the synthetic file.';
 const streams = () => {
@@ -159,12 +159,12 @@ test('help, invalid arguments and no discovered sessions do not load, call model
         assert.equal(codexHome, input.env.CODEX_HOME); return { sessions: [] };
       }, loadSession: async () => assert.fail('nothing selected') }), code);
     assert.equal(scans, args.length ? 0 : 1);
-    if (!args.length) {
-      assert.match(out.chunks.stdout, /No Claude Code or Codex session was found/);
-      assert.ok(out.chunks.stdout.includes(input.env.SONAH_CLAUDE_PROJECTS));
-      assert.ok(out.chunks.stdout.includes(input.env.CODEX_HOME));
-      assert.match(out.chunks.stdout, /SONAH_CLAUDE_PROJECTS or CODEX_HOME/);
-    }
+    if (!args.length) assert.equal(out.chunks.stdout, 'Sonah found no Claude Code or Codex session for this repository. '
+      + 'Run Claude Code or Codex here, or give the path of a recording.\n'
+      + `Sonah searched ${input.env.SONAH_CLAUDE_PROJECTS} (the projects folder of Claude Code) and ${input.env.CODEX_HOME} `
+      + '(the Codex home).\n'
+      + 'If your recordings are in another folder, set SONAH_CLAUDE_PROJECTS or CODEX_HOME, or give the path of a '
+      + 'recording.\n');
     await assert.rejects(stat(input.env.SONAH_HOME), { code: 'ENOENT' });
   }
 });
@@ -185,7 +185,7 @@ test('dry run selects latest or numbered recording, uses configured helper roots
       }, loadReviews: async () => assert.fail('dry run must not read decision responses'), createJudge: noJudge }), 0);
     assert.equal(loaded, 1);
     assert.match(out.chunks.stdout, choose.length ? /\(codex\)/ : /\(claude\)/);
-    assert.match(out.chunks.stdout, /^Dry run: nothing was sent to a model, written or posted\.$/m);
+    assert.match(out.chunks.stdout, /^Dry run: Sonah sent nothing to a model, and wrote or posted nothing\.$/m);
     await assert.rejects(stat(output), { code: 'ENOENT' });
     await assert.rejects(stat(input.env.SONAH_HOME), { code: 'ENOENT' });
   }
@@ -219,8 +219,8 @@ test('the estimate is the plan\'s time: one size per window sent, in the lanes o
     const out = streams();
     assert.equal(await runSessionReviewCommand([file, '--dry-run', '--backend', 'codex-cli', ...args],
       { ...input.options, ...out, createJudge: noJudge }), 0);
-    assert.match(out.chunks.stdout, /^The session has \d+ events, to be reviewed in 3 windows\.$/m);
-    assert.match(out.chunks.stdout, /^1 window is too large for one request: a review would not send it and /m);
+    assert.match(out.chunks.stdout, /^The session has \d+ events, and Sonah would review them in 3 windows\.$/m);
+    assert.match(out.chunks.stdout, /^1 window is too large for one call\. A review would not send it and /m);
     assert.ok(out.chunks.stdout.includes(`A review should take roughly ${lo}-${hi} minutes (less if answers are `
       + 'already stored).\n'), out.chunks.stdout);
   }
@@ -271,8 +271,8 @@ test('HTML announces an absolute path and opens only a successfully saved page, 
     assert.ok(out.chunks.stdout.includes(`Local page: ${output}\n`));
     assert.match(await readFile(output, 'utf8'), /^<!doctype html>/i);
     if (index === 2) {
-      assert.match(out.chunks.stderr, /page is saved.*could not be opened automatically/);
-      assert.match(out.chunks.stderr, /Open the printed HTML path.*--no-open/);
+      assert.match(out.chunks.stderr, /Sonah saved the page, but could not open it\./);
+      assert.match(out.chunks.stderr, /Open the HTML path that Sonah printed in your browser\..*--no-open/);
       assert.doesNotMatch(out.chunks.stderr, /SYNTHETIC_PRIVATE_OPENER_ERROR/);
     }
   }
@@ -417,10 +417,11 @@ test('D69 f (g) an answer recorded with `sonah decision` is shown under its deci
   const { decisions } = JSON.parse(await readFile(report, 'utf8'));
   assert.equal(decisions.length, 1, 'premise: the review kept the one decision');
   const short = decisions[0].id.slice('sha256:'.length, 'sha256:'.length + 12);
-  // Page /14 (D77 B): the command is printed once, with ROW_ID in the id's place; each row names its short id.
+  // Page /14 (D77 B), page /37: the command is printed once, with ROW_ID in the id's place; each item names its short
+  // id.
   assert.ok(before.includes(`sonah decision accept|change|clarify ${hash} ROW_ID --report REPORT`),
     'the command names the session hash');
-  assert.ok(before.includes(`<span class="label">Decision id</span> <code>${short}</code>`), 'the row names its id');
+  assert.ok(before.includes(`<span class="label">Item id:</span> <code>${short}</code>`), 'the item names its id');
   // The command and where the report is kept name no folder of this computer's.
   for (const value of [input.directory, report]) assert.equal(before.includes(value), false, 'the page is path-free');
   assert.doesNotMatch(before, /class="note answer"/);
@@ -430,7 +431,7 @@ test('D69 f (g) an answer recorded with `sonah decision` is shown under its deci
     env: { PATH: '/usr/bin:/bin', HOME: input.home, SONAH_HOME: input.env.SONAH_HOME } });
   assert.equal(stdout, `recorded: change ${short}\n`);
   const after = await page('after.html');
-  assert.match(after, /<p class="note answer"><span class="label">Your answer<\/span> You asked to change it\. Your reason: Read the other file\.<\/p>/);
+  assert.match(after, /<p class="note answer"><span class="label">Your answer:<\/span> You asked to change it\. <span class="answer-reason">Read the other file\.<\/span><\/p>/);
   assert.equal(after.replace(/<p class="note answer">.*?<\/p>/, ''), before, 'the answer changes nothing else');
 });
 
@@ -503,11 +504,13 @@ test('D82 step 10 a confirmed comment is built from the session review\'s checkl
   const body = github.writes[0].body.body;
   assert.equal(body, previewed);
   assert.match(out.chunks.stdout, /PR comment preview for example\/demo#7, head a{40}:/);
-  assert.match(body, /^Sonah advisory review\n\nSonah's review ran to completion\./);
+  assert.match(body, /^Sonah advisory review\n\nSonah finished its review\./);
   assert.doesNotMatch(body, /Read the synthetic file|a\.js|Synthetic file content/, 'counts and fixed words only');
-  assert.match(out.chunks.stdout, /PR comment and neutral advisory check posted\./);
+  assert.match(out.chunks.stdout, /Sonah posted the PR comment and the neutral advisory check\./);
   // The journal sits beside the session review's own state.
   assert.ok((await readdir(join(stateOf(input), 'publication'))).some((name) => name.endsWith('.json')));
+  // Everything the review wrote in its state folder is one of the entries the code step leaves out by name.
+  assert.deepEqual((await readdir(stateOf(input))).filter((name) => !STATE_FOLDER_ENTRIES.includes(name)), []);
 });
 
 test('D82 step 10 without confirmation nothing is posted, and posting is off unless asked', async (t) => {
@@ -518,7 +521,7 @@ test('D82 step 10 without confirmation nothing is posted, and posting is off unl
       confirm: async () => answer });
     assert.equal(code, answer === null ? 2 : 0);
     assert.equal(github.writes.length, 0);
-    assert.match(out.chunks.stdout, /PR comment not posted\./);
+    assert.match(out.chunks.stdout, /Sonah did not post the PR comment\./);
   }
   const input = await fixture(t), out = streams();
   assert.equal(await sessionOnly([input.file, '--format', 'html', '--output', join(input.repo, 'p.html')], {
@@ -569,7 +572,7 @@ test('D82 step 10 a repository made public after the review started is refused a
     confirm: () => assert.fail('a public PR is never offered for confirmation') }), 3);
   assert.equal(github.writes.length, 0);
   assert.match(out.chunks.stderr,
-    /Sharing could not complete: publication_disabled\. The local page and review history are retained\./);
+    /Sharing could not finish: publication_disabled\. Sonah keeps the local page and the history of this review\./);
   assert.ok((await stat(page)).isFile());
 });
 
@@ -584,14 +587,14 @@ test('D82 step 10 a dry run shows the comment of the last finished review, readi
     return out.chunks.stdout;
   };
   assert.match(await dry('first.html'),
-    /^PR comment for example\/demo#7: this recording has no finished review yet, so there is no comment to show\./m);
+    /^PR comment for example\/demo#7: this recording has no finished review yet\. There is no comment to show\./m);
   const github = fakeGitHub(), out = streams();
   assert.equal(await sessionOnly([input.file, ...COMMENT, '--output', join(input.repo, 'page.html')], {
     ...input.options, ...out, env, client: github.client, createJudge: fakeTransport(),
     confirm: async () => false }), 0);
   const preview = /:\n(Sonah advisory review[\s\S]*?)\n\n<!-- sonah-review:/.exec(out.chunks.stdout)[1];
   const shown = await dry('second.html');
-  assert.match(shown, new RegExp('^PR comment for example/demo#7, as this recording\'s last finished review would post '
+  assert.match(shown, new RegExp('^PR comment for example/demo#7, as the last finished review of this recording would post '
     + 'it \\(a dry run reads nothing from GitHub and posts nothing\\):$', 'm'));
   assert.ok(shown.includes(`${preview}\n`), 'the same comment text the review previewed, without the PR\'s marker');
   assert.equal(github.writes.length, 0);

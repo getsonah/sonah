@@ -5,8 +5,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionFromLedger, INSTRUCTION_GAP_NOTES } from '../adapters/sonah-ledger.js';
-import { renderReview, coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { instructionReviewScope } from '../src/ledger.js';
+
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line). */
+const causeLine = (report) => coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
 
 const NOTE = INSTRUCTION_GAP_NOTES.refusal_untyped;
 const led = ({ capture, marks = [] }) => ({ version: 1, session: 'l1-untyped', claim: {},
@@ -50,8 +53,11 @@ test('L1 review: a count the marks do not cover, a count out of shape, or a mark
 
 test('L1 review: the loss is named by its own cause', () => {
   assert.ok(COVERAGE_CAUSES.includes('instructions_refusal_untyped'));
-  assert.equal(COVERAGE_SENTENCE.instructions_refusal_untyped({ n: 1 }), '1 failed call was recorded by a version '
-    + 'that does not record which calls the human refused, so it may hold an answer that was not read');
+  // The failed call is the subject, so "the call" (or "any of them") is what can hold an answer, never the recorder.
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_untyped({ n: 1 }), '1 failed call comes from a recorder version '
+    + 'that does not record which calls you refused, so the call can hold an answer that Sonah did not read');
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_untyped({ n: 2 }), '2 failed calls come from a recorder version '
+    + 'that does not record which calls you refused, so any of them can hold an answer that Sonah did not read');
   const report = { repo: { host: 'github.com', id: 'l1' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 2, instructions: 2,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -60,6 +66,6 @@ test('L1 review: the loss is named by its own cause', () => {
     counts: { decisions: 0, byColumn: {}, uncheckedColumn: 0, rejectedDecisions: 0, rejectedFindings: 0 },
     coverage: 'partial', codeCoverage: 'complete' };
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]), [['instructions_refusal_untyped', 3]]);
-  const header = renderReview(report).split('\n').find((line) => line.startsWith('Not covered:'));
-  assert.match(header, /3 failed calls were recorded by a version that does not record which calls the human refused/);
+  const header = causeLine(report);
+  assert.match(header, /3 failed calls come from a recorder version that does not record which calls you refused/);
 });

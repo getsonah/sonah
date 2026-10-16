@@ -19,7 +19,7 @@ import { sessionFromLedger, INTER_AGENT_GAP_NOTES, INTER_AGENT_LOSS_GAPS, HELPER
   from '../adapters/sonah-ledger.js';
 import { verifyReceipt } from '../src/session.js';
 import { buildLedger } from '../src/ledger.js';
-import { coverageCauses, renderReview, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { planWindowRequests } from '../src/run-review.js';
 import { planWindows } from '../src/windows.js';
 import { stableEvidence } from './m35-windows-fixture.js';
@@ -29,6 +29,9 @@ import { redact, FINAL_ANSWER_OMISSION } from '../../redact/index.js';
 /** The 8,000 / 6,000 / 2,000 code points an earlier Sonah bounded a helper report by (M33 F to D68 E). */
 const FINAL_ANSWER_CAP = Object.freeze({ chars: 8000, head: 6000, tail: 2000 });
 import { loadSessionEvidence } from '../../cli/src/session-evidence.js';
+/** Whether the report declares a gap of `code` with `note` (on its own list or the session's). */
+const declaredNote = (built, code, note) => [...(built.gaps ?? []), ...(built.session?.adapterGaps ?? [])]
+  .some((gap) => gap?.code === code && gap.note === note);
 import { TEXT, SECRET, finalAnswer, newTask, rootRows, attributedRows, unattachedRows, lateReportRows, rootMeta, ask,
   said, spawn, call, output, jsonl } from './m33-f-final-answer-fixture.js';
 import { childRows } from './m33-t-helper-brief-fixture.js';
@@ -179,15 +182,16 @@ test('M33 F a truncated report declares its cut, and no quote can cross it', asy
     quote: 'Report line 0001 checked.' }).ok, true);
 });
 
-test('M33 F a report redaction scrubbed declares that its output was partly withheld', async (t) => {
+test('M33 F, D90 a report holding a key-shaped value reaches the review as recorded, and nothing is declared withheld', async (t) => {
   const { ledger, session } = await sessionOf(t, rootRows([finalAnswer('/root/fix_parser',
     `Deployed the fix.\nI used the key ${SECRET} to call the API.\nAll 13 tests pass.`)]));
   const report = reportOf(session, delegateFor(session, ledger, 'spawn-fix'));
-  assert.equal(JSON.stringify(session.blobs).includes(SECRET), false);
-  const withheld = session.adapterGaps.find((gap) => gap.code === 'incomplete_inventory'
-    && gap.channel === 'observations' && gap.note === 'recorded tool output was partly withheld by redaction');
-  assert.ok(withheld?.eventIds.includes(report.id));
+  assert.ok(JSON.stringify(session.blobs).includes(SECRET));
+  assert.ok(!session.adapterGaps.some((gap) => gap.channel === 'observations'
+    && gap.note === 'recorded tool output was partly withheld by redaction'));
   assert.equal(verifyReceipt(session, { eventId: report.id, role: 'observation', quote: 'All 13 tests pass.' }).ok, true);
+  assert.equal(verifyReceipt(session, { eventId: report.id, role: 'observation',
+    quote: `I used the key ${SECRET} to call the API.` }).ok, true);
 });
 
 test('M33 F every withheld inter-agent message is declared, counted by its closed reason', async (t) => {
@@ -224,9 +228,9 @@ test('M33 F the review names encrypted inter-agent messages in plain words', asy
   assert.ok(COVERAGE_CAUSES.includes('messages_encrypted'));
   assert.equal(COVERAGE_CAUSES.indexOf('messages_encrypted'), COVERAGE_CAUSES.indexOf('briefs_encrypted') + 1);
   assert.equal(COVERAGE_SENTENCE.messages_encrypted({ n: 1 }),
-    '1 inter-agent message was encrypted by the recorder, so it cannot be shown or checked');
+    'the recorder encrypted 1 message between agents, so Sonah cannot show or check it');
   assert.equal(COVERAGE_SENTENCE.messages_encrypted({ n: 3 }),
-    '3 inter-agent messages were encrypted by the recorder, so they cannot be shown or checked');
+    'the recorder encrypted 3 messages between agents, so Sonah cannot show or check them');
   const { session } = await sessionOf(t, [rootMeta(), ask(), newTask('/root/fix_parser'), newTask('/root/other')]);
   const report = buildLedger({ repo, session, pr: null, sessionCoverage: 'complete' });
   assert.equal(report.coverage, 'partial');
@@ -359,18 +363,14 @@ test('M33 F a report cut before review carries Sonah\'s own marker and declarati
     [['reports_capped', { n: 1 }]]);
   assert.equal(COVERAGE_CAUSES.indexOf('reports_capped'), COVERAGE_CAUSES.indexOf('source_clipped') + 1);
   assert.equal(COVERAGE_SENTENCE.reports_capped({ n: 1 }),
-    '1 helper report was capped before review, so its elided middle cannot be quoted');
+    'Sonah cut the middle out of 1 helper report before its review, so it cannot quote that part');
   assert.equal(COVERAGE_SENTENCE.reports_capped({ n: 2 }),
-    '2 helper reports were capped before review, so their elided middle cannot be quoted');
-  const text = renderReview(built);
-  assert.match(text, /1 helper report was capped before review, so its elided middle cannot be quoted/);
-  const line = text.split('\n').find((row) => row.startsWith('- `source_clipped`'));
-  assert.ok(line, text);
-  assert.ok(line.includes(HELPER_REPORT_CLIPPED_NOTE), line);
-  assert.doesNotMatch(line, /recorder/);
+    'Sonah cut the middle out of 2 helper reports before its review, so it cannot quote that part');
+  assert.ok(declaredNote(built, 'source_clipped', HELPER_REPORT_CLIPPED_NOTE), 'the cut is declared with its own note');
+  assert.doesNotMatch(HELPER_REPORT_CLIPPED_NOTE, /recorder/);
   // A tool output the recorder cut keeps its own words: only the helper report's cut is Sonah's.
   assert.equal(COVERAGE_SENTENCE.source_clipped({ n: 1 }),
-    '1 recorded text(s) were cut short by the recorder, so what was cut cannot be quoted');
+    'the recorder shortened 1 recorded text, so Sonah cannot quote what it left out');
 });
 
 test('M33 F a report never precedes its own hand-off: without a later recorded position it stays right after it', async (t) => {

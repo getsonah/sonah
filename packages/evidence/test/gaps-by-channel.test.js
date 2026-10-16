@@ -22,7 +22,7 @@ import { Session } from '../src/session.js';
 import { runReview } from '../src/run-review.js';
 import { runCodeReview } from '../src/code-review.js';
 import { GAP_CODES, honestStatuses } from '../src/ledger.js';
-import { renderReview, coverageCauses, GAP_SENTENCE, GAP_SENTENCE_CHILDREN, UNRECORDED_COVER_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
 
 const repo = { host: 'github.com', id: '9' };
 const EMPTY = { decisions: [], pivots: [], claims: [], requirements: [] };
@@ -97,17 +97,10 @@ test('F106/F116 a code-channel gap alone: the session reads CLEAN, the code revi
   assert.equal(report.codeStatus, 'UNCHECKED');
   assert.equal(report.reviewStatus, 'UNCHECKED', 'a declared gap never lets the review read CLEAN overall');
 
-  const md = renderReview(report);
-  // D71 (a): rendered, each part by whether it ran, never a status.
-  assert.ok(md.includes('Session review: **complete**'));
-  assert.ok(md.includes('Code review: **did not read every file**'));
-  assert.ok(md.includes("Sonah's review did not complete"));
-  assert.doesNotMatch(md, /\b(CLEAN|UNCHECKED|NO_FINDINGS|DECIDE|FYI)\b/);
-  assert.ok(!md.includes('**Nothing found, and the evidence was complete enough to say so.**'));
-  assert.ok(md.includes('Not covered: 1 changed file(s) could not be reviewed.'),
-    'the header names why the code review is short, although the session is complete');
-  assert.ok(md.includes(`- \`code_unreviewable\` (1) — ${GAP_SENTENCE.code_unreviewable}; 1 changed file(s) could not be reviewed: 1 binary.`));
-  assert.ok(!md.includes('stripped some source text'));
+  assert.equal(report.sessionReview, 'complete');
+  assert.deepEqual(coverageCauses(report), [['code_unreviewable', { n: 1 }]],
+    'the causes name why the code review is short, although the session is complete');
+  assert.ok(report.gaps.some((gap) => gap.code === 'code_unreviewable' && /1 binary/.test(gap.note ?? '')));
 });
 
 test('F106 the note counts every reason present, and only those', async () => {
@@ -255,18 +248,15 @@ test('F96 a transferred child\'s unrecorded write is counted on the parent, unde
   assert.deepEqual(gap.eventIds, ['child:kid:A1-1']);
 });
 
-test('F96 the render names unrecorded_body in the gap list and in the header\'s "Not covered:"', async () => {
+test('F96 the causes name unrecorded_body beside the writes with no provable outcome', async () => {
   const session = await throughProductionPath(realisticSession());
   const report = await runReview({ session, pr: prFor(session), judge: quiet });
-  const md = renderReview(report);
   const [gap] = unrecordedGaps(session);
-  // F163 (W3d-4): the declaration's own note, then one sentence per cover type — no generic
-  // headline saying none of the code could be checked above a line that may say some was covered.
-  assert.ok(md.includes(`- \`unrecorded_body\` at \`${gap.eventIds[0]}\` (3) — 3 write(s) whose body the recording does not contain: 3 shell write(s):\n  - 3 ${UNRECORDED_COVER_SENTENCE.none}.`), md);
-  assert.ok(!md.includes(GAP_SENTENCE.unrecorded_body));
-  assert.ok(md.includes('Not covered: 3 write(s) have no recorded body, so the code they wrote cannot be quoted from the session;'));
-  assert.ok(md.includes('attempted write(s) have no provable outcome'));
-  assert.deepEqual(coverageCauses(report).map(([cause]) => cause), ['unrecorded_body', 'write_outcome_unknown']);
+  assert.equal(gap.note, '3 write(s) whose body the recording does not contain: 3 shell write(s)');
+  const causes = coverageCauses(report);
+  assert.deepEqual(causes.map(([cause]) => cause), ['unrecorded_body', 'write_outcome_unknown']);
+  assert.deepEqual(causes[0], ['unrecorded_body', { n: 3 }]);
+  assert.equal(typeof COVERAGE_SENTENCE.unrecorded_body(causes[0][1]), 'string');
 });
 
 // ---- F96, the decision: what the rule costs on a realistic session -----------------------------
@@ -302,8 +292,3 @@ test('F96 decision: a realistic session whose only unrecorded writes are shell w
   assert.equal(control.sessionStatus, 'CLEAN', 'the control proves the shell writes alone flipped the verdict');
 });
 
-// ---- the phrasebooks ----------------------------------------------------------------------------
-
-test('W3c-8 the children phrasebook carries one variant per gap code too', () => {
-  assert.deepEqual(Object.keys(GAP_SENTENCE_CHILDREN).sort(), [...GAP_CODES].sort());
-});

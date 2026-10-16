@@ -1,8 +1,7 @@
 // D68 (owner decision 2026-10-07; C-02 "M36 recorded facts"). The recorder's typed facts about a call, read once at
-// slicing from its own structured fields and carried on the ledger event as `recorded`, scrubbed before slice_hash:
-// the recorder's tool name and a Codex command's class (c5); a Codex command's parsed meaning (C 3); a change's recorded,
-// line-numbered hunks, scrubbed with the whole recorded file where it exists, else as one change, line count kept (c2,
-// C 1, D); a Codex delete's recorded prior state (C 2); web searches (C 4); a Claude Code sidecar's numbers, booleans
+// slicing from its own structured fields and carried on the ledger event as `recorded`, rebuilt from its closed
+// vocabulary before slice_hash: the recorder's tool name and a Codex command's class (c5); a Codex command's parsed
+// meaning (C 3); a change's recorded, line-numbered hunks, as recorded (c2, C 1, D; D90: nothing in them is masked); a Codex delete's recorded prior state (C 2); web searches (C 4); a Claude Code sidecar's numbers, booleans
 // and strings (D); and a change of a file between two recorded states that no edit recorded (E).
 //
 // Synthetic recordings only: every byte is invented. No recording, no model, no network.
@@ -14,7 +13,7 @@ import { join } from 'node:path';
 import { buildEvents } from '../src/events.js';
 import { sliceLineage } from '../index.js';
 import { parseUnifiedHunks, commandClassOf, recordedHunks, claudeAgentFacts } from '../src/recorded.js';
-import { redact, sliceHash, scrubHunks, RECORDED_FACTS, HUNK_LINE_MASK } from '../../redact/index.js';
+import { redact, sliceHash, validHunks, RECORDED_FACTS } from '../../redact/index.js';
 import { sessionFromLedger, RECORDED_FACT_KEYS, RECORDED_AGENT_KEYS } from '../../evidence/adapters/sonah-ledger.js';
 
 // ---- builders -------------------------------------------------------------------------------------------------------
@@ -51,17 +50,16 @@ test('the closed vocabulary is one list, re-declared by the adapter exactly', ()
 
 // ---- Claude Code ----------------------------------------------------------------------------------------------------
 
-test('a Claude Code Edit: tool, typed error flag, hunks scrubbed with the whole recorded file, prior state recorded', () => {
+test('a Claude Code Edit: tool, typed error flag, hunks as recorded, prior state recorded', () => {
   const [edit] = build([userRow('raise the rate'),
     call('e1', 'Edit', { file_path: '/repo/src/rate.js', old_string: '  return 0.2;', new_string: '  return 0.25;' }),
     result('e1', 'The file has been updated.', editSidecar(FILE))]);
-  assert.deepEqual(edit.recorded, { tool: 'Edit', patch: 'hunks', prior: 'file', isError: false, hunks: EDIT_HUNKS,
-    hunkScrub: 'file' });
-  // With no recorded file (the recorder keeps one for small files only) the hunks are scrubbed as the change alone.
+  assert.deepEqual(edit.recorded, { tool: 'Edit', patch: 'hunks', prior: 'file', isError: false, hunks: EDIT_HUNKS });
+  // With no recorded file (the recorder keeps one for small files only) the hunks are the prior state's only record.
   const [big] = build([userRow('raise the rate'),
     call('e1', 'Edit', { file_path: '/repo/src/rate.js', old_string: '  return 0.2;', new_string: '  return 0.25;' }),
     result('e1', 'The file has been updated.', editSidecar(null))]);
-  assert.equal(big.recorded.hunkScrub, 'change');
+  assert.equal(big.recorded.hunkScrub, undefined, 'D90: nothing scrubs them');
   assert.equal(big.recorded.prior, 'hunks');
   // A failed call types its error flag and nothing of its sidecar.
   const [failed] = build([userRow('raise the rate'),
@@ -80,7 +78,7 @@ test('a Claude Code Write: its type, its prior state, and an update\'s recorded 
     filePath: '/repo/src/rate.js', content: FILE.replace('0.2', '0.25'), structuredPatch: EDIT_HUNKS, originalFile: FILE,
     userModified: false })]);
   assert.deepEqual(updated.recorded, { tool: 'Write', patch: 'body', prior: 'file', isError: false, writeType: 'update',
-    hunks: EDIT_HUNKS, hunkScrub: 'file' });
+    hunks: EDIT_HUNKS });
 });
 
 test('a Claude Code sidecar\'s typed numbers: Read window, Grep and Glob counts, WebFetch, WebSearch, Bash flags', () => {
@@ -109,72 +107,66 @@ test('a Claude Code sidecar\'s typed numbers: Read window, Grep and Glob counts,
     noOutputExpected: false, backgroundTaskId: 'bg1' });
 });
 
-test('a Bash call\'s bashEditDiff: the files it changed, typed, each with its hunks scrubbed as a change', () => {
+test('a Bash call\'s bashEditDiff: the files it changed, typed, each with its hunks as recorded', () => {
   const [bash] = build([userRow('fix it'), call('b1', 'Bash', { command: 'node fix.js' }),
     result('b1', 'done', { stdout: 'done', stderr: '', interrupted: false, isImage: false, noOutputExpected: false,
       bashEditDiff: { files: [{ filePath: '/repo/src/rate.js', hunks: EDIT_HUNKS }, { filePath: '/repo/new.js',
         hunks: [patch(0, ['+x'])], created: true }], changedFiles: ['/repo/src/rate.js', '/repo/new.js'], moreFiles: 0 } })]);
-  assert.deepEqual(bash.recorded.editDiff, { files: [{ path: 'src/rate.js', hunks: EDIT_HUNKS, hunkScrub: 'change' },
-    { path: 'new.js', created: true, hunks: [patch(0, ['+x'])], hunkScrub: 'change' }],
+  assert.deepEqual(bash.recorded.editDiff, { files: [{ path: 'src/rate.js', hunks: EDIT_HUNKS },
+    { path: 'new.js', created: true, hunks: [patch(0, ['+x'])] }],
   changedFiles: ['src/rate.js', 'new.js'], moreFiles: 0 });
 });
 
-// ---- hunks: scrubbed before slice_hash, line count kept -------------------------------------------------------------
+// ---- hunks: as recorded, line count kept -----------------------------------------------------------------------------
 
 // A GitHub-token-shaped value, assembled at run time (a secret scan reads test sources for token shapes).
 const KEY = ['ghp', `${'Zk3Qw8Rt'.repeat(4)}Ab9x`].join('_');
 const BEGIN = ['-----BEGIN', 'RSA', 'PRIVATE', 'KEY-----'].join(' ');
 const END = ['-----END', 'RSA', 'PRIVATE', 'KEY-----'].join(' ');
 
-test('(c2) a secret-named YAML block that opens above a hunk is masked with the whole file, the line count kept', () => {
+test('(c2), D90: a change\'s recorded hunks are carried as recorded — a secret-named block, a token, a key block too', () => {
   const file = ['deploy:', '  signing_key: |', '    c3ludGhldGljLXZhbHVlLWxpbmUtb25l', '    c3ludGhldGljLXZhbHVlLWxpbmUtdHdv',
     'done: true', ''].join('\n');
-  const hunks = [patch(4, ['     c3ludGhldGljLXZhbHVlLWxpbmUtdHdv', '-done: true', '+done: false'])];
-  const withFile = scrubHunks(hunks, file);
-  assert.equal(withFile.scrub, 'file');
-  assert.equal(withFile.hunks[0].lines.length, 3, 'the line count is the recorder\'s');
-  assert.equal(withFile.hunks[0].lines[0], '     ‹redacted:secret-value›', 'the value line, judged under its key, is masked');
-  // Without the file the same hunk cannot see the key: the line is judged alone (declared `change`).
-  assert.equal(scrubHunks(hunks).scrub, 'change');
-  assert.deepEqual(withFile.hunks[0].lines.slice(1), ['-done: true', '+done: false']);
-  assert.deepEqual({ ...withFile.hunks[0], lines: undefined }, { ...hunks[0], lines: undefined }, 'numbers untouched');
+  for (const hunks of [[patch(4, ['     c3ludGhldGljLXZhbHVlLWxpbmUtdHdv', '-done: true', '+done: false'])],
+    [patch(3, [' const a = 1;', `+const k = "${KEY}";`])],
+    [patch(10, [' QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5', ` ${END}`, '+x = 1'])],
+    [patch(1, [`+${BEGIN}`, '+QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5', `+${END}`, '+ok'])]]) {
+    for (const originalFile of [file, null]) {
+      const [edit] = build([userRow('change it'),
+        call('e1', 'Edit', { file_path: '/repo/src/rate.js', old_string: 'x', new_string: 'y' }),
+        result('e1', 'The file has been updated.', editSidecar(originalFile, hunks))]);
+      assert.deepEqual(edit.recorded.hunks, hunks, JSON.stringify(hunks).slice(0, 60));
+      assert.equal(edit.recorded.hunkScrub, undefined);
+      assert.equal(edit.recorded.withheld, undefined);
+    }
+  }
+  // Not hunks in the recorder's shape: none is carried, and the facts say the record held some.
+  for (const bad of [[{ oldStart: 1 }], [{ ...patch(1, ['+a']), lines: ['?a'] }], [{ ...patch(1, ['+a']), lines: ['+a\nb'] }]]) {
+    const [edit] = build([userRow('change it'),
+      call('e1', 'Edit', { file_path: '/repo/src/rate.js', old_string: 'x', new_string: 'y' }),
+      result('e1', 'The file has been updated.', editSidecar(null, bad))]);
+    assert.equal(edit.recorded.hunks, undefined, JSON.stringify(bad));
+    assert.equal(edit.recorded.withheld, true, JSON.stringify(bad));
+  }
 });
 
-test('(c2) without the file: one change, a token masked in place, an open key-block boundary fails closed', () => {
-  const token = scrubHunks([patch(3, [` const a = 1;`, `+const k = "${KEY}";`])]);
-  assert.equal(token.scrub, 'change');
-  assert.equal(token.hunks[0].lines[1], '+const k = "‹redacted:github-token›";');
-  // The hunk shows a key block's END without its BEGIN (the BEGIN is above it, in a file the recorder did not keep).
-  const open = scrubHunks([patch(10, [' QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5', ` ${END}`, '+x = 1'])]);
-  assert.deepEqual(open.hunks[0].lines, [` ${HUNK_LINE_MASK}`, ` ${HUNK_LINE_MASK}`, `+${HUNK_LINE_MASK}`]);
-  assert.equal(open.lost, true);
-  // A whole block inside the change is dropped as a block, every line masked in place.
-  const block = scrubHunks([patch(1, [`+${BEGIN}`, '+QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5', `+${END}`, '+ok'])]);
-  assert.deepEqual(block.hunks[0].lines.slice(0, 3), Array(3).fill(`+${HUNK_LINE_MASK}`));
-  assert.equal(block.hunks[0].lines[3], '+ok');
-  // Not hunks: nothing kept.
-  for (const bad of [[], [{ oldStart: 1 }], [{ ...patch(1, ['+a']), extra: 1 }], [{ ...patch(1, ['+a']), lines: ['?a'] }]])
-    assert.equal(scrubHunks(bad), null);
-});
-
-test('(c2) redaction scrubs recorded hunks again before slice_hash, keeps the count, and is final', () => {
+test('(c2), D90: redaction carries recorded hunks as recorded before slice_hash, keeps the count, and is final', () => {
   const event = { turn: 1, seq: 0, kind: 'edit', path: 'src/a.js',
     recorded: { tool: 'Edit', hunks: [patch(3, [' const a = 1;', `+const k = "${KEY}";`])], hunkScrub: 'change' } };
   const once = clean([event]).ledger;
-  assert.equal(JSON.stringify(once).includes(KEY), false);
-  assert.equal(once.ledger[0].recorded.hunks[0].lines.length, 2);
+  assert.deepEqual(once.ledger[0].recorded.hunks, event.recorded.hunks, 'as recorded');
   assert.deepEqual(redact({ ...once, dropped: [] }).ledger.ledger, once.ledger, 'a second pass changes nothing');
   assert.notEqual(sliceHash(once), sliceHash({ ...once, ledger: once.ledger.map(({ recorded, ...e }) => e) }),
     'slice_hash covers the recorded facts');
 });
 
-test('redaction rebuilds recorded facts from the closed vocabulary and withholds a flagged recorder string whole', () => {
+test('redaction rebuilds recorded facts from the closed vocabulary; a recorder string is carried as recorded (D90)', () => {
   const [event] = clean([{ turn: 1, seq: 0, kind: 'bash', cmd: 'cat a', recorded: { tool: 'exec_command',
     commandClass: 'sometimes', parsedCmd: [{ type: 'read', name: 'a', path: `/tmp/${KEY}/a` }, { type: 'fly' }],
     fetch: { url: `https://x.invalid/?token=${KEY}`, code: 200 }, invented: 1 } }]).ledger.ledger;
-  assert.equal(JSON.stringify(event).includes(KEY), false);
   assert.deepEqual(event.recorded, { tool: 'exec_command',
-    parsedCmd: [{ type: 'read', name: 'a', path: null }, { type: 'unknown' }], fetch: { code: 200 }, withheld: true });
+    parsedCmd: [{ type: 'read', name: 'a', path: `/tmp/${KEY}/a` }, { type: 'unknown' }],
+    fetch: { url: `https://x.invalid/?token=${KEY}`, code: 200 }, withheld: true });
   assert.equal(event.redacted, true);
 });
 
@@ -239,7 +231,7 @@ test('(C 1, C 2) a Codex FileChange: an update keeps its line-numbered hunks; a 
     '/repo/src/a.js': { type: 'update', unified_diff: diff, move_path: null },
     '/repo/src/gone.js': { type: 'delete', content: 'export const gone = 1;\n' } } })]);
   const [update, del] = ledger.ledger.filter((e) => ['edit', 'delete'].includes(e.kind));
-  assert.deepEqual(update.recorded, { tool: 'FileChange', patch: 'hunks', prior: 'hunks', hunkScrub: 'change',
+  assert.deepEqual(update.recorded, { tool: 'FileChange', patch: 'hunks', prior: 'hunks',
     hunks: [{ oldStart: 2, oldLines: 3, newStart: 2, newLines: 3, lines: [' line one', '-old', '+new', ' line three'] }] });
   assert.deepEqual(del.recorded, { tool: 'FileChange', prior: 'file' });
   // An add is the recorder's verb, not an existence check (Codex writes the file whether or not it was there): its
@@ -282,7 +274,7 @@ test('recordedHunks reads the recorder\'s hunks as written, any number of them (
   assert.equal(recordedHunks([]), null);
   const many = Array.from({ length: 5000 }, (_, i) => patch(2 * i + 1, [`-a${i}`, `+b${i}`]));
   assert.equal(recordedHunks(many).length, 5000);
-  assert.equal(scrubHunks(many).hunks.length, 5000);
+  assert.equal(validHunks(many).length, 5000);
 });
 
 test('E: a file changed between a recorded Write and a later recorded file by something not recorded as an edit', () => {

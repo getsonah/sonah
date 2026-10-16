@@ -14,7 +14,8 @@ import { Session } from '../src/session.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { runReview } from '../src/run-review.js';
 import * as ledger from '../src/ledger.js';
-import { renderReview, coverageCauses, COVERAGE_SENTENCE, RUN_STATE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
+import { PUBLIC_RUN_WORDS } from '../../github/publication.js';
 import { redisPivotSession } from '../fixtures/redis-pivot.js';
 
 const { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, reduceStatus } = ledger;
@@ -96,8 +97,9 @@ test('M33 PublicStatus is a frozen closed list that includes NO_FINDINGS', () =>
   // D71 (a): no headline per status any more — only whether Sonah's own review ran, and neither reads as a pass.
   assert.deepEqual([...ledger.REVIEW_RUN_STATES], ['complete', 'incomplete', 'failed']);
   assert.ok(Object.isFrozen(ledger.REVIEW_RUN_STATES));
-  assert.deepEqual(Object.keys(RUN_STATE_SENTENCE).sort(), ['complete', 'incomplete']);
-  for (const sentence of Object.values(RUN_STATE_SENTENCE))
+  // The words a reader says it in (the PR comment's and its check's, PUBLIC_RUN_WORDS).
+  assert.deepEqual(Object.keys(PUBLIC_RUN_WORDS).sort(), ['complete', 'incomplete']);
+  for (const sentence of Object.values(PUBLIC_RUN_WORDS))
     assert.doesNotMatch(sentence, /clean|approv|ready|complete enough|DECIDE|FYI|NO_FINDINGS|UNCHECKED/i);
 });
 
@@ -373,48 +375,38 @@ test('M35 windowing: an action and its result too large for one budget window ar
   assert.equal(report.coverage, 'complete', 'a trimmed middle is how the window shows it, not a recorder limit');
 });
 
-// ---- rendered ---------------------------------------------------------------------------------
+// ---- what the readers read ------------------------------------------------------------------
 
-const CLEAN_WORDS = [/\bCLEAN\b/, /Nothing found, and the evidence was complete/, /No grounded issues found/,
-  /\bapproved\b/i, /ready to merge/i, /merge[- ]ready/i, /Session evidence complete/];
-// D71 (a): no status token is ever rendered.
+// D71 (a): no status token is ever put in a reader's words.
 const STATUS_TOKENS = /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/;
 
 for (const [name, make] of Object.entries(RECORDER_LIMITS)) {
-  test(`M33 renderReview: NO_FINDINGS for ${name} names partial coverage and every declared cause with its count`, async () => {
+  test(`M33 a session-only review of ${name} completes, reads partial coverage and names every declared cause with its count`, async () => {
     const report = await reviewSessionOnly(make());
     assert.equal(report.sessionStatus, 'NO_FINDINGS');
-    const md = renderReview(report);
-    assert.match(md, /Session review: \*\*complete\*\*/);
-    assert.match(md, /session coverage is partial/i);
-    assert.doesNotMatch(md, STATUS_TOKENS);
+    assert.equal(report.sessionReview, 'complete');
+    assert.equal(report.coverage, 'partial');
     const causes = coverageCauses(report);
     assert.ok(causes.length > 0);
-    const line = md.split('\n').find((l) => l.startsWith('Not covered: '));
-    assert.ok(line, 'the causes line is shown');
-    for (const [cause, counts] of causes) assert.ok(line.includes(COVERAGE_SENTENCE[cause](counts)), `${cause} is named`);
-    for (const word of CLEAN_WORDS) assert.doesNotMatch(md, word);
-    assert.match(md, /Scope: coding session only/);
+    for (const [cause, counts] of causes) {
+      const sentence = COVERAGE_SENTENCE[cause](counts);
+      assert.equal(typeof sentence, 'string', `${cause} is named`);
+      assert.doesNotMatch(sentence, STATUS_TOKENS);
+    }
   });
 }
 
-test('M33 renderReview: a combined review says what of each part ran and names the session limits, no status', async () => {
+test('M33 a combined review reads complete, partial session coverage, and names the session limits', async () => {
   const report = await runReview({ session: session({ delegate: true }), pr: completePr, judge: quiet });
-  const joined = { ...report, codeCoverage: 'complete' };
-  const md = renderReview(joined);
-  assert.match(md, /Code review: \*\*read every file\*\* · Session review: \*\*complete\*\*/);
-  assert.doesNotMatch(md, STATUS_TOKENS);
-  assert.match(md, /session coverage is partial/i);
-  assert.match(md, /Not covered: .*1 delegation\(s\) have no verified child evidence/);
-  assert.doesNotMatch(md, /Nothing found, and the evidence was complete/);
-  assert.doesNotMatch(md, /ready to merge|merge[- ]ready|\bapproved\b/i);
+  assert.equal(report.sessionReview, 'complete');
+  assert.equal(report.coverage, 'partial');
+  const causes = coverageCauses({ ...report, codeCoverage: 'complete' });
+  assert.deepEqual(causes.find(([cause]) => cause === 'delegations_unlinked'), ['delegations_unlinked', { n: 1 }]);
 });
 
-test('M33 renderReview: an incomplete review says it did not complete, apart from the recorder limits', async () => {
+test('M33 an incomplete review reads incomplete, apart from the recorder limits', async () => {
   const failed = await reviewSessionOnly(session({ delegate: true }), async () => null);
-  const md = renderReview(failed);
-  assert.match(md, /Session review: \*\*did not complete\*\*/);
-  assert.match(md, /session review did not complete/i);
-  assert.match(md, /Sonah's review did not complete/);
-  assert.doesNotMatch(md, STATUS_TOKENS);
+  assert.notEqual(failed.sessionReview, 'complete');
+  assert.equal(ledger.reviewRunState(failed), 'incomplete');
+  assert.doesNotMatch(PUBLIC_RUN_WORDS.incomplete, STATUS_TOKENS);
 });

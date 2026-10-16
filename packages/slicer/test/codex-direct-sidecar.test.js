@@ -117,3 +117,24 @@ test('legacy patch completion requires its exact call ID and matching changes', 
     assert.equal(near.ledger[0].sourceLocator?.fileChangeRecord, undefined);
   }
 });
+
+test('D90: a change to a credential-shaped file and a command holding a key-shaped word join their native records', async () => {
+  // D90 (owner decision 2026-10-15): the join keys are structural (one repository-relative path; the exact command and
+  // its directory) and nothing reads what a path names or a command holds, so a change to `.env`, a path with a
+  // mark-shaped name, and a command that sets a key each join their exact same-thread completion like any other.
+  for (const path of ['.env', 'config/secrets.yml', 'deploy/id_rsa', 'notes/‹redacted›.md']) {
+    const body = `*** Begin Patch\n*** Add File: ${path}\n+X=1\n*** End Patch`;
+    const joined = await ledgerFor([direct('functions.apply_patch', 'p1', { patch: body }),
+      fileChange('p1', { changes: [{ path, kind: 'add' }] }), output('p1', 'visible result')]);
+    assert.equal(joined.ledger[0].sourceLocator?.fileChangeRecord, 4, path);
+    assert.equal(joined.ledger[0].result?.outcome, 'succeeded', path);
+  }
+  // A FAKE key, built at run time so no line of this file is itself key-shaped.
+  const key = ['sk', 'ant', 'api03', 'FAKEonlyForTests0123456789abcdefXYZ0123456789fake'].join('-');
+  const cmd = `ANTHROPIC_API_KEY=${key} node build.js`;
+  const keyed = await ledgerFor([direct('functions.exec_command', 'c1', { cmd }),
+    command('c1', { command: ['/bin/zsh', '-lc', cmd] }), output('c1', 'visible output')]);
+  assert.equal(keyed.ledger[0].sourceLocator?.commandExecutionRecord, 4);
+  assert.equal(keyed.ledger[0].exitCode, 0);
+  assert.equal(keyed.ledger[0].cmd, cmd);
+});

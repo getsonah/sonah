@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { claudeLiveProjectsDir, claudeProjectsDir } from './claude-home.js';
 import { codexExecutable } from './codex-model.js';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
-import { createReviewJudge, reviewJudgeConfig, cliVersionOf, highestUtilization, PROVIDER_CLASSES,
+import { AGENT_CLI_OPTIONS, createReviewJudge, reviewJudgeConfig, cliVersionOf, highestUtilization, PROVIDER_CLASSES,
   servedModelId } from './review-judge.js';
 import { utilizationWords } from './review-budget.js';
 import { PROBE_REQUEST, probeOutcome } from './review-probe.js';
@@ -32,6 +32,8 @@ export const DOCTOR_FIXES = Object.freeze({
   codex_auth_unknown: 'Run codex login status to check sign-in; update Codex if this command cannot complete.',
   model: 'Run sonah doctor again; check your provider allowance and network connection if it still cannot answer.',
   claude_model: 'Update Claude Code with claude update and confirm your account can use the requested long-context model.',
+  claude_agent: 'Update Claude Code with claude update, then run sonah doctor again; or turn the code step off with sonah '
+    + 'config code-pass off.',
   skipped: 'Run sonah doctor without --no-probe to check the selected model with one tiny request.',
   sessions: 'Run a coding session in your repository, then pass its recording path to sonah review.',
   diagnostics: 'Check read access to your home and recording directories; correct HOME, CODEX_HOME, CLAUDE_CONFIG_DIR or SONAH_CLAUDE_PROJECTS if they point to unavailable paths.',
@@ -85,6 +87,23 @@ async function command(file, args, options, runCli) {
       stdout: typeof error?.stdout === 'string' ? error.stdout : '', exitCode: error?.code };
   }
 }
+/**
+ * The agent transport's options (review-judge.js AGENT_CLI_OPTIONS), checked with no model call: given before `auth
+ * status`, the CLI parses them and then answers its documented sign-in JSON; an option it does not know stops the
+ * command before it prints anything on stdout (2.1.296: exit 1, "unknown option" on stderr, which is never read). Each
+ * valued option gets a valid value. The installed CLI hides `--max-turns` from its help, so the help is not read.
+ */
+export const AGENT_OPTIONS_CHECK = Object.freeze(['--restricted', '--max-turns', '1', '--json-schema', '{"type":"object"}',
+  'auth', 'status']);
+
+/** Whether the installed CLI accepts the agent transport's options: `accepted` when the check answered the sign-in JSON
+ *  (`authFact` read it, signed in or out), `refused` when it did not although the plain `auth status` did, `unknown`
+ *  when the plain one could not be read either. */
+function agentOptionsFact(checked, auth) {
+  if (!['signed_in', 'signed_out'].includes(auth.state)) return { state: 'unknown' };
+  return { state: ['signed_in', 'signed_out'].includes(authFact(checked).state) ? 'accepted' : 'refused' };
+}
+
 function authFact(result) {
   let value;
   try { value = JSON.parse(result.stdout); } catch { return { state: 'unknown' }; }
@@ -155,6 +174,16 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
   if (claude.state === 'ok') {
     const fix = auth.state === 'signed_in' ? '' : ` Fix: ${auth.state === 'unknown' ? DOCTOR_FIXES.claude_auth_unknown : DOCTOR_FIXES.claude_auth}`;
     lines.push(`Claude sign-in: ${auth.state === 'signed_in' ? 'signed in (confirm your account billing settings)' : auth.state}.${fix}`);
+  }
+  // The agent transport: the code step's review agent runs Claude Code with options an older version does not have.
+  let agentOptions = { state: 'not_checked' };
+  if (claude.state === 'ok') {
+    agentOptions = agentOptionsFact(await command('claude', AGENT_OPTIONS_CHECK, cliOptions, runCli), auth);
+    const options = AGENT_CLI_OPTIONS.join(', ');
+    lines.push(agentOptions.state === 'accepted' ? `Claude code-step options: accepted (${options}).`
+      : agentOptions.state === 'refused' ? `Claude code-step options: this Claude Code refused at least one of ${options}, `
+        + `which the code step's review agent needs. Fix: ${DOCTOR_FIXES.claude_agent}`
+        : 'Claude code-step options: not checked, since claude auth status could not be read.');
   }
   if (selected.backend === 'claude-cli') {
     if (claude.state !== 'ok') attention.push('claude');
@@ -239,8 +268,11 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
   if (read.state === 'invalid') attention.push('settings');
   const settings = { state: read.state, codePass: read.state === 'invalid' ? null
     : read.settings?.codePass ?? CODE_PASS_DEFAULT };
+  // The agent transport: options the CLI refused need the person when a review would run the code step on Claude.
+  if (agentOptions.state === 'refused' && selected.backend === 'claude-cli' && settings.codePass !== false)
+    attention.push('claude_agent');
   lines.push(attention.length ? `needs attention: ${attention.join(', ')}` : 'Local review setup checked.');
-  return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth, codex, model, adapters: found, settings } };
+  return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth, agentOptions, codex, model, adapters: found, settings } };
 }
 
 export async function runDoctorCommand(argv, { stdout = process.stdout, stderr = process.stderr, env = process.env,

@@ -23,8 +23,8 @@ import { answerableRowIds, ROW_ID } from '../../evidence/src/checklist.js';
 export const DECISION_COMMAND_USAGE = 'usage: sonah decision accept|change|clarify SESSION_HASH DECISION_ID --report FILE '
   + '--reason TEXT';
 /** Why an answer was not recorded, a closed vocabulary: the report is not a readable review report; it holds no
- *  decision with that id, or more than one; the reason is empty, too long, or holds what redaction would remove; the
- *  file could not be written. */
+ *  decision with that id, or more than one; the reason is empty, too long, or not trimmed; the file could not be
+ *  written. */
 export const DECISION_COMMAND_REFUSALS = Object.freeze(['report_unreadable', 'decision_not_in_report', 'decision_ambiguous',
   'reason_rejected', 'not_recorded']);
 const [REPORT_UNREADABLE, NOT_IN_REPORT, AMBIGUOUS, REASON_REJECTED, NOT_RECORDED] = DECISION_COMMAND_REFUSALS;

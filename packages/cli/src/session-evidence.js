@@ -132,14 +132,12 @@ async function parentSources(files, sources, roots) {
   }));
 }
 
-/** Returns redacted evidence. No model or network. A fresh context rechecks growing files. D84 (owner decision
- *  2026-10-12): `mask: false` is a session review's load — every recording of the lineage is sliced and redacted with
- *  masking off (bounded, validated, nothing masked), because the model reads the session unredacted; the default masks
- *  (`sonah slice`; the pull-request route is removed, D82 step 10). Which identities may locate a recording on disk
- *  (`keptIdentities`, the identity scan before a Workflow agent is read) is a join check, scanned either way. */
+/** Returns bounded, validated evidence (redact). No model or network. A fresh context rechecks growing files. D90 (owner
+ *  decision 2026-10-15, privacy is not a design constraint): every recording of the lineage is sliced and kept as
+ *  recorded — nothing is masked — for a review and for `sonah slice` alike. Which identities may locate a recording on
+ *  disk (`keptIdentities`, before a Workflow agent is read) is a join check of their shape. */
 export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots = {},
-  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {}, mask = true } = {}) {
-  const scrub = { mask: mask !== false };
+  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {} } = {}) {
   const limits = { ...CHILD_RECORDING_LIMITS, ...lower };
   if (Object.entries(limits).some(([key, n]) => !Number.isSafeInteger(n) || n <= 0
     || !(key in CHILD_RECORDING_LIMITS) || n > CHILD_RECORDING_LIMITS[key])) {
@@ -153,7 +151,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     let raw = snapshot ?? await sliceLineage(nodeFiles, { cwd: child ? undefined : cwd,
       outcomes: child ? await outcomesFor(nodeFiles) : outcomes ?? await outcomesFor(nodeFiles),
       includeSources: true, sidechainAsMain: child || undefined, childRecording: child, workflowLaunches: true,
-      claudeLocators: true, helperDeliveries: true, ...scrub });
+      claudeLocators: true, helperDeliveries: true });
     // M34 labels (C-02 "Slice-time labels"): a helper's recording is known by its structure — the slicer's lineage role,
     // from `isSidechain` rows or a Codex subagent thread — never by its path. M34 labels review (F7): by that role alone,
     // never re-decided here: a main recording holding inline sidechain rows beside its own (`mixedHistory`, its first
@@ -163,9 +161,9 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       child = true;
       raw = await sliceLineage(nodeFiles, { outcomes: await outcomesFor(nodeFiles),
         includeSources: true, sidechainAsMain: true, childRecording: true, workflowLaunches: true,
-        claudeLocators: true, helperDeliveries: true, ...scrub });
+        claudeLocators: true, helperDeliveries: true });
     }
-    const ledger = redact(raw, scrub).ledger;
+    const ledger = redact(raw).ledger;
     // M33 W: the slicer's Workflow launch side channel is read below and never returned (no ledger keeps it).
     const launches = ledger.workflowLaunches ?? null;
     delete ledger.workflowLaunches;
@@ -265,9 +263,9 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
         // recording's home from where the recorder wrote it, never from the private copy's temporary path.
         const sliced = await sliceLineage([snapshot.path], { outcomes: await outcomesFor([file]),
           includeSources: true, sidechainAsMain: true, childRecording: true, noForkChildProof, workflowLaunches: true,
-          claudeLocators: true, helperDeliveries: true, lineageFiles: [file], ...scrub });
+          claudeLocators: true, helperDeliveries: true, lineageFiles: [file] });
         sliced.lineage.files = [file];
-        const cleaned = redact(sliced, scrub).ledger;
+        const cleaned = redact(sliced).ledger;
         const [verified] = resolveChildLinks([delegation], [{ ...cleaned.sources?.[0], namespace: parent.namespace,
           key: linked.link.source }], parents);
         if (verified.status !== 'linked') { links.push({ ...delegation, reason: CHILD_RECORDING_REASONS.CHANGED }); continue; }
@@ -361,7 +359,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     const linkedIds = new Set(links.map((d) => d?.childId).filter((id) => typeof id === 'string'));
     // A run several calls of this recording name is linked only to its one origin, each other call resuming it by its
     // recorded input; anything else is neither's by recorded identity: all keep their M33 D declaration (never the
-    // first by order). A runId the identity scan withholds is no call's.
+    // first by order). A runId that is not text is no call's.
     const actOf = (launch) => (ledger.ledger ?? []).find((event) => event.turn === launch.turn && event.seq === launch.seq);
     const roles = workflowCallRoles(calls.map((launch) => ({ ...launch, launched: workflowLaunched(actOf(launch)),
       runId: keptIdentities([launch.runId]).length ? launch.runId : undefined })));
@@ -427,9 +425,9 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       }
       runs.push(runRecord({ turn: launch.turn, seq: launch.seq, linked, losses, resumes, receipt, earlierReceipts: earlier }));
     }
-    // Every new channel is redacted before it is stored, cut, capped or hashed: identities by the delegation scan,
-    // each report scrubbed whole as tool output and only then bounded (redact/index.js `finalAnswer`).
-    if (fresh.length) links.push(...redact({ ask: [], ledger: [], claim: {}, delegations: fresh, dropped: [] }, scrub)
+    // Every new channel is validated before it is stored or hashed: its identities by their declared state, each report
+    // rebuilt from its allow-list (redact/index.js `finalAnswer`).
+    if (fresh.length) links.push(...redact({ ask: [], ledger: [], claim: {}, delegations: fresh, dropped: [] })
       .ledger.delegations);
     return runs;
   }
@@ -438,7 +436,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
    * M33 W repair 2 (calls copied from an earlier session file). Claude Code continues a conversation in a new session
    * file that repeats earlier rows with the SAME row uuid while rewriting their sessionId, so a copied call's recorded
    * transcriptDir lies under a session X this recording never records. For each origin whose recorded transcriptDir
-   * names a run directory under such an X (kept by the identity scan), read `<slug>/<X>.jsonl` once — only the rows
+   * names a run directory under such an X (a text, `keptIdentities`), read `<slug>/<X>.jsonl` once — only the rows
    * naming the calls' own row uuids — and accept X for that call only when the file records the call's tool_use row
    * and every result row with the same uuids, call id, sessionId X and runId (slicer `copiedCallProven`). At most
    * `WORKFLOW_LIMITS.copiedSessions` such files per recording: when more are named, none is read, and every such call
@@ -493,16 +491,15 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       const identity = await readRecordingIdentity(snapshot.path, { adapter: 'claude', namespace: snapshot.directory,
         maxBytes: snapshot.bytesRead, maxLineBytes: Math.min(limits.lineBytes, snapshot.bytesRead),
         maxRecords: limits.inventoryRecords });
-      const [scanned] = redact({ ask: [], ledger: [], claim: {}, sources: [identity], dropped: [] }).ledger.sources;
-      if (!own({ ...identity, ...scanned })) return mismatch;
+      if (!own(identity)) return mismatch;
       // M33 W: an agent's brief (its first user row) is an ask like any helper's: the slicer keeps it whole and only
-      // declares the cut due on it; redaction scrubs it whole and only then bounds it (M33 R).
+      // declares the cut due on it; redaction bounds and validates it, masking nothing (M33 R, D90).
       // D69 (b): named by the recording it was read from, as an Agent/Task child's copy is (`lineageFiles`).
       const sliced = await sliceLineage([snapshot.path], { outcomes: await outcomesFor([file]), includeSources: true,
         sidechainAsMain: true, childRecording: true, workflowLaunches: true, claudeLocators: true, helperDeliveries: true,
-        lineageFiles: [file], ...scrub });
+        lineageFiles: [file] });
       sliced.lineage.files = [file];
-      const cleaned = redact(sliced, scrub).ledger;
+      const cleaned = redact(sliced).ledger;
       if (!own(cleaned.sources?.[0])) return missing;
       state.visited.add(file); state.children++; state.actionBytes += snapshot.bytesRead;
       const recording = await readNode([file], depth + 1, true, cleaned, true);

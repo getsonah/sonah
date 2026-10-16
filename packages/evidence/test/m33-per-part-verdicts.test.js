@@ -16,7 +16,6 @@ import { Session } from '../src/session.js';
 // Namespace imports, so each test fails on its own against code that predates it.
 import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
 import { runCodeReview } from '../src/code-review.js';
 
 const repo = { host: 'github.com', id: '1' };
@@ -121,8 +120,6 @@ test('M33 P the part reasons and the NO_FINDINGS part causes are frozen closed v
   assert.ok(!ledger.PART_REVIEW_REASONS.some((r) => ledger.PART_COVERAGE_REASONS.includes(r)), 'review and coverage are apart');
   assert.deepEqual([...ledger.PART_CAUSES], ['parts_fully_checked', 'parts_partial', 'parts_decide_unsettled',
     'parts_unchecked', 'session_wide_unchecked']);
-  // One rendered sentence per reason, and no other.
-  assert.deepEqual(Object.keys(review.PART_REASON_SENTENCE).sort(), [...ledger.PART_REASONS].sort());
 });
 
 test('M33 P a part is a root human turn; a child belongs to the part whose assignment spawned it', () => {
@@ -407,29 +404,3 @@ test('M33 P honestStatuses never upgrades a declared part, and a saved report re
   assert.equal(declared.sessionStatus, 'UNCHECKED');
 });
 
-// ---- rendering ------------------------------------------------------------------------------------
-
-test('M33 P renderReview lists every part with something to list, by its reasons, and counts the rest — no status (D71)', async () => {
-  const base = session({ three: true, post: true });
-  base.adapterGaps = [{ code: 'command_outcome_unknown', channel: 'observations', scope: 'session', count: 1,
-    eventIds: ['A3'], sessionKey: 's' }, { code: 'unsupported_message', channel: 'commentary', scope: 'session', count: 2,
-    sessionKey: 's' }];
-  const report = await sessionOnly(base, { fail: [1] });
-  assert.deepEqual(statusesOf(report), [['T1', 'CLEAN'], ['T2', 'UNCHECKED'], ['T3', 'NO_FINDINGS']]);
-  const md = review.renderReview(report);
-  assert.ok(md.includes('### Review by part'), 'the section is rendered');
-  const after = md.slice(md.indexOf('### Review by part') + 1);
-  const section = after.slice(0, after.indexOf('\n### ') < 0 ? after.length : after.indexOf('\n### '));
-  const lines = section.split('\n').filter((line) => line.startsWith('- '));
-  // D71 (a): each part by its reasons, never its status.
-  assert.ok(lines.some((line) => line.includes('`T2`') && line.includes(review.PART_REASON_SENTENCE.window_incomplete)),
-    'T2 with its reason');
-  assert.ok(lines.some((line) => line.includes('`T3`') && line.includes(review.PART_REASON_SENTENCE.gap_declared)),
-    'T3 with its reason');
-  assert.doesNotMatch(section, /\b(CLEAN|UNCHECKED|NO_FINDINGS|DECIDE|FYI)\b/, 'no part status is printed');
-  assert.ok(!lines.some((line) => line.includes('`T1`')), 'a part with nothing to list is not listed');
-  assert.ok(lines.some((line) => /^- 1 part with nothing to list\.$/.test(line)), 'and is counted');
-  assert.equal(lines.filter((line) => line.includes('Session-wide')).length, 1, 'the session-wide entry is listed once');
-  assert.ok(md.includes('1 part fully checked, 1 partial, 1 not checked'), 'the part counts are named');
-  assert.ok(!section.includes('SYNTHETIC_PARTS'), 'no session text reaches the part lines');
-});

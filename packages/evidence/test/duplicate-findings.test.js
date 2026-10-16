@@ -11,7 +11,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildLedger, mergeDuplicateFindings, codeSourceTexts } from '../src/ledger.js';
-import { renderReview } from '../src/review.js';
 import { Session } from '../src/session.js';
 
 const repo = { host: 'github.com', id: 'sonah/sonah' };
@@ -75,9 +74,6 @@ test('two findings on the same file, overlapping lines and the same kind become 
   assert.equal(survivor.title, second.title, 'the framing with more receipts is the one kept');
   assert.deepEqual(survivor.alsoReportedAs, [first.title],
     'the other framing is carried, not discarded');
-
-  const md = renderReview({ ...report, session: null });
-  assert.match(md, /also reported as: a rendered line can end on a backslash/);
 });
 
 test('two findings on different lines of one file, citing different code, stay two (W3-6, F94)', () => {
@@ -296,7 +292,7 @@ test('F94 risk: the W3b four-framings quote is one place, so that case still mer
 test('an unmerged report says nothing about merging (W3-6)', () => {
   const report = ledgerOf([codeFinding()]);
   assert.equal(report.counts.findingsMerged, 0);
-  assert.ok(!renderReview({ ...report, session: null }).includes('also reported as'));
+  assert.ok(!report.findings.some((f) => f.alsoReportedAs?.length), 'nothing is said to be reported twice');
 });
 
 // ---- what must never merge -----------------------------------------------------------------

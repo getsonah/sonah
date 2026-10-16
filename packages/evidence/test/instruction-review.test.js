@@ -6,7 +6,6 @@ import { deriveColumn, groundDecision, buildLedger, instructionReviewScope } fro
 import { buildNarrativePrompt, NARRATIVE_SCHEMA } from '../src/prompt.js';
 import { toCandidates } from '../src/run-review.js';
 import { buildCodeReviewPrompt, CODE_REVIEW_SCHEMA } from '../src/code-review-prompt.js';
-import { renderReview } from '../src/review.js';
 
 function fixture() {
   const blobs = { one: 'Change the icon colour to blue.', two: 'Keep the image dimensions unchanged.',
@@ -45,7 +44,6 @@ test('R1 omission leaves authority unchecked even with complete history', () => 
   const report = buildLedger({ ...args(f), candidates: [f.candidate] });
   assert.equal(report.counts.byColumn.unasked, 0);
   assert.equal(report.counts.uncheckedColumn, 1);
-  assert.match(renderReview(report), /\*\*not checked\*\*/, 'D71 (a): the row says not checked, in words');
 });
 
 test('R1 only an explicit complete dimension-bound review can establish unasked', () => {

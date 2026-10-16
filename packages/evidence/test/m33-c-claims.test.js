@@ -38,7 +38,7 @@ import * as codeReviewPrompt from '../src/code-review-prompt.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { sliceLineage } from '../../slicer/index.js';
 import { redact } from '../../redact/index.js';
-import { renderSessionStory } from '../../render/session-story.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
 import { CASES } from '../../cli/test/m33-fast-profile-fixture.js';
 import { beforeM36Labels, beforeM36Conversation, textBeforeS7, textBeforeFixColumn, textBeforeAsksFixes, textBeforeW1, textBeforeW2 }
   from './m33-integration-fixture.js';
@@ -413,6 +413,7 @@ test('M33 C tiers: in m33-fast and m33-lean every claim is asked three times; ev
   // Standard is unchanged: every item three times, in one run — and the support in its own.
   const seen = [];
   await reviewRun.runReview({ session: session(), pr: null, reviewScope: 'session-only', judge: judgeWith(narrative, { seen }) });
+  // `sonah.challenge/44`: the decision's vote whose receipt does not check out stands; it is not asked again.
   assert.deepEqual(seen.filter((r) => r.challenge).map((r) => r.label), ['challenge:w1:b1:p1', 'challenge:w1:b1:p2', 'challenge:w1:b1:p3',
     'challenge:w1:support:b1:p1', 'challenge:w1:support:b1:p2', 'challenge:w1:support:b1:p3']);
 });
@@ -458,8 +459,9 @@ test('M33 C the narrative prompt defines a claim and asks for supportedBy; one v
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   // M35 windowing moved it once more (`sonah.narrative/21`): windows, carried context, trims, aliases (C-07).
   // M36 phase 1 moved it once more (`sonah.narrative/22`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.narrative/23`): the window format (D68; FORMAT_VERSIONS).
@@ -473,8 +475,9 @@ test('M33 C the narrative prompt defines a claim and asks for supportedBy; one v
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
   const base = session();
   const built = prompt.buildNarrativePrompt({ session: base, window: { index: 0, events: base.events } });
   const task = built.prompt.replace(built.evidencePrompt, '').replace(/\s+/g, ' ');
@@ -544,7 +547,11 @@ test('M33 C the challenger is told explicit criteria for claims and supports; on
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   const system = challenge.challengeSystem().replace(/\s+/g, ' ');
   // H3: a hedged statement is judged as said; a contradiction is refuted when the words assert nothing about the work.
   for (const phrase of [/Read the whole AGENT SAID event/, /hedged or not: judge the quoted words as said, hedge included/,
@@ -718,34 +725,25 @@ const NO_ERRORS = 'SYNTHETIC_C_NO_ERRORS: all unit tests pass, no failures remai
 
 // ---- rendering: plain words, never "open" -------------------------------------------------------------------
 
-test('M33 C review.js says "confirmed by a recorded result" and "not checked" — never "open" — and withholds no claim by cause', async () => {
+test('M33 C a claim is confirmed by a recorded result or not checked, never open, and code withholds none by cause', async () => {
   const report = await run([CLAIMS.supported, CLAIMS.plain, CLAIMS.disclosed, CLAIMS.intention], { verdict: refuteNotClaims });
-  const md = review.renderReview(report);
-  const section = md.slice(md.indexOf('### What the agent told you'));
-  const ends = ['\n### ', '\n<details>'].map((mark) => section.indexOf(mark, 5)).filter((at) => at > 0);
-  const claimsPart = section.slice(0, ends.length ? Math.min(...ends) : undefined);
-  // D88: the confirmed claim is listed here; the one not checked under What Sonah could not check, and counted here.
-  assert.match(claimsPart, /1 claim the agent made in its own recorded words is confirmed by a recorded result: /);
-  assert.match(claimsPart, /\*\*confirmed by a recorded result\*\* — The agent said the lint is clean\./);
-  assert.ok(claimsPart.includes(`_${review.FOLDED_SECTION_WORDS.here(1, 'claim')}_`));
-  const folded = md.slice(md.indexOf(review.CHECKLIST_HEADINGS.folded));
-  assert.match(folded, /\*\*not checked\*\* — The agent said the notes file is written\./);
-  for (const part of [claimsPart, folded.slice(0, folded.indexOf('</details>'))])
-    assert.ok(!/\bopen\b/i.test(part), 'the claims section never says open');
+  // D88: the confirmed claim is listed with the claims; the one not checked is folded (the row kinds every reader reads).
+  assert.deepEqual(review.listedPromises(report).map((p) => [p.text, p.status, review.claimRowKind(p)]),
+    [['The agent said the lint is clean.', 'verified', null], ['The agent said the notes file is written.', 'open', 'claimsOpen']]);
   // M33 C recheck 2: the challengers refuted the disclosed and the intended statements; no claim is withheld by code.
-  assert.ok(!/statement\(s\) withheld|claim\(s\) withheld/.test(md));
+  assert.deepEqual(Object.entries(report.withheld?.causes ?? {}).filter(([, n]) => n > 0), []);
 });
 
-test('M33 C the session story says the same words for promises', async () => {
+test('M33 C, D97 the report .md says the same words for claims: checked, or not checked, never open', async () => {
   const report = await run([CLAIMS.supported, CLAIMS.plain, CLAIMS.disclosed, CLAIMS.intention], { verdict: refuteNotClaims });
-  const story = renderSessionStory(session(), report);
-  assert.ok(!story.includes('Open promises'), 'never "open"');
-  // D88: the confirmed claim under what the agent told you; the one not checked under What Sonah could not check.
-  assert.match(story, /## What the agent told you\n\n\*\*Confirmed by a recorded result: 1\*\*/);
-  assert.match(story, /## What Sonah could not check \(\d+\)[\s\S]*\*\*Claims not checked against a recorded result \(1\)\*\*/);
-  assert.match(story, /The agent said the lint is clean\. \(confirmed by a recorded result;/);
-  assert.match(story, /The agent said the notes file is written\. \(not checked;/);
-  // M33 C recheck 2: code withholds no claim, so the story counts none as "not listed as claims".
+  const story = renderReportMarkdown(session(), report);
+  const claims = story.slice(story.indexOf('#### Claims'), story.indexOf('#### What the agent said it did not do'));
+  assert.ok(claims.length > 0 && !/\bopen\b/i.test(claims), 'never "open"');
+  // The confirmed claim reads "checked", with the recorded result it was checked against; the other "not checked".
+  assert.equal(claims.split('\n- checked “').length - 1, 1, claims);
+  assert.equal(claims.split('\n- not checked “').length - 1, 1, claims);
+  assert.match(claims, /- checked “[^\n]*· A recorded result shows: “/);
+  // M33 C recheck 2: code withholds no claim, so the report counts none as "not listed as claims".
   assert.ok(!/not listed as (a )?claims?/.test(story));
 });
 

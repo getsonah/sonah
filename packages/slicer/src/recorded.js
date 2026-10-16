@@ -2,12 +2,12 @@
 // slicing from the recorder's own structured fields, never from the words of an output or a thought: the recorder's
 // own tool name, a Codex command's parsed meaning (`parsed_cmd`), a change's line-numbered hunks, a Claude Code result's
 // sidecar (`toolUseResult`) numbers, booleans and strings. Each is carried on the ledger event as `recorded`, in the
-// closed vocabulary redaction validates and scrubs before slice_hash (redact/index.js `RECORDED_FACTS`). Deterministic:
+// closed vocabulary redaction validates before slice_hash (redact/index.js `RECORDED_FACTS`). Deterministic:
 // no clock, no model, no network, no filesystem.
 
 import { posix } from 'node:path';
-import { RECORDED_FACTS, scrubHunks } from '../../redact/index.js';
-import { withheldFileReason, spelledPath } from './before.js';
+import { RECORDED_FACTS, validHunks } from '../../redact/index.js';
+import { spelledPath } from './before.js';
 
 const own = (value, key) => Object.hasOwn(value, key);
 const plain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -89,7 +89,7 @@ export function parseUnifiedHunks(diff) {
 /**
  * C (3), (c5). A Codex CommandExecution's `parsed_cmd`, the recorder's own typed reading of its command: one entry per
  * part, `{type}` from its closed set (`read`, `search`, `list_files`, `unknown`) with the recorder's own strings for that
- * type (a read's `name` and `path`, a search's `query` and `path`, a listing's `path`), verbatim (redaction scrubs them).
+ * type (a read's `name` and `path`, a search's `query` and `path`, a listing's `path`), verbatim.
  * Each entry's `cmd` text is not carried: it is the command's own text, already the action. Null for any other shape.
  */
 export function codexParsedCmd(value) {
@@ -128,13 +128,9 @@ export const codexCommandTool = (name) => typeof name === 'string'
 export const commandClassOf = (parsedCmd) => (Array.isArray(parsedCmd) && parsedCmd.length
   && parsedCmd.every((entry) => entry.type === 'read') ? 'read' : 'command');
 
-/**
- * (c2) A change's recorded hunks, scrubbed before slice_hash with the whole recorded file where one exists
- * (redact/index.js `scrubHunks`): `{ hunks, scrub, reasons, lost }`, or null (no hunk is kept). D84: `mask: false` (a
- * session review's load) keeps every line as recorded, `scrub` null.
- */
-export const scrubbedHunks = (hunks, file = null, { mask = true } = {}) =>
-  (hunks ? scrubHunks(hunks, file, { mask }) : null);
+/** (c2) A change's recorded hunks as the recorder wrote them (redact/index.js `validHunks`: the recorder's shape), or
+ *  null (no hunk is kept). D90 (owner decision 2026-10-15): nothing in them is masked. */
+export const carriedHunks = (hunks) => (hunks ? validHunks(hunks) : null);
 
 /** A path the way the slicer spells a call's path (events.js `makeEvent`: normalized, then `relative`): before.js
  *  `spelledPath` — relative under the recorder's cwd, as recorded outside it (D69 review F7). */
@@ -146,18 +142,16 @@ const relativeTo = (path, cwd) => {
 /**
  * D. A Claude Code Bash result's `bashEditDiff` (2.1.270 and later: the files the command changed): each file's path
  * (spelled as the slicer spells paths), whether the recorder typed it created or deleted, and its line-numbered hunks
- * scrubbed as one change each; the recorder's `changedFiles` list, `moreFiles` count and `shared`/`unavailable` flags.
- * D68 (R), D69 (b): a file whose content is withheld (before.js `withheldFileReason`: a credential-shaped path, a harness
- * home folder of the recording's user, `place` its home and the recorder's cwd) carries no hunk, only `hunksWithheld` (its closed reason). `{ editDiff, reasons, lost, unread }` or null for any
- * other shape: `unread` when a file's recorded hunks could not be read (the facts say `withheld`). D69 (c): a path is
- * spelled by the recorder's working directory, as an event's is; no work root re-spells it.
+ * as recorded; the recorder's `changedFiles` list, `moreFiles` count and `shared`/`unavailable` flags.
+ * D90 (owner decision 2026-10-15): every file carries its hunks (D68 R and D69 b withheld a credential-shaped or harness
+ * home file's, `hunksWithheld`). `{ editDiff, unread }` or null for any other shape: `unread` when a file's recorded
+ * hunks could not be read (the facts say `withheld`). D69 (c): a path is spelled by the recorder's
+ * working directory, as an event's is; no work root re-spells it.
  */
-export function bashEditDiffFacts(value, cwd, place = { cwd }, { mask = true } = {}) {
+export function bashEditDiffFacts(value, cwd) {
   if (!plain(value)) return null;
   if (Object.keys(value).some((key) => !RECORDED_FACTS.editDiff.includes(key))) return null;
   const editDiff = {};
-  const reasons = [];
-  let lost = false;
   let unread = false;
   if (own(value, 'files')) {
     if (!Array.isArray(value.files)) return null;
@@ -168,19 +162,9 @@ export function bashEditDiffFacts(value, cwd, place = { cwd }, { mask = true } =
       const entry = { path: relativeTo(file.filePath, cwd) };
       if (file.created === true) entry.created = true;
       if (file.deleted === true) entry.deleted = true;
-      const why = withheldFileReason(file.filePath, place);
-      if (why && recordedValue(file.hunks)) entry.hunksWithheld = why;
-      else if (!why) {
-        const hunks = recordedHunks(file.hunks);
-        const scrubbed = scrubbedHunks(hunks, null, { mask });
-        if (scrubbed) {
-          entry.hunks = scrubbed.hunks;
-          // D84: an unmasked read scrubbed nothing, and declares no scrub.
-          if (scrubbed.scrub) entry.hunkScrub = scrubbed.scrub;
-          reasons.push(...scrubbed.reasons);
-          lost = lost || scrubbed.lost;
-        } else if (recordedValue(file.hunks)) unread = true;
-      }
+      const hunks = carriedHunks(recordedHunks(file.hunks));
+      if (hunks) entry.hunks = hunks;
+      else if (recordedValue(file.hunks)) unread = true;
       editDiff.files.push(entry);
     }
   }
@@ -191,7 +175,7 @@ export function bashEditDiffFacts(value, cwd, place = { cwd }, { mask = true } =
   if (count(value.moreFiles)) editDiff.moreFiles = value.moreFiles;
   if (typeof value.shared === 'boolean') editDiff.shared = value.shared;
   if (typeof value.unavailable === 'boolean') editDiff.unavailable = value.unavailable;
-  return { editDiff, reasons, lost, unread };
+  return { editDiff, unread };
 }
 
 /**

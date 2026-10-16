@@ -74,16 +74,15 @@ test('B2: the sub-agent transcript Claude Code writes beside the parent links to
   assert.equal(ledger.children[0].ledger.instructions[0].origin, 'agent-or-inherited');
 });
 
-test('a scrubbed Claude call ID preserves the verified child ID and parent session link', async t => {
+test('D90: an opaque Claude call ID is kept as recorded, with the verified child ID and parent session link', async t => {
   const opaque = 'call_' + createHash('sha256').update('synthetic opaque ID 32')
     .digest('base64url').replace(/[-_]/g, 'A').slice(0, 24);
   const f = await fixture(t, { rootRows: [user('Review the parser.'), ...spawn(opaque, 'child-1')] });
   const ledger = await loadSessionEvidence([f.root], { ...f.options, reviewLinkedChildren: true });
   assert.equal(ledger.delegations[0].status, 'linked');
-  assert.equal(ledger.delegations[0].callId, null);
-  assert.deepEqual(ledger.delegations[0].identityUncheckedFields, ['callId']);
+  assert.equal(ledger.delegations[0].callId, opaque);
+  assert.equal(ledger.delegations[0].identityUncheckedFields, undefined);
   assert.equal(ledger.children.length, 1);
-  assert.equal(JSON.stringify(ledger).includes(opaque), false);
 });
 
 test('a PR review can clear only resolved child capture flags while the default load and direct child remain guarded', async t => {
@@ -232,12 +231,12 @@ test('wrong, duplicate, conflicting and redacted source identities cannot link',
   assert.equal(JSON.stringify(cleaned).includes(secret), false);
 });
 
-test('child text is redacted before hashing and local terminal display', async t => {
+test('D90: child text is kept as recorded, and hashed as recorded', async t => {
   const secret = 'sk-ant-api03-' + 'A'.repeat(80);
   const f = await fixture(t, { childRows: [user('use ' + secret), write('child-write', 'src/child.js', secret)] });
   const ledger = await loadSessionEvidence([f.root], f.options);
   assert.equal(ledger.children.length, 1);
-  assert.equal(JSON.stringify(ledger).includes(secret), false);
+  assert.ok(JSON.stringify(ledger.children[0].ledger).includes(secret));
   assert.equal(typeof sliceHash(ledger), 'string');
 });
 
@@ -438,7 +437,7 @@ test('V2 no-history Codex spawn proves child-owned zero boundary only through th
   assert.ok(direct.capture.reasons.includes('child_history_unchecked'));
 });
 
-test('a scrubbed native call ID keeps a verified Codex child tuple and no-fork boundary', async t => {
+test('D90: an opaque native call ID is kept as recorded, with a verified Codex child tuple and no-fork boundary', async t => {
   const f = await codexNoForkFixture(t);
   const opaque = 'call_' + createHash('sha256').update('synthetic opaque ID 32')
     .digest('base64url').replace(/[-_]/g, 'A').slice(0, 24);
@@ -448,10 +447,9 @@ test('a scrubbed native call ID keeps a verified Codex child tuple and no-fork b
   await f.saveRoot(rows);
   const root = await loadSessionEvidence([f.root], { ...f.options, reviewLinkedChildren: true });
   assert.equal(root.delegations[0].status, 'linked');
-  assert.equal(root.delegations[0].callId, null);
-  assert.deepEqual(root.delegations[0].identityUncheckedFields, ['callId']);
+  assert.equal(root.delegations[0].callId, opaque);
+  assert.equal(root.delegations[0].identityUncheckedFields, undefined);
   assert.deepEqual(root.children[0].ledger.ledger.map(event => event.path), ['child.js']);
-  assert.equal(JSON.stringify(root).includes(opaque), false);
 });
 
 test('no-fork proof fails closed for default spawn, missing result, and explicit spawn failure', async t => {
@@ -592,17 +590,16 @@ test('task linkage rejects changed parent metadata and unknown follow-up targets
   assert.ok(missing.delegations.every(d => d.status === 'unresolved'));
 });
 
-test('new protocol source and descriptor identities are scrubbed before matching or hashing', () => {
+test('D90: new protocol source and descriptor identities are carried as recorded to matching and hashing', () => {
   const secret = 'sk-ant-api03-' + 'A'.repeat(80);
   const unit = { ask: [], ledger: [], claim: {}, dropped: [],
     sources: [{ parentThreadId: secret, taskPath: '/root/' + secret }],
     delegations: [{ taskName: '/root/' + secret, target: secret, turn: 1 }] };
   const cleaned = redact(unit).ledger;
-  assert.equal(JSON.stringify(cleaned).includes(secret), false);
-  assert.equal(cleaned.sources[0].identityUnchecked, true);
-  assert.equal(cleaned.delegations[0].identityUnchecked, true);
-  assert.equal(cleaned.sources[0].taskPath, null);
-  assert.equal(cleaned.delegations[0].taskName, null);
+  assert.equal(cleaned.sources[0].taskPath, '/root/' + secret);
+  assert.equal(cleaned.delegations[0].taskName, '/root/' + secret);
+  assert.equal(cleaned.delegations[0].target, secret);
+  assert.notEqual(cleaned.delegations[0].identityUnchecked, true);
 });
 
 test('malformed lines cannot conceal a conflicting identity during indexing or a later read', async t => {
@@ -712,12 +709,11 @@ test('M33 A10 an unrelated conflicting rollout no longer withholds the child; a 
   // A malformed identity still blocks every link in the namespace.
   await save(other, [{ type: 'session_meta', payload: { id: 'stranger-a', agent_path: 'x'.repeat(201) } }]);
   assert.equal((await loadSessionEvidence([f.root], f.options)).delegations[0].reason, 'child_link_source_conflict');
-  // A redacted candidate value may be anything, so it blocks too.
-  const secret = 'sk-ant-api03-' + 'C'.repeat(80);
-  await save(other, [{ type: 'session_meta', payload: { id: 'stranger-a' } }, { type: 'session_meta', payload: { id: secret } }]);
-  const hidden = await loadSessionEvidence([f.root], f.options);
-  assert.equal(hidden.delegations[0].reason, 'child_link_source_conflict');
-  assert.equal(JSON.stringify(hidden).includes(secret), false);
+  // D90 (owner decision 2026-10-15): a key-shaped candidate value is a value like any other (an identity scan once hid
+  // it, and a hidden value blocked as if it could be anything): one that is not the child's blocks nothing.
+  const keyShaped = 'sk-ant-api03-' + 'C'.repeat(80);
+  await save(other, [{ type: 'session_meta', payload: { id: 'stranger-a' } }, { type: 'session_meta', payload: { id: keyShaped } }]);
+  assert.equal((await loadSessionEvidence([f.root], f.options)).delegations[0].status, 'linked');
 });
 
 test('M33 A10 Claude: an unrelated conflicting agent recording no longer withholds the child', async t => {

@@ -23,7 +23,7 @@ import { codeJudge, codeSession, contradictClaim, findEmptyInput, repoWith, sha2
 
 const exec = promisify(execFile);
 const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
-const CODE_LABEL = /^(?:code-check|code-pass|challenge:code-check|challenge:code-finding)(?::|$)/;
+const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
 
 /** A scratch home with its own SONAH_HOME (not created yet). */
 async function scratch(t) {
@@ -104,9 +104,9 @@ test('sonah config shows the setting, sets it, says how to change it, and refuse
   const box = await scratch(t);
   const path = settingsPath({ env: box.env });
   const shown = await config(box, []);
-  assert.deepEqual([shown.code, shown.stdout, shown.stderr], [0, 'code-pass: on (the default). A review also reads the '
-    + 'files the session changed or read, as they are now, and sends them to the reviewer. Change it with sonah config '
-    + 'code-pass off, or for one review with --no-code-pass.\n', '']);
+  assert.deepEqual([shown.code, shown.stdout, shown.stderr], [0, 'code-pass: on (the default). A review also runs the '
+    + 'code step: a review agent reads the repository with read-only tools and reviews the session\'s change. Change it '
+    + 'with sonah config code-pass off, or for one review with --no-code-pass.\n', '']);
   await assert.rejects(stat(box.env.SONAH_HOME), { code: 'ENOENT' }, 'showing writes nothing');
   const off = await config(box, ['code-pass', 'off']);
   assert.deepEqual([off.code, off.stdout], [0, `code-pass: off (set in ${path}). A review reads and sends the session `
@@ -194,13 +194,13 @@ test('a review follows the setting, the flag overrides it, and the session part 
     for (const name of ['byDefault', 'flagOn', 'settingOn']) assert.ok(codePart(runs[name].calls).length > 0, name);
     for (const name of ['settingOff', 'flagOff']) assert.deepEqual(codePart(runs[name].calls), [], name);
     // The estimate's companion line names where the setting came from.
-    assert.match(runs.byDefault.stdout, /^Code step: on \(the default\)\. [^\n]*it adds about 5 model calls/m);
-    assert.match(runs.settingOff.stdout, /^Code step: off \(your setting, sonah config\)\. Only the session is reviewed; no file is read or sent\. Turn it on with --code-pass, or for every review with sonah config code-pass on\.$/m);
-    assert.match(runs.flagOn.stdout, /^Code step: on \(--code-pass\)\. /m);
-    assert.match(runs.settingOn.stdout, /^Code step: on \(your setting, sonah config\)\. /m);
-    assert.match(runs.flagOff.stdout, /^Code step: off \(--no-code-pass\)\. /m);
+    assert.match(runs.byDefault.stdout, /^Code review: on \(the default\)\. [^\n]*It adds one review call, and one check call for each finding/m);
+    assert.match(runs.settingOff.stdout, /^Code review: off \(your setting, sonah config\)\. Sonah reviews only the session, and reads or sends no file\. Turn it on with --code-pass, or for every review with sonah config code-pass on\.$/m);
+    assert.match(runs.flagOn.stdout, /^Code review: on \(--code-pass\)\. /m);
+    assert.match(runs.settingOn.stdout, /^Code review: on \(your setting, sonah config\)\. /m);
+    assert.match(runs.flagOff.stdout, /^Code review: off \(--no-code-pass\)\. /m);
     // It follows the estimate, before the first call.
-    assert.match(runs.byDefault.stdout, /^This review should take roughly [^\n]*\nCode step: on /m);
+    assert.match(runs.byDefault.stdout, /^This review should take roughly [^\n]*\nCode review: on /m);
   });
 
 test('an unreadable setting stops a review with no flag before anything is read; a flag still runs it', async (t) => {
@@ -213,9 +213,9 @@ test('an unreadable setting stops a review with no flag before anything is read;
       loadSession: async () => assert.fail('nothing is read before the setting is known') });
     assert.equal(stopped.code, 2, argv.join(' '));
     assert.deepEqual(stopped.calls, []);
-    assert.equal(stopped.stderr, 'Review could not complete: config_invalid.\nFix: Your Sonah settings file could not be '
-      + 'read, so nothing was read or sent. Run sonah config code-pass on or sonah config code-pass off to write it again, '
-      + 'or add --code-pass or --no-code-pass to this review.\n');
+    assert.equal(stopped.stderr, 'Review could not complete: config_invalid.\nFix: Sonah could not read your settings file, '
+      + 'so it read and sent nothing. To write the file again, run sonah config code-pass on or sonah config code-pass '
+      + 'off. Or add --code-pass or --no-code-pass to this review.\n');
   }
   const flagged = await review(t, box, { root, argv: ['--no-code-pass'] });
   assert.equal(flagged.code, 0);
@@ -228,16 +228,20 @@ test('a dry run says whether the step runs and roughly what it adds, and sends n
   const on = await review(t, box, { root, argv: ['--dry-run'] });
   assert.equal(on.code, 0);
   assert.deepEqual(on.calls, []);
-  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode step: on \(the default\)\. It reads the files the session changed or read, as they are now, and sends them to the reviewer; it adds about 5 model calls after the session's review, then three checking passes for each answer and finding they give\. /m);
-  assert.match(on.stdout, /^Code pass: \d+ files? the session changed/m, 'and what it would read');
+  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode review: on \(the default\)\. It reviews the change with read-only access to the whole repository \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  assert.match(on.stdout, /^Code review: the change holds \d+ paths? that the session changed/m, 'and what it would read');
   await assert.rejects(stat(box.env.SONAH_HOME), { code: 'ENOENT' }, 'a dry run writes no setting');
   await config(box, ['code-pass', 'off']);
   const off = await review(t, box, { root, argv: ['--dry-run'] });
-  assert.match(off.stdout, /^A review should take roughly [^\n]*\nCode step: off \(your setting, sonah config\)\. /m);
-  assert.doesNotMatch(off.stdout, /^Code pass:/m, 'off: no file is read');
-  // The line's words: one count, and no call is promised where nothing can be read.
-  assert.match(codeStepLine({ on: true, source: 'default' }, 0), /it found no file it can read here, so it adds no call\./);
-  assert.match(codeStepLine({ on: true, source: 'config' }, 5), /it adds about 5 model calls/);
+  assert.match(off.stdout, /^A review should take roughly [^\n]*\nCode review: off \(your setting, sonah config\)\. /m);
+  assert.doesNotMatch(off.stdout, /^Code review: the change holds/m, 'off: no file is read');
+  // The line's words: no call is promised where there is no change to review.
+  assert.match(codeStepLine({ on: true, source: 'default' }, { root: true, files: [] }),
+    /It found no change to review here, so it adds no call\./);
+  assert.match(codeStepLine({ on: true, source: 'default' }, { root: true, files: [{ path: 'a.js', diff: 'withheld' }] }),
+    /It found no change to review here/);
+  assert.match(codeStepLine({ on: true, source: 'config' }, { root: true, files: [{ path: 'a.js', diff: 'recorded' }] }),
+    /It adds one review call, and one check call for each finding/);
 });
 
 test('sonah doctor reports the setting, and an unreadable one needs attention', async (t) => {
@@ -248,9 +252,9 @@ test('sonah doctor reports the setting, and an unreadable one needs attention', 
     adapters: async () => ({ claude: { count: 1, where: 'claude' }, codex: { count: 0, where: 'codex' } }) };
   const lineOf = (text) => text.split('\n').find((line) => line.startsWith('Code step (code-pass): '));
   const byDefault = await doctor({ probe: false }, dependencies);
-  assert.equal(lineOf(byDefault.text), 'Code step (code-pass): on (the default). A review also reads the files the '
-    + 'session changed or read, as they are now, and sends them to the reviewer. Change it with sonah config code-pass '
-    + 'off, or for one review with --no-code-pass.');
+  assert.equal(lineOf(byDefault.text), 'Code step (code-pass): on (the default). A review also runs the code step: a '
+    + 'review agent reads the repository with read-only tools and reviews the session\'s change. Change it with sonah '
+    + 'config code-pass off, or for one review with --no-code-pass.');
   assert.deepEqual(byDefault.facts.settings, { state: 'absent', codePass: true });
   assert.ok(!byDefault.attention.includes('settings'));
   await config(box, ['code-pass', 'off']);

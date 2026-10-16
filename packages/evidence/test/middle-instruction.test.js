@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import { middleInstructionSession, middleInstructionPr, MIDDLE_DECISION_CANDIDATES } from '../fixtures/middle-instruction.js';
 import { buildLedger, deriveColumn } from '../src/ledger.js';
 import { Session, verifyReceipt } from '../src/session.js';
-import { renderReview } from '../src/review.js';
 
 const recorded = middleInstructionSession();
 const events = structuredClone(recorded.events);
@@ -57,14 +56,6 @@ test('JG-03 the amendment settles the column, not the superseded original', () =
   assert.deepEqual(d.amends, ['M1']);
 });
 
-test('JG-03 the review states the amendment rather than reading the choice as a breach', () => {
-  const md = renderReview(report());
-  assert.match(md, /This amends your earlier instruction/);
-  assert.match(md, /The agent followed the later one/);
-  // It must not claim to know which sentence was reversed — supersedes does not record that.
-  assert.match(md, /not recorded, so it is not guessed here/);
-});
-
 test('JG-03 a superseded instruction cannot itself settle a later choice', () => {
   // Citing the original streaming rule against the buffering write is a real conflict, and it
   // grounds — the ledger must show it as a conflict, not silently prefer the amendment.
@@ -75,12 +66,6 @@ test('JG-03 a superseded instruction cannot itself settle a later choice', () =>
   assert.equal(out.column, 'asked-settled'); // it is a real, earlier, human instruction
   // ...but the amendment relationship is what stops a reviewer misreading it: M3 supersedes M1.
   assert.deepEqual(session.event('M3').supersedes, ['M1']);
-});
-
-test('the timeline carries the full instruction history, both versions', () => {
-  const md = renderReview(report());
-  const timeline = md.slice(md.indexOf('What happened in the session'));
-  for (const id of ['M1', 'M3', 'M5']) assert.match(timeline, new RegExp(`\`${id}\``));
 });
 
 test('a new module write is structural and survives into the PR', () => {

@@ -18,7 +18,6 @@ import assert from 'node:assert/strict';
 // Namespace imports, so each test fails on its own against code that predates it rather than
 // the whole file failing to link.
 import * as reviewRun from '../src/run-review.js';
-import * as reviewRender from '../src/review.js';
 import * as prompts from '../src/code-review-prompt.js';
 import { runCodeReview } from '../src/code-review.js';
 import { groundDecision, deriveColumn } from '../src/ledger.js';
@@ -31,7 +30,6 @@ import { join } from 'node:path';
 import { createAnswerCache, memoizeJudge } from '../../cli/src/answer-cache.js';
 
 const { runReview, mergeWindowOutputs } = reviewRun;
-const { renderReview } = reviewRender;
 const { buildCodeReviewPrompt, renderManifest, fileReview, MANIFEST_MAX_FILES } = prompts;
 
 const REPO = { host: 'github.com', id: '42' };
@@ -176,75 +174,6 @@ test('W3d-2 the session-only wrapper (no reviewable code) forwards the same iden
   assert.ok(!JSON.stringify(report).includes('SYNTHETIC_STDERR'));
 });
 
-// ---- the report says it ------------------------------------------------------------------
-
-const shell = (over) => ({
-  repo: REPO, pr: { number: 7, files: [] }, session: null,
-  hasSessionEvidence: true, decisions: [], findings: [], rejectedDecisions: [], rejectedFindings: [],
-  gaps: [], counts: { decisions: 0, byColumn: {}, uncheckedColumn: 0, rejectedDecisions: 0, rejectedFindings: 0 },
-  coverage: 'partial', codeCoverage: 'missing', ...over,
-});
-const ok = { narrative: 'ok', challenge: { passes: 3, validVotes: 9, reason: null },
-  grounding: { receipts: 2, verified: 2, rejected: 0, repaired: 0, sessionGrounded: true, relevanceUnchecked: 0 },
-  reuse: null, transport: null };
-const shortfall = (over) => ({ ...ok, ...over, grounding: { ...ok.grounding, ...over?.grounding } });
-const windowLines = (md, n) => md.split('\n').filter((line) => line.startsWith(`- window ${n}:`));
-
-test('W3d-2 a window whose session evidence did not ground says so', () => {
-  const md = renderReview(shell({ windowResults: [
-    { shortfall: shortfall({ grounding: { sessionGrounded: false } }) },
-    { shortfall: shortfall() },
-  ] }));
-  assert.deepEqual(windowLines(md, 1), ['- window 1: the session evidence did not ground.']);
-  assert.deepEqual(windowLines(md, 2), [], 'a grounded window says nothing');
-});
-
-test('W3d-2 decisions about a partly supplied file are counted per window', () => {
-  // F157 (W3d-4): a PR that supplied a file list, one file of it partly. With no file list at all
-  // the same count reads "the PR file list was not available" instead (d58-follow-through.test.js).
-  const md = renderReview(shell({ pr: { number: 7, enumeration: 'complete',
-    files: [{ path: 'SYNTHETIC_PARTIAL.js', change: 'modified', contentState: 'partial' }] }, windowResults: [
-    { shortfall: shortfall({ grounding: { relevanceUnchecked: 2 } }) },
-    { shortfall: shortfall({ grounding: { relevanceUnchecked: 'two' } }) },
-  ] }));
-  assert.deepEqual(windowLines(md, 1), ['- window 1: 2 decision(s) concern a file the PR supplied only partly.']);
-  assert.deepEqual(windowLines(md, 2), [], 'a count that is not a count is never printed as one');
-});
-
-test('W3d-2 a failed model call names its transport class from a closed phrasebook', () => {
-  assert.deepEqual(Object.keys(reviewRender.TRANSPORT_SENTENCE ?? {}).sort(), [...reviewRun.TRANSPORT_SHORTFALL].sort(),
-    'one phrase per transport class, and no phrase without one');
-  const md = renderReview(shell({ windowResults: [
-    { shortfall: shortfall({ narrative: 'model_unavailable', transport: 'timeout',
-      grounding: { receipts: 0, verified: 0, sessionGrounded: false } }) },
-    { shortfall: shortfall({ narrative: 'model_unavailable', transport: 'SYNTHETIC_UNLISTED_CLASS',
-      grounding: { receipts: 0, verified: 0, sessionGrounded: false } }) },
-  ] }));
-  const one = windowLines(md, 1);
-  assert.ok(one.includes('- window 1: the model call failed (timeout).'), one.join('\n'));
-  // A window the model never answered has no session evidence of its own to ground; saying it
-  // "did not ground" would blame the evidence for the call.
-  assert.ok(!one.some((l) => /did not ground/.test(l)), one.join('\n'));
-  const two = windowLines(md, 2);
-  assert.ok(two.includes('- window 2: the model call failed.'), two.join('\n'));
-  assert.ok(!md.includes('SYNTHETIC_UNLISTED_CLASS'), 'an unlisted class is never printed as itself');
-  for (const phrase of Object.values(reviewRender.TRANSPORT_SENTENCE)) assert.doesNotMatch(phrase, /undefined|_/);
-});
-
-test('W3d-2 the footer says how many challenge items were re-asked and how many vote quotes were snapped', () => {
-  const footer = (md) => md.split('\n').filter((l) => /re-asked once|snapped by code/.test(l));
-  assert.deepEqual(footer(renderReview(shell({ challenge: { reaskedSlots: 2, reaskCalls: 1, repairedVotes: 3 } }))),
-    ['_2 challenge item(s) were re-asked once; 3 vote quote(s) were snapped by code._']);
-  assert.deepEqual(footer(renderReview(shell({ challenge: { reaskedSlots: 0, reaskCalls: 0, repairedVotes: 0 } }))), [],
-    'nothing re-asked and nothing snapped prints nothing');
-  assert.deepEqual(footer(renderReview(shell({ challenge: { reaskedSlots: 1, reaskCalls: 1, repairedVotes: 0 } }))),
-    ['_1 challenge item(s) were re-asked once._']);
-  // The code review's own challenges re-ask and snap too; the footer counts every one the report carries.
-  assert.deepEqual(footer(renderReview(shell({ challenge: { reaskedSlots: 1, reaskCalls: 1, repairedVotes: 0 },
-    codeChallenges: [{ reaskedSlots: 2, reaskCalls: 1, repairedVotes: 3 }, { reaskedSlots: 'x', repairedVotes: null }] }))),
-  ['_3 challenge item(s) were re-asked once; 3 vote quote(s) were snapped by code._']);
-});
-
 // ---- report totals, end to end -------------------------------------------------------------
 
 test('W3d-2 report.challenge totals re-asks and snapped votes across windows, and the report says them', async () => {
@@ -262,13 +191,11 @@ test('W3d-2 report.challenge totals re-asks and snapped votes across windows, an
   assert.equal(report.challenge.reaskCalls, 1);
   assert.equal(report.challenge.reaskedSlots, 1);
   assert.equal(report.challenge.repairedVotes, 9);
-  const md = renderReview(report);
-  assert.match(md, /^_1 challenge item\(s\) were re-asked once; 9 vote quote\(s\) were snapped by code\._$/m);
 });
 
 // D60 (W3f-1): a review answered from stored answers runs the same challenge — the same re-ask,
 // the same snapped quotes — with no call, so it counts what its challenge did exactly as the first
-// review did, and renders the same bytes. (The window capsule this used to pin reported zeros.)
+// review did. (The window capsule this used to pin reported zeros.)
 test('W3d-2 a review answered from stored answers counts what its challenge did, exactly as the first', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'sonah-w3d2-answers-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -285,10 +212,10 @@ test('W3d-2 a review answered from stored answers counts what its challenge did,
   const again = await runReview({ session: s, pr, judge: replay });
   assert.equal(replay.answers.calls, 0, 'premise: every answer came from the cache');
   assert.deepEqual([again.challenge.reaskCalls, again.challenge.reaskedSlots, again.challenge.repairedVotes], [1, 1, 9]);
-  assert.equal(renderReview(again), renderReview(first));
+  assert.deepEqual(again.windowResults.map((w) => w.shortfall), first.windowResults.map((w) => w.shortfall));
 });
 
-test('W3d-2 end to end: a window whose relevance is unknown and one whose model call timed out say so', async () => {
+test('W3d-2 end to end: a window whose relevance is unknown and one whose model call timed out record so', async () => {
   const s = windowedSession(2);
   const partial = { repo: REPO, enumeration: 'partial', files: [{ path: modulePath(1), change: 'added', contentState: 'complete' },
     { path: modulePath(2), change: 'added', contentState: 'complete' }] };
@@ -297,10 +224,10 @@ test('W3d-2 end to end: a window whose relevance is unknown and one whose model 
       throw transportError({ code: 'model_timeout', transportClass: 'timeout' });
     return reviewer()(request);
   } });
-  const md = renderReview(report);
-  assert.ok(windowLines(md, 1).includes('- window 1: 1 decision(s) concern a file the PR supplied only partly.'), md);
-  assert.ok(windowLines(md, 2).includes('- window 2: the model call failed (timeout).'), md);
-  assert.ok(!md.includes('SYNTHETIC_STDERR'));
+  const [one, two] = report.windowResults;
+  assert.equal(one.shortfall.grounding.relevanceUnchecked, 1, JSON.stringify(one.shortfall));
+  assert.equal(two.shortfall.transport, 'timeout', JSON.stringify(two.shortfall));
+  assert.ok(!JSON.stringify(report).includes('SYNTHETIC_STDERR'));
 });
 
 // ---- renames keep relevance ------------------------------------------------------------------

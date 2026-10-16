@@ -18,8 +18,8 @@ import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { runReview } from '../src/run-review.js';
-import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom } from '../src/ledger.js';
-import { renderReview } from '../src/review.js';
+import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, reviewRunState } from '../src/ledger.js';
+import { coverageCauses } from '../src/review.js';
 import { redisPivotSession } from '../fixtures/redis-pivot.js';
 
 const repo = { host: 'github.com', id: '1' };
@@ -44,11 +44,6 @@ const quiet = (narrative = EMPTY) => async (request) => request.challenge ? {
 // cut in a session write body (`source_clipped`, channel `code`, scope `session`) — is a loss of
 // the session record. Whichever side a gap lands on, the overall reviewStatus is never CLEAN.
 const isCodeGap = (gap) => gap?.channel === 'code' && gap?.scope === 'pr';
-const OVERALL_CLEAN = '**Nothing found, and the evidence was complete enough to say so.**';
-// D71 (a), owner decision 2026-10-08: the rendered review shows no status at all, so none can certify a gap.
-const ANY_STATUS = /\*\*(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\*\*|Needs a decision|Worth a look|nothing is blocking/;
-const SESSION_NOT_COMPLETE = 'Session review: **did not complete**';
-const RUN_NOT_COMPLETE = "Sonah's review did not complete";
 
 // M29, also by hand: an `unrecorded_body` is a shortfall for every repository write unless
 // exact historical-body/head equivalence is proved. The current record has no such proof. A
@@ -151,7 +146,7 @@ function partsByHand(report) {
 // Every window failing leaves the coverage missing too: no window's answer was usable.
 const WINDOW_NOT_RUN = /^(window:incomplete|facts:windows_incomplete|facts:windows_unanswered|coverage_missing)$/;
 
-function assertNotRunUnchecked(report, joined, md, label) {
+function assertNotRunUnchecked(report, joined, label) {
   const notRun = notRunCauses(report);
   if (!notRun.length || (report.findings ?? []).some((f) => f.origin !== 'code-review' && f.status === 'DECIDE')) return;
   notRunChecked++;
@@ -175,16 +170,19 @@ function assertNotRunUnchecked(report, joined, md, label) {
       assert.notEqual(status, 'CLEAN', `${why} (${where})`);
       if (expected) assert.equal(status, expected, `${why} (${where})`);
     }
-    // D71 (a): rendered, the session review is said to have not completed — never by a status.
-    assert.ok(md.includes(SESSION_NOT_COMPLETE) && md.includes(RUN_NOT_COMPLETE), `${why} (rendered)`);
-    assert.doesNotMatch(md, ANY_STATUS, `${why} (rendered)`);
+    // D71 (a): every reader says the session review did not complete — never by a status.
+    assertReadsIncomplete(joined, why);
     return;
   }
   const why = `${label}: ${notRun.join(', ')} — the session review did not complete`;
   assert.equal(report.sessionStatus, 'UNCHECKED', why);
   assert.equal(honestStatuses(joined).sessionStatus, 'UNCHECKED', `${why} (recomputed)`);
-  assert.ok(md.includes(SESSION_NOT_COMPLETE) && md.includes(RUN_NOT_COMPLETE), `${why} (rendered)`);
-  assert.doesNotMatch(md, ANY_STATUS, `${why} (rendered)`);
+  assertReadsIncomplete(joined, why);
+}
+/** What every reader recomputes and says of the review: the session review, and Sonah's review, did not complete. */
+function assertReadsIncomplete(joined, why) {
+  assert.notEqual(honestStatuses(joined).sessionReview, 'complete', `${why} (the session review, as read)`);
+  assert.equal(reviewRunState(joined), 'incomplete', `${why} (Sonah's review, as read)`);
 }
 
 function assertNeverClean(report, label) {
@@ -206,11 +204,7 @@ function assertNeverClean(report, label) {
   if (sessionSide) assert.notEqual(honest.sessionStatus, 'CLEAN', `${why} — yet the recomputed sessionStatus is CLEAN`);
   if (codeSide) assert.notEqual(honest.codeStatus, 'CLEAN', `${why} — yet the recomputed codeStatus is CLEAN`);
   assert.notEqual(honest.reviewStatus, 'CLEAN', `${why} — yet the recomputed reviewStatus is CLEAN`);
-  // As rendered: the reader never sees a CLEAN beside the gap — D71 (a): nor any other status.
-  const md = renderReview(joined);
-  assert.doesNotMatch(md, ANY_STATUS, `${why} — yet the render shows a status`);
-  assert.ok(!md.includes(OVERALL_CLEAN), `${why} — yet the render's headline certifies the review`);
-  assertNotRunUnchecked(report, joined, md, label);
+  assertNotRunUnchecked(report, joined, label);
 }
 
 // ---- fixtures --------------------------------------------------------------------------------
@@ -463,10 +457,9 @@ test('W3c-8 buildLedger joined to a code review that could not read a file: neve
   assertNeverClean(joined, 'a PR-scoped code gap');
   assert.equal(joined.sessionStatus, 'CLEAN', 'the code gap does not touch a fully-read session');
   assert.equal(joined.codeStatus, 'UNCHECKED');
-  // D71 (a): rendered, the fully-read session is said to have completed and the code review not to have read every
-  // file — never by a status.
-  const md = renderReview(joined);
-  assert.ok(md.includes('Session review: **complete**') && md.includes('Code review: **did not read every file**'), md);
+  // D71 (a): the fully-read session reads as completed and the code review as not having read every file.
+  assert.equal(joined.sessionReview, 'complete');
+  assert.notEqual(joined.codeCoverage, 'complete');
 });
 
 test('F117 honestStatuses never upgrades a partial that buildLedger derived from a rejected decision', () => {
@@ -549,7 +542,7 @@ test('M29 joined: a same-path placed diff cannot make an unrecorded shell body C
   // beside a clean code review — never CLEAN. Before M33, UNCHECKED.
   assert.equal(joined.sessionStatus, 'NO_FINDINGS');
   assert.equal(joined.reviewStatus, 'NO_FINDINGS');
-  assert.ok(renderReview(joined).includes('- `unrecorded_body`'), 'and it is still listed as not checked');
+  assert.ok(coverageCauses(joined).some(([cause]) => cause === 'unrecorded_body'), 'and it is still named as not checked');
 });
 
 test('W3c-10 the lift is only ever the unrecorded-write cap: a partial with another cause is never raised', async () => {
@@ -638,10 +631,8 @@ for (const [route, scope] of [['session-only', { pr: null, reviewScope: 'session
     assert.equal(report.coverage, 'partial', 'the declared recorder limit caps the coverage');
     assert.equal(report.sessionStatus, 'NO_FINDINGS');
     assert.equal(honestStatuses({ ...report, codeCoverage: 'complete' }).sessionStatus, 'NO_FINDINGS', 'recomputed');
-    // D71 (a): rendered, a completed session review over a recorder limit, its causes named — never a status.
-    const md = renderReview(report);
-    assert.ok(md.includes('Session review: **complete**') && md.includes('Not covered: '), 'rendered');
-    assert.doesNotMatch(md, ANY_STATUS, 'rendered');
+    // D71 (a): a completed session review over a recorder limit, its causes named — never a status.
+    assert.ok(coverageCauses(report).length > 0, 'its causes are named');
     assertNeverClean(report, `a parent+child decision (${route})`);
   });
 }

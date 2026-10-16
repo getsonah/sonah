@@ -14,8 +14,8 @@
 // Windowing (owner-confirmed spec 2026-10-06; C-02 "M35 the human message in
 // full"): a human message is kept IN FULL. The 20,000-code-point transport budget M33 R declared here is gone, and no
 // human turn is declared over any budget. Only a file the human attached keeps a budget — redaction's `ATTACHED_CAP`,
-// 2k tokens, head and tail — and, as M33 R made it, the cut is declared here and made by redaction after it scrubbed the
-// whole text (a cut made here, before redaction, handed the redactor half a token).
+// 2k tokens, head and tail — and, as M33 R made it, the cut is declared here and made by redaction, which reads the whole
+// text (D90: and masks nothing in it).
 
 import { ASK_MIDDLE } from '../../redact/index.js';
 
@@ -25,7 +25,7 @@ import { ASK_MIDDLE } from '../../redact/index.js';
  *   human message
  * @returns {{text: string, elided: Array<{what: string, chars: number}>}} the turn, whole — its runs of blank lines
  *   folded and the turn trimmed, as it always was — and, for an attached file over its budget only, the one cut due on
- *   it: its middle (made by redaction, after it has scrubbed the text whole).
+ *   it: its middle (made by redaction, which reads the text whole).
  */
 export function compressAsk(text, cap = null) {
   const kept = String(text ?? '').replace(/\n{3,}/g, '\n\n').trim();

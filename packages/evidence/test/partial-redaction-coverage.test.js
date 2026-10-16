@@ -4,7 +4,6 @@ import { redact } from '../../redact/index.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { verifyReceipt } from '../src/session.js';
 import { instructionReviewScope } from '../src/ledger.js';
-import { renderTimeline } from '../src/review.js';
 import { buildEvents } from '../../slicer/src/events.js';
 
 const PEM = [
@@ -14,9 +13,20 @@ const PEM = [
 ].join('\n');
 const source = (over = {}) => ({ ask: [{ turn: 1, text: 'Fix the parser.' }], ledger: [],
   claim: { finalMessage: '' }, dropped: [], ...over });
+// D90 (owner decision 2026-10-15, privacy is not a design constraint): no Sonah masks or drops a recorded text now, but
+// a ledger an earlier Sonah redacted is still read as it was written. Each `persisted…` ledger below is literally what
+// that redactor wrote for the text named beside it: its note in place of a dropped key block, its mark in place of a
+// masked value, the counts and flags it declared.
+const NOTE = '[… 3 line(s) dropped: private key block …]';
+/** `Never use\n<key block>\nRedis here.` as an ask, after the earlier redactor. */
+const persistedPemAsk = () => source({ ask: [{ turn: 1, text: `Never use\n${NOTE}\nRedis here.`, redacted: true,
+  redactedLines: 3 }] });
 
 test('a partial PEM cut leaves visible instruction spans but cannot certify full authority or a bridge quote', () => {
-  const { ledger } = redact(source({ ask: [{ turn: 1, text: `Never use\n${PEM}\nRedis here.` }] }));
+  // D90: today's redaction keeps the key block as recorded; the ledger an earlier one wrote is read below.
+  assert.equal(redact(source({ ask: [{ turn: 1, text: `Never use\n${PEM}\nRedis here.` }] })).ledger.ask[0].text,
+    `Never use\n${PEM}\nRedis here.`);
+  const { ledger } = redact(persistedPemAsk());
   assert.ok(ledger.ask[0].redactedLines > 0);
   assert.match(ledger.ask[0].text, /line\(s\) dropped/);
   const session = sessionFromLedger(ledger);
@@ -35,7 +45,7 @@ test('a partial PEM cut leaves visible instruction spans but cannot certify full
 
 test('partially redacted working commentary declares T loss and cannot bridge the dropped block', () => {
   const { ledger } = redact(source({ commentary: [{ turn: 1, beforeEvent: 0,
-    text: `Do not deploy\n${PEM}\nuntil tests pass.` }] }));
+    text: `Do not deploy\n${NOTE}\nuntil tests pass.`, redactedLines: 3 }] }));
   assert.ok(ledger.commentary[0].redactedLines > 0);
   const session = sessionFromLedger(ledger);
   const commentary = session.events.find((event) => event.kind === 'commentary');
@@ -58,10 +68,10 @@ test('an inline redaction marker is neither instruction text nor a bridge betwee
 });
 
 test('generic redaction masks split human and command evidence and declare their channels', () => {
-  const { ledger } = redact(source({ ask: [{ turn: 1,
-    text: 'Please set API_TOKEN=synthetic_value_for_testing today.' }],
-  ledger: [{ turn: 1, seq: 0, kind: 'bash', cmd: 'echo API_TOKEN=synthetic_value_for_testing',
-    outcome: 'passed' }] }));
+  const { ledger } = redact(source({ ask: [{ turn: 1, text: 'Please set API_TOKEN=‹redacted› today.', redacted: true }],
+    ledger: [{ turn: 1, seq: 0, kind: 'bash', cmd: 'echo API_TOKEN=‹redacted›', outcome: 'passed' }],
+    dropped: [{ turn: 1, reason: 'redacted:assigned-secret', where: 'ask' },
+      { turn: 1, reason: 'redacted:assigned-secret', where: 'cmd' }] }));
   assert.match(ledger.ask[0].text, /‹redacted›/);
   const session = sessionFromLedger(ledger);
   assert.equal(session.textSpansOf(session.event('I1')).length, 2);
@@ -73,7 +83,9 @@ test('generic redaction masks split human and command evidence and declare their
 
 test('redacted tool output retains two separate quotable spans and declares O loss', () => {
   const { ledger } = redact(source({ ledger: [{ turn: 1, seq: 0, kind: 'bash',
-    cmd: 'node --test', outcome: 'passed', tailLines: ['Never use', ...PEM.split('\n'), 'Redis here.'] }] }));
+    cmd: 'node --test', outcome: 'passed', tailLines: ['Never use', NOTE, 'Redis here.'], redacted: true }],
+  dropped: [{ turn: 1, reason: 'redacted:secret-key-value', where: 'tailLines' },
+    { turn: 1, reason: 'dropped:pem-block', where: 'tailLines' }] }));
   const session = sessionFromLedger(ledger);
   const observation = session.event('A1-0-r');
   assert.equal(session.textSpansOf(observation, 'output').length, 2);
@@ -84,13 +96,14 @@ test('redacted tool output retains two separate quotable spans and declares O lo
 
 test('a masked written body declares a code gap while keeping its visible source', () => {
   const { ledger } = redact(source({ ledger: [{ turn: 1, seq: 0, kind: 'create', path: 'src/config.js',
-    after: { text: 'export const API_TOKEN=synthetic_value_for_testing;', truncated: false } }] }));
+    after: { text: 'export const API_TOKEN=‹redacted:secret-value›', truncated: false } }],
+  dropped: [{ turn: 1, reason: 'redacted:secret-key-value', where: 'after' }] }));
   const session = sessionFromLedger(ledger);
   const write = session.event('A1-0');
   assert.equal(write.changes[0].redacted, true);
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'code'));
   assert.equal(verifyReceipt(session, { eventId: write.id, role: 'code',
-    quote: '‹redacted›' }).ok, false);
+    quote: '‹redacted:secret-value›' }).ok, false);
 });
 
 test('ordinary multiline output survives the recorder and remains quotable', () => {
@@ -140,11 +153,4 @@ test('a historical recorder-clipped output cannot ground a quote across its omit
   assert.equal(verifyReceipt(session, { eventId: observation.id, role: 'observation',
     quote: 'GO\n[… output omitted by recorder …]\nSTOP' }).ok, false);
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'observations' && gap.code === 'source_clipped'));
-});
-
-test('the Markdown timeline shows a source cut instead of joining an instruction', () => {
-  const { ledger } = redact(source({ ask: [{ turn: 1, text: `Never use\n${PEM}\nRedis here.` }] }));
-  const timeline = renderTimeline(sessionFromLedger(ledger)).join('\n');
-  assert.match(timeline, /omitted/);
-  assert.doesNotMatch(timeline, /Never use\s+Redis here/);
 });

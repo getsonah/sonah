@@ -204,17 +204,17 @@ const verifiedTaskName = (delegation) => {
  *  anywhere else a stub must stand at the start of a line. */
 const BODY_TRUNCATION = /(?:^|\n)\[\u2026 truncated at (\d+) chars \u2026\]/g;
 
-/** W3e-1 / F184. The REDACTOR's note, written by `scrubLines` (redact/index.js) on a line of its
+/** W3e-1 / F184. The REDACTOR's note, written by an earlier Sonah's redactor (`scrubLines`) on a line of its
  *  own at the end of each segment it dropped lines from — the end of a whole body, or the end of
  *  one side of an Edit, just before the separator. It is the redactor's words, not the session's,
  *  so it is recognised exactly as the recorder's stub is: never inside a quotable span, never part
  *  of any edit side, never counted as a character or line of one. The count it states is already
  *  on the field (`redactedLines`), and only a field that declares one is read for it.
  *
- *  W3e-3 / F199: the note names why the lines were dropped, one phrase per reason from
- *  redact/index.js DROPPED_NOTE_PHRASES (a key block, a secret-named value, unclassified content\u2026),
- *  one note per reason. Every phrase is letters, spaces and hyphens, which is what this matches;
- *  redact/test/every-field.test.js pins that each phrase is recognised here and never quotable. */
+ *  W3e-3 / F199: the note names why the lines were dropped, one phrase per reason (that redactor's
+ *  `DROPPED_NOTE_PHRASES`: a key block, a secret-named value, unclassified content\u2026), one note per reason.
+ *  Every phrase is letters, spaces and hyphens, which is what this matches. D90 (owner decision 2026-10-15): no Sonah
+ *  writes the note now (the redactor's detectors are deleted); a ledger an earlier one persisted is still read. */
 const REDACTION_NOTE = /(?:^|\n)\[\u2026 \d+ line\(s\) dropped: [A-Za-z][A-Za-z -]*[A-Za-z] \u2026\](?=\n|$)/g;
 const REDACTION_TOKEN = /‹redacted(?::[^›\n]+)?›/g;
 const DROPPED_TOKEN = /‹dropped(?::[^›\n]+)?›/g;
@@ -237,10 +237,35 @@ const STATEMENT_OMISSION = /(?:^|\n)\[… statement middle omitted before review
  *  M33 F repair 3 to D68 E): read only to recognise a persisted bound. */
 const STATEMENT_CAP_CHARS = 8000;
 const hasRedactionNote = (value) => new RegExp(REDACTION_NOTE.source).test(String(value ?? ''));
+/** An ask's own cuts, Sonah's or an older slicer's, read where its `elided` declares one. */
+const ASK_CUTS = new RegExp(`${ASK_ELISION.source}|${ASK_OMISSION.source}`, 'g');
 const INSTRUCTION_OMISSION = new RegExp(`${ASK_ELISION.source}|${ASK_OMISSION.source}|${REDACTION_NOTE.source}|${REDACTION_TOKEN.source}|${DROPPED_TOKEN.source}`, 'g');
 const PROSE_OMISSION = new RegExp(`${REDACTION_NOTE.source}|${REDACTION_TOKEN.source}|${DROPPED_TOKEN.source}`, 'g');
+/** Does `value` hold mark-shaped text: a masked value, a dropped token, a dropped-lines note? It is an earlier
+ *  redactor's mark only where the record declares that redactor's work (`redactorDeclared`). */
 const hasRedactionToken = (value) => String(value ?? '').includes('‹redacted')
   || String(value ?? '').includes('‹dropped') || hasRedactionNote(value);
+/**
+ * D90 (owner decision 2026-10-15). Where the record declares an earlier Sonah's redactor's work, mark-shaped text
+ * (`‹redacted…›`, `‹dropped…›`, a dropped-lines note) is that redactor's: kept out of every quotable span and declared
+ * as withheld, as it always was. The record declares it in two places, both that redactor's own fields: the ledger's
+ * list of what it dropped (`dropped`, an entry with one of its closed `redacted:` or `dropped:` reasons:
+ * `redactorLedger`), and the field itself (its `redacted`, or a count of the lines or tokens it dropped:
+ * `declaresRedaction`). No Sonah writes a mark or either declaration now, and nothing derives one from a text's
+ * characters (redact/index.js), so in a ledger a review slices today the same characters are the recording's own text
+ * (a person pasted an earlier page, an agent printed one): placed whole, quotable, and never read as a redaction.
+ * Provenance by the record's structure, never by what its text says.
+ */
+const REDACTOR_REASON = /^(?:redacted|dropped):/;
+const redactorLedger = (ledger) => Array.isArray(ledger?.dropped)
+  && ledger.dropped.some((drop) => typeof drop?.reason === 'string' && REDACTOR_REASON.test(drop.reason));
+const declaresRedaction = (field) => field !== null && typeof field === 'object'
+  && (field.redacted === true || Number(field.redactedLines) > 0 || Number(field.redactedTokens) > 0);
+/** `redactorDeclared(ledger)(field)`: does the record declare an earlier redactor's work on this field? */
+const redactorDeclared = (ledger) => {
+  const whole = redactorLedger(ledger);
+  return (field) => whole || declaresRedaction(field);
+};
 
 /** A write whose body the record simply does not carry (a shell write, a delete, an `Edit`
  *  whose tool call names old/new strings rather than a whole body). Declared on the change so
@@ -312,11 +337,11 @@ export const BODY_CAPPED_NOTE = 'a file body was capped before review; only its 
  * where the parent RECEIVED it — the row (`record`, in the hand-off's own recording) and human turn (`turn`) of its
  * FINAL_ANSWER row, or null when not recorded as a count. Anything that is not that shape is no report.
  */
-const helperReport = (delegation) => {
+const helperReport = (delegation, declared = declaresRedaction) => {
   const report = delegation?.finalAnswer;
   if (report === null || typeof report !== 'object' || Array.isArray(report) || typeof report.text !== 'string') return null;
   return { text: report.text, truncated: report.truncated === true,
-    redacted: report.redacted === true || hasRedactionToken(report.text),
+    redacted: report.redacted === true || declared(report) && hasRedactionToken(report.text),
     record: Number.isSafeInteger(report.record) && report.record >= 1 ? report.record : null,
     turn: Number.isSafeInteger(report.turn) && report.turn >= 0 ? report.turn : null };
 };
@@ -940,6 +965,9 @@ export function sessionFromLedger(ledger, options = {}) {
   const adapter = adapterOf(ledger);
   // C-01 event identity: every element's id, claimed once for this adaptation (`ledgerEventIds`).
   const ids = ledgerEventIds(ledger);
+  // D90: does the record declare an earlier redactor's work on a field (`redactorDeclared`)? Only then is a field's
+  // mark-shaped text that redactor's.
+  const redactorField = redactorDeclared(ledger);
   const blobs = {};
   const events = [];
   let sequence = 0;
@@ -1002,17 +1030,20 @@ export function sessionFromLedger(ledger, options = {}) {
         untilByte: Buffer.byteLength(whole, 'utf8') });
     return refs.length ? refs : [{ sourceKey: key, fromByte: 0, untilByte: 0 }];
   };
-  const putProse = (text) => putAround(text, PROSE_OMISSION);
-  const putOutput = (text, clipped) => clipped
-    ? putAround(text, new RegExp(`${PROSE_OMISSION.source}|${OUTPUT_OMISSION.source}`, 'g'))
-    : putProse(text);
+  /** A text a person or an agent wrote, placed whole; around an earlier redactor's marks only where its field declares
+   *  them (`declared`, from `declaresRedaction`). */
+  const putProse = (text, declared = false) => (declared ? putAround(text, PROSE_OMISSION) : put(text));
+  const withMarks = (declared, marker) => new RegExp(declared ? `${PROSE_OMISSION.source}|${marker.source}` : marker.source, 'g');
+  const putOutput = (text, clipped, declared = false) => clipped
+    ? putAround(text, withMarks(declared, OUTPUT_OMISSION))
+    : putProse(text, declared);
   /** M33 F repair. A helper's final report: its cut is this review's own marker (`REPORT_OMISSION`). */
-  const putReport = (text, clipped) => clipped
-    ? putAround(text, new RegExp(`${PROSE_OMISSION.source}|${REPORT_OMISSION.source}`, 'g'))
-    : putProse(text);
+  const putReport = (text, clipped, declared = false) => clipped
+    ? putAround(text, withMarks(declared, REPORT_OMISSION))
+    : putProse(text, declared);
   /** M33 F repair 3. A closing statement this review cut: its marker (and any older '[…]' line) is never quotable. */
-  const putStatement = (text) => putAround(text,
-    new RegExp(`${PROSE_OMISSION.source}|${STATEMENT_OMISSION.source}|(?:^|\\n)\\[\u2026\\](?=\\n|$)`, 'g'));
+  const putStatement = (text, declared = false) => putAround(text,
+    withMarks(declared, new RegExp(`${STATEMENT_OMISSION.source}|(?:^|\\n)\\[\u2026\\](?=\\n|$)`)));
   /**
    * M33 F. The helper's final report, attached by the slicer by exact recorded identity, is what the parent RECEIVED:
    * the hand-off `id`'s own recorded result, an observation like any tool result (`<id>-r`), emitted where it arrived
@@ -1023,7 +1054,7 @@ export function sessionFromLedger(ledger, options = {}) {
   const emitReport = (id, report, turnOf = null) => events.push({ id: ids.sub(id, 'r'), kind: 'observation',
     sequence: sequence++,
     invocation: id, callKey: id, phase: 'terminal', result: 'unknown', exitCode: null,
-    output: putReport(report.text, report.truncated), sourceOfResult: 'native', helperReported: true,
+    output: putReport(report.text, report.truncated, report.redacted), sourceOfResult: 'native', helperReported: true,
     // M33 P: a W2 agent's closing report placed at a later turn's receipt keeps its hand-off's C-02 turn (and part).
     ...(turnOf !== null ? { turn: turnIdentity(turnOf) } : {}) });
 
@@ -1062,10 +1093,12 @@ export function sessionFromLedger(ledger, options = {}) {
     const truncated = body.truncated === true;
     const redactedLines = Number.isFinite(body.redactedLines) ? body.redactedLines : 0;
     const noted = redactedLines > 0;
+    // D90: a mark-shaped string is an earlier redactor's only where the record declares its work (`redactorDeclared`).
+    const declared = redactorField(body);
     const markers = [truncated ? BODY_TRUNCATION.source : null,
       noted ? REDACTION_NOTE.source : null,
-      whole.includes('‹redacted') ? REDACTION_TOKEN.source : null,
-      whole.includes('‹dropped') ? DROPPED_TOKEN.source : null].filter(Boolean);
+      declared && whole.includes('‹redacted') ? REDACTION_TOKEN.source : null,
+      declared && whole.includes('‹dropped') ? DROPPED_TOKEN.source : null].filter(Boolean);
     const words = markers.length ? new RegExp(markers.join('|'), 'g') : null;
     const refs = words ? putAround(whole, words) : put(whole);
     const placed = words ? whole.replace(words, '') : whole;
@@ -1073,9 +1106,9 @@ export function sessionFromLedger(ledger, options = {}) {
     const cap = truncated ? Number(whole.match(new RegExp(BODY_TRUNCATION.source))?.[1]) : NaN;
     return {
       refs,
-      // A masked value ("‹redacted:aws-key›") drops no line, so the line count alone would
-      // report an untouched body. redact/index.js:132 uses the same marker test.
-      redacted: redactedLines > 0 || body.redacted === true || hasRedactionToken(whole),
+      // A masked value ("‹redacted:aws-key›") drops no line, so the line count alone would report an untouched body; D90:
+      // it is a mask only where the record declares an earlier redactor's work.
+      redacted: redactedLines > 0 || body.redacted === true || declared && hasRedactionToken(whole),
       extent: {
         chars: placed.length,
         lines: placed.length ? placed.split('\n').length : 0,
@@ -1120,6 +1153,8 @@ export function sessionFromLedger(ledger, options = {}) {
     // The redactor counts dropped lines per recorded FIELD, not per segment, so every segment of
     // one field declares that field's count. Over-declaring redaction is the safe direction.
     const redactedLines = Number.isFinite(body.redactedLines) ? body.redactedLines : 0;
+    // D90: a mark-shaped string is an earlier redactor's only where the record declares its work (`redactorDeclared`).
+    const declared = redactorField(body);
 
     const regions = [];
     for (const m of whole.matchAll(EDIT_PART)) regions.push({ start: m.index, end: m.index + m[0].length, cut: true });
@@ -1127,8 +1162,10 @@ export function sessionFromLedger(ledger, options = {}) {
       regions.push({ start: m.index, end: m.index + m[0].length, cut: false, cap: Number(m[1]) });
     if (redactedLines > 0)
       for (const m of whole.matchAll(REDACTION_NOTE)) regions.push({ start: m.index, end: m.index + m[0].length, note: true });
-    for (const m of whole.matchAll(REDACTION_TOKEN)) regions.push({ start: m.index, end: m.index + m[0].length, note: true });
-    for (const m of whole.matchAll(DROPPED_TOKEN)) regions.push({ start: m.index, end: m.index + m[0].length, note: true });
+    if (declared) {
+      for (const m of whole.matchAll(REDACTION_TOKEN)) regions.push({ start: m.index, end: m.index + m[0].length, note: true });
+      for (const m of whole.matchAll(DROPPED_TOKEN)) regions.push({ start: m.index, end: m.index + m[0].length, note: true });
+    }
     regions.sort((a, b) => a.start - b.start);
 
     const segments = [];
@@ -1170,7 +1207,7 @@ export function sessionFromLedger(ledger, options = {}) {
       const cut = truncated && (stubbed ? segment.stub !== null : i === last);
       return {
         refs: segment.refs,
-        redacted: redactedLines > 0 || body.redacted === true || hasRedactionToken(whole),
+        redacted: redactedLines > 0 || body.redacted === true || declared && hasRedactionToken(whole),
         extent: {
           chars: segment.text.length,
           lines: segment.text.length ? segment.text.split('\n').length : 0,
@@ -1418,7 +1455,7 @@ export function sessionFromLedger(ledger, options = {}) {
   const reportArrivals = new Map();       // arrival turn -> [{ delegation, index, report, row }]
   const gluedReports = new Set();         // hand-offs whose report stays inside their own block
   for (const { delegation, index } of delegations) {
-    const report = delegation.status === 'failed' ? null : helperReport(delegation);
+    const report = delegation.status === 'failed' ? null : helperReport(delegation, redactorField);
     if (!report) continue;
     const row = hasRow(delegation) && report.record !== null ? { source: delegation.source, record: report.record } : null;
     if (report.turn === null || report.turn < delegation.turn
@@ -1672,9 +1709,12 @@ export function sessionFromLedger(ledger, options = {}) {
     // no quotable text, and is omitted — so the instruction history reads incomplete
     // (ledger.js instructionReviewScope). A ledger persisted before W3e-3 carries the redactor's
     // old literal in the human's place instead; it is read the same way.
+    // D90: a mark-shaped string is an earlier redactor's only where the record declares its work (`redactorDeclared`);
+    // in any other ask it is the human's own words (a pasted page), kept whole and quotable.
+    const declared = redactorField(ask);
     const redactedAway = ask.redacted === true && typeof ask.text === 'string'
       && (!ask.text.trim() || ask.text === DROPPED_ASK_LITERAL);
-    const partlyRedacted = (Number(ask.redactedLines) > 0 || hasRedactionToken(ask.text))
+    const partlyRedacted = (Number(ask.redactedLines) > 0 || declared && hasRedactionToken(ask.text))
       && !redactedAway;
     if (redactedAway || partlyRedacted) withheldAsks.push(id);
     // Gain I (2026-10-13): the nontext blocks the message carried (an image the human pasted), on its event.
@@ -1687,7 +1727,7 @@ export function sessionFromLedger(ledger, options = {}) {
       ...(strippedAsk && !shortenedAsk ? { stripped: true } : {}),
       ...(redactedAway || partlyRedacted ? { redacted: true } : {}),
       text: redactedAway ? [] : elided || partlyRedacted
-        ? putAround(ask.text, INSTRUCTION_OMISSION) : put(ask.text) };
+        ? putAround(ask.text, declared ? INSTRUCTION_OMISSION : ASK_CUTS) : put(ask.text) };
   };
 
   // M33 P: each hand-off event and report placed by a row of its own (not by an action's), for `workBetween`.
@@ -1855,7 +1895,7 @@ export function sessionFromLedger(ledger, options = {}) {
         const event = { id: commentaryId,
           kind: 'commentary', sequence: sequence++,
           phase: 'working', beforeInvocation: i < acts.length ? ids.act(acts[i]) : null,
-          text: putProse(say.text) };
+          text: putProse(say.text, redactorField(say)) };
         events.push(event);
         slotOf.set(event, { slot: i, action: false });
         const row = rowFrom(say.source, say.record);
@@ -1887,9 +1927,9 @@ export function sessionFromLedger(ledger, options = {}) {
       // Spelled once here: every change of this action carries the same stored path.
       const path = spellField(act.path);
       const otherInput = attempted === 'other' && typeof act.argsExcerpt === 'string'
-        ? act.argsExcerpt.split(INPUT_PART).flatMap((part) => part ? putProse(part) : []) : [];
+        ? act.argsExcerpt.split(INPUT_PART).flatMap((part) => part ? putProse(part, redactorField({ redacted: act.inputRedacted })) : []) : [];
       const metadataInput = typeof act.inputMetadata === 'string'
-        ? putProse(act.inputMetadata) : [];
+        ? putProse(act.inputMetadata, redactorField({ redacted: act.inputMetadataRedacted })) : [];
       const sourceLocator = sourceLocatorOf(act);
       const recordedTool = attempted === 'other' && typeof act.tool === 'string' ? act.tool : act.via ?? attempted;
       const invocation = { id, kind: 'invocation', sequence: sequence++, callKey: id,
@@ -1899,7 +1939,7 @@ export function sessionFromLedger(ledger, options = {}) {
         ...humanInteractionFlags(adapter, recordedTool),
         ...(sourceLocator ? { sourceLocator } : {}),
         paths: path ? [{ path }] : [],
-        command: isCommand && act.cmd ? putProse(act.cmd) : [],
+        command: isCommand && act.cmd ? putProse(act.cmd, redactorField(null)) : [],
         ...(shellWriteOf ? { shellWriteOf } : {}),
         ...(shellWriteOf && act.shellWriteStatusEligible === true
           ? { shellWriteStatusEligible: true } : {}),
@@ -1928,14 +1968,15 @@ export function sessionFromLedger(ledger, options = {}) {
       // ToolSearch's exact tool_reference blocks are distinct native sources. The redactor scans
       // their names in tailLines; place each surviving name in its own blob so a quote can name
       // one reference but cannot cross the newline we only added for display.
+      const outputDeclared = redactorField({ redacted: act.observationRedacted });
       const outputRefs = () => act.toolReferenceSpans === true && Array.isArray(act.tailLines)
         ? act.tailLines.flatMap((name) => typeof name === 'string' && name
-          ? putOutput(name, false) : [])
+          ? putOutput(name, false, outputDeclared) : [])
         : act.genericTool === true && act.observationRedacted === true ? []
         : act.genericTool === true && Array.isArray(act.outputSpans)
           ? act.outputSpans.flatMap((span) => typeof span === 'string' && span
-            ? putOutput(span, false) : [])
-        : output ? putOutput(output, act.tailClipped === true) : [];
+            ? putOutput(span, false, outputDeclared) : [])
+        : output ? putOutput(output, act.tailClipped === true, outputDeclared) : [];
       // A terminal observation is emitted ONLY when the record actually carries one. Commands
       // carry `outcome`; write-shaped events carry the structured `result` evidence added for
       // CRD-A1/G2. Absent both, no result was recorded -- and inventing a successful one is how
@@ -2158,7 +2199,8 @@ export function sessionFromLedger(ledger, options = {}) {
       const handOff = { id, kind: 'invocation', sequence: sequence++, callKey: id,
         tool: workflowAgent ? 'Workflow' : spellField(delegation.parentInstruction?.tool ?? 'delegation'),
         operation: 'delegate', paths: [], command: [], changes: [],
-        input: !workflowAgent && delegation.parentInstruction?.text ? putProse(delegation.parentInstruction.text) : [],
+        input: !workflowAgent && delegation.parentInstruction?.text
+          ? putProse(delegation.parentInstruction.text, redactorField(delegation.parentInstruction)) : [],
         ...(taskName ? { taskName } : {}), ...(encryptedBrief(delegation) ? { briefEncrypted: true } : {}),
         ...(workflowCall ? { workflowCall } : {}),
         ...(workflowAgent && plainWorkflowName(delegation.workflowName) ? { workflowName: delegation.workflowName } : {}),
@@ -2175,14 +2217,14 @@ export function sessionFromLedger(ledger, options = {}) {
       // M33 W: a Workflow agent's report is its run journal's record of what the agent returned: no parent row
       // received it, so it closes the agent's own block, after its transferred history — never moved elsewhere.
       const closingReport = workflowAgent && gluedReports.has(delegation);
-      const closeBlock = () => { if (closingReport) emitReport(id, helperReport(delegation), receipt || moved ? delegation.turn : null); };
+      const closeBlock = () => { if (closingReport) emitReport(id, helperReport(delegation, redactorField), receipt || moved ? delegation.turn : null); };
       if (delegation.status === 'failed') {
         events.push({ id: ids.sub(id, 'r'), kind: 'observation', sequence: sequence++, invocation: id,
           callKey: id, phase: 'terminal', result: 'failed', exitCode: null, output: [],
           sourceOfResult: 'native' });
       } else if (gluedReports.has(delegation) && !closingReport) {
         // M33 F: a report whose recorded position cannot place it after this hand-off stays right after it.
-        emitReport(id, helperReport(delegation));
+        emitReport(id, helperReport(delegation, redactorField));
       }
       if (delegation.status !== 'linked') { closeBlock(); continue; }
 
@@ -2303,16 +2345,16 @@ export function sessionFromLedger(ledger, options = {}) {
       // cut is declared either way.
       if (raw.split('\n').includes(STATEMENT_OMISSION_LINE)) {
         if (raw.replace(STATEMENT_OMISSION, '').trim() !== '')
-          events.push({ id, kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putStatement(raw) });
+          events.push({ id, kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putStatement(raw, redactorField(say)) });
         clippedSayings++;
         return;
       }
       const cut = raw.indexOf(`\n${ELISION}\n`);
       if (cut === -1) {
-        events.push({ id, kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw) });
+        events.push({ id, kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw, redactorField(say)) });
       } else {
-        events.push({ id: ids.sub(id, 'head'), kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw.slice(0, cut)) });
-        events.push({ id: ids.sub(id, 'tail'), kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw.slice(cut + ELISION.length + 2)) });
+        events.push({ id: ids.sub(id, 'head'), kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw.slice(0, cut), redactorField(say)) });
+        events.push({ id: ids.sub(id, 'tail'), kind: 'commentary', sequence: sequence++, phase: 'final', beforeInvocation: null, text: putProse(raw.slice(cut + ELISION.length + 2), redactorField(say)) });
         clippedSayings++;
       }
     });
@@ -2354,7 +2396,8 @@ export function sessionFromLedger(ledger, options = {}) {
     projectRows.map(({ turn, beforeEvent, source, record }) => ({ turn, beforeEvent, source, record })));
   const projectInstructions = projectRows.map((entry, k) => ({ id: ids.of(entry) ?? `P${entry.turn}-${k}`,
     kind: 'project-instructions', afterSequence: projectStarts[k] > 0 ? events[projectStarts[k] - 1].sequence : -1,
-    childId: null, path: spellField(entry.path), text: putProse(entry.text), ...(entry.redacted ? { redacted: true } : {}) }));
+    childId: null, path: spellField(entry.path), text: putProse(entry.text, redactorField(entry)),
+    ...(entry.redacted ? { redacted: true } : {}) }));
   const session = new Session({ sessionKey, adapter, events, blobs, children, projectInstructions });
   // The second release review (low): the working directory the recording states (the slicer's `cwd`, whose prefix it
   // strips from the paths it spells), non-enumerable like the facts below, so no reader of the session's own fields
@@ -2859,6 +2902,9 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
   transfers = [], unrecorded = { count: 0, shell: 0, eventIds: [], writes: [] }, withheldAsks = [], events = [],
   ids = ledgerEventIds(ledger)) {
   const gaps = [];
+  // D90: a mark-shaped string is an earlier redactor's only where the record declares its work (`redactorDeclared`).
+  const redactorField = redactorDeclared(ledger);
+  const marked = (field, text) => redactorField(field) && hasRedactionToken(text);
   // M33 F: the typed communication loss is every closed inter-agent loss counter together; each must be a count.
   const communicationOnlyCapture = (capture) => {
     if (capture?.incomplete !== true || capture.interAgentMessagesSoleIncomplete !== true
@@ -2888,9 +2934,8 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     });
   });
   const redactedBriefs = (ledger.delegations ?? []).filter((delegation) =>
-    delegation?.parentInstruction && (hasRedactionToken(delegation.parentInstruction.text)
-      || delegation.parentInstruction.redacted === true
-      || Number(delegation.parentInstruction.redactedLines) > 0));
+    delegation?.parentInstruction && (declaresRedaction(delegation.parentInstruction)
+      || marked(delegation.parentInstruction, delegation.parentInstruction.text)));
   if (redactedBriefs.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions',
     scope: 'session', count: redactedBriefs.length,
     eventIds: redactedBriefs.map((delegation) => delegationEventIds.get(delegation)).filter(Boolean),
@@ -2957,14 +3002,13 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     count: redactedCode.length, eventIds: redactedCode,
     note: 'recorded code bodies contain redacted or omitted source text' });
   const redactedCommands = (ledger.ledger ?? []).filter((act) => COMMAND_KINDS.includes(act.attempted ?? act.kind)
-    && (hasRedactionToken(act.cmd)
-      || (!act.cmd && act.redacted === true))).map((act) => ids.act(act));
+    && (marked(null, act.cmd) || !act.cmd && act.redacted === true)).map((act) => ids.act(act));
   if (redactedCommands.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions', scope: 'session',
     count: redactedCommands.length, eventIds: redactedCommands,
     note: 'recorded command text was partly withheld by redaction' });
   const redactedOtherInput = (ledger.ledger ?? []).filter((act) =>
     (act.attempted ?? act.kind) === 'other' && (act.inputRedacted === true
-      || hasRedactionToken(act.argsExcerpt)
+      || marked(null, act.argsExcerpt)
       || act.inputRecorded === true && typeof act.argsExcerpt !== 'string'))
     .map((act) => ids.act(act));
   if (redactedOtherInput.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions', scope: 'session',
@@ -3196,11 +3240,11 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
   // M33 F: a helper's final report is recorded output too: its redaction is declared with tool output's, by the
   // observation that carries it. This review's cut of it is its own gap (M33 F repair: the recorder cut nothing).
   const reportIds = (pick) => (ledger.delegations ?? []).filter((delegation) => delegation?.status !== 'failed'
-    && helperReport(delegation) && pick(helperReport(delegation)))
+    && helperReport(delegation, redactorField) && pick(helperReport(delegation, redactorField)))
     .map((delegation) => delegationEventIds.get(delegation)).filter(Boolean).map((id) => ids.sub(id, 'r'))
     .filter((id) => observationIds.has(id));
   const redactedOutputs = [...(ledger.ledger ?? []).filter((act) => act.observationRedacted === true
-    || Array.isArray(act.tailLines) && act.tailLines.some(hasRedactionToken))
+    || Array.isArray(act.tailLines) && act.tailLines.some((line) => marked(null, line)))
     .map((act) => ids.sub(ids.act(act), 'r'))
     .filter((id) => observationIds.has(id)), ...reportIds((report) => report.redacted)];
   if (redactedOutputs.length) gaps.push({ code: 'incomplete_inventory', channel: 'observations', scope: 'session',
@@ -3228,8 +3272,7 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     gaps.push({ code: 'unsupported_message', channel: 'commentary', scope: 'session',
       count: ledger.commentaryCapture.unsupported });
   if ([...(ledger.commentary ?? []), ...(ledger.sayings ?? [])]
-    .some((item) => Number(item?.redactedLines) > 0 || item?.redacted === true
-      || hasRedactionToken(item?.text)))
+    .some((item) => declaresRedaction(item) || marked(item, item?.text)))
     gaps.push({ code: 'incomplete_inventory', channel: 'commentary', scope: 'session', count: null,
       note: 'visible commentary text was partly withheld by redaction' });
   if (clippedSayings) gaps.push({ code: 'source_clipped', channel: 'commentary', scope: 'session',

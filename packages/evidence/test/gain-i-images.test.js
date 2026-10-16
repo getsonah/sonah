@@ -15,7 +15,7 @@ import { REQUEST_IMAGE_LIMITS, IMAGE_BACKENDS, deliverableImage, sniffedMediaTyp
   deliveredView, clearedView } from '../src/images.js';
 import { INSTRUCTION_GAP_NOTES, sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { coverageCauses } from '../src/review.js';
-import { renderSessionStory } from '../../render/session-story.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { named, labelOf, humanAsk, call, result, said } from './m33-u-unasked-fixture.js';
 import { readingStableIds } from './m35-windows-fixture.js';
@@ -67,8 +67,14 @@ test('Gain I: a pasted image rides on its message, and its loss is located there
   assert.ok(!causes.includes('instructions_elided'));
 });
 
-test('Gain I: with masking on (what a person reads), the image\'s data is withheld and its loss stays', async (t) => {
-  const { ledger, session } = await loadPasted(t, pastedRows(), { mask: true });
+test('Gain I: an image an earlier Sonah withheld the data of (its masked ledger) keeps its loss, and none is sent', async (t) => {
+  // D90 (owner decision 2026-10-15): no Sonah withholds an image's data now; a ledger an earlier one masked carries the
+  // block without its data, and is read so.
+  const withoutData = (ledger) => {
+    for (const block of ledger.ask[0].nonText ?? []) { delete block.data; delete block.mediaType; }
+    return ledger;
+  };
+  const { ledger, session } = await loadPasted(t, pastedRows(), { persisted: withoutData });
   assert.deepEqual(ledger.ask[0].nonText, [{ block: 1, type: 'image' }]);
   assert.equal(located(session).length, 1);
   assert.deepEqual(requestImages(session, null, 'claude-cli'), { images: [], delivered: [] });
@@ -328,21 +334,21 @@ test('Gain I: a Codex message keeps a data-URL image whole; a path-only image is
   const raw = await sliceLineage([file], { cwd: '/repo' });
   assert.deepEqual(raw.ask.map((ask) => ask.nonText?.map(({ type, mediaType, data: d }) => [type, mediaType ?? null,
     d === data])), [[['image', 'image/png', true]], [['image', null, false]]]);
-  const session = sessionFromLedger(redact(raw, { mask: false }).ledger, { sessionKey: 'gain-i-codex' });
+  const session = sessionFromLedger(redact(raw).ledger, { sessionKey: 'gain-i-codex' });
   const { delivered } = requestImages(session, null, 'codex-cli');
   assert.equal(delivered.length, 1, 'the path-only image keeps its message\'s loss');
   assert.equal(located(session)[0].count, 2);
 });
 
-test('Gain I: the page and the story say an image was attached, and never hold it', async (t) => {
+test('Gain I: the page and the report .md say an image was attached, and never hold it', async (t) => {
   const { session } = await loadPasted(t, pastedRows([imageBlock(png(64, 48)), imageBlock(png(32, 32))]));
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', backend: 'claude-cli',
     judge: readingStableIds(session, judge(session, [])) });
   const data = session.event(named(session, 'I1')).nonText[0].data;
-  const story = renderSessionStory(session, report);
+  const story = renderReportMarkdown(session, report);
   const page = renderSessionPage(session, report);
-  for (const text of [story, page]) {
-    assert.match(text, /You attached 2 images to this message; they are not shown here\./);
-    assert.ok(!text.includes(data.slice(0, 40)), 'no image byte is ever written for a person');
-  }
+  assert.ok(story.includes('You attached 2 images to this message. Sonah does not show them.'));
+  // D97: the page says it under the message, in the report's words.
+  assert.ok(page.includes('You attached 2 images to this message. Sonah does not show them.'));
+  for (const text of [story, page]) assert.ok(!text.includes(data.slice(0, 40)), 'no image byte is ever written for a person');
 });

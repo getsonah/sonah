@@ -14,7 +14,7 @@ import { sessionFromLedger, WORKFLOW_GAP_NOTES } from '../../evidence/adapters/s
 // C-01 event identity: sessions are registered, and their events named by positional labels (stable-ids-fixture.js).
 import { adapt, named, labelOf, withoutIdentity } from '../../evidence/test/stable-ids-fixture.js';
 import { runReview, planWindowRequests } from '../../evidence/src/run-review.js';
-import { renderSessionStory } from '../../render/session-story.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
 import { captureCase, windowNarrative, fixtureJudge } from './m33-fast-profile-fixture.js';
 import { modulesBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fixture.js';
 import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
@@ -105,7 +105,7 @@ test('M35 W2 the agents are reviewed as sessions of their own; the parent\'s win
   assert.ok(agents.every((part) => part.session.parentSegment?.childId === null), 'linked back to the parent');
 });
 
-test('M33 W2 a completion received in a later human turn places the agents there; the story shows them in that step', async (t) => {
+test('M33 W2 a completion received in a later human turn places the agents there', async (t) => {
   const { ledger, session } = await load(t, receivedLaterRows);
   // Rows: 1 ask, 2-3 the launch, 4 the compaction, 5 the second ask, 6-7 the README write, 8 the notification.
   assert.deepEqual(ledger.workflowRuns[0].receipt, { turn: 2, beforeEvent: 2, source: 0, record: 8 });
@@ -122,26 +122,7 @@ test('M33 W2 a completion received in a later human turn places the agents there
   assert.equal(partOf('A1-0'), 0);
   assert.equal(partOf('D1-0'), 0);
   assert.ok(partOf(STALE) > 0 && plan.windows[0].parts[partOf(STALE)].session.helper, 'the agent\'s run is its own session\'s');
-  const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
-    judge: fixtureJudge({ narrativeOf: (r) => windowNarrative(session, r.window) }) });
-  // The story's steps are the report's windows. No window holds the receipt boundary (a placement, never reviewed),
-  // so the story places it in the step of the parent's last event before it. Read with the parent's window cut at its
-  // second ask — as a longer session's windows would be — the agents are listed under the second step, not the launch's.
-  const [parent] = report.windowResults;
-  const parentIds = parent.eventIds.filter((id) => session.event(id)?.childId == null);
-  const agentIds = parent.eventIds.filter((id) => session.event(id)?.childId != null);
-  const second = parentIds.indexOf(named(session, 'I2'));
-  assert.ok(second > 0, 'premise: the parent\'s window holds both asks');
-  const cut = { ...report, windowResults: [{ ...parent, eventIds: parentIds.slice(0, second) },
-    { ...parent, eventIds: parentIds.slice(second) }, { ...parent, eventIds: agentIds }] };
-  const story = renderSessionStory(session, cut);
-  const helper = story.indexOf('- Helper (workflow fix parser): Fix the nested-input branch');
-  assert.ok(helper > 0);
-  const step = (n) => story.search(new RegExp(`^#+ .*Step ${n}\\b`, 'm'));
-  assert.ok(step(2) > 0 && step(2) < helper && (step(3) < 0 || helper < step(3)),
-    'listed under the step that received it, not the launch\'s');
-  // Read as the review windowed it: one parent window holds the launch and the receipt alike.
-  assert.ok(renderSessionStory(session, report).indexOf('- Helper (workflow fix parser): Fix the nested-input branch') > 0);
+  // (D97: the story's step blocks, which listed the agents under the step that received them, are gone with the story.)
 });
 
 test('M33 W2 no receipt recorded: the agents stand after the launch request\'s own work, declared once with the call and its agents', async (t) => {
@@ -413,10 +394,32 @@ const MOVED_BY_FIX_REVIEW = Object.freeze({ planned: '89c47c64ae704bb72e6507ee5a
  *  Sonah could not check folded under their own heading last. Nothing renders a story back, so every capture below
  *  carries it. No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_JUDGMENT_FIRST = Object.freeze({ story: '2d84734edd969da9190af23c669189474c6d1d8ddb476374d65aaa55d92ab249' });
+/** D90 (owner decision 2026-10-15; story /30, the agentic code step's release item): the story, by its footer alone — it
+ *  is generated from the recorded session, no longer "from a redacted recording" (nothing is masked for a person).
+ *  Nothing renders a story back, so every capture below carries it. No event, gap, request, label, window or window
+ *  failure moved. */
+const MOVED_BY_AGENTIC = Object.freeze({ story: '227151e0e18c31522b5a23f7c3ff20f33249f2653a26434df214fef4f56dad0d' });
+/** D97 (STE at about 80%): the story, by the fixed words it reads from review.js and code-report.js alone (the attention
+ *  lines, the folded section, the coverage causes and the code review's words, rewritten in STE). Nothing renders a
+ *  story back, so every capture below carries it. No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_STE = Object.freeze({ story: 'f6452c9f190a3d1c00cf9933e1336b164d1c74a4fd327e3f4fff5b8918ae5cc8' });
+/** D97 (owner decisions 2026-10-16; story /32): the story, by what it is — the report .md, the report model rendered for a
+ *  pull request comment. Nothing renders a story back, so every capture below carries it. No event, gap, request, label,
+ *  window or window failure moved. */
+const MOVED_BY_REPORT_MD = Object.freeze({ story: 'd39b11f72ecddeeb2cdbc0b51471a995bd3aaa4b274c08cb6238babcf1241652' });
+/** D97 (the review of the .md and its samples, story /32 unreleased): the story, by the report's fixes alone — the word
+ *  count, the prompt table's one coverage line, code spans, labels that name their item, a repository's missing links
+ *  said once, the tiers of "you asked, the agent decided how" (D96 amended). Nothing renders a story back, so every
+ *  capture below carries it. No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_MD_FIXES = Object.freeze({ story: 'bedeb96d8cbfcfb5277b6e40eaddd4da4db971d4e330805aef0b732f56867056' });
+/** The beta.2 release check's render fixes (story /32 unreleased): the story, by the report's words alone. Nothing
+ *  renders a story back, so every capture below carries it. No event, gap, request, label, window or window failure
+ *  moved. */
+const MOVED_BY_RELEASE_CHECK = Object.freeze({ story: 'ba8cadaed32ef4010cab0a325436ff53764ff189e1defc587c06c44b21cc795f' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
-    windowNarrative, fixtureJudge, renderSessionStory };
+    windowNarrative, fixtureJudge, renderStory: renderReportMarkdown };
   const stable = BASE_D7226EC.map((base) => ({ ...base, ...MOVED_BY_M33_C2, ...MOVED_BY_M33_H, ...MOVED_BY_H4,
     ...MOVED_BY_H1.n13, ...MOVED_BY_M1.n13, ...MOVED_BY_H3, ...MOVED_BY_INTEGRATION.current, ...MOVED_BY_STABLE_IDS }));
   // As the code sends it: moved by the D64 wording's two texts (MOVED_BY_DISCLOSURE_WORDS), then by M35 windowing
@@ -425,9 +428,13 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   const current = await captureReceivedCases(modules);
   const asksFixes = stable.map((c) => ({ ...c, ...MOVED_BY_DISCLOSURE_WORDS, ...MOVED_BY_WINDOWING,
     ...MOVED_BY_M36_FORMAT, ...MOVED_BY_M36_CONVERSATION, ...MOVED_BY_D71, ...MOVED_BY_D71_BRIEF, ...MOVED_BY_D71_CHANNELS,
-    ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST }));
+    ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
+    ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK }));
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
-  // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back.
+  // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
+  // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more
+  // (MOVED_BY_REPORT_MD), the story now the report .md; and once more (MOVED_BY_MD_FIXES), by the report's fixes; and
+  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes.
   // W2: moved once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): moved once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: moved once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.
@@ -449,7 +456,7 @@ test('M33 W2 a run received right after its launch keeps d7226ec\'s order and ga
   // D64 wording's proposer sentences rendered back as /19 sent them (`modulesBeforeDisclosureWords`).
   const modules = modulesBeforeDisclosureWords({ loadSessionEvidence, redact,
     sessionFromLedger: (ledger, options) => sessionFromLedger(withoutIdentity(ledger), options), runReview,
-    planWindowRequests, captureCase, windowNarrative, fixtureJudge, renderSessionStory });
+    planWindowRequests, captureCase, windowNarrative, fixtureJudge, renderStory: renderReportMarkdown });
   // M33 N (`sonah.narrative/14`) moved every session-only narrative request by its three forbidden-edit texts alone:
   // rendered back as /13 sent them (`modulesBeforeForbiddenEdit`), the capture is M33 H's, byte for byte. H3 moved them
   // once more (MOVED_BY_H3), and the status fact: their texts are rendered back first (`modulesBeforeStatusFact`,

@@ -19,7 +19,6 @@ import { HELPER_RECEIPT_BOUNDARY, HELPER_PLACEMENT_NOTES, HELPER_DELIVERY_GAP_NO
 import { adapt, named, labelOf } from '../../evidence/test/stable-ids-fixture.js';
 import { runReview } from '../../evidence/src/run-review.js';
 import { partAttribution } from '../../evidence/src/ledger.js';
-import { renderSessionStory } from '../../render/session-story.js';
 import { windowNarrative, fixtureJudge } from './m33-fast-profile-fixture.js';
 import { AGENTS, RUN, SID as W_SID, SLUG, linkedRun, mkdir, rm as wrm, scratch, writeTree } from './m33-w-workflow-fixture.js';
 import { W2_TEXT, receivedLaterRows, verifierBeforeFixRows } from './m33-w2-placement-fixture.js';
@@ -161,7 +160,7 @@ test('M33 P cc verifier-before-fix: no DECIDE in either profile; d7226ec\'s plac
   assert.equal(none.adapterGaps.filter((gap) => gap.note === WORKFLOW_GAP_NOTES.unreceived).length, 1);
 });
 
-test('M33 P a Workflow received in a later turn keeps its launch request\'s part, is stated, and the story says so', async (t) => {
+test('M33 P a Workflow received in a later turn keeps its launch request\'s part, and is stated', async (t) => {
   const ledger = await workflowLedger(t, receivedLaterRows);
   const session = adapt(ledger, { sessionKey: 'm33-p-later' });
   // Placed in turn 2 (where received), but its C-02 turn and C-06 part are the launch's: the request that ran it.
@@ -177,11 +176,7 @@ test('M33 P a Workflow received in a later turn keeps its launch request\'s part
   const launch = adapt(d7226ec(ledger), { sessionKey: 'm33-p-later' });
   const commentary = (s) => s.events.filter((event) => event.kind === 'commentary' && !event.childId).map((event) => event.id);
   assert.deepEqual(commentary(session), commentary(launch));
-  // The story lists the helpers in the step that received them, naming the request that launched them.
-  const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
-    judge: fixtureJudge({ narrativeOf: (r) => windowNarrative(session, r.window) }) });
-  const story = renderSessionStory(session, report);
-  assert.match(story, /- Helper \(workflow fix parser\): Fix the nested-input branch[^\n]*\(launched for request 1\)/);
+  // (D97: the story's step blocks, which listed the helpers in the step that received them, are gone with the story.)
 });
 
 // ---- follow-ups and messages (Codex) ----------------------------------------------------------------------------------

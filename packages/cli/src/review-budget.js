@@ -83,9 +83,18 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
   // M44: `rateLimit` is the latest attempt's closed rate-limit record that reported a utilization; `utilization`
   // its highest (highestUtilization), which `--stop-at-utilization` compares.
   let inputReportedCalls = 0, outputReportedCalls = 0, utilization = null, rateLimit = null, reason = null;
+  // The agent transport: attempts of agent requests (their metadata carries `agentRun`) and the turns they report; and
+  // the cost every attempt that states one reports (the CLI's `total_cost_usd`, at list price).
+  let agentCalls = 0, turns = 0, turnsReportedCalls = 0, costUsd = 0, costReportedCalls = 0;
   const pause = value => { reason ??= value; admission.abort(); };
   const record = (metadata, part = null) => {
     reportedCalls++;
+    if (metadata?.agentRun !== null && typeof metadata?.agentRun === 'object') {
+      agentCalls++;
+      const reported = metadata.agentRun.numTurns;
+      if (count(reported) && count(turns + reported)) { turns += reported; turnsReportedCalls++; }
+    }
+    if (Number.isFinite(metadata?.costUsd) && metadata.costUsd >= 0) { costUsd += metadata.costUsd; costReportedCalls++; }
     const usage = metadata?.usage;
     // The code step's share is never more than the whole, so it is a count whenever the whole is.
     const ofCode = part === CODE_STEP_PART;
@@ -112,6 +121,8 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
     inputTokens: calls === 0 || inputReportedCalls > 0 ? inputTokens : null,
     outputTokens: calls === 0 || outputReportedCalls > 0 ? outputTokens : null,
     inputReportedCalls, outputReportedCalls, utilization, windows: rateLimit?.windows ?? null, reason,
+    agentCalls, turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null, turnsReportedCalls,
+    costUsd: calls === 0 || costReportedCalls > 0 ? costUsd : null, costReportedCalls,
     elapsedMs: Math.max(0, Math.round(now() - started)),
     limits: { maxCalls: limits.maxCalls, maxInputBytes: limits.maxInputBytes, stopAtUtilization: limits.stopAtUtilization } });
   return {
@@ -130,8 +141,12 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
       const state = snapshot();
       const tokens = (total, reported, of = calls) => total === null ? `not reported (0/${of} calls reported)`
         : `${total} (${reported}/${of} calls reported)`;
+      // The agent transport: the turns its agents took, only when an agent request ran.
+      const agentTurns = agentCalls === 0 ? ''
+        : `agent turns ${state.turns === null ? 'not reported' : state.turns} (${turnsReportedCalls}/${agentCalls} agent calls `
+          + 'reported); ';
       const line = `Review usage: ${calls} calls; ${inputBytes} input bytes; input tokens ${tokens(state.inputTokens, inputReportedCalls)}; `
-        + `output tokens ${tokens(state.outputTokens, outputReportedCalls)}; wall ${state.elapsedMs} ms; `
+        + `output tokens ${tokens(state.outputTokens, outputReportedCalls)}; ${agentTurns}wall ${state.elapsedMs} ms; `
         + `utilization ${utilizationWords(rateLimit)}.`;
       if (typeof codeModel !== 'string' || !codeModel) return line;
       // --code-model: the code step's model and its share of the calls, bytes and tokens above (the session's model
@@ -159,31 +174,38 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
 export const REVIEW_ESTIMATE_RATES = Object.freeze({ minutesAtOneMB: 12.3, exponent: 0.61,
   range: Object.freeze([0.6, 1.7]), unknownRequestBytes: 48_000 });
 
+/** The agentic code step's share of the estimate (code-pass/7): a literal range of minutes added after the session's
+ *  windows — one review agent, then its checking agents side by side — until it is timed on real reviews. Reported,
+ *  never a limit. */
+export const CODE_STEP_ESTIMATE_MINUTES = Object.freeze([3, 15]);
+
 /** The rough time range, in whole minutes, of a review whose windows' first requests are `requestBytes` (one entry per
  *  request, in plan order; an entry that is not a byte count is `unknownRequestBytes`), run `lanes` at a time: each
  *  window starts in the next lane to come free, as the review admits them, and the busiest lane sets the time. Null
  *  when there is nothing to send. D87 (D74: the estimate includes the code pass): `after`, requests run one after
- *  another once the windows are done (the code pass's check and review), each timed by the same rates and added. A
- *  review with none is timed as before. */
-export function estimateMinutes({ requestBytes = [], lanes, after = [] } = {}) {
+ *  another once the windows are done, each timed by the same rates and added; `extra`, a range of minutes added as it
+ *  is (the agentic code step's, CODE_STEP_ESTIMATE_MINUTES). A review with neither is timed as before. */
+export function estimateMinutes({ requestBytes = [], lanes, after = [], extra = null } = {}) {
   const sizes = Array.isArray(requestBytes) ? requestBytes : [];
   const later = Array.isArray(after) ? after : [];
-  if (!sizes.length && !later.length) return null;
+  const added = Array.isArray(extra) && extra.length === 2 && extra.every((n) => Number.isSafeInteger(n) && n >= 0)
+    ? extra : null;
+  if (!sizes.length && !later.length && !added) return null;
   const { minutesAtOneMB, exponent, range: [low, high], unknownRequestBytes } = REVIEW_ESTIMATE_RATES;
   const minutesOf = (bytes) => minutesAtOneMB * ((Number.isFinite(bytes) && bytes >= 0 ? bytes : unknownRequestBytes)
     / 1e6) ** exponent;
   const busy = new Array(Number.isSafeInteger(lanes) && lanes > 0 ? Math.max(1, Math.min(lanes, sizes.length)) : 1).fill(0);
   for (const bytes of sizes) busy[busy.indexOf(Math.min(...busy))] += minutesOf(bytes);
   const minutes = Math.max(...busy) + later.reduce((sum, bytes) => sum + minutesOf(bytes), 0);
-  const lo = Math.max(1, Math.round(minutes * low));
-  return [lo, Math.max(lo + 1, Math.round(minutes * high))];
+  const lo = Math.max(1, Math.round(minutes * low)) + (added?.[0] ?? 0);
+  return [lo, Math.max(lo + 1, Math.round(minutes * high) + (added?.[1] ?? 0))];
 }
 
 /** One line, before any call: roughly how long this review should take, from its own plan (`estimateMinutes`), and how
  *  to stop it. Time only: no calls, sizes or windows. A dry run (`dryRun`) runs nothing, so its line says only how long
  *  a review would take. */
-export function estimateLine({ requestBytes = [], lanes, dryRun = false, after = [] } = {}) {
-  const minutes = estimateMinutes({ requestBytes, lanes, after });
+export function estimateLine({ requestBytes = [], lanes, dryRun = false, after = [], extra = null } = {}) {
+  const minutes = estimateMinutes({ requestBytes, lanes, after, extra });
   if (dryRun) return minutes === null ? 'A review would have nothing to send to a model.'
     : `A review should take roughly ${minutes[0]}-${minutes[1]} minutes (less if answers are already stored).`;
   if (minutes === null) return 'This review has nothing to send to a model.';

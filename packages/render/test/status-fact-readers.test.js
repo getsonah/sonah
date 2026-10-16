@@ -1,4 +1,4 @@
-// Status fact (owner decision 2026-10-06: "unproven" is not a terminal state). The story and the page read a command's
+// Status fact (owner decision 2026-10-06: "unproven" is not a terminal state). The report .md and the page read a command's
 // status from the record alone: a command whose zero exit status does not cover every command of its line is never
 // listed as failed or as passed by that status; every failed command they list is a proven failure (a recorded failure
 // or a nonzero exit); and a claim confirmed by a recorded result shows the result's own words it was confirmed through —
@@ -7,8 +7,9 @@
 // Synthetic sessions and reports only: no recording, no model. Nothing prints.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionStory, STORY_VERSION, confirmingQuote } from '../session-story.js';
+import { renderReportMarkdown, STORY_VERSION } from '../session-story.js';
 import { renderSessionPage, PAGE_VERSION } from '../session-page.js';
+import { REPORT_DID_WORDS } from '../report-words.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
 const TEXT = {
@@ -76,7 +77,14 @@ test('status fact readers: versions moved with the bytes', () => {
   // The judgment-first review moved it once more (sonah.session-story/28): one counting, the claims every reader lists.
   // The release review moved it once more (sonah.session-story/29): with the home folder as the repository, the footer
   // says only the session's files were read and counts the rest.
-  assert.equal(STORY_VERSION, 'sonah.session-story/29');
+  // The agentic code step's release item moved it once more (sonah.session-story/30): an ask's status beside what the
+  // code step tied to it, the session shown as loaded (the footer saying the story is generated from the recorded
+  // session), and the code step's new report.
+  // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // D97 moved it once more (sonah.session-story/32): the story is the report .md, the report model rendered for a pull
+  // request comment.
+  assert.equal(STORY_VERSION, 'sonah.session-story/32');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -107,52 +115,52 @@ test('status fact readers: versions moved with the bytes', () => {
   // The judgment-first review moved it once more (sonah.session-page/33): one counting, folded groups by their count.
   // The release review moved it once more (sonah.session-page/34): with the home folder as the repository, the footer
   // says only the session's files were read and counts the rest.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/34');
+  // The agentic code step's release item moved it once more (sonah.session-page/35): an ask's status beside what the
+  // code step tied to it, the session shown as loaded (the footer saying the page is generated from the recorded
+  // session), and the code step's new report.
+  // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/37');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {
   const { session, report } = fixture();
-  const story = renderSessionStory(session, report);
-  assert.ok(story.includes('1 command failed') && !story.includes('2 commands failed'), 'one failed command, not two');
-  assert.ok(!story.includes('SYNTHETIC_SFR_UNCOVERED'), 'the uncovered command is named nowhere as failed');
-  assert.ok(!/\bpassed\b/i.test(story.replace(QUOTE, '')), 'no status word "passed" outside the quoted result');
-  // D69 f: the page counts the one proven failure; a claim citing the uncovered command's result shows no failure beside
-  // it, and a row citing the failing result shows that command, the one failure, beside it.
+  // D97: the report .md lists the runs as the page does: the one proven failure as failed, the uncovered zero status as
+  // covering only the last command of its line.
+  const story = renderReportMarkdown(session, report);
+  assert.equal((story.match(/failed, exit code/g) ?? []).length, 1);
+  assert.ok(story.includes(`SYNTHETIC_SFR_UNCOVERED\` · ${REPORT_DID_WORDS.uncoveredExit}`), story);
+  assert.ok(!/\bpassed\b/i.test(story.split(QUOTE).join('')), 'no status word "passed" outside the quoted result');
+  // D97: the page's runs list the one proven failure as failed, and the uncovered zero status as covering only the
+  // last command of its line — never as failed, never as a plain pass.
   const page = renderSessionPage(session, report);
-  assert.ok(page.includes('1 of 2 commands failed; 1 is cited by no row on this page'));
-  // D69 f (g): the one no row cites is listed, folded, by its words; the uncovered command nowhere.
-  assert.ok(!page.includes('SYNTHETIC_SFR_UNCOVERED'));
-  assert.equal((page.match(/failed, exit/g) ?? []).length, 1);
-  assert.ok(page.slice(page.indexOf('<details class="failed">')).includes('failed, exit'));
-  const cited = renderSessionPage(session, { ...report, pivots: [{ abandoned: 'one check', adopted: 'another',
-    receipts: [receipt('observation', 'A1-r', QUOTE), receipt('observation', 'A2-r', 'SYNTHETIC_SFR_CHECK: 1 failing')] }] });
-  assert.ok(cited.includes('SYNTHETIC_SFR_FAILING'));
-  assert.ok(!cited.includes('SYNTHETIC_SFR_UNCOVERED'));
-  assert.equal((cited.match(/failed, exit/g) ?? []).length, 1);
-  assert.ok(cited.includes('1 of 2 commands failed; 1 is shown beside the row that cites it.'));
+  assert.equal((page.match(/failed, exit code/g) ?? []).length, 1);
+  assert.match(page, /SYNTHETIC_SFR_FAILING<\/code> · failed, exit code 1/);
+  assert.ok(page.includes(`SYNTHETIC_SFR_UNCOVERED</code> · ${REPORT_DID_WORDS.uncoveredExit}`));
+  assert.doesNotMatch(page, /SYNTHETIC_SFR_UNCOVERED<\/code> · (?:failed|exit code 0<)/);
 });
 
 test('status fact readers: a claim confirmed through a quoted result shows that quote; any other claim shows none', () => {
   const { session, report } = fixture();
-  assert.equal(confirmingQuote(session, report.promises[0]), QUOTE);
-  assert.equal(confirmingQuote(session, report.promises[1]), null, 'an open claim has no confirming result');
-  const story = renderSessionStory(session, report);
-  // G3 (owner decision 2026-10-05, merged): the status reads "confirmed by a recorded result" (after the claim, or before
-  // it in its own turn with no change to the code between).
-  assert.ok(story.includes(`(confirmed by a recorded result; `), 'premise: the claim reads confirmed');
-  assert.ok(story.includes(`— Recorded result: "${QUOTE}"`), 'the result\'s own words, labelled');
-  assert.equal(story.split('Recorded result:').length - 1, story.split(`Recorded result: "${QUOTE}"`).length - 1,
-    'only the confirmed claim carries one');
+  // G3 (owner decision 2026-10-05, merged): the claim reads checked (after the claim, or before it in its own turn
+  // with no change to the code between), with the result's own words it was checked through; D97: in the report .md as
+  // on the page.
+  const story = renderReportMarkdown(session, report);
+  assert.ok(story.includes(`- checked “the parser suite is green.” · ${REPORT_DID_WORDS.claimStatus.checked === 'checked'
+    ? 'A recorded result shows:' : ''} “${QUOTE}”`), story);
+  assert.equal(story.split('A recorded result shows:').length - 1, 1, 'only the confirmed claim carries one');
+  // The page's claims list: the confirmed claim, then the result's own words it was confirmed through.
   const page = renderSessionPage(session, report);
-  assert.ok(page.includes(`<span class="label">Recorded result</span><blockquote><q class="said">${QUOTE}</q></blockquote>`));
-  assert.equal(page.split('Recorded result</span>').length - 1, 1);
+  assert.ok(page.includes(`<span class="tag">checked</span> <q class="said">the parser suite is green.</q> · `
+    + `<span class="label">A recorded result shows:</span> <q class="said">${QUOTE}</q>`), page.slice(page.indexOf('id="claim-1"')));
+  assert.equal(page.split('A recorded result shows:</span>').length - 1, 1);
 });
 
 test('status fact readers: a confirming quote that does not ground in this session, or an open claim, shows nothing', () => {
   for (const options of [{ supportQuote: 'SYNTHETIC_SFR_NOT_IN_THE_OUTPUT' }, { confirmed: false }]) {
     const { session, report } = fixture(options);
-    assert.equal(confirmingQuote(session, report.promises[0]), null, JSON.stringify(options));
-    assert.ok(!renderSessionStory(session, report).includes('Recorded result:'), JSON.stringify(options));
-    assert.ok(!renderSessionPage(session, report).includes('Recorded result</span>'), JSON.stringify(options));
+    assert.ok(!renderReportMarkdown(session, report).includes('A recorded result shows:'), JSON.stringify(options));
+    assert.ok(!renderSessionPage(session, report).includes('A recorded result shows:</span>'), JSON.stringify(options));
   }
 });

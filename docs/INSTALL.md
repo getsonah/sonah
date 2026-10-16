@@ -55,6 +55,28 @@ made before this beta went to npm is named `sonah`; the installer replaces it in
 To build the package file yourself: `node scripts/package-source.mjs --output-dir /tmp/sonah-package`, then install
 the printed file with `npm install --global --prefix "$HOME/.local" --ignore-scripts --no-audit --no-fund PATH.tgz`.
 
+## Update
+
+Sonah does not check for new versions. To update an install from npm, install the latest version over it:
+
+```sh
+npm install -g getsonah@latest
+sonah --version
+```
+
+With `npx`, name the version, as in `npx getsonah@latest doctor --no-probe`.
+
+To update an install from a checkout, get the new code and run the installer again. Give the same `--prefix` as
+before, if you gave one:
+
+```sh
+cd sonah && git pull && node scripts/install.mjs
+```
+
+Your reviews under `~/.sonah` stay. A new version can need new calls to review a session that an earlier version
+reviewed. Read the [changelog](../CHANGELOG.md) before you update. From 0.3.0-beta.2, Sonah masks nothing in what it
+writes for you.
+
 ## Check your setup
 
 ```sh
@@ -76,17 +98,19 @@ Go into the project you worked in, then run `sonah review`:
 cd ~/code/your-project
 sonah sessions                                   # recorded sessions of this repository, newest first
 sonah review --dry-run                           # what would be reviewed and roughly how long; no model call
-sonah review --format html --output ~/review.html  # review the newest one and open the page
+sonah review --format html --output ~/review.html  # review the newest one, open the page, write ~/review.md
 ```
 
 ### What is read and sent
 
 Sonah reads the session's recording and sends it to the reviewer model through your own login (`claude` by default),
-as it was recorded, secrets and pasted images included. The code step, on by default, then reads the files the session
-changed or read, as they are now (and their changes since the session's start commit, read with git, which Sonah never
-writes to), and sends them to the reviewer too. Credential-shaped files, `~/.claude` and `~/.codex`, files outside the
-project, binary files and files too large for a request are never sent. Nothing else leaves your computer: no
-telemetry, no update check. [PRIVACY.md](PRIVACY.md) has the details.
+as it was recorded, secrets and pasted images included. The code step, on by default (with the `claude-cli`
+backend only), then reads the session's changes since its start commit, read with git, which Sonah never writes to, and
+gives them to a review agent: Claude Code with read-only tools (Read, Grep and Glob) over your repository as it is now,
+which reads what it needs there and sends it to the model as it works, and checking agents with the same tools. Nothing
+else leaves your computer: no telemetry, no update check. Nothing is masked or withheld, in what is sent or in what
+Sonah shows and keeps: treat the page, the .md and `~/.sonah` as holding your session as recorded.
+[PRIVACY.md](PRIVACY.md) has the details.
 
 ### Turning the code step off
 
@@ -133,12 +157,9 @@ Before the first model call, an estimate:
 
 A *window* is one part of the session (a run of your messages and what the agent did after them), reviewed in requests
 of its own; four windows are reviewed at a time (`--concurrency N` sets up to twelve, or up to three with `--profile
-standard`). The page does not show windows: it shows each of your requests and what the agent did under it as a *step*,
-whichever windows reviewed that work (a session with three requests is three steps, however many windows it took; work
-before your first request is one step of its own; a file you attached to a message belongs to that message's request
-and is shown under it). As each window finishes, `Review window N/M finished` appears. At the end: whether Sonah's
-own review completed, any parts it could not cover and why, where your attention is needed, how many answers were
-reused, and a usage line:
+standard`). The report does not show windows. As each window finishes, `Review window N/M finished` appears. At the
+end, Sonah prints whether its own review completed. It names the parts that it could not cover, with the reason. Then
+it prints the count line and the Must act items, how many answers it reused, and a usage line:
 
 > Review usage: 41 calls; 3112640 input bytes; input tokens ... ; output tokens ... ; wall 412000 ms; utilization 0.57
 > (five-hour 0.57, seven-day 0.18).
@@ -148,21 +169,76 @@ your provider reported, not a price: what a call costs depends on your own plan.
 Claude plan's usage limits the latest call that reported it had used, as a fraction (0.57 is 57%): first the highest,
 then each limit the `claude` CLI reported (five-hour, seven-day, and on some accounts seven-day with extra usage; a
 limit Sonah does not know by name is shown as `other limit`). An older `claude` reports one figure, shown alone. The
-Codex CLI and the API report none: `utilization not reported`.
+Codex CLI and the API report none: `utilization not reported`. When the code step's agents ran, the line also gives
+their `agent turns`; their input bytes count only the requests Sonah sent them, while what they read as they worked is
+in the input tokens your provider reported.
 
 ### Reading the result
 
-`--format html --output FILE` writes the checklist page and opens it (`--no-open` for automation or a machine with no
-browser; if opening fails the page is still saved). The page is one self-contained file: no script, nothing loaded
-from the network, light or dark as your system is set. `--format md --output FILE` writes the same review as a short
-Markdown story you can paste into a pull request description; without `--output`, Markdown goes to the terminal.
+`--format html --output FILE` writes the page and opens it. Use `--no-open` for automation or a computer with no
+browser. If Sonah cannot open the page, it still keeps it. The page is one file: no script, nothing from the network,
+light or dark as your system shows. Sonah also writes the same report in Markdown beside the page: `review.html` gives
+`review.md`. `--format md --output FILE` writes the .md alone. Without `--output`, the .md goes to the terminal.
 
-Output files are readable by you only, and Sonah never overwrites a file: use a new name each run. The page quotes your
-session with secrets masked (the model itself read the session as recorded): read it before you share it, as its
-footer says. Keep reviews out of Git.
+The report has this order:
 
-A row that could not be checked says so and why; nothing on the page proves the absence of bugs or that every
-decision was found.
+1. A header. It says what the work was and how large the change is. It counts the commands that the agent ran after
+   its last edit, by their results. It also says what Sonah did not check.
+2. A count line. It counts the items in each section, and the asks of each status.
+3. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
+   code review concerns it.
+4. Must act, Must know and Good to know: the items. Sonah folds Good to know.
+5. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
+   results. It also lists the claims, what the agent said it did not do, and the decisions that you settled.
+6. What Sonah could not check, folded.
+
+Each item starts with its type: Fix, Decide, Read or Verify. Then it says what the item is and where it is. With the
+code review, the item also says the impact on you and one action. These two lines are the code review's words. Sonah
+checks their form, not their meaning. Sonah folds the evidence under each item, with the reason for its section.
+
+Sonah puts each item in a section by its kind. The code review can propose high, medium or low for an item. Sonah
+keeps that proposal inside fixed bounds for the kind. For example, an unmet ask never goes to Good to know. A decision
+on how to do something that you asked goes to Good to know, unless a finding or question of the code review concerns
+it. Without the code review, each item stays in the section of its kind, and it shows no impact or action.
+
+When Must act and Must know are both empty, the report says so. This does not mean that the work is correct. Nothing in
+the report proves the absence of bugs, or that Sonah found every decision.
+
+### Posting the report on your pull request
+
+At the end, the terminal prints the path of the .md, its size, and a command for the GitHub CLI:
+
+```sh
+gh pr comment --body-file review.md
+```
+
+With no pull request number, `gh` posts on the pull request of your current branch. To post on another pull request,
+put its number after `comment`. Sonah posts nothing itself. When it can, Sonah keeps the .md within 60,000 bytes, so
+it fits in a GitHub comment. To fit, it takes these steps in order, and stops as soon as the .md fits. First, it shows
+only the start of your long messages. Then it empties the evidence folds of Good to know, then of Must know, then of
+Must act. Then it counts the rows of the lists in What the agent did, then in What Sonah could not check, and shows the
+counts in place of the rows. Then it leaves out the code excerpts. Last, it shows Good to know as a count of each kind
+of item. It says so at the top of the first part that it shortened. It never
+shortens the header, the count line or the table of your prompt. It keeps the open lines of the Must act and Must know
+items whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
+prints no `gh` command (see TROUBLESHOOTING.md). The .md pings no one. Sonah puts a mention, an issue number or a commit
+hash from the recording in a code span. In the .md, "you" means the person who ran the agent.
+
+After you commit and push the work, the report links each place in the code to its lines on GitHub. Sonah reads
+these facts from your local git only, and fetches nothing. You usually run Sonah before you commit. Then the
+terminal tells you how to get the links:
+
+1. Commit your work.
+2. Push the commit.
+3. Run the same command with a new `--output` file.
+
+Sonah reuses its stored answers, so the second run makes no model call. Keep the report files outside the repository,
+or add them to `.gitignore`. Otherwise the second run reads them as part of the change, and the code review asks again.
+The terminal tells you when Sonah wrote the report inside the repository.
+
+Only you can read the output files, and Sonah never overwrites a file: use a new name each run. The report quotes your
+session as the recording holds it, secrets included. Sonah masks nothing. Read the report before you share it, as its
+footer says.
 
 Exit codes report only whether Sonah's own review ran: `0` when it ran to completion, `1` when it ran but did not
 complete (a part of the session was not reviewed; the output names which part and why) or when no session was found for
@@ -172,19 +248,18 @@ recording not found, a command with no recorded exit status) are named with thei
 
 ### Answering rows
 
-The page prints, once, under "Where your attention is needed", the command that records your answer on this computer,
-with the session's hash filled in:
+The page prints, once, in the folded "Record your answer" part at its foot, the command that records your answer on
+this computer, with the session's hash filled in:
 
 ```sh
 sonah decision accept|change|clarify <session hash> ROW_ID --report REPORT --reason "YOUR REASON"
 ```
 
-Pick `accept`, `change` or `clarify`. Under each row the page prints only its id (`Row id` or `Decision id`): use it as
+Pick `accept`, `change` or `clarify`. In each item's evidence fold the page prints only its id (`Item id`): use it as
 `ROW_ID`. `REPORT` is `~/.sonah/session-reviews/<hash>/review/report.private.json`, where `<hash>` is the SHA-256 of the
 recording's path exactly as the `Recording:` line printed it: `printf '%s' /absolute/path/to/session.jsonl | shasum -a
 256` (`sha256sum` on Linux) (or `<--state-dir>/review/report.private.json` if you set one). Answers are stored in
-`~/.sonah/decision-reviews.ndjsonl` and shown on the page the next time it is written. A reason that looks like a secret
-is refused.
+`~/.sonah/decision-reviews.ndjsonl` and shown on the page the next time it is written.
 
 ### Stopping, resuming and rerunning
 
@@ -210,16 +285,18 @@ a new `--output` name. Only one review of a recording runs at a time.
 ## Choose the reviewer
 
 **Claude Code (default).** Your `claude` login and the model `claude-sonnet-5-5[1m]` (Sonnet 5.5 with its 1M-token
-window). Leave `--model` out. Each call runs in an empty private folder with Claude Code's tools, MCP servers, settings
-and slash commands switched off, and only a basic environment: not your API keys, proxy settings or `CLAUDE_CONFIG_DIR`.
-Every answer is checked to come from the model and window asked for; if not, the answer is never kept: that part is
-marked not reviewed, or the review stops with `model_unavailable`. If you want subscription usage rather than API
-billing, remove `ANTHROPIC_API_KEY` and endpoint overrides from the terminal you sign in from. Each checking call (the
-calls that test what the reviewer proposed) is limited to 32,768 output tokens per attempt, a cost guard against a reply
-that runs on; the `claude` CLI may ask the model to continue a cut reply up to three times, so one checking call costs
-at most 131,072 output tokens. A continuation that answers whole is read like any other reply; a reply still cut after
-the third counts as a check that did not run, and nothing cut is ever read in part. The call that reads a window has no
-such limit.
+window). Leave `--model` out. Each call of the session review runs in an empty private folder with Claude Code's tools,
+MCP servers, settings and slash commands switched off, and only a basic environment: not your API keys, proxy settings
+or `CLAUDE_CONFIG_DIR`. The code step's agents run in your working directory with the same environment and three
+read-only tools (Read, Grep and Glob), confined to your repository, each within a budget of turns and time (the review
+agent 150 turns and 45 minutes, each check 60 or 80 turns and 30 minutes). Every answer is checked to come from the
+model and window asked for; if not, the answer is never kept: that part is marked not reviewed, or the review stops with
+`model_unavailable`. If you want subscription usage rather than API billing, remove `ANTHROPIC_API_KEY` and endpoint
+overrides from the terminal you sign in from. Each checking call of the session review (the calls that test what the
+reviewer proposed) is limited to 32,768 output tokens per attempt, a cost guard against a reply that runs on; the
+`claude` CLI may ask the model to continue a cut reply up to three times, so one checking call costs at most 131,072
+output tokens. A continuation that answers whole is read like any other reply; a reply still cut after the third counts
+as a check that did not run, and nothing cut is ever read in part. The call that reads a window has no such limit.
 
 **Codex.** `--backend codex-cli --model gpt-6.1-sol`, with the Codex CLI signed in to your ChatGPT account (on macOS
 the CLI inside the ChatGPT or Codex app is preferred; `SONAH_CODEX_BIN` names another). It runs read-only with its
@@ -237,8 +314,8 @@ same reviewer; the session review keeps its own. Without either, the code step u
 
 The estimate before the first call is a rough time, computed from the review's own plan: the size of each window's
 request and how many windows run at a time, at fixed rates for Sonnet 5.5 running four windows at a time, as a review
-does by default. It includes the code step's first requests, and the line after it says roughly how many
-calls the code step adds. `--profile standard` checks every item in three passes: it makes more calls and can take
+does by default. It adds a fixed range for the code step's agents, and the line after it says what the code step
+adds: one review agent, and one checking agent per finding. `--profile standard` checks every item in three passes: it makes more calls and can take
 longer. The estimate is never a limit. The calls and input the review used are in the usage line at the end.
 
 A short session takes a few minutes. A long session of several hours is reviewed in many parts: more calls, millions
@@ -294,7 +371,8 @@ page, reads the metadata again (so the comment is attached to the current revisi
 revision it will be attached to, and posts only after you type the `share OWNER/REPO#123` phrase it shows, in an
 interactive terminal. The comment is built from the review's checklist and carries fixed sentences and counts only:
 whether Sonah's review ran, what it could not cover, and where your attention is needed. No quotes, file text, paths
-or page. Its GitHub check is always neutral. Without the three settings below the review stops before any model call:
+or page. Its counts do not come from the report's sections, so they can differ from the count line. To post the whole
+report instead, use the `gh pr comment` command that Sonah prints. Its GitHub check is always neutral. Without the three settings below the review stops before any model call:
 
 - a token of a GitHub App installed on the repository, with read and write access to pull requests and checks, in
   `GH_TOKEN` (else `GITHUB_TOKEN`, else what `gh auth token` prints). A GitHub check can only be created by an App;
@@ -313,38 +391,42 @@ last finished review would post, or says there is none yet.
 
 ## How the code step reviews the change
 
-The code step (on unless you run `sonah config code-pass off` or add `--no-code-pass`; `--code-pass` turns it on for
-one review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. After the session review, Sonah reads the change the session made: every file that differs
-from the commit the session started from (read with git, which it never writes to; with no git history to start from,
-the session's own recorded edits), each file's lines before and after, and a file git shows changed that no recorded
-edit wrote is marked so. It reads those files as they are now, then the files the session read, in the working
-directory the recording names, and sends them to the reviewer in the request (the reviewer still has no tools). A
-credential-shaped file, a file in `~/.claude` or `~/.codex` (or the home you set for Claude Code or Codex, or a folder
-one of them links to, deleted or not), Claude Code's own `~/.claude.json` and its backups, a link into any of these, a
-binary file (or one git diffs as binary, through a
-`binary` or `-diff` attribute), a file outside that directory (wherever a link leads), one too large for a request, and
-a file that no longer holds what the session last wrote to it are never sent, before or after; the page counts them by
-kind, and the code review does not read as complete while any part of the change went unshown (a file the agent
-changed outside that directory, such as a scratch file, included). When the working
-directory is a folder of a larger repository, git is asked about that folder only: paths that differ elsewhere are
-counted, never named. The reviewer first checks the agent's claims, decisions, asks not
-shown done and failures it passed over against the code, then reads the whole change four ways (behaviour, tests,
-contracts, your ask), with what the session review found beside it, each finding naming the input that shows it and
-quoting every step from that input to the line (of the session, a step may quote only your words or a recorded
-result, never the agent's: a helper's report, and a `CLAUDE.md` the agent wrote, edited or deleted in the session, count
-as the agent's; a copy, move or `git checkout` onto it is not seen as a write).
-Every answer and finding quotes the code and is checked word for word by code, then by three checking passes that must
-all uphold it; a finding's checking passes are never shown the agent's words from the session (a finding's own wording
-is the reviewer's, and is shown), and the passes that check a row against the code see what the row states and no other
-words of the agent's. The
-page lists them under "What the code review found": each finding beside the row of the session review it follows
-from, then the others, then questions only you
-can answer, then what the code review did not cover. Each checked row says what the code shows of it, beside its own
-status, which the code pass never changes. Run it again on the same `--state-dir`, and the session part reuses its
-stored answers: only the code pass asks anything new. `--dry-run --state-dir DIR` says, with no call and nothing
-written, how many stored session answers such a run would reuse and what the code pass would send first.
-`--code-model ID` (or `SONAH_CODE_MODEL`) runs the code pass on a model of its own, such as `claude-opus-5-5[1m]`, while
-the session review stays on `--model` (or the default); the code pass's stored answers are kept per model.
+The code step (on unless you run `sonah config code-pass off` or add `--no-code-pass`; `--code-pass` turns it on for one
+review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. It runs
+with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: every file that
+differs from the commit the session started from (read with git, which it never writes to; with no git history to start
+from, the session's own recorded edits), each file's lines before and after, and a file git shows changed that no
+recorded edit wrote is marked so. It gives that change, your words, the project instruction and skill files the session
+loaded and its review of the session to a review agent: Claude Code with three read-only tools (Read, Grep and Glob)
+over the repository as it is now, for as many turns as it needs (up to 150). It cannot run or write anything. It reads
+the changed files whole, their callers, tests and docs and the project's rules, and checks the change, your asks and the
+agent's claims and decisions against the code. Each finding names the input that shows it and quotes every step from
+that input to the line (of the session, a step may quote only your words or a recorded result, never the agent's: a
+helper's report, and a `CLAUDE.md` the agent wrote, edited or deleted in the session, count as the agent's). Every quote
+is checked word for word by code against the file it names; an answer that breaks the contract goes back to the agent
+once, naming what is wrong. Then a checking agent with the same tools tries to refute each finding, never shown the
+agent's words from the session, and one more checks the questions it asks. A finding is published only when its
+checker upholds it with quotes of the code; a supporting sentence the checker finds false is cut and not shown; a
+behaviour that is as stated but may be what you wanted becomes a question for you; anything
+withheld is listed with its reason. A binary file (or one git diffs as binary, through a `binary` or `-diff` attribute),
+one too large, and a file the session deleted that is there again have no lines in the change the agent is given; the
+code review does not read as complete while any part of the change went unshown, or while the repository changed
+during the review. A file that changed after the session's last recorded edit (a formatter, say) is shown with its
+change from where the session started, like any changed file, and the report says that Sonah cannot tell whether
+all of its lines are the agent's. When the working directory is a folder of a larger repository, git is asked about that folder
+only (paths that differ elsewhere are counted), and the agents may still read the whole repository. Each finding and
+each question of the code review is an item of the report. What Sonah could not check lists what the code review did
+not cover and what its checks withheld. A claim that a finding shows false says so beside its status. The code review
+never changes that status. The code review also proposes a level for each item, and it writes one line for each changed
+file (see "Reading the result"). In a git repository, run it again on the same `--state-dir` with nothing
+changed since, and nothing is asked again (what Sonah writes in its state folder is never part of the change, and a
+`--state-dir` that is the working directory or holds it is refused; a file git tracks or the session wrote always is,
+and so is any other file written in the repository after the session began, such as a page saved there with `--output`);
+with only the repository changed, the session part reuses its stored answers: only the code pass asks anything new.
+`--dry-run --state-dir DIR` says, with no call and nothing written, how many stored session answers such a run would
+reuse and what the code pass would send first. `--code-model ID` (or `SONAH_CODE_MODEL`) runs the code pass on a model
+of its own, such as `claude-opus-5-5[1m]`, while the session review stays on `--model` (or the default); the code pass's
+stored answers are kept per model.
 
 ### Cursor and optional stops
 
@@ -366,14 +448,13 @@ It does:
   cannot settle is kept and marked not checked;
 - check every quote against the recording by code, never by trusting the model;
 - show what it could not check, and why, instead of guessing;
-- mask secrets on your computer in everything it writes for you to read;
 - keep everything on your computer except the model requests themselves.
 
 It does not:
 
 - give a verdict, approve, merge or block anything;
 - run your code or your tests: the review reads the recording and, with the code step (on unless you turn it off),
-  the files the session changed or read, as they are now, and their changes from Git, which it never writes to;
+  your repository as it is now, with read-only tools, and the session's changes from Git, which it never writes to;
 - let the model rate its own confidence or the severity of anything;
 - post anything anywhere unless you ask for it and confirm;
 - change your recordings.
@@ -382,7 +463,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.1`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.2`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
@@ -398,6 +479,11 @@ can change between betas.
 - The code step reads the files as they are on this computer now. A recording from another computer, or a project
   whose files were deleted since, leaves it with nothing to read. The page and the terminal say so, and the exit code
   still follows the session review, unless you add `--code-pass`, which makes the code step's coverage count.
+- The code step runs only with the default `claude` reviewer; with `--backend codex-cli` or `anthropic-api` the session
+  is reviewed alone, and the page says so. It needs a Claude Code recent enough to accept its options (`sonah doctor`
+  checks).
+- The code step's stored answers hold for the repository as it is and where it is: after a file of it changes (one git
+  ignores aside), or after the project moves to another folder, its agents are asked again.
 - Images you paste into your messages are sent to the reviewer. This is new, and checked on the default `claude`
   reviewer only, not yet on the `codex` or Anthropic API reviewers.
 - The review can miss a decision or put one in the wrong place: check the rows that matter to you against their
@@ -442,4 +528,5 @@ Smaller changes you may notice:
 - The PR comment no longer ends with a sentence about automatic publication being disabled. Sonah recognises a comment
   it posted by a hash of the comment's text, so if an early preview could not confirm whether its comment was posted
   (`operation_uncertain`), this version does not recognise that comment and would post a new one: check the pull
-  request yourself before you post again.
+  request yourself before you post again. The comment's words changed again in `0.3.0-beta.2`, so the same is true of
+  a comment that `0.3.0-beta.1` could not confirm.

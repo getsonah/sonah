@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session, receiptProjection } from '../src/session.js';
 import { runReview, mergeWindowOutputs } from '../src/run-review.js';
-import { renderReview } from '../src/review.js';
+import { claimRowKind } from '../src/review.js';
 import { identityDigest } from '../contracts/canonical.js';
 
 const TEXT = {
@@ -62,16 +62,14 @@ test('M33 a grounded claim that survived the challenge is published as an open P
   assert.deepEqual(report.findings, []);
 });
 
-test('M33 the rendering lists the agent\'s grounded claims, open, with their quotes', async () => {
-  const md = renderReview(await reviewOf([claim()]));
-  assert.match(md, /### What the agent told you/);
-  const section = md.slice(md.indexOf('### What the agent told you'));
-  assert.ok(section.includes('The agent said the retry helper was added and the unit tests pass.'), section);
-  // M33 C: an open claim reads "not checked", never "open".
-  assert.match(section, /\*\*not checked\*\*/);
-  assert.doesNotMatch(section.split('\n### ')[0].split('<details>')[0], /\bopen\b/i);
-  assert.match(section, /\*\*agent said\*\* `C1` — “I added the retry helper and the unit tests pass now\.”/);
-  assert.doesNotMatch(section.split('\n### ')[0], /verified|confirmed|kept/i, 'an open claim is never shown as kept');
+test('M33 a grounded claim is listed not checked, with its quote, never as kept', async () => {
+  const report = await reviewOf([claim()]);
+  const [promise] = report.promises;
+  assert.equal(promise.text, 'The agent said the retry helper was added and the unit tests pass.');
+  // M33 C: an open claim reads "not checked" (folded, the row kind every reader reads), never "open" or kept.
+  assert.equal(promise.status, 'open');
+  assert.equal(claimRowKind(promise), 'claimsOpen');
+  assert.deepEqual([promise.stated.eventId, promise.stated.quote], ['C1', 'I added the retry helper and the unit tests pass now.']);
 });
 
 test('M33 a claim whose quote did not ground is withheld and never published or rendered', async () => {
@@ -79,18 +77,16 @@ test('M33 a claim whose quote did not ground is withheld and never published or 
     quote: 'SYNTHETIC QUOTE THAT WAS NEVER SAID BY ANYONE' } })]);
   assert.deepEqual(report.promises, []);
   assert.equal(report.claimsRejected, 1);
-  // S6 (S5 review M4): the closing message's line the withheld claim quoted is now in no claim, so the section says so
-  // by count — the quote itself is never rendered, and no claim is listed.
-  const text = renderReview(report);
-  assert.doesNotMatch(text, /SYNTHETIC QUOTE THAT WAS NEVER SAID/);
-  assert.doesNotMatch(text, /^- \*\*(not checked|confirmed)/m);
-  assert.match(text, /_Of the agent's closing messages, 1 line is in no claim: the session page lists it as recorded\._/);
+  // S6 (S5 review M4): the closing message's line the withheld claim quoted is now in no claim, so the report counts it
+  // by position (the readers list it as recorded) — the quote itself is never published.
+  assert.doesNotMatch(JSON.stringify([report.promises, report.findings]), /SYNTHETIC QUOTE THAT WAS NEVER SAID/);
+  assert.deepEqual(report.windowResults.flatMap((w) => w.closingLines ?? []).map((e) => [e.eventId, e.unreviewed.length]),
+    [['C1', 1]]);
 });
 
 test('M33 a claim the challengers refuted is not published', async () => {
   const report = await reviewOf([claim()], refute);
   assert.deepEqual(report.promises, []);
-  assert.doesNotMatch(renderReview(report), /### What the agent told you/);
 });
 
 test('M33 a contradicted claim stays a claim_contradicted finding and is not an open promise', async () => {

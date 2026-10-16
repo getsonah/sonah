@@ -10,7 +10,7 @@
 // nearly all of the reduction comes from. Tool output stays intact here. Review-window and request limits
 // decide whether a long observation can be reviewed, without losing its middle at capture time.
 
-import { editChange, createChange, DIFF_BUDGET } from './diff.js';
+import { editDiff, createDiff, DIFF_BUDGET } from './diff.js';
 import { isWriteSuccessLine } from './outcome.js';
 import { compressAsk } from './ask.js';
 import { isDelegationTool, isEncryptedBrief, recordedAgentId } from './delegation.js';
@@ -45,8 +45,9 @@ export const INTERJECTION_KINDS = Object.freeze({ queued: 'queued', answer: 'ans
  * attachments (records.js PROJECT_INSTRUCTIONS_RECORD) — the recorder's own closed vocabulary of a file's `type`, compared
  * exactly. Only the project's own (`Project`: a repository CLAUDE.md, or an AGENTS.md it names): never the user's, a
  * local or managed file, or the agent's memory (`User`, `Local`, `Managed`, `AutoMem`, …), which the harness keeps under
- * its home folders or outside the repository (D69 withholds those). Project files come in `instructions` and in `nested_memory`;
- * `AutoMem` is read by none.
+ * its home folders or outside the repository. The recorder's type decides, never where the file lies (D90: one under the
+ * harness home folders is no longer withheld). Project files come in `instructions` and in `nested_memory`; `AutoMem`
+ * is read by none.
  */
 export const PROJECT_INSTRUCTION_TYPES = Object.freeze(['Project']);
 /**
@@ -203,85 +204,9 @@ function recordedJson(value) {
   try { return valid(value, 0) ? JSON.stringify(value) ?? null : null; }
   catch { return null; }
 }
-/** D68 (R), D69 (b): why the file an event names is withheld whole (before.js `withheldFileReason`, a closed member): its
- *  path is credential-shaped, or lies in a harness home folder (`_harnessFiles`, set in `makeEvent` on every path shape). */
-const fileWithheldOf = (ev) => (typeof ev.path === 'string' && ev.path && credentialPath(ev.path) ? 'credential_path'
-  : ev._harnessFiles === true ? 'harness_home' : null);
 /** A recorded `structuredPatch` with at least one entry (an empty list records no change). */
 const recordedPatch = (value) => (Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null);
 
-/** RFC 8089: a `file:` URI names a path — read through the WHATWG URL parser (deterministic, the same on every
- *  platform): its path, percent-decoded. Any other text is itself. */
-function fileUriPath(text) {
-  if (text.length < 5 || text.slice(0, 5).toLowerCase() !== 'file:') return text;
-  try {
-    const url = new URL(text);
-    return url.protocol === 'file:' ? decodeURIComponent(url.pathname) : text;
-  } catch { return text; }
-}
-/** Every string a recorded value holds, at any depth and under any key (no key vocabulary): a recorder's own record of an
- *  input, read by its grammar (JSON). Bounded by depth; a cycle is read once. */
-function recordedStrings(value, out = [], depth = 0, seen = new Set()) {
-  if (depth > 64 || value === null || value === undefined) return out;
-  if (typeof value === 'string') { out.push(value); return out; }
-  if (typeof value !== 'object' || seen.has(value)) return out;
-  seen.add(value);
-  for (const item of Array.isArray(value) ? value : Object.values(value)) recordedStrings(item, out, depth + 1, seen);
-  return out;
-}
-
-/**
- * Whether a generic tool's output is withheld, from its RECORDED INPUT only (never its output's words). D68 (R): only
- * when that input names a credential-shaped file (`CREDENTIAL_PATH`) or (D69 b) a harness home folder (`harnessHomePath`).
- *
- * D69 review (findings F3, F4): the input is read by its grammar, never cut by a delimiter list.
- * (1) Each value it records is read as a path WHOLE (a `file:` URI as its path, RFC 8089): every string at any depth
- * under any key of a structured input (JSON). (2) A Codex code cell (free program text; a generic tool, withheld by what
- * its input names, D68 R — its output is what its commands printed): every string its script spells, by the JavaScript
- * grammar (codex-exec.js `scriptStrings`; codex.js carries them on the call, `cellStrings`), whole and word by word by
- * the shell grammar (`lexShell`, each word whole, its quotes removed). (3) Any value that names a harness home folder
- * literally (before.js `namesHomeFolder`: the known home's own spelling, or the shell's `~`, `$HOME`, `${HOME}`) —
- * a string search for structural names, so a home folder named inside a program or an option is withheld however the
- * text around it is cut. Deleted: the free-text tokenizer (`pathCandidates`: the input cut at quotes and list or shell
- * delimiters into "path-like" words — no grammar holds for it) and the key vocabulary (`file_path`, `path`, `url`,
- * `cwd`, … read at the first level only). A path the program computes (`os.homedir() + '/.codex'`) is named by no
- * value, word or literal spelling: not read. A direct shell command is no generic tool: its output is withheld by the
- * recorder's typed reading of it (a Codex command's `parsed_cmd`, `typedReadWithheld`), never by its words (D68 R; open
- * for the owner, D69 review). Until D68 a location rule withheld more (`cwdAnchoredPaths`, C-02 "M33
- * native-first refreeze"), deleted with the guessed work root's.
- */
-function genericOutputSensitive(input, place, cellStrings = null) {
-  let value = input;
-  if (string(input)) {
-    try { value = JSON.parse(input); } catch { /* a free text: itself, one recorded string */ }
-  }
-  const values = recordedStrings(value);
-  const words = [];
-  for (const text of Array.isArray(cellStrings) ? cellStrings : []) if (string(text)) words.push(text, ...shellWordsOf(text));
-  if ([...values, ...words].some((text) => text.length > 0 && withheldFileReason(fileUriPath(text), place) !== null))
-    return true;
-  return values.some((text) => namesHomeFolder(text, place));
-}
-/** The words of a shell command line by the shell grammar (`lexShell`, the POSIX token rules the slicer reads shell
- *  writes by): each word whole, its quotes removed; none when the line does not lex. */
-export function shellWordsOf(line) {
-  let lexed = null;
-  try { lexed = lexShell(line); } catch { lexed = null; }
-  return (lexed?.parts ?? []).flatMap((part) => (Array.isArray(part.tokens) ? part.tokens : []))
-    .filter((token) => typeof token?.word === 'string').map((token) => token.word);
-}
-/**
- * D69 review (finding F3): a Codex command's output is withheld when the recorder's typed reading of it (`parsed_cmd`)
- * names a withheld file — any entry with a path (a read, a search, a listing: what its output shows came from there, as a
- * Claude Code Read, Grep or Glob of the same path is withheld by its own path). A relative path is the command's own
- * working directory's (its `workdir`, else the session's). Structure only: the recorder's entries, never the command's
- * words (commands typed as reads of a `~/.codex` file were shown before it).
- */
-function typedReadWithheld(parsedCmd, workdir, place) {
-  if (!Array.isArray(parsedCmd)) return false;
-  return parsedCmd.some((entry) => plain(entry) && string(entry.path) && entry.path.length > 0
-    && withheldFileReason(resolvedFrom(entry.path, string(workdir) ? workdir : place.cwd), place) !== null);
-}
 function visibleTaskIdAgrees(text, nativeId) {
   if (typeof text !== 'string') return false;
   const labels = [...text.matchAll(/\btask[ _-]?id\s*[:=]/gi)];
@@ -655,15 +580,10 @@ const SOURCE_EXT = /\.(js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cc|cp
  * @param {{cwd?: string}} opts
  * @returns {{events: object[], ask: object[], claim: object, marks: object[]}}
  */
-export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators = false, home = null,
-  mask = true } = {}) {
+export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators = false, home = null } = {}) {
   // D69 (b): where a path stands, for the harness home folders' rule: the recording's home (sliceLineage
   // `recordingHome`, from where the recorder wrote it) and the recorder's working directory.
   const place = Object.freeze({ home, cwd });
-  // D84 (owner decision 2026-10-12): `mask: false` is a session review's load, which the model reads unredacted:
-  // a write's diff, its recorded hunks and a heredoc's body are kept as recorded (diff.js, recorded.js); bounded the
-  // same.
-  const scrub = Object.freeze({ mask: mask !== false });
   // M34 labels: records a caller built itself carry no reader's labels; label them once, by the reader's own function.
   ensureClaudeLabels(records);
   const events = [];
@@ -674,8 +594,9 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   const interjections = [];
   // D71 (g), owner decision 2026-10-08: the project's own instruction files the harness gave the agent, each at the row
   // of the typed attachment that carried it (`rowAt`), in record order — `{ turn, beforeEvent, source, record, path, text,
-  // identity }`. Never one of a kind other than the project's (PROJECT_INSTRUCTION_TYPES), never one under the harness
-  // home folders or at a credential-shaped path (D69 b: withheld, as their reads are). Not asks and not events.
+  // identity }`. Never one of a kind other than the project's (PROJECT_INSTRUCTION_TYPES). D90 (owner decision
+  // 2026-10-15): none is withheld for where it lies (D69 b withheld one under the harness home folders or at a
+  // credential-shaped path, as their reads were). Not asks and not events.
   const projectInstructions = [];
   // OWNER DECISION B: each Claude AskUserQuestion call's recorded questions (each one's text and whether it lets the
   // human choose several options, `multiSelect`), by call key, and the answers read from its result (the entries above,
@@ -714,8 +635,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   let lastAssistantText = '';
   // Last assistant text PER HUMAN TURN — the per-arc claim channel (D1/D23: a workspace session
   // is many trajectories, and each arc's closing message is that arc's claim). Kept WHOLE (M33 F
-  // repair 3): redaction scrubs the whole text and, since D68 (E), bounds nothing (what the agent produced is kept
-  // whole). A cut made here, before redaction, handed it half a token.
+  // repair 3, D68 E): nothing bounds it and nothing masks it (D90) — what the agent produced is kept whole.
   const sayings = new Map();
   // Closing claims remain a compatibility view. They must never overwrite the visible working
   // narrative. beforeEvent locates a statement relative to captured actions, not its cause.
@@ -983,7 +903,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     }
 
     // D71 (g): a typed attachment giving the agent instruction files: each of the project's own files, whole (redaction
-    // scrubs it before slice_hash), at its row. Its block is its index in the attachment's file list.
+    // validates it before slice_hash), at its row. Its block is its index in the attachment's file list.
     if (rec.kind === PROJECT_INSTRUCTIONS_RECORD) {
       const item = plain(d) ? d.attachment : null;
       const files = item?.type === 'instructions' ? (Array.isArray(item.files) ? item.files : [])
@@ -991,7 +911,6 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       files.forEach((file, block) => {
         if (!plain(file) || !PROJECT_INSTRUCTION_TYPES.includes(file.type) || !string(file.path) || !file.path
             || !string(file.content) || !file.content.trim()) return;
-        if (harnessHomePath(file.path, place) || credentialPath(file.path)) return;
         // Spelled as every path of the slice is: repo-relative under the recorder's working directory (`relative`).
         projectInstructions.push({ ...rowAt(rec, recordIndex), path: relative(file.path, cwd), text: file.content,
           identity: rowIdentity(rec, recordIndex, block) });
@@ -1153,7 +1072,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
         const command = !events[idx].genericTool && ['bash', 'test'].includes(events[idx].kind);
         const sidecar = claudeRecord && command ? claudeBashSidecar(res) : null;
         const editInput = claudeRecord ? claudeEditInputs.get(key) : undefined;
-        attachResult(events[idx], { ...res, mask: scrub.mask,
+        attachResult(events[idx], { ...res,
           fileChangeSuccess: rec.adapter === 'codex' && d.codexFileChangeSuccess === true,
           commandStatusConflict: rec.adapter === 'codex' && d.codexCommandExecutionConflict === true,
           // C-02 M33 native-first: a failed native command item whose negative exit is a sentinel.
@@ -1236,7 +1155,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
         const words = humanWordsOf(rec);
         if (!words.trim()) continue;
         // M33 R repair: the turn whole, with the cuts due on it declared; redaction makes them (and names what they
-        // cut) after it has scrubbed the turn whole. M33 W: a Workflow agent's brief (its recording's first user row)
+        // cut) over the turn whole. M33 W: a Workflow agent's brief (its recording's first user row)
         // takes this same path, as every helper's ask does.
         const { text: t2, elided } = compressAsk(words);
         const entry = { turn, text: t2 };
@@ -1319,12 +1238,12 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       const claudeRow = claudeLocators && (rec.adapter === 'claude' || rec.adapter == null)
         ? { stream: rec.source ?? 0, record: rec.line ?? recordIndex + 1, part: block } : null;
       const ev = makeEvent(use, spec, { turn, seq: seq++, cwd, source: rec.source,
-        adapter: rec.adapter, claudeRow, place, mask: scrub.mask });
+        adapter: rec.adapter, claudeRow });
       if (!ev) { unsupportedActions++; continue; }
       // C-01 event identity: the call the recorder wrote (its row and block; a Codex call's own call_id and part).
       ev.identity = callIdentity(rec, recordIndex, use, block);
       // D68 (C-02 "M36 recorded facts"): what the recorder typed about the call itself, set once here.
-      callFacts(ev, use, rec.adapter ?? 'claude', scrub);
+      callFacts(ev, use, rec.adapter ?? 'claude');
       if (spec.generic && KNOWN_CODE_EFFECT.has(use.sourceName ?? use.name))
         knownCodeEffectDemoted++;
       events.push(ev);
@@ -1371,13 +1290,12 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       // a test and stays one; it also wrote out.txt, and a class is not a reason to stop looking.
       //
       // A `cat > path <<DELIM` carries its whole body in the recorded command, so that body is
-      // recorded as the write's `after` — taken from the command AS THE REDACTOR LEAVES IT, never
-      // from the raw one (`heredocBodies`). Only when the heredoc is the path's one write in this
+      // recorded as the write's `after`, taken from the command as recorded (`heredocBodies`). Only when the heredoc is the path's one write in this
       // command: a later `sed -i` of the same file would make the body a state the file left.
       if (typeof ev.cmd === 'string' && !spec.distinctWorkdir) {
         const writes = shellWrites(ev.cmd, cwd);
         const statusEligible = shellWriteStatusEligible(ev.cmd, cwd, writes);
-        const bodies = writes.some((w) => w.heredoc) ? heredocBodies(ev.cmd, turn, scrub) : null;
+        const bodies = writes.some((w) => w.heredoc) ? heredocBodies(ev.cmd) : null;
         for (const [k, w] of writes.entries()) {
           // C-01 event identity: the command's k-th shell write, a sub-event of its call.
           const sibling = { turn, seq: seq++, kind: 'edit', path: w.path, via: w.how,
@@ -1466,22 +1384,11 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   // External first, so attachBefore can skip paths outside the recorder's working directory (memory files,
   // scratchpads): they are not code under review (`external`, the write scope).
   finalizeExternal(events, cwd, place);
-  for (const ev of events) {
-    const sensitive = ev._genericSensitiveOutput === true;
-    const withheldFile = fileWithheldOf(ev);
-    delete ev._genericSensitiveOutput;
-    delete ev._harnessFiles;
-    // D68 (R) (owner decision 2026-10-07; C-02 "M36 withholding narrowed"): an observation is withheld only for a
-    // credential-shaped path or (D69 b) a harness home folder of the recording's user (`~/.claude`, `~/.codex`, outside a
-    // worktree), never for lying outside the session folder, or in a scratchpad: `external` is the write scope, not a
-    // reason to hide what the agent read.
-    if (!(withheldFile || sensitive) || !Array.isArray(ev.tailLines)) continue;
-    // Those files are excluded from evidence: their contents never reach the reviewer.
-    delete ev.tailLines;
-    delete ev.outputSpans;
-    ev.observationWithheld = true;
-  }
-  attachBefore(events, place);
+  // D90 (owner decision 2026-10-15, privacy is not a design constraint): no observation is withheld for the file it
+  // read (D68 R and D69 b withheld a credential-shaped file's and a harness home folder's): the reviewer sees what the
+  // agent saw. `external` is the write scope, never a reason to hide what the agent read. A ledger an earlier slicer
+  // wrote may still say `observationWithheld`: the adapter reads it.
+  attachBefore(events);
   for (const ev of events) if (ev.external && ev.before) delete ev.before;
   // M33 U repair, L1: every action the human refused, whatever became of that result.
   for (const index of rejectedWithWords) if (events[index]) events[index].humanAnswerUnresolved = true;
@@ -1636,11 +1543,11 @@ function finalizeExternal(events, cwd, place = {}) {
  * tool name (c5: Claude Code's tool name; a Codex call's recorded name, or a native item's type), a Codex command's
  * parsed meaning and the class it makes (`read` only when every part is a read; a code cell's output mixes commands, and
  * a command the recorder typed no meaning for, legacy or direct, is a `command`), a Codex change's recorded hunks
- * (scrubbed before slice_hash, `hunkRedaction` carrying what that withheld to redaction), and what the record holds of
+ * (as recorded, recorded.js `carriedHunks`), and what the record holds of
  * a write (`patch`) and of the file before it (`prior`). A sidecar may add to them when the result is read
  * (`attachResult`).
  */
-function callFacts(ev, use, adapter, { mask = true } = {}) {
+function callFacts(ev, use, adapter) {
   const facts = { tool: typeof use.recorderName === 'string' ? use.recorderName : (use.sourceName ?? use.name) };
   if (adapter === 'codex') {
     if (ev.provenance === ACTION_PROVENANCE.codexCodeCell) facts.commandClass = 'command';
@@ -1665,21 +1572,15 @@ function callFacts(ev, use, adapter, { mask = true } = {}) {
     facts.patch = ev._editParts ? 'strings' : typeof ev._body === 'string' ? 'body' : 'none';
     facts.prior = 'unrecorded';
     const hunks = Array.isArray(use.recordedHunks) ? use.recordedHunks : null;
-    // D68 (R): a withheld file's hunks are never carried, nor scrubbed: only why (`hunksWithheld`).
-    const withheldFile = hunks ? fileWithheldOf(ev) : null;
-    const scrubbed = withheldFile ? null : scrubbedHunks(hunks, null, { mask });
-    if (withheldFile) facts.hunksWithheld = withheldFile;
-    else if (scrubbed) {
-      facts.hunks = scrubbed.hunks;
-      if (scrubbed.scrub) facts.hunkScrub = scrubbed.scrub;   // D84: an unmasked read scrubbed nothing
-      declareHunks(ev, scrubbed);
-    }
-    if (withheldFile || scrubbed) {
+    // D90: every file's hunks are carried (D68 R withheld a credential-shaped or harness home file's, `hunksWithheld`).
+    const carried = carriedHunks(hunks);
+    if (carried) {
+      facts.hunks = carried;
       facts.patch = 'hunks';
       facts.prior = 'hunks';
     }
     // The recorder recorded hunks Sonah could not read as hunks: the facts say so.
-    if (use.recordedHunksUnread === true || (hunks && !withheldFile && !scrubbed)) facts.withheld = true;
+    if (use.recordedHunksUnread === true || (hunks && !carried)) facts.withheld = true;
   } else if (ev.kind === 'delete') {
     facts.prior = typeof use.priorContent === 'string' ? 'file' : 'unrecorded';
     // C (2): the whole file the recorder kept before the delete is its prior state (attachBefore, source `original`).
@@ -1688,15 +1589,7 @@ function callFacts(ev, use, adapter, { mask = true } = {}) {
   ev.recorded = facts;
 }
 
-/** (c2) What a hunk scrub withheld, carried to redaction (`hunkRedaction`, one per event: its reasons, and whether it
- *  masked a line), which declares it before slice_hash. */
-function declareHunks(ev, scrubbed) {
-  const prior = ev.hunkRedaction ?? { reasons: [] };
-  const reasons = [...new Set([...prior.reasons, ...scrubbed.reasons])];
-  ev.hunkRedaction = { reasons, ...(prior.lost || scrubbed.lost ? { lost: true } : {}) };
-}
-
-function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = null, place = {}, mask = true }) {
+function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = null }) {
   const input = use.input || {};
   const ev = { turn, seq, kind: spec.kind };
   const locator = use.sourceLocator;
@@ -1722,8 +1615,6 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
     const sourceInput = own(use, 'sourceInput') ? use.sourceInput : use.input;
     ev.tool = use.sourceName ?? use.name;
     ev.genericTool = true;
-    if (genericOutputSensitive(sourceInput, place, ev.provenance === ACTION_PROVENANCE.codexCodeCell
-      ? use.cellStrings : null)) ev._genericSensitiveOutput = true;
     const exactInput = recordedJson(sourceInput);
     if (exactInput === null) ev.inputUnparsed = true;
     else { ev.argsExcerpt = exactInput; ev.inputRecorded = true; }
@@ -1759,21 +1650,18 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
       // Normalize before the cwd-prefix check: `/repo/../private` is outside `/repo`.
       ev._abs = posix.normalize(sourcePath);
       ev.path = relative(ev._abs, cwd);
-      if (harnessHomePath(ev._abs, place)) ev._harnessFiles = true;
     } else if (win32.isAbsolute(sourcePath)) {
       const absolute = win32.normalize(sourcePath);
       const within = win32.isAbsolute(cwd) ? win32.relative(cwd, absolute) : null;
       const inside = within !== null && !win32.isAbsolute(within) && !escapesRelativeRoot(within);
       ev.path = inside ? within.replaceAll('\\', '/') : absolute.replaceAll('\\', '/');
       if (!inside) ev.external = true;
-      if (harnessHomePath(absolute, place)) ev._harnessFiles = true;
     } else {
       ev.path = relative(sourcePath, cwd);
       if (escapesRelativeRoot(sourcePath)
         || /^(?:~[^/\\]*|\$(?:HOME|\{HOME\})|%USERPROFILE%)(?:[/\\]|$)/i.test(sourcePath)
         || /^[A-Za-z]:/.test(sourcePath) || /^[A-Za-z][\w+.-]*:\/\//.test(sourcePath))
         ev.external = true;
-      if (harnessHomePath(sourcePath, place)) ev._harnessFiles = true;
     }
   }
 
@@ -1786,8 +1674,6 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
     // reviewer's reading of its command and output, quoted verbatim. (A ledger an older slicer wrote may still say
     // `test`; every reader takes it as a command.)
     if (input.run_in_background === true) ev.background = true;
-    // D69 review (F3): the recorder's typed reading of a Codex command names a withheld file: its output is withheld.
-    if (adapter === 'codex' && typedReadWithheld(use.parsedCmd, input.workdir, place)) ev._genericSensitiveOutput = true;
     // Status fact (review F1): the Codex adapter types a command whose native item recorded it as the script of its own
     // shell process (`[shell, -c|-lc, line]`, codex.js); only there is the line's own errexit read (`exitStatusGap`).
     if (adapter === 'codex' && use.ownShell === true) OWN_SHELL.add(ev);
@@ -1847,8 +1733,8 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
   // F67: an Edit's own text is evidence, not only a diff of it. `new_string` is what the agent
   // WROTE and `old_string` is what it replaced, and the recording carries both — most changes in a
   // session are Edits, so without this the review can quote almost nothing
-  // the agent actually wrote. Both sides ride on ONE body field because redaction scrubs exactly
-  // two (`before.text` and `after.text`, redact/index.js) and `before` is the whole-file pre-edit
+  // the agent actually wrote. Both sides ride on ONE body field because redaction scrubbed exactly
+  // two (`before.text` and `after.text`, before D90 deleted its detectors) and `before` is the whole-file pre-edit
   // channel: an edit fragment placed there would describe a fragment as the file's first version
   // in the session. So the edit's own text is one
   // recorded field with a declared shape — every WRITTEN segment first (they are the point of the
@@ -1859,11 +1745,9 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
     ? input.edits.filter((x) => x && typeof x.old_string === 'string' && typeof x.new_string === 'string')
     : (typeof input.old_string === 'string' && typeof input.new_string === 'string' ? [input] : []);
   if (editEntries.length) {
-    // M33 R repair: each diff is rendered from its change as redaction scrubbed it whole (diff.js `editChange`).
-    const changes = editEntries.map((x) => editChange(x.old_string, x.new_string, { mask }));
-    const joined = changes.length === 1 ? { text: changes[0].diff, kept: 1 } : joinDiffs(changes.map((c) => c.diff));
-    ev.diff = joined.text;
-    declareDiff(ev, changes.slice(0, joined.kept));
+    // Each diff is rendered from its change as recorded (diff.js `editDiff`).
+    const diffs = editEntries.map((x) => editDiff(x.old_string, x.new_string));
+    ev.diff = diffs.length === 1 ? diffs[0] : joinDiffs(diffs).text;
     ev._body = editText(editEntries.map((x) => x.new_string), editEntries.map((x) => x.old_string));
     ev._editParts = editEntries.length;
     // `replace_all` changes WHERE the text landed, never what it was: the body stays the written
@@ -1886,11 +1770,7 @@ function makeEvent(use, spec, { turn, seq, cwd, source, adapter, claudeRow = nul
     const cellMode = spec === TOOLS.NotebookEdit ? input.edit_mode : undefined;
     if (cellMode !== 'delete' && typeof body === 'string' && (body.length || wholeState)) {
       ev._body = body;
-      if (body.length) {
-        const change = createChange(body, { mask });
-        ev.diff = change.diff;
-        declareDiff(ev, [change]);
-      }
+      if (body.length) ev.diff = createDiff(body);
       if (cellMode === 'insert') ev._insert = true;
     }
   }
@@ -2134,7 +2014,7 @@ function unrecordedChanges(events) {
  * D68 (C-02 "M36 recorded facts"). A Claude Code result's typed facts (a parent recording's: helper recordings carry no
  * sidecar): the error flag as the result block typed it (`is_error` true or false; absent, nothing), the sidecar's
  * numbers, booleans and strings by tool (recorded.js `claudeSidecarFacts`), a Bash call's `bashEditDiff`, and an Edit's
- * or Write's recorded hunks (`structuredPatch`, scrubbed with the whole `originalFile` where the recorder kept it), its
+ * or Write's recorded hunks (`structuredPatch`, as recorded: recorded.js `carriedHunks`), its
  * type, and what the record holds of the file before it. E: the file before and after it, as recorded, kept transient
  * (`_fileState`) for the unrecorded-change check. A failed result types none of the sidecar's facts.
  */
@@ -2150,10 +2030,9 @@ function claudeResultFacts(ev, res) {
   if (!raw || res.isError === true || res.outcomeUnknown === true) return;
   Object.assign(facts, claudeSidecarFacts(facts.tool, raw));
   if (facts.tool === 'Bash' && own(raw, 'bashEditDiff')) {
-    const read = bashEditDiffFacts(raw.bashEditDiff, res.cwd, res.place, { mask: res.mask !== false });
+    const read = bashEditDiffFacts(raw.bashEditDiff, res.cwd);
     if (read) {
       facts.editDiff = read.editDiff;
-      if (read.reasons.length || read.lost) declareHunks(ev, read);
       if (read.unread) facts.withheld = true;
     } else if (raw.bashEditDiff !== null) facts.withheld = true;
   }
@@ -2164,16 +2043,10 @@ function claudeResultFacts(ev, res) {
       facts.writeType = raw.type;
       if (raw.type === 'create') facts.prior = 'absent';
     }
-    // D68 (R): a withheld file's hunks are never carried, nor scrubbed: only why (`hunksWithheld`).
-    const withheldFile = hunks ? fileWithheldOf(ev) : null;
-    const scrubbed = withheldFile ? null : scrubbedHunks(hunks, original, { mask: res.mask !== false });
-    if (withheldFile) facts.hunksWithheld = withheldFile;
-    else if (scrubbed) {
-      facts.hunks = scrubbed.hunks;
-      if (scrubbed.scrub) facts.hunkScrub = scrubbed.scrub;   // D84: an unmasked read scrubbed nothing
-      declareHunks(ev, scrubbed);
-    }
-    if ((withheldFile || scrubbed) && facts.tool !== 'Write') facts.patch = 'hunks';
+    // D90: every file's hunks are carried (D68 R withheld a credential-shaped or harness home file's, `hunksWithheld`).
+    const carried = carriedHunks(hunks);
+    if (carried) facts.hunks = carried;
+    if (carried && facts.tool !== 'Write') facts.patch = 'hunks';
     // M36 review: the recorder recorded hunks Sonah could not read as hunks: the facts say so, never silence.
     if (!hunks && recordedPatch(raw.structuredPatch)) facts.withheld = true;
     if (original !== null) facts.prior = 'file';
@@ -2573,24 +2446,13 @@ function shellWriteStatusEligible(cmd, cwd, writes) {
 }
 
 /**
- * The heredoc bodies of one command, from the command AS REDACTION LEAVES IT — keyed by the
- * heredoc's position among the command's operators, with what identifies it (target word, append,
- * delimiter) so the caller pairs a body only with the write it was detected as.
- *
- * `redact()` is run over a one-event ledger carrying just this `cmd`: the exact code path the
- * ledger's own `cmd` field takes (PEM blocks dropped whole, named secrets masked, an unclassifiable
- * high-entropy token dropping the whole command), so the two can never drift. A body is therefore
- * never more than the recorded command would show: a masked secret stays masked, and when the
- * command itself is dropped there is no body at all (fail closed). Redaction still runs over the
- * resulting `after.text` later, with the file-body posture; that pass only ever removes more. D84: with `mask` false (a
- * session review's load) the same pass masks nothing, and the body is the recorded command's.
+ * The heredoc bodies of one command, read from the command as recorded — keyed by the heredoc's position among the
+ * command's operators, with what identifies it (target word, append, delimiter) so the caller pairs a body only with
+ * the write it was detected as. D90 (owner decision 2026-10-15): the command is never masked, so neither is a body.
  */
-function heredocBodies(cmd, turn, { mask = true } = {}) {
+function heredocBodies(cmd) {
   const bodies = new Map();
-  const clean = redact({ ask: [], ledger: [{ turn, seq: 0, kind: 'bash', cmd }], claim: {} }, { mask })
-    .ledger.ledger[0]?.cmd;
-  if (typeof clean !== 'string') return bodies;
-  const lexed = lexShell(clean);
+  const lexed = lexShell(cmd);
   if (!lexed) return bodies;
   for (const part of lexed.parts) {
     if (!part.tokens) continue;
@@ -3010,18 +2872,6 @@ function joinDiffs(diffs) {
   return { text: i < diffs.length ? `${joined}\n[… ${diffs.length - i} more edit diff(s) elided …]` : joined, kept: i };
 }
 
-/**
- * M33 R repair. What redaction withheld from the diffs a write shows, when it scrubbed each change whole before the
- * slicer cut it (diff.js `editChange`, `createChange`): carried to redaction as `diffRedaction` — `{ reasons, lost? }`,
- * the reasons of its declarations over the lines shown and whether it dropped one — which declares it as the diff's
- * (redact/index.js) and removes the field. Nothing withheld, nothing carried.
- */
-function declareDiff(ev, changes) {
-  const reasons = changes.flatMap((change) => change.reasons);
-  const lost = changes.some((change) => change.lost);
-  if (reasons.length || lost) ev.diffRedaction = { reasons, ...(lost ? { lost: true } : {}) };
-}
-
 // Relative file-tool paths that walk above their working directory are never treated as
 // project evidence. This check is lexical so it also holds when the recording has no cwd.
 function escapesRelativeRoot(path) {
@@ -3046,17 +2896,15 @@ export function relative(p, cwd) {
 }
 
 // Local re-exports so this module can be tested without importing records.js internals.
-import { attachBefore, credentialPath, harnessHomePath, homeFolderPath, namesHomeFolder, withheldFileReason, spelledPath,
-  within, resolvedFrom, editText, unwrapReadResult, stripLineNumbers } from './before.js';
-// D69 (b): the harness home folders' rule lives with the credential rule (before.js); re-exported for its readers.
+import { attachBefore, homeFolderPath, spelledPath, within, editText, unwrapReadResult, stripLineNumbers } from './before.js';
+// D69 (b): the harness home folders' rule (before.js); re-exported for its readers.
 export { harnessHomePath, recordingHome } from './before.js';
-import { recordedHunks, scrubbedHunks, commandClassOf, codexCommandTool, bashEditDiffFacts, claudeSidecarFacts,
+import { recordedHunks, carriedHunks, commandClassOf, codexCommandTool, bashEditDiffFacts, claudeSidecarFacts,
   claudeDenialFacts }
   from './recorded.js';
-// The redactor, for one purpose: a heredoc body is read from the command as `redact()` leaves it
-// (heredocBodies). Deterministic and dependency-free like this package; it imports nothing back.
-// M33 R: and the attached file's bound, which it applies after scrubbing the text this module keeps.
-import { redact, ATTACHED_CAP } from '../../redact/index.js';
+// The attached file's bound (redact/index.js applies it to the text this module keeps whole). Deterministic and
+// dependency-free like this package; it imports nothing back.
+import { ATTACHED_CAP } from '../../redact/index.js';
 import { textOf as text, toolUsesOf as toolUses,
   toolResultsOf as toolResults, visibleToolContent, QUEUED_PROMPT_RECORD, ATTACHED_RECORD, PROJECT_INSTRUCTIONS_RECORD,
   humanWordsOf, humanNonTextOf, NONTEXT_BLOCK_TYPES, ensureClaudeLabels,

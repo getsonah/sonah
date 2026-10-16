@@ -9,8 +9,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionFromLedger, LABEL_GAP_NOTES } from '../adapters/sonah-ledger.js';
-import { renderReview, coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { instructionReviewScope } from '../src/ledger.js';
+
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line). */
+const causeLine = (report) => coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
 
 const led = (capture) => ({ ask: [{ turn: 1, text: 'Fix the parser.' }], ledger: [{ turn: 1, seq: 0, kind: 'bash',
   cmd: 'npm test', outcome: 'passed', exitCode: 0, exitCodeSource: 'native' }], claim: { finalMessage: '' }, dropped: [],
@@ -40,8 +43,8 @@ test('M5; M34 labels: the loss is named by its own cause, never by the recorder\
   for (const retired of ['instructions_unattributed', 'instructions_unattributed_structure', 'instructions_wordless'])
     assert.equal(COVERAGE_CAUSES.includes(retired), false, retired);
   // M34 labels review (F6): every row the fallback labelled is counted, whichever way it read it.
-  assert.equal(COVERAGE_SENTENCE.labels_legacy_recorder({ n: 1 }), '1 recorded user row was labelled by the '
-    + 'legacy-recorder fallback, which has no typed human channel to go by, so whether it holds an instruction is not proven');
+  assert.equal(COVERAGE_SENTENCE.labels_legacy_recorder({ n: 1 }), '1 record comes from an old recorder that does not '
+    + 'mark your messages, so Sonah could not check whether it holds a message of yours');
   const report = { repo: { host: 'github.com', id: 'm5' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 1, instructions: 1,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -50,7 +53,7 @@ test('M5; M34 labels: the loss is named by its own cause, never by the recorder\
     counts: { decisions: 0, byColumn: {}, uncheckedColumn: 0, rejectedDecisions: 0, rejectedFindings: 0 },
     coverage: 'partial', codeCoverage: 'complete' };
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]), [['labels_legacy_recorder', 2]]);
-  const header = renderReview(report).split('\n').find((line) => line.startsWith('Not covered:'));
-  assert.match(header, /2 recorded user rows were labelled by the legacy-recorder fallback/);
+  const header = causeLine(report);
+  assert.match(header, /2 records come from an old recorder that does not mark your messages/);
   assert.doesNotMatch(header, /opening words|elided by the recorder/);
 });

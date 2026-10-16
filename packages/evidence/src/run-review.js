@@ -11,7 +11,7 @@ import { verifyReceipts, verifyReceipt, repairReceipt, decisionIdentity, receipt
 import { identityDigest } from '../contracts/canonical.js';
 import { requestImages, deliveredView, clearedView } from './images.js';
 import { buildChallengeDossier, buildNarrativePrompt, NARRATIVE_SCHEMA, SESSION_NARRATIVE_SCHEMA, PROMPT_VERSION,
-  narrativeSchemaOf, restatusRequest, recolumnRequest } from './prompt.js';
+  narrativeSchemaOf, restatusRequest, recolumnRequest, reanchorRequest } from './prompt.js';
 import { reviewAgentProfile } from './review-agent.js';
 import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withheldRejection,
   withheldCauseCounts, declaredCauses, JUDGE_FAILURE_CODES, RUN_FAILURE_CODES, windowEnd,
@@ -25,7 +25,8 @@ import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withhe
   FAILURE_OUTCOMES, resultOutcome, REQUIREMENT_FACTS, PROMISE_UNCHECKED_REASONS, CHALLENGE_ENDED, UNRUN_WRITE_REASON,
   quotesOnlyUnrunWrite, constraintWithSourceRole, reviewWithSourceRoles, REQUIREMENT_RESTATUS_WITHHELD,
   DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, groundDecision, codeContradictionSource, SUPPORT_ASKED,
-  OWN_WRITTEN_SOURCE, RESTS_ON_REPAIRED, DECISION_RECOLUMN_RECORD } from './ledger.js';
+  OWN_WRITTEN_SOURCE, RESTS_ON_REPAIRED, DECISION_RECOLUMN_RECORD, NOT_ACTING_REANCHOR_WITHHELD,
+  NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD } from './ledger.js';
 import { checkedRequirement, claimRestsOn, windowAsks, notClaimsCheck, closingCoverage, windowFailures, failuresCheck }
   from './checklist.js';
 import { supportCheck, supportShape } from './claims.js';
@@ -1253,9 +1254,14 @@ export const CHALLENGE_SHORTFALL = Object.freeze([
  *  error code — never from anything it printed (B5: its text can carry the prompt or a key).
  *  Recorded as `shortfall.transport`, BESIDE the window's failure: the failure reason stays its
  *  closed token, so per-reason rates stay computable. Frozen here, in the evidence package the
- *  CLI transport already depends on, so the transport and the window share one list. */
+ *  CLI transport already depends on, so the transport and the window share one list.
+ *  The agent transport (cli/src/review-judge.js, `sonah.review-agent-transport/1`): `turn_limit`, the CLI ended the run
+ *  at the request's `--max-turns` (result subtype `error_max_turns`), and `structured_output_failed`, it gave up on an
+ *  answer that never matched the request's `--json-schema` (`error_max_structured_output_retries`); each read from the
+ *  one result event's typed subtype, beside its failure code (`model_turn_limit`, `model_structured_output_failed`). */
 export const TRANSPORT_SHORTFALL = Object.freeze([
   'timeout', 'exit_nonzero', 'output_limit', 'spawn_failed', 'no_output', 'unknown',
+  'turn_limit', 'structured_output_failed',
 ]);
 
 /** The class a failed call carried, or null when it carried none. Outside the list is `unknown`. */
@@ -1834,6 +1840,23 @@ const [RECOLUMN_BOUND, RECOLUMN_NO_ANSWER, RECOLUMN_NO_ROW, RECOLUMN_COULD_NOT_T
 /** W1 A: does a decision proposal say who decided it (a covering receipt, or an instruction review)? */
 const filesColumn = (candidate) => plain(candidate) && (plain(candidate.constrainedBy)
   || plain(candidate.instructionReview));
+/** W1 A and G2: a decision proposal grounded as the window's grounding grounds it (`groundNarrative`): the ledger's
+ *  answer (`groundDecision`), or null when it cannot be read. `place` is `{ session, repo, pr, end }`. */
+function groundedProposal(decision, { session, repo, pr, end }) {
+  try {
+    const [candidate] = toCandidates({ decisions: [decision] }, session).decisions;
+    return groundDecision({ repo, session, pr, candidate, instructionHistoryComplete: true, upTo: end,
+      notActing: true, projectFilesShown: true });
+  } catch { return null; }
+}
+/** W1 A and G2: the column a decision proposal grounds to, as the window's grounding derives it, or null. */
+function groundedColumn(decision, place) {
+  const out = groundedProposal(decision, place);
+  return out?.ok === true && out.decision.columnState === 'grounded' ? out.decision.column : null;
+}
+/** The refuting votes of a challenge result: the counted (valid) ones that refuted it, as the vote record holds them. */
+const refutingVotesIn = (result) => (result?.votes ?? []).filter((vote) => vote?.valid === true
+  && vote.verdict === 'refuted');
 /** W1 A: a decision proposal without who decided it — the choice alone, which its existence check is asked about. */
 function withoutColumn(candidate) {
   const { constrainedBy: _column, instructionReview: _review, ...choice } = candidate;
@@ -1888,16 +1911,8 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
     [WITHHELD_MEMBER]: withheld, [CHALLENGED_MEMBER]: challenged };
   const recolumned = new Map();
   // The column a decision proposal grounds to, as the window's grounding derives it (`groundNarrative`), or null.
-  const columnOf = (decision) => {
-    try {
-      const [candidate] = toCandidates({ decisions: [decision] }, session).decisions;
-      const out = groundDecision({ repo, session, pr, candidate, instructionHistoryComplete: true, upTo: end,
-        notActing: true, projectFilesShown: true });
-      return out.ok && out.decision.columnState === 'grounded' ? out.decision.column : null;
-    } catch { return null; }
-  };
-  const refutationsOf = (item) => (byKey.get(item.key)?.votes ?? []).filter((vote) => vote?.valid === true
-    && vote.verdict === 'refuted');
+  const columnOf = (decision) => groundedColumn(decision, { session, repo, pr, end });
+  const refutationsOf = (item) => refutingVotesIn(byKey.get(item.key));
   let existsChallenge = null;
   try {
     existsChallenge = await ask(refuted.map((item) => ({ key: `${item.key}${EXISTS_SUFFIX}`, type: 'decision',
@@ -1907,10 +1922,14 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
   const existsEnded = new Map((existsChallenge?.results ?? []).map((result) => [result.key, result]));
   if (existsChallenge) delete existsChallenge.survivors;
   const made = [];
+  // G2: and every choice the existence check refuted, with that check's refuting votes (`reanchoredChoices`).
+  const existenceRefuted = [];
   for (const item of refuted) {
-    const outcome = challengeOutcome(existsEnded.get(`${item.key}${EXISTS_SUFFIX}`));
+    const ended = existsEnded.get(`${item.key}${EXISTS_SUFFIX}`);
+    const outcome = challengeOutcome(ended);
     existence[outcome]++;
     if (outcome === UPHELD) made.push(item);
+    else if (outcome === REFUTED_OUTCOME) existenceRefuted.push({ item, refutations: refutingVotesIn(ended) });
   }
   const sent = made.map((item) => {
     const refutations = refutationsOf(item);
@@ -1960,7 +1979,146 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
   for (const item of made)
     if (!recolumned.has(item.key))
       recolumned.set(item.key, { ...item.candidate, [CHALLENGE_ENDED]: DECISION_COLUMN_REFUTED });
-  return { recolumned, record, existsChallenge, challenge };
+  return { recolumned, record, existsChallenge, challenge, existenceRefuted };
+}
+
+/** G2: the label suffix of a window's run that checks whether the agent made each choice not to act its re-ask
+ *  anchored anew (`challenge:wN:reanchor:…`; the re-ask itself is `narrative:wN:reanchor:K`), and of the run that checks
+ *  the column the re-ask's row gives (`challenge:wN:reanchor-column:…`). */
+const REANCHOR_SUFFIX = ':reanchor';
+const REANCHOR_COLUMN_SUFFIX = ':reanchor-column';
+const [REANCHOR_BOUND, REANCHOR_NO_ANSWER, REANCHOR_NONE_STATED, REANCHOR_NO_ROW, REANCHOR_SAME, REANCHOR_UNGROUNDED]
+  = NOT_ACTING_REANCHOR_WITHHELD;
+const [REANCHOR_COULD_NOT_TELL, REANCHOR_COLUMN_UNGROUNDED] = NOT_ACTING_REANCHOR_COLUMN_WITHHELD;
+/** G2: a decision proposal's set of actions, as one string, or null when it cannot be read. */
+const actionSet = (candidate) => (plain(candidate) && Array.isArray(candidate.actions)
+  && candidate.actions.every((id) => typeof id === 'string') ? JSON.stringify([...new Set(candidate.actions)].sort())
+  : null);
+/** G2: is the re-ask's decision row `row` the choice `own` names: a choice not to act, on the same set of actions, with
+ *  the same dimension, the same choice and the same value, character for character (the re-ask asks for them exactly as
+ *  in the row it shows)? Structure and exact strings only. */
+const sameChoice = (row, own) => plain(row) && plain(own) && row.notActing === true && actionSet(own) !== null
+  && actionSet(row) === actionSet(own) && typeof own.dimension === 'string' && row.dimension === own.dimension
+  && typeof own.chosen === 'string' && row.chosen === own.chosen && (row.value ?? null) === (own.value ?? null);
+/** G2: is the receipt `next` the refuted anchor `was` again: in its event, one quote holding the other (strings only)? */
+const sameAnchor = (next, was) => plain(next) && plain(was) && typeof next.eventId === 'string'
+  && next.eventId === was.eventId && typeof next.quote === 'string' && typeof was.quote === 'string'
+  && (next.quote.includes(was.quote) || was.quote.includes(next.quote));
+
+/**
+ * G2 (owner decision 2026-10-15; option (c) of the ask-status spec). A stop to ask the person is often the agent's
+ * biggest judgment, and a review can anchor it on words that do not state it (a plan sentence), which the existence
+ * check then rightly refutes, so the choice was lost. Each session-only choice not to act (a decision proposal whose
+ * `notActing` is true: a field, never a word) that the window's challenge refuted and whose existence check
+ * (`recolumnedDecisions`, step 1) refuted too (`refuted`: `{ item, refutations }`, its item as asked and the votes of that
+ * check that refuted it) is put to the reviewer once more, the way S3 re-asks a refuted requirement:
+ *   1. the window's kept request with the row, what each refuting vote of the existence check said, and fixed words
+ *      asking for the agent's own words that state the choice, or no row (prompt.js `reanchorRequest`): one call per
+ *      choice, named `<label>:<its index>`, every re-ask sent before any answer is read, so a stored answer replays it
+ *      (D60). The answer's one readable decision row that is this choice (`sameChoice`: a choice not to act on the
+ *      decision's own set of actions, dimension, choice and value, exactly) gives the new anchor (`stated`) and who
+ *      decided it; the choice itself stays the decision's own. It goes on only when the anchor is not the refuted one
+ *      (precision: refuted words are never published on a second answer) and the choice on it grounds under code's
+ *      checks (ledger.js `groundDecision`);
+ *   2. each that goes on is asked on its choice alone (`withoutColumn`, so the existence proposition), in one run
+ *      (`:reanchor`) bound as the existence check that refuted it was (`existenceBounds`: unanimous, on the whole
+ *      window). A choice that check does not uphold stays out, as any refuted decision;
+ *   3. a choice it upholds whose row gives a column that grounds is asked with that column (`:reanchor-column`, run as
+ *      the decision's own check was), whether or not it is the column the window's challenge refuted: that challenge
+ *      refuted the choice on words that do not state it, so code cannot tell that it refuted who decided it. It is
+ *      published with that column when the check upholds it; "could not tell" with DECISION_COLUMN_REFUTED when the
+ *      check refutes it (its choice upheld on these words, the check refuted who decided it, and no other column was
+ *      given: W1 A's reason, for W1 A's cause); and with how the check ended (UNSETTLED_CHALLENGE) when it did not
+ *      settle or did not run (CHALLENGE_ENDED). A choice whose row gives no column, or one that does not ground, had no
+ *      check of who decided it: it is published as the ledger grounds any decision whose column does not hold
+ *      (`groundDecision`: "could not tell", with the ledger's own reason for that column), never with a check's reason.
+ * At most one re-ask per choice: nothing here is asked again. Returns `reanchored`, the item's key to the candidate it
+ * publishes; `record`, the counts (NOT_ACTING_REANCHOR_RECORD); and the two checks' own records (`existsChallenge`,
+ * `challenge`), kept apart from the window's (like a support's: they never make a window incomplete), each null when
+ * nothing was asked or its run failed. A failed call or check withholds only its own choice. Model output is read
+ * structurally only; nothing here reads a word of it.
+ */
+async function reanchoredChoices({ refuted, request, aliases, judge, session, windowEnd: end, repo, pr, requestBound,
+  label, ask, existenceBounds }) {
+  const withheld = zeros(NOT_ACTING_REANCHOR_WITHHELD);
+  const existence = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
+  const columnWithheld = zeros(NOT_ACTING_REANCHOR_COLUMN_WITHHELD);
+  const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
+  const [REFUTED_MEMBER, ASKED_MEMBER, WITHHELD_MEMBER, EXISTENCE_MEMBER, COLUMN_WITHHELD_MEMBER, CHALLENGED_MEMBER]
+    = NOT_ACTING_REANCHOR_RECORD;
+  const record = { [REFUTED_MEMBER]: refuted.length, [ASKED_MEMBER]: 0, [WITHHELD_MEMBER]: withheld,
+    [EXISTENCE_MEMBER]: existence, [COLUMN_WITHHELD_MEMBER]: columnWithheld, [CHALLENGED_MEMBER]: challenged };
+  const place = { session, repo, pr, end };
+  const reanchored = new Map();
+  const sent = refuted.map(({ item, refutations }) => {
+    const reask = reanchorRequest({ request, row: item.candidate, refutations, aliases,
+      label: `${label}:${item.key.split(':')[1]}` });
+    if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };
+    record[ASKED_MEMBER]++;
+    let answer;
+    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }
+    catch { answer = Promise.resolve(undefined); }
+    return { item, answer };
+  });
+  const anchored = [];
+  for (const { item, answer: pending } of sent) {
+    if (pending === null) { withheld[REANCHOR_BOUND]++; continue; }
+    const answer = await pending;
+    if (!narrativeShape(answer, true)) { withheld[REANCHOR_NO_ANSWER]++; continue; }
+    if (!answer.decisions.length) { withheld[REANCHOR_NONE_STATED]++; continue; }
+    // The row for this choice: the one readable row that is this choice not to act (precision: never a choice that
+    // acts, another choice or another choice's actions, and two such rows are none).
+    const rows = answer.decisions.filter((row) => !unreadableIn('decisions', row, SESSION_NARRATIVE_SCHEMA)
+      && sameChoice(row, item.candidate));
+    if (rows.length !== 1) { withheld[REANCHOR_NO_ROW]++; continue; }
+    const [row] = rows;
+    if (sameAnchor(row.stated, item.candidate.stated)) { withheld[REANCHOR_SAME]++; continue; }
+    const candidate = { ...withoutColumn(item.candidate), stated: { ...row.stated },
+      ...(plain(row.constrainedBy) ? { constrainedBy: constraintWithSourceRole(session, row.constrainedBy) } : {}),
+      ...(plain(row.instructionReview)
+        ? { instructionReview: reviewWithSourceRoles(session, row.instructionReview) } : {}) };
+    if (groundedProposal(withoutColumn(candidate), place)?.ok !== true) { withheld[REANCHOR_UNGROUNDED]++; continue; }
+    anchored.push({ item, candidate });
+  }
+  let existsChallenge = null;
+  if (anchored.length) {
+    try {
+      existsChallenge = await ask(anchored.map(({ item, candidate }) => ({ key: `${item.key}${REANCHOR_SUFFIX}`,
+        type: 'decision', candidate: withoutColumn(candidate) })), REANCHOR_SUFFIX, existenceBounds);
+    } catch { existsChallenge = null; }
+  }
+  const existsEnded = new Map((existsChallenge?.results ?? []).map((result) => [result.key, result]));
+  if (existsChallenge) delete existsChallenge.survivors;
+  const columnAsked = [];
+  for (const { item, candidate } of anchored) {
+    const outcome = challengeOutcome(existsEnded.get(`${item.key}${REANCHOR_SUFFIX}`));
+    existence[outcome]++;
+    if (outcome !== UPHELD) continue;
+    if (groundedColumn(candidate, place) !== null) {
+      columnAsked.push({ key: `${item.key}${REANCHOR_COLUMN_SUFFIX}`, of: item.key, type: 'decision', candidate });
+      continue;
+    }
+    // No column was checked: the ledger grounds it as any decision whose column does not hold, with its own reason (the
+    // row's column when the choice grounds with it, else none).
+    columnWithheld[filesColumn(candidate) ? REANCHOR_COLUMN_UNGROUNDED : REANCHOR_COULD_NOT_TELL]++;
+    reanchored.set(item.key, groundedProposal(candidate, place)?.ok === true ? candidate : withoutColumn(candidate));
+  }
+  let challenge = null;
+  if (columnAsked.length) {
+    try {
+      challenge = await ask(columnAsked.map(({ key, type, candidate }) => ({ key, type, candidate })),
+        REANCHOR_COLUMN_SUFFIX);
+    } catch { challenge = null; }
+    const ended = new Map((challenge?.results ?? []).map((result) => [result.key, result]));
+    for (const entry of columnAsked) {
+      const outcome = challengeOutcome(ended.get(entry.key));
+      challenged[outcome]++;
+      reanchored.set(entry.of, outcome === UPHELD ? entry.candidate : { ...entry.candidate,
+        [CHALLENGE_ENDED]: endedAs(outcome, [DECISION_COLUMN_REFUTED, DECISION_UNSETTLED, DECISION_UNEXECUTED]) });
+    }
+    if (challenge) delete challenge.survivors;
+  }
+  return { reanchored, record, existsChallenge, challenge };
 }
 
 /**
@@ -2078,6 +2236,9 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   // W1 A: what became of the decisions the challenge refuted on who decided them (`recolumnedDecisions`), and the records
   // of the runs that checked their choices and their new columns — each null when the window has none.
   let recolumnRecord = null, recolumnExistsChallenge = null, recolumnChallenge = null;
+  // G2: what became of the choices not to act whose existence check refuted them (`reanchoredChoices`), and the records
+  // of the runs that checked their new anchors and columns — each null when the window has none.
+  let reanchorRecord = null, reanchorExistsChallenge = null, reanchorChallenge = null;
   // S1: what the one whole-window vote on the requirements the single-pass dossier check left unsettled came to, and
   // that run's record — both null when the window has none (or its profile shows its single pass no dossier).
   let windowVoteRecord = null, windowVoteChallenge = null;
@@ -2643,6 +2804,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // W1 A: the existence check is shown the refuting votes and is unanimous across as many passes as the decision's
       // own check used, never fewer than the decide tier's, on the whole window. A choice it does not uphold stays out.
       let recolumned = new Map();
+      // G2 (owner decision 2026-10-15): and each choice not to act among them whose existence check refuted it is put to
+      // the reviewer once more for the agent's own words that state it (`reanchoredChoices`): published only when its
+      // own existence check upholds it, with the column its check upheld, else "could not tell".
+      let reanchored = new Map();
       const columnRefuted = checklist ? items.filter((item) => item.type === 'decision' && !survivors.has(item.key)
         && filesColumn(item.candidate) && challengeOutcome(byKey.get(item.key)) === REFUTED_OUTCOME) : [];
       if (columnRefuted.length) {
@@ -2650,11 +2815,19 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
           : CHALLENGE_TIER_BOUNDS.single;
         const passes = Math.max((tiered ? CHALLENGE_TIER_BOUNDS.single : CHALLENGE_PROFILE).passes,
           CHALLENGE_TIER_BOUNDS.decide.passes);
+        const existenceBounds = { passes, requiredSurvivals: passes, unanimous: true };
+        const run = await recolumnedDecisions({ refuted: columnRefuted, byKey, request, aliases, judge,
+          session: shownRecord, windowEnd: upTo, repo, pr, requestBound,
+          label: `narrative:w${window.index + 1}${RECOLUMN_SUFFIX}`,
+          ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds });
         ({ recolumned, record: recolumnRecord, existsChallenge: recolumnExistsChallenge, challenge: recolumnChallenge }
-          = await recolumnedDecisions({ refuted: columnRefuted, byKey, request, aliases, judge, session: shownRecord,
-            windowEnd: upTo, repo, pr, requestBound, label: `narrative:w${window.index + 1}${RECOLUMN_SUFFIX}`,
-            ask: (list, suffix, own = bounds) => ask(list, suffix, own),
-            existenceBounds: { passes, requiredSurvivals: passes, unanimous: true } }));
+          = run);
+        const choicesRefuted = run.existenceRefuted.filter(({ item }) => item.candidate?.notActing === true);
+        if (choicesRefuted.length)
+          ({ reanchored, record: reanchorRecord, existsChallenge: reanchorExistsChallenge, challenge: reanchorChallenge }
+            = await reanchoredChoices({ refuted: choicesRefuted, request, aliases, judge, session: shownRecord,
+              windowEnd: upTo, repo, pr, requestBound, label: `narrative:w${window.index + 1}${REANCHOR_SUFFIX}`,
+              ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds }));
       }
       // D71 (S2; owner decision D71 b): a session-only requirement the challenge did not uphold is KEPT, lowered to
       // not-checked (its receipts dropped: the weakest status needs none), with the closed reason of how its check ended.
@@ -2679,6 +2852,12 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
         // re-ask's check upheld, or "could not tell".
         if (item.type === 'decision' && recolumned.has(item.key)) {
           lowered.set(item.key, recolumned.get(item.key));
+          continue;
+        }
+        // G2: a choice not to act whose existence check refuted its anchor, anchored anew on the agent's own words that
+        // its own check upheld: published with the column its check upheld, or "could not tell".
+        if (item.type === 'decision' && reanchored.has(item.key)) {
+          lowered.set(item.key, reanchored.get(item.key));
           continue;
         }
         if (outcome === REFUTED_OUTCOME || !plain(item.candidate)) continue;
@@ -2881,6 +3060,11 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
     // keeps its bytes.
     ...(recolumnRecord ? { recolumn: recolumnRecord } : {}),
     ...(recolumnExistsChallenge ? { recolumnExistsChallenge } : {}), ...(recolumnChallenge ? { recolumnChallenge } : {}),
+    // G2: counts only, and the runs that checked the new anchors and their columns — each absent when the window's
+    // existence check refuted no choice not to act (resp. nothing was asked), so every other window's record keeps its
+    // bytes.
+    ...(reanchorRecord ? { reanchor: reanchorRecord } : {}),
+    ...(reanchorExistsChallenge ? { reanchorExistsChallenge } : {}), ...(reanchorChallenge ? { reanchorChallenge } : {}),
     // S1: counts only, and the whole-window vote's run — each absent when the window had no such requirement.
     ...(windowVoteRecord ? { windowVote: windowVoteRecord } : {}),
     ...(windowVoteChallenge ? { windowVoteChallenge } : {}) };
@@ -3552,6 +3736,11 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
     ...(w.recolumn ? { recolumn: w.recolumn } : {}),
     ...(w.recolumnExistsChallenge ? { recolumnExistsChallenge: w.recolumnExistsChallenge } : {}),
     ...(w.recolumnChallenge ? { recolumnChallenge: w.recolumnChallenge } : {}),
+    // G2: what became of its choices not to act whose existence check refuted them, by count, and the runs that checked
+    // their new anchors and columns (each present only when there is one).
+    ...(w.reanchor ? { reanchor: w.reanchor } : {}),
+    ...(w.reanchorExistsChallenge ? { reanchorExistsChallenge: w.reanchorExistsChallenge } : {}),
+    ...(w.reanchorChallenge ? { reanchorChallenge: w.reanchorChallenge } : {}),
     // S1: the whole-window vote on its unsettled requirements, by count, and that run's record (each present only when
     // there is one).
     ...(w.windowVote ? { windowVote: w.windowVote } : {}),

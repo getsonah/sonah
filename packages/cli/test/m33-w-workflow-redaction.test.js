@@ -1,9 +1,10 @@
-// M33 W (Claude Code Workflow agents), privacy. Every channel this change opens — an agent's brief (its recording's
-// first user row), its report (the journal's exact recorded result JSON), and its transcript text — is redacted
-// BEFORE any cut, cap or hash (C-02 M33 F repair 3 / M33 R order). Synthetic secrets sit across every cap boundary of
-// those channels, on one line and across lines, with a key on one side of a cut and its value on the other; no
-// fragment of any of them may reach the ledger, the canonical session, a review request or the story.
-// Every byte is invented; the secrets are assembled at run time.
+// M33 W (Claude Code Workflow agents): every channel this change opens — an agent's brief (its recording's first user
+// row), its report (the journal's exact recorded result JSON), and its transcript text — reaches the ledger, the
+// canonical session and a review request. D90 (owner decision 2026-10-15, privacy is not a design constraint): as
+// recorded. Before, each channel was redacted before any cut, cap or hash and these tests proved no fragment of a
+// planted secret survived; now nothing is masked or withheld for what it says, and these tests prove each planted
+// FAKE value is carried whole, wherever the cuts an earlier Sonah made fell. Every byte is invented; the FAKE values are
+// assembled at run time.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -12,15 +13,13 @@ import { loadSessionEvidence } from '../src/session-evidence.js';
 import { redact, sliceHash, ASK_OMISSION, FINAL_ANSWER_OMISSION, STATEMENT_OMISSION as STATEMENT_OMISSION_LINE }
   from '../../redact/index.js';
 /** The 8,000 / 6,000 / 2,000 code points an earlier Sonah bounded a statement and a report by (M33 F to D68 E): used
- *  only to place a token where those cuts fell. */
+ *  only to place a value where those cuts fell. */
 const FINAL_ANSWER_CAP = Object.freeze({ chars: 8000, head: 6000, tail: 2000 });
 const STATEMENT_CAP = FINAL_ANSWER_CAP;
 import { INSTRUCTION_GAP_NOTES } from '../../evidence/adapters/sonah-ledger.js';
 // C-01 event identity: sessions are registered, and their events named by positional labels (stable-ids-fixture.js).
 import { adapt, named } from '../../evidence/test/stable-ids-fixture.js';
-import { runReview, planWindowRequests } from '../../evidence/src/run-review.js';
-import { renderSessionStory } from '../../render/session-story.js';
-import { windowNarrative, fixtureJudge } from './m33-fast-profile-fixture.js';
+import { planWindowRequests } from '../../evidence/src/run-review.js';
 import { ARG_SEP } from '../../slicer/src/events.js';
 import { AGENTS, SLUG, SID, RUN, TEXT, fixerRows, linkedRun, mkdir, parentRows, resulted, rm, scratch, started,
   testerRows, workflowRows, writeTree } from './m33-w-workflow-fixture.js';
@@ -32,14 +31,12 @@ const ARMOUR = ['RSA', 'PRIVATE', 'KEY'].join(' ');
 const BEGIN = `-----BEGIN ${ARMOUR}-----`, END = `-----END ${ARMOUR}-----`;
 /** A key block body: base64 lines derived from a fixed seed (no word of any other text in these sessions). */
 const PEM_BODY = [0, 1, 2].map((i) => createHash('sha512').update(`m33-w synthetic key line ${i}`).digest('base64').slice(0, 64));
-/** Every 6-character window of every secret: none may survive anywhere. */
-const pieces = [TOKEN, PASS, ...PEM_BODY].flatMap((secret) => Array.from({ length: secret.length - 5 },
-  (_, i) => secret.slice(i, i + 6)));
-const leaks = (text, extra = []) => [...pieces, ...extra].filter((piece) => text.includes(piece));
 const filler = (n, tag = 'line') => Array.from({ length: n }, (_, i) => `filler ${tag} ${String(i).padStart(4, '0')} about the parser.`);
+const MARK = /‹(?:redacted|dropped)/;
 
-/** Load a run, and every surface a review or a story reads; assert no fragment of any secret reaches one. */
-async function surfaces(t, run, { extra = [] } = {}) {
+/** Load a run as a review does; every value in `shown` must reach the ledger, the session's text and the requests
+ *  whole, and nothing is marked redacted. */
+async function surfaces(t, run, { shown = [] } = {}) {
   const dir = await scratch();
   t.after(() => rm(dir, { recursive: true, force: true }));
   const previous = process.env.SONAH_HOME;
@@ -51,24 +48,26 @@ async function surfaces(t, run, { extra = [] } = {}) {
   const raw = await loadSessionEvidence([tree.parent], { outcomes: new Map(), reviewLinkedChildren: true,
     recordingRoots: { claude: tree.projects, codex: join(dir, 'codex') } });
   const ledger = redact(raw).ledger;
-  const session = adapt(ledger, { sessionKey: 'm33-w-leak' });
+  const session = adapt(ledger, { sessionKey: 'm33-w-as-recorded' });
   const plan = planWindowRequests({ session, reviewScope: 'session-only' });
-  const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
-    judge: fixtureJudge({ narrativeOf: (r) => windowNarrative(session, r.window) }) });
-  const story = renderSessionStory(session, report);
-  const shown = { raw: JSON.stringify(raw), ledger: JSON.stringify(ledger), hash: sliceHash(ledger),
-    blobs: Object.values(session.blobs).join('\n'), requests: plan.requests.map(({ request }) =>
-      `${request.prompt ?? ''}\n${request.evidencePrompt ?? ''}\n${request.system ?? ''}`).join('\n'), story };
-  for (const [where, value] of Object.entries(shown)) assert.deepEqual(leaks(value, extra), [], `${where}: no fragment survives`);
-  return { raw, ledger, session, plan, story, linked: ledger.delegations.filter((d) => d.kind === 'workflow-agent') };
+  const surface = { ledger: JSON.stringify(ledger), blobs: Object.values(session.blobs).join('\n'),
+    requests: plan.requests.map(({ request }) => `${request.prompt ?? ''}\n${request.system ?? ''}`).join('\n') };
+  for (const [where, value] of Object.entries(surface)) {
+    for (const text of shown) assert.ok(value.includes(text), `${where}: ${text.slice(0, 12)}… is carried whole`);
+    assert.doesNotMatch(value, MARK, `${where}: nothing is marked redacted`);
+  }
+  assert.equal(typeof sliceHash(ledger), 'string');
+  return { raw, ledger, session, plan, linked: ledger.delegations.filter((d) => d.kind === 'workflow-agent') };
 }
+/** `text` as a JSON string's body: what the ledger and a request hold of it inside a serialized report. */
+const inJson = (text) => JSON.stringify(text).slice(1, -1);
 const withReport = (fixerResult) => linkedRun({ journal: [started(AGENTS.fixer), started(AGENTS.tester),
   resulted(AGENTS.fixer, fixerResult), resulted(AGENTS.tester, 'Ran npm test: 12 passed.')] });
 const withAgents = (fixer, tester = testerRows()) => linkedRun({ agents: { [AGENTS.fixer]: fixer, [AGENTS.tester]: tester } });
 
-test('M33 W a report over the retired cap: a token across the old head or tail cut withholds it whole; a clean one is kept whole', async (t) => {
+test('M33 W, D90: a report over the retired cap is kept whole as recorded, a value where the old cuts fell included', async (t) => {
   for (const offset of [1, 15, 29, 39]) {
-    // In the recorded JSON text the head cut (code point 6000) falls `offset` characters into the token.
+    // In the recorded JSON text the old head cut (code point 6000) falls `offset` characters into the value.
     const lead = '{"summary":"';
     const before = `${lead}${filler(150).join(' ')} The deploy key is `;
     const pad = 'x'.repeat(FINAL_ANSWER_CAP.head - [...before].length - offset);
@@ -76,17 +75,15 @@ test('M33 W a report over the retired cap: a token across the old head or tail c
     const text = JSON.stringify(value);
     assert.equal([...text].slice(FINAL_ANSWER_CAP.head - offset, FINAL_ANSWER_CAP.head - offset + 4).join(''), 'ghp_');
     assert.ok([...text].length > FINAL_ANSWER_CAP.chars);
-    // M33 W repair: a decoded string of the recorded report holds a secret, so the whole report is withheld before any
-    // scrub or cut (no line of it is judged without the lines around it).
-    const { linked, session } = await surfaces(t, withReport(value));
-    assert.deepEqual(linked[0].finalAnswer, { text: '', redacted: true }, `offset ${offset}`);
+    const { linked, session } = await surfaces(t, withReport(value), { shown: [TOKEN] });
+    assert.deepEqual(linked[0].finalAnswer, { text }, `offset ${offset}`);
     assert.equal(session.observationFor(named(session, 'D1-0')).helperReported, true);
   }
-  // The tail cut (the last 2000 code points) falling into the token.
+  // The old tail cut (the last 2000 code points) falling into the value.
   const value = { summary: `${filler(400).join(' ')} the key ${TOKEN}${'y'.repeat(FINAL_ANSWER_CAP.tail - 30)} end.` };
-  const { linked } = await surfaces(t, withReport(value));
-  assert.deepEqual(linked[0].finalAnswer, { text: '', redacted: true });
-  // D68 (E): a clean report over the retired cap is kept whole: nothing cut, nothing declared clipped.
+  assert.deepEqual((await surfaces(t, withReport(value), { shown: [TOKEN] })).linked[0].finalAnswer,
+    { text: JSON.stringify(value) });
+  // D68 (E): a report over the retired cap is kept whole: nothing cut, nothing declared clipped.
   const summary = { summary: filler(400).join(' ') };
   const clean = await surfaces(t, withReport(summary));
   const report = clean.linked[0].finalAnswer;
@@ -95,81 +92,64 @@ test('M33 W a report over the retired cap: a token across the old head or tail c
   assert.equal(clean.session.adapterGaps.some((gap) => gap.code === 'source_clipped'), false);
 });
 
-test('M33 W a report whose decoded strings hold a secret is withheld whole; one only its serialized line names is masked', async (t) => {
-  // M33 W repair: any decoded string or key of the recorded report (each alone, and joined by line breaks) a scan
-  // would change withholds the whole report, before the serialized scrub.
-  const value = { summary: `Rotated the deploy key ${TOKEN} and reran the parser tests.`, ok: true };
-  assert.deepEqual((await surfaces(t, withReport(value))).linked[0].finalAnswer, { text: '', redacted: true });
-  // A value secret only by the key that names it, in another JSON string: every decoded string is clean alone, the
-  // serialized line masks it in place, and the decoded strings of what it leaves are clean. (M33 R repair 8: a key of
-  // the proximity rule's vocabulary is no longer such a key — the decoded strings joined by line breaks read `password`
-  // over its value, a label line and the value below it, so a scan changes them and the report is withheld whole, fail
-  // closed. `salt` is a secret name to the key-name rule and no word of that vocabulary: it still shows the masking in
-  // place.)
-  assert.deepEqual((await surfaces(t, withReport({ password: PASS, ok: true }))).linked[0].finalAnswer, { text: '', redacted: true });
-  const { linked, session } = await surfaces(t, withReport({ salt: PASS, ok: true }));
-  const report = linked[0].finalAnswer;
-  assert.equal(report.redacted, true);
-  assert.equal(report.truncated, undefined);
-  assert.equal(report.text, '{"salt":"‹redacted:secret-value›","ok":true}');
-  assert.ok(session.adapterGaps.some((gap) => gap.note === 'recorded tool output was partly withheld by redaction'
-    && gap.eventIds.includes(named(session, 'D1-0-r'))), 'the scrub is declared with tool output\'s');
-});
-
-test('M33 W a key block hidden by JSON escapes inside a report withholds the whole report', async (t) => {
+test('M33 W, D90: a report holding a key-shaped value, a secret-named one or a key block is kept whole as recorded', async (t) => {
   for (const value of [
+    { summary: `Rotated the deploy key ${TOKEN} and reran the parser tests.`, ok: true },
+    { password: PASS, ok: true },
+    { salt: PASS, ok: true },
     { config: `db:\n  password: |\n    ${PASS}\n    second line` },
     { key: `${BEGIN}\n${PEM_BODY.join('\n')}\n${END}` },
     { env: `PORT=8080\nAPI_TOKEN=${PASS}` },
+    { lines: ['line one', `password: ${PASS}`] },
+    { note: 'rotated', parts: [BEGIN, ...PEM_BODY, END] },
+    `${BEGIN}\n${PEM_BODY.join('\n')}\n${END}`,
   ]) {
-    const { linked, session } = await surfaces(t, withReport(value));
-    assert.deepEqual(linked[0].finalAnswer, { text: '', redacted: true }, JSON.stringify(value).slice(0, 40));
-    assert.equal(session.observationFor(named(session, 'D1-0')).helperReported, true, 'still the hand-off\'s result, with no text');
+    const text = JSON.stringify(value);
+    const shown = text.includes(TOKEN) ? [TOKEN] : text.includes(PASS) ? [PASS] : PEM_BODY.map(inJson);
+    const { linked, session } = await surfaces(t, withReport(value), { shown });
+    assert.deepEqual(linked[0].finalAnswer, { text }, text.slice(0, 40));
+    assert.equal(session.observationFor(named(session, 'D1-0')).helperReported, true, 'the hand-off\'s result');
+    assert.ok(!session.adapterGaps.some((gap) => /withheld by redaction/.test(gap.note ?? '')), 'no redaction gap');
   }
-  // M33 W repair: a secret-named value on one line of one string is a decoded string a scan changes: withheld whole.
-  const { linked } = await surfaces(t, withReport({ lines: ['line one', `password: ${PASS}`] }));
-  assert.deepEqual(linked[0].finalAnswer, { text: '', redacted: true });
 });
 
-test('M33 W, M35: a long brief is redacted whole and kept in full: a secret where the old ask cuts fell leaves no fragment', async (t) => {
+test('M33 W, M35, D90: a long brief is kept in full and as recorded, a value where the old ask cuts fell included', async (t) => {
   const HEAD = 14_000, BUDGET = 20_000;
   const lead = `${TEXT.fixerBrief}\n${filler(200).join('\n')}\n`;
   for (const offset of [1, 20, 39]) {
-    // Head: the old 14,000-character cut falls `offset` characters into the token.
+    // Head: the old 14,000-character cut falls `offset` characters into the value.
     const pad = 'p'.repeat(HEAD - lead.length - 'Use key '.length - offset);
     const head = `${lead}${pad}Use key ${TOKEN} for the deploy.\n${filler(260, 'tail').join('\n')}`;
     assert.ok(head.length > BUDGET && head.slice(HEAD - offset, HEAD - offset + 4) === 'ghp_');
-    const { session, raw } = await surfaces(t, withAgents(fixerRows({ brief: head })));
+    const { session, raw } = await surfaces(t, withAgents(fixerRows({ brief: head })), { shown: [TOKEN] });
     const brief = session.events.find((e) => e.childId === AGENTS.fixer && e.kind === 'instruction');
-    const kept = session.textSpansOf(brief, 'text').join('');
-    // M33 W repair: a brief takes every ask's path (M33 R): scrubbed whole. M35 (windowing): and kept in full — no cut,
-    // no declaration, no gap.
-    assert.ok(kept.startsWith(TEXT.fixerBrief) && kept.endsWith('filler tail 0259 about the parser.'), 'kept whole');
+    // M33 W repair: a brief takes every ask's path (M33 R). M35 (windowing): kept in full — no cut, no declaration, no
+    // gap. D90: as recorded.
+    assert.equal(session.textSpansOf(brief, 'text').join(''), head, 'kept whole, as recorded');
     assert.ok(!raw.children[0].ledger.instructions[0].text.includes(ASK_OMISSION), 'nothing is cut');
     assert.equal(raw.children[0].ledger.instructions[0].elided, undefined, 'nothing is declared');
     assert.ok(!session.adapterGaps.some((gap) => gap.note === INSTRUCTION_GAP_NOTES.capped_before_review), 'no gap');
   }
-  // A YAML block whose key sits before the old cut and whose value lines sit after it.
+  // A YAML block whose key sits before the old cut and whose value lines sit after it; a key block across it; a block
+  // the old ask strip replaced.
   const keyAt = HEAD - 30;
-  const yaml = `${lead}${'q'.repeat(keyAt - lead.length)}\ndb:\n  password: |\n    ${PASS}\n    more of it\n${filler(300, 'end').join('\n')}`;
-  await surfaces(t, withAgents(fixerRows({ brief: yaml })));
-  // A key block whose BEGIN line is before the old cut and whose body is after it.
-  const pem = `${lead}${'r'.repeat(HEAD - lead.length - 40)}\n${BEGIN}\n${PEM_BODY.join('\n')}\n`
-    + `${END}\n${filler(300, 'end').join('\n')}`;
-  await surfaces(t, withAgents(fixerRows({ brief: pem })));
-  // A pasted block the old ask strip replaced before redaction: scrubbed in place now.
-  const fenced = `${TEXT.fixerBrief}\n\`\`\`\n${filler(40).join('\n')}\nexport TOKEN=${TOKEN}\n\`\`\`\nThen report.`;
-  await surfaces(t, withAgents(fixerRows({ brief: fenced })));
+  for (const [brief, shown] of [
+    [`${lead}${'q'.repeat(keyAt - lead.length)}\ndb:\n  password: |\n    ${PASS}\n    more of it\n${filler(300, 'end').join('\n')}`,
+      [PASS]],
+    [`${lead}${'r'.repeat(HEAD - lead.length - 40)}\n${BEGIN}\n${PEM_BODY.join('\n')}\n${END}\n${filler(300, 'end').join('\n')}`,
+      PEM_BODY],
+    [`${TEXT.fixerBrief}\n\`\`\`\n${filler(40).join('\n')}\nexport TOKEN=${TOKEN}\n\`\`\`\nThen report.`, [TOKEN]],
+  ]) await surfaces(t, withAgents(fixerRows({ brief })), { shown });
 });
 
-test('M33 W an agent\'s transcript is redacted before every cut: tool output, statements past the cap, commentary', async (t) => {
+test('M33 W, D90: an agent\'s transcript is kept as recorded: tool output, a statement past the retired cap, commentary', async (t) => {
   const output = (row) => row('user', [{ type: 'tool_result', tool_use_id: 'toolu_leak_out', content:
     `deploying\nexport GITHUB_TOKEN=${TOKEN}\ndb:\n  password: |\n    ${PASS}\ndone` }], {}, 'leak:r');
   const call = (row) => row('assistant', [{ type: 'tool_use', id: 'toolu_leak_out', name: 'Bash',
     input: { command: 'cat deploy.log', description: 'show the log' } }], {}, 'leak');
   const commentary = (row) => row('assistant', [{ type: 'text', text: `Found the key block:\n${BEGIN}\n`
     + `${PEM_BODY.join('\n')}\n${END}` }], {}, 'leak:said');
-  // A closing statement over the statement cap, the token across its head cut.
+  // A closing statement over the retired statement cap, the value across its old head cut.
   const offset = 9;
   const lead = `${filler(100, 'said').join('\n')}\n`;
   const statement = `${lead}${'s'.repeat(STATEMENT_CAP.head - lead.length - 'key '.length - offset)}key ${TOKEN} used.\n`
@@ -178,16 +158,15 @@ test('M33 W an agent\'s transcript is redacted before every cut: tool output, st
   const rows = fixerRows({ extra: [call, output, commentary] });
   const last = rows[rows.length - 1];
   rows[rows.length - 1] = { ...last, message: { role: 'assistant', content: [{ type: 'text', text: statement }] } };
-  const { session, ledger } = await surfaces(t, withAgents(rows));
-  // D68 (E): the statement is kept whole and scrubbed whole; no marker is written.
+  const { session, ledger } = await surfaces(t, withAgents(rows), { shown: [TOKEN, PASS, ...PEM_BODY] });
+  // D68 (E): the statement is kept whole; no marker is written. D90: as recorded.
   assert.equal(ledger.children[0].ledger.sayings.some((s) => s.text.includes(STATEMENT_OMISSION_LINE)), false);
-  assert.ok(ledger.children[0].ledger.sayings.some((s) => s.text.includes('key ‹redacted:github-token› used.')), 'scrubbed whole');
-  assert.equal(JSON.stringify(ledger).includes(TOKEN), false);
+  assert.ok(ledger.children[0].ledger.sayings.some((s) => s.text === statement), 'the statement as recorded');
   assert.ok(session.events.some((e) => e.childId === AGENTS.fixer && e.kind === 'observation'
-    && session.textSpansOf(e, 'output').join('').includes('deploying')), 'the output is kept, scrubbed');
+    && session.textSpansOf(e, 'output').join('').includes(`export GITHUB_TOKEN=${TOKEN}`)), 'the output as recorded');
 });
 
-// ---- M33 W repair: a workflow agent's file bodies and write arguments take M33 R's order ----------------------------
+// ---- M33 W repair: a workflow agent's file bodies and write arguments, past Sonah's retired cuts ---------------------
 
 const PROSE_LINE = 'checked the parser module and left it as it was';
 /** Exactly `n` characters of prose: whole lines, then a partial line of `y`. */
@@ -208,14 +187,14 @@ const writeCall = (id, name, input) => [
     ? `File created successfully at: ${input.file_path}` : `The file ${input.file_path} has been updated.` }], {}, `${id}:r`),
 ];
 
-test('M33 W a workflow agent\'s Write and Edit bodies and arguments are redacted before Sonah\'s 20,000 and 2,000 cuts', async (t) => {
+test('M33 W, D90: a workflow agent\'s Write and Edit bodies and arguments are kept as recorded past the old 20,000 and 2,000 cuts', async (t) => {
   const BODY = 20_000, ARGS = 2_000;
   for (const offset of [1, 20, 39]) {
-    // The token starts `offset` characters before each cut: the cut falls `offset` characters into it.
+    // The value starts `offset` characters before each old cut: the cut fell `offset` characters into it.
     const path = (name) => `/repo/src/${name}.txt`;
     const argsAt = (prefix) => ARGS - prefix.length - offset;
     const calls = [
-      // A file body over 20,000 characters (the written content, each Edit side): Sonah's body cap.
+      // A file body over 20,000 characters (the written content, each Edit side): Sonah's old body cap.
       ...writeCall('toolu_w_body', 'Write', { file_path: path('w-body'), content: placed(BODY - offset, 25_000) }),
       ...writeCall('toolu_e_body', 'Edit', { file_path: path('e-body'), old_string: 'x',
         new_string: placed(BODY - offset, 25_000) }),
@@ -227,11 +206,13 @@ test('M33 W a workflow agent\'s Write and Edit bodies and arguments are redacted
       ...writeCall('toolu_e_old', 'Edit', { file_path: path('e-old'),
         old_string: placed(argsAt(`${path('e-old')}${ARG_SEP}`), 3_000), new_string: 'y' }),
     ];
-    const { ledger } = await surfaces(t, withAgents(fixerRows({ extra: calls })));
+    const { ledger } = await surfaces(t, withAgents(fixerRows({ extra: calls })), { shown: [TOKEN] });
     const written = ledger.children[0].ledger.ledger.filter((event) => ['edit', 'create'].includes(event.kind));
     assert.equal(written.length, 6, `offset ${offset}: the agent's own Edit and the five writes are its events`);
+    for (const event of written.slice(1))
+      assert.ok(JSON.stringify(event).includes(` ${TOKEN} is the key`), `offset ${offset}: ${event.path} as recorded`);
   }
-  // Across lines: the line that makes the lines after it secret stands before the cut, they stand after it.
+  // Across lines: the line that once made the lines after it secret stands before the old cut, they stand after it.
   const yamlAt = (cut) => {
     const head = `${prose(cut - 40)}\ndb:\n  password: |\n`;
     return `${head}${' '.repeat(Math.max(0, cut - head.length))}    ${PASS}\n    second line\n${prose(3_000)}`;
@@ -243,21 +224,5 @@ test('M33 W a workflow agent\'s Write and Edit bodies and arguments are redacted
     ...writeCall('toolu_e_yaml', 'Edit', { file_path: '/repo/conf/c.yml', old_string: 'x', new_string: yamlAt(ARGS) }),
     ...writeCall('toolu_e_pem', 'Edit', { file_path: '/repo/conf/d.pem', old_string: pemAt(ARGS), new_string: 'y' }),
   ];
-  await surfaces(t, withAgents(fixerRows({ extra: lines })));
-});
-
-test('M33 W a key block header the serialized scrub masks still withholds the whole report (no body line survives)', async (t) => {
-  // Low-entropy body lines: no rule but the key block's own knows them. The scan of the serialized line masks the
-  // BEGIN header; without it, the decoded string's body no longer reads as a key block.
-  const BODY = ['plainbodylineoneofthesynthetickey', 'plainbodylinetwoofthesynthetickey'];
-  const extra = BODY.flatMap((line) => Array.from({ length: line.length - 9 }, (_, i) => line.slice(i, i + 10)));
-  for (const value of [
-    { key: `${BEGIN}\n${BODY.join('\n')}\n${END}` },
-    { key: `${BEGIN}\n${BODY.join('\n')}` },
-    { note: 'rotated', parts: [BEGIN, ...BODY, END] },
-    `${BEGIN}\n${BODY.join('\n')}\n${END}`,
-  ]) {
-    const { linked } = await surfaces(t, withReport(value), { extra });
-    assert.deepEqual(linked[0].finalAnswer, { text: '', redacted: true }, JSON.stringify(value).slice(0, 60));
-  }
+  await surfaces(t, withAgents(fixerRows({ extra: lines })), { shown: [PASS, ...PEM_BODY] });
 });

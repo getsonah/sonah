@@ -1,7 +1,7 @@
 // R7: no live provider, registry package, user configuration or GitHub write.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, stat, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, writeFile, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { sourcePackageFiles, assertPackageListing, SOURCE_ROOT } from '../../../scripts/package-source.mjs';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
 import { PROBE_REQUEST } from '../src/review-probe.js';
+import { AGENT_OPTIONS_CHECK } from '../src/doctor.js';
 import { session, toJsonl } from '../../golden/src/build.js';
 
 const exec = promisify(execFile);
@@ -180,13 +181,40 @@ test('one installer command in a fresh HOME produces an installed CLI and a synt
     .say('The synthetic value was updated.').done()) + '\n');
 
   const callLog = join(directory, 'fake-calls'), probeLog = join(directory, 'fake-probes');
+  const agentLog = join(directory, 'fake-agent-calls');
   await writeFile(join(fakeBin, 'claude'), `#!${process.execPath}\nconst fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === '--version') { console.log('2.1.278 (Claude Code)'); process.exit(0); }
 if (args.join(' ') === 'auth status') { console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'})); process.exit(0); }
-if (args[args.indexOf('--tools') + 1] !== '' || !args.includes('--strict-mcp-config')) process.exit(8);
+// doctor's check that this CLI knows the agent transport's options (they come before auth status).
+if (args.join(' ') === ${JSON.stringify(AGENT_OPTIONS_CHECK.join(' '))}) {
+  console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'})); process.exit(0);
+}
+// The agent transport's argv: read-only tools, confined, a turn budget and a JSON schema, no partial messages.
+const valueOf = (flag) => args[args.indexOf(flag) + 1];
+const agent = valueOf('--tools') === 'Read,Grep,Glob';
+if (agent && (!args.includes('--restricted') || valueOf('--permission-mode') !== 'dontAsk'
+  || !/^[1-9][0-9]*$/.test(valueOf('--max-turns')) || args.includes('--include-partial-messages'))) process.exit(12);
+if (!agent && valueOf('--tools') !== '' || !args.includes('--strict-mcp-config')) process.exit(8);
 let input = ''; process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
+  if (agent) {
+    // An answer in the shape the request's schema asks for: each required member empty of its type.
+    const schema = JSON.parse(valueOf('--json-schema')), empty = { array: [], object: {}, string: '', integer: 0,
+      number: 0, boolean: false };
+    const answer = Object.fromEntries((schema.required || []).map((key) => [key,
+      empty[(schema.properties || {})[key]?.type] ?? null]));
+    const model = valueOf('--model');
+    fs.appendFileSync(${JSON.stringify(agentLog)}, JSON.stringify({ cwd: process.cwd(), input }) + '\\n');
+    process.stdout.write(JSON.stringify({type:'system',subtype:'init',model,claude_code_version:'2.1.296',
+      tools:['Glob','Grep','Read','StructuredOutput']}) + '\\n');
+    process.stdout.write(JSON.stringify({type:'assistant',parent_tool_use_id:null,message:{model:model.replace('[1m]',''),
+      role:'assistant',content:[{type:'tool_use',id:'toolu_1',name:'StructuredOutput',input:answer}]}}) + '\\n');
+    process.stdout.write(JSON.stringify({type:'result',subtype:'success',is_error:false,num_turns:1,
+      result:JSON.stringify(answer),structured_output:answer,
+      modelUsage:{[model]:{contextWindow:1000000,maxOutputTokens:128000,inputTokens:2,outputTokens:4}}}) + '\\n');
+    return;
+  }
   if (input.includes(${JSON.stringify(PROBE_REQUEST.prompt)})) {
     const configured = ${JSON.stringify(SESSION_REVIEW_CLAUDE_CLI_MODEL)};
     if (args[args.indexOf('--model') + 1] !== configured) process.exit(10);
@@ -226,6 +254,17 @@ process.stdin.on('end', () => {
   await assert.rejects(stat(callLog), { code: 'ENOENT' });
   const doctor = await run(bin, ['doctor', '--backend', 'claude-cli', '--model', SESSION_REVIEW_CLAUDE_CLI_MODEL]);
   assert.match(doctor.stdout, /answered one tiny synthetic request under the 1M context window/);
+  assert.match(doctor.stdout, /^Claude code-step options: accepted \(--restricted, --max-turns, --json-schema\)\.$/m);
+  // The installed agent transport, through the same fake executable: one agent request, answered in its schema's shape.
+  const { createReviewJudge } = await import(pathToFileURL(join(installed, 'packages/cli/src/review-judge.js')).href);
+  const agentAnswer = await createReviewJudge({ config: { backend: 'claude-cli', model: SESSION_REVIEW_CLAUDE_CLI_MODEL },
+    env })({ system: 'SYNTHETIC_AGENT_SYSTEM', prompt: 'SYNTHETIC_AGENT_PROMPT', agent: { root: work, maxTurns: 3 },
+    schema: { type: 'object', required: ['findings', 'note'], properties: { findings: { type: 'array' },
+      note: { type: 'string' } } } });
+  assert.deepEqual(agentAnswer, { findings: [], note: '' });
+  assert.equal(agentAnswer.agentRun.toolCalls.StructuredOutput, 1);
+  const [agentCall, ...moreAgentCalls] = (await readFile(agentLog, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual([agentCall.input, agentCall.cwd, moreAgentCalls], ['SYNTHETIC_AGENT_PROMPT', await realpath(work), []]);
   assert.equal(await readFile(probeLog, 'utf8'), 'probe\n', 'doctor probes once without retrying');
   await assert.rejects(stat(callLog), { code: 'ENOENT' });
   await assert.rejects(stat(env.SONAH_HOME), { code: 'ENOENT' });
@@ -235,13 +274,13 @@ process.stdin.on('end', () => {
   const args = ['review', recording];
   const dryOutput = join(directory, 'dry.html');
   const dry = await run(bin, [...args, '--format', 'html', '--output', dryOutput, '--dry-run']);
-  assert.match(dry.stdout, /^Dry run: nothing was sent to a model, written or posted\.$/m);
+  assert.match(dry.stdout, /^Dry run: Sonah sent nothing to a model, and wrote or posted nothing\.$/m);
   await assert.rejects(stat(dryOutput), { code: 'ENOENT' });
   await assert.rejects(stat(callLog), { code: 'ENOENT' });
   await assert.rejects(stat(env.SONAH_HOME), { code: 'ENOENT' });
   // Owner decision 2026-10-14: the code step is on by default, and the dry run says so. The installed `sonah config`
   // then turns it off, so the reviews below are the session's alone (the code step has its own tests).
-  assert.match(dry.stdout, /^Code step: on \(the default\)\. /m);
+  assert.match(dry.stdout, /^Code review: on \(the default\)\. /m);
   const off = await run(bin, ['config', 'code-pass', 'off']);
   assert.equal(off.stdout, `code-pass: off (set in ${join(env.SONAH_HOME, 'config.json')}). A review reads and sends the `
     + 'session only. Change it with sonah config code-pass on, or for one review with --code-pass.\n');
@@ -291,7 +330,7 @@ process.stdin.on('end', () => {
     } } });
   assert.equal(code, 0); assert.equal(reads, 2);
   assert.match(out, /^PR comment preview for example\/demo#7, head a{40}:\nSonah advisory review$/m);
-  assert.match(out, /^PR comment not posted\.$/m);
+  assert.match(out, /^Sonah did not post the PR comment\.$/m);
   assert.equal(await readFile(callLog, 'utf8'), callsAfterReview, 'the comment is built from stored answers');
 
   // B2: use native storage, no explicit recording or Git range, and a helper newer than its parent.
@@ -336,7 +375,9 @@ process.stdin.on('end', () => {
   assert.ok(!afterSession.slice(callsBeforeDiscovery.length).includes('call+code'), 'bare review never invents a code range');
   const sessionHtml = await readFile(sessionOutput, 'utf8');
   assert.match(sessionHtml, /^<!doctype html>/i);
-  assert.match(sessionHtml, /inspect a file in the linked helper/);
+  // D97: the page shows your prompt (the helper's brief was on the removed steps card; the call log above shows the
+  // model received the linked helper's evidence).
+  assert.match(sessionHtml, /inspect the repository with a helper/);
   assert.ok(!sessionHtml.includes('<script'));
   assert.equal((await stat(sessionOutput)).mode & 0o777, 0o600);
   await run(bin, ['review', '--choose', '1', '--state-dir', sessionState]);

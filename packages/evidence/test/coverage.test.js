@@ -12,8 +12,11 @@ import { Session } from '../src/session.js';
 import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { planWindows } from '../src/windows.js';
 import { runReview } from '../src/run-review.js';
-import { buildLedger, sessionCoverageFacts, coverageFrom, honestStatuses } from '../src/ledger.js';
-import { renderReview, COVERAGE_CAUSES, COVERAGE_SENTENCE, coverageCauses } from '../src/review.js';
+import { buildLedger, sessionCoverageFacts, coverageFrom, honestStatuses, reviewRunState } from '../src/ledger.js';
+import { COVERAGE_CAUSES, COVERAGE_SENTENCE, coverageCauses } from '../src/review.js';
+
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line). */
+const causeLine = (report) => coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
 
 const repo = { host: 'github.com', id: '1' };
 const pr = { repo, number: 1, files: [] };
@@ -31,7 +34,6 @@ test('B12 a session whose only event is a compaction boundary is UNCHECKED, not 
   assert.equal(report.coverage, 'missing');
   assert.equal(report.sessionStatus, 'UNCHECKED');
   assert.equal(report.reviewStatus, 'UNCHECKED');
-  assert.ok(!renderReview(report).includes('CLEAN'), 'nothing was reviewed, so nothing may read CLEAN');
 });
 
 test('B13 the same session through the production adapter is UNCHECKED', async () => {
@@ -101,7 +103,7 @@ test('B1/G6 an unverified delegation becomes a delegate invocation and a named i
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.equal(report.gaps.filter((g) => g.code === 'incomplete_inventory' && g.channel === 'children').length, 1,
     'one delegation, one declared gap — the adapter and the child-link path must not double it');
-  assert.match(renderReview(report), /hand-off could not be verified against a child recording/);
+  assert.ok(coverageCauses(report).some(([cause]) => cause === 'incomplete_inventory'), 'the reader is told why');
 });
 
 test('B1/G6 a delegation the slicer called ambiguous is declared as ambiguous, not as absent', () => {
@@ -116,7 +118,7 @@ test('B1/G6 a delegation the slicer called ambiguous is declared as ambiguous, n
   const report = buildLedger({ repo, session, pr, sessionCoverage: 'complete' });
   // M33 (C-06): a completed review over an ambiguous child (a recorder limit) reads NO_FINDINGS.
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.match(renderReview(report), /could not be matched to exactly one sub-agent session/);
+  assert.ok(coverageCauses(report).some(([cause]) => cause === 'delegations_ambiguous'), 'the reader is told why');
 });
 
 test('B1/G6 a recorder that only reports delegated_capture_unchecked still declares a child gap', () => {
@@ -153,8 +155,8 @@ test('F100 a missing child link and an empty narrative is partial and NO_FINDING
   assert.equal(report.sessionReview, 'complete');
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.notEqual(report.reviewStatus, 'CLEAN');
-  assert.match(renderReview(report), /1 delegation\(s\) have no verified child evidence/,
-    'the reader is told which fact made it partial');
+  assert.deepEqual(coverageCauses(report).find(([cause]) => cause === 'delegations_unlinked'),
+    ['delegations_unlinked', { n: 1 }], 'the reader is told which fact made it partial');
 });
 
 test('F100 sessionCoverageFacts counts every route a delegation gap takes, once per hand-off', () => {
@@ -218,7 +220,7 @@ test('honestStatuses overrides a CLEAN written by an intermediate step', () => {
   assert.equal(out.reviewStatus, 'UNCHECKED');
 });
 
-test('the renderer recomputes before it prints, so a forged CLEAN never reaches a reader', () => {
+test('a reader recomputes before it says anything, so a forged CLEAN never reaches a person', () => {
   const forged = {
     repo, pr, session: null, hasSessionEvidence: true,
     decisions: [], findings: [], rejectedDecisions: [], rejectedFindings: [], gaps: [],
@@ -228,27 +230,12 @@ test('the renderer recomputes before it prints, so a forged CLEAN never reaches 
     coverageFacts: { windows: 0, windowsWithNarrative: 0, windowsFailed: 0, actions: 0, instructions: 0,
       instructionsElided: 0, delegationsUnlinked: 0, adapterGaps: 0, declared: 'complete' },
   };
-  const md = renderReview(forged);
-  // D71 (a): the renderer prints no status at all; what it says of the review is recomputed from the facts.
-  assert.match(md, /Session review: \*\*did not complete\*\*/);
-  assert.match(md, /Sonah's review did not complete/);
-  assert.doesNotMatch(md, /\b(CLEAN|UNCHECKED|NO_FINDINGS|DECIDE|FYI)\b/, 'the renderer never prints a status');
+  // D71 (a): no reader prints a status; what it says of the review is recomputed from the facts.
+  assert.notEqual(honestStatuses(forged).sessionReview, 'complete');
+  assert.equal(reviewRunState(forged), 'incomplete');
 });
 
-test('a forged code CLEAN with missing code coverage renders as "not run"', () => {
-  const forged = {
-    repo, pr, session: null, hasSessionEvidence: false,
-    decisions: [], findings: [], rejectedDecisions: [], rejectedFindings: [], gaps: [],
-    counts: { decisions: 0, byColumn: {}, uncheckedColumn: 0, rejectedDecisions: 0, rejectedFindings: 0 },
-    coverage: 'complete', codeCoverage: 'missing',
-    sessionStatus: 'CLEAN', codeStatus: 'CLEAN', reviewStatus: 'CLEAN',
-  };
-  const md = renderReview(forged);
-  assert.match(md, /Code review: \*\*not run\*\*/);
-  assert.ok(!md.includes('Code review: **CLEAN**'));
-});
-
-// ---- Change 7: the render says what was not covered, in words --------------------------
+// ---- Change 7: the readers say what was not covered, in words --------------------------
 
 const FACTS = (over = {}) => ({ windows: 2, windowsWithNarrative: 2, windowsFailed: 0, actions: 3,
   instructions: 1, instructionsElided: 0, delegationsUnlinked: 0, adapterGaps: 0, declared: 'complete', ...over });
@@ -267,50 +254,27 @@ test('the coverage phrasebook is closed and complete', () => {
 });
 
 for (const [name, over, expected] of [
-  ['no windows', { windows: 0 }, 'no review windows were produced'],
-  ['no actions', { actions: 0 }, 'no actions were recorded in this session'],
-  ['failed windows', { windowsFailed: 1 }, '1 of 2 review windows did not complete'],
-  ['elided instructions', { instructionsElided: 2 }, '2 instruction(s) were elided by the recorder'],
-  ['unlinked delegations', { delegationsUnlinked: 1 }, '1 delegation(s) have no verified child evidence'],
+  ['no windows', { windows: 0 }, 'Sonah found nothing in the session to review'],
+  ['no actions', { actions: 0 }, 'the recording holds no action of the agent'],
+  ['failed windows', { windowsFailed: 1 }, '1 of 2 review windows did not finish'],
+  ['elided instructions', { instructionsElided: 2 }, 'the recorder shortened 2 messages of yours'],
+  ['unlinked delegations', { delegationsUnlinked: 1 }, 'Sonah found no checked recording for 1 delegation to a helper'],
 ]) {
   test(`the coverage note names the fact that caused it: ${name}`, () => {
-    const md = renderReview(shell({ coverageFacts: FACTS(over) }));
-    assert.ok(md.includes(`Not covered: `), 'the note is present');
-    assert.ok(md.includes(expected), `${name}: expected "${expected}" in the rendered note`);
+    const said = causeLine(shell({ coverageFacts: FACTS(over) }));
+    assert.ok(said.includes(expected), `${name}: expected "${expected}" among the causes`);
   });
 }
 
 test('an incomplete PR file list is named too, and a complete one is not', () => {
   const partial = { ...completePr, enumeration: 'partial' };
-  assert.ok(renderReview(shell({ pr: partial, coverageFacts: FACTS({ windowsFailed: 1 }) }))
-    .includes('the PR file list was incomplete'));
-  assert.ok(!renderReview(shell({ coverageFacts: FACTS({ windowsFailed: 1 }) }))
-    .includes('the PR file list was incomplete'));
+  assert.ok(causeLine(shell({ pr: partial, coverageFacts: FACTS({ windowsFailed: 1 }) }))
+    .includes('the file list of the pull request is incomplete'));
+  assert.ok(!causeLine(shell({ coverageFacts: FACTS({ windowsFailed: 1 }) }))
+    .includes('the file list of the pull request is incomplete'));
   assert.deepEqual(coverageCauses({ pr: completePr, coverageFacts: FACTS() }), []);
 });
 
-test('complete coverage prints no coverage note at all', () => {
-  const md = renderReview(shell({ codeCoverage: 'complete', coverageFacts: FACTS() }));
-  assert.ok(!md.includes('Not covered:'));
-});
-
-// ---- F19: a finding the caller has not reported before is marked ------------------------
-
-const finding = (over) => ({ origin: 'code-review', kind: 'code_issue', title: 'Unguarded call',
-  explanation: 'It can throw.', receipts: [], scope: 'current-code', anchor: null, status: 'DECIDE', ...over });
-
-test('F19 a finding carrying isNew renders a `new` tag; an unchanged one does not', () => {
-  const md = renderReview(shell({ codeCoverage: 'complete', coverageFacts: FACTS(),
-    findings: [finding({ isNew: true }), finding({ title: 'Old defect', isNew: false })] }));
-  // D71 (a): the header names the kind and its recorded facts, never a status.
-  assert.match(md, /\*\*Unguarded call\*\* {2}`code\\_issue` · `new`/);
-  assert.match(md, /\*\*Old defect\*\* {2}`code\\_issue`$/m);
-});
-
-test('F19 only a strictly true isNew is a claim; absent or truthy is not', () => {
-  for (const value of [undefined, 'yes', 1, null]) {
-    const md = renderReview(shell({ codeCoverage: 'complete', coverageFacts: FACTS(),
-      findings: [finding(value === undefined ? {} : { isNew: value })] }));
-    assert.ok(!md.includes('· `new`'), `isNew=${String(value)} must not be rendered as new`);
-  }
+test('complete coverage names no cause at all', () => {
+  assert.deepEqual(coverageCauses(shell({ codeCoverage: 'complete', coverageFacts: FACTS() })), []);
 });

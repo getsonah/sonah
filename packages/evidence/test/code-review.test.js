@@ -3,7 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { snapshotDiff, validateAnchor, runCodeReview as rawRunCodeReview } from '../src/code-review.js';
-import { renderReview } from '../src/review.js';
 import { Session } from '../src/session.js';
 import { redisPivotSession, redisPivotPr, REDIS_PIVOT_TEXT } from '../fixtures/redis-pivot.js';
 import { DECISION_CANDIDATES, FINDING_CANDIDATES } from '../fixtures/redis-pivot-candidates.js';
@@ -534,7 +533,7 @@ for (const outcome of ['failed', 'unknown']) {
       assert.deepEqual(gaps.map((gap) => gap.eventIds), [actions]);
       assert.equal(report.sessionStatus, 'UNCHECKED');
     }
-    assert.ok(!renderReview(report).includes(finding.title), 'the withheld accusation reaches no section of the report');
+    assert.ok(!JSON.stringify(report.findings).includes(finding.title), 'the withheld accusation is never published');
   });
 }
 
@@ -746,9 +745,7 @@ test('R4 rejected pivot and requirement receipts are withheld and counted, never
   assert.deepEqual(report.withheld, { proposals: 0, unsettled: 2 });
   assert.equal(report.coverage, 'complete');
   assert.equal(report.sessionStatus, 'CLEAN');
-  const md = renderReview(report);
-  assert.ok(!md.includes('a fabricated requirement') && !md.includes('old approach'));
-  assert.match(md, /- 2 item\(s\) the challengers could not settle\./);
+  assert.ok(!JSON.stringify([report.pivots, report.requirements]).includes('a fabricated requirement'));
 });
 
 const repairResult = (...candidates) => ({ ...emptyResult([]), codeFindings: candidates });

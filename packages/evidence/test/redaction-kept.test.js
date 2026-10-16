@@ -9,9 +9,11 @@
 //         (`priorState: 'redacted'`) instead of claiming the record had none.
 //
 // The production raw path (a synthetic .jsonl on disk -> analyze() -> sessionFromLedger) runs
-// wherever the recorder's own shape or cap is part of the case; hand-built ledgers go through the
-// real `redact()`. Every fixture is synthetic; secret-shaped values are assembled at run time. No
-// real recording is read and no session text is printed.
+// wherever the recorder's own shape or cap is part of the case. D90 (owner decision 2026-10-15, privacy is not a design
+// constraint): no Sonah drops or masks a line now, so F184 and F185 read hand-built ledgers literally as an earlier
+// Sonah's redactor wrote them (its note in place of the lines it dropped, its counts), through today's `redact()`.
+// Every fixture is synthetic; secret-shaped values are assembled at run time. No real recording is read and no session
+// text is printed.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,10 +82,9 @@ test('F186 a whole-file write of a continued shell command is quotable exactly a
 
 // ---- F184: the redactor's note is not the session's text ----------------------------------------
 
-const BLOB = 'Zk3!q9Xv%2Lp#7Rw@Nb^4Ty&8Ue*Hs$Jd';                    // unclassifiable, high entropy
 const NOTE_QUOTES = ['line(s) dropped: unclassified', 'unclassified high-entropy content', '[… 1 line(s) dropped'];
 
-/** Hand-built ledger events through the real redactor, then the adapter. */
+/** Hand-built ledger events, as an earlier Sonah's redactor left them, through today's redactor and the adapter. */
 function reviewed(events) {
   const { ledger } = redact({ ask: [{ turn: 1, text: 'change the key loader' }], ledger: events,
     claim: { finalMessage: '' }, dropped: [] });
@@ -96,15 +97,21 @@ const editOf = (segments, over = {}) => {
     after: { text, truncated: false, lines: text.split('\n').length, parts: segments.length / 2,
       priorParts: segments.length / 2, ...over.after } };
 };
+/** The notes that redactor wrote in place of the lines it dropped. */
+const ENTROPY_NOTE = '[… 1 line(s) dropped: unclassified high-entropy content …]';
+const KEY_NOTE = (n) => `[… ${n} line(s) dropped: private key block …]`;
+/** What that redactor declared on an event whose text it dropped `n` lines of. */
+const dropped = (n, after = {}) => ({ redacted: true, after: { redactedLines: n, ...after } });
 const noteIsRejected = (session, id) => {
   for (const quote of NOTE_QUOTES)
     assert.equal(quotable(session, id, quote), false, `the redactor's note is not quotable: ${JSON.stringify(quote)}`);
 };
 
 test('F184 an edit whose written side lost a line: the replaced side is exactly the replaced text', () => {
-  const WRITTEN = ['const seed = loadSeed();', `  seed: ${BLOB}`, 'export default seed;'].join('\n');
+  // The written side's middle line, a high-entropy blob, was dropped by that redactor.
+  const WRITTEN = ['const seed = loadSeed();', ENTROPY_NOTE, 'export default seed;'].join('\n');
   const OLD = 'const seed = null;   // W3E1_REPLACED';
-  const { session, write } = reviewed([editOf([WRITTEN, OLD])]);
+  const { session, write } = reviewed([editOf([WRITTEN, OLD], dropped(1))]);
   const [change] = write.changes;
   assert.equal(session.textOf(change, 'before'), OLD, 'nothing of the redactor\'s is in the replaced side');
   assert.equal(change.beforeExtent.chars, OLD.length);
@@ -117,8 +124,8 @@ test('F184 an edit whose written side lost a line: the replaced side is exactly 
 });
 
 test('F184 an edit whose replaced side lost a line: the note is not counted as replaced text', () => {
-  const OLD = ['const seed = null;', `seed: ${BLOB}`, '// W3E1_OLD_TAIL'].join('\n');
-  const { session, write } = reviewed([editOf(['const seed = loadSeed();', OLD])]);
+  const OLD = ['const seed = null;', ENTROPY_NOTE, '// W3E1_OLD_TAIL'].join('\n');
+  const { session, write } = reviewed([editOf(['const seed = loadSeed();', OLD], dropped(1))]);
   const [change] = write.changes;
   assert.equal(session.textOf(change, 'before'), 'const seed = null;\n// W3E1_OLD_TAIL');
   assert.equal(change.beforeExtent.lines, 2, 'the note is not a line of the replaced side');
@@ -127,12 +134,12 @@ test('F184 an edit whose replaced side lost a line: the note is not counted as r
 });
 
 test('F184 a whole-file body and a file state that lost a line: the note is neither code nor counted', () => {
-  const BODY = ['export const a = 1;', `export const seed = "${BLOB}";`, 'export const b = 2;'].join('\n');
-  const FILE = ['export const a = 0;', `seed: ${BLOB}`].join('\n');
-  const { session, write } = reviewed([{ turn: 1, seq: 0, kind: 'create', path: 'src/seed.js',
-    after: { text: BODY, truncated: false, lines: 3 } },
-  { turn: 1, seq: 1, kind: 'edit', path: 'src/file.js',
-    before: { text: FILE, source: 'read', turn: 1, partial: false, truncated: false, lines: 2 },
+  const BODY = ['export const a = 1;', ENTROPY_NOTE, 'export const b = 2;'].join('\n');
+  const FILE = ['export const a = 0;', ENTROPY_NOTE].join('\n');
+  const { session, write } = reviewed([{ turn: 1, seq: 0, kind: 'create', path: 'src/seed.js', redacted: true,
+    after: { text: BODY, truncated: false, lines: 3, redactedLines: 1 } },
+  { turn: 1, seq: 1, kind: 'edit', path: 'src/file.js', redacted: true,
+    before: { text: FILE, source: 'read', turn: 1, partial: false, truncated: false, lines: 2, redactedLines: 1 },
     after: { text: `export const a = 1;${ARG_SEP}export const a = 0;`, truncated: false, lines: 3, parts: 1, priorParts: 1 } }]);
   const [created] = write.changes;
   assert.equal(session.textOf(created, 'after'), 'export const a = 1;\nexport const b = 2;');
@@ -148,7 +155,7 @@ test('F184 a whole-file body and a file state that lost a line: the note is neit
 });
 
 test('F184 a MultiEdit: each segment\'s drops stay in that segment, and no replaced side carries a note', () => {
-  const { session, write } = reviewed([editOf(['one();', `two(${BLOB});`, 'old one', 'old two'])]);
+  const { session, write } = reviewed([editOf(['one();', ENTROPY_NOTE, 'old one', 'old two'], dropped(1))]);
   assert.equal(write.changes.length, 2);
   assert.equal(session.textOf(write.changes[0], 'before'), 'old one');
   assert.equal(session.textOf(write.changes[1], 'before'), 'old two');
@@ -170,24 +177,27 @@ const KEY = (n = 3) => [BEGIN, ...keyBody(n), END].join('\n');
 const noKeyMaterial = (session) => Object.values(session.blobs)
   .every((b) => !b.includes(BEGIN) && keyBody(250).every((l) => !b.includes(l.slice(0, 32))));
 
-test('F185 / M33 R a key block across the review cap is dropped whole by redaction, so nothing of it is cut', async () => {
+// D90 (owner decision 2026-10-15, privacy is not a design constraint): the production path (`analyze`, what `sonah
+// slice` prints, as a review loads) masks and drops nothing, so a key block the agent wrote is kept whole as written;
+// the hand-built ledgers below still pass the redactor, which declares its drops as before.
+
+test('F185, D90 a key block across the retired review cap is kept whole: nothing of it is cut or dropped', async () => {
   const NEW = ['const key = `', BEGIN, ...keyBody(400), END, '`;'].join('\n');
   assert.ok(NEW.indexOf(END) > BEFORE_CAP, 'premise: the old cap, made before redaction, cut inside the key body');
   const OLD = 'const key = loadKey();   // W3E1_OLD_LOADER';
   const { ledger, session, write } = await throughProductionPath([userTurn('inline the key'),
     ...rawEdit('e1', '/repo/src/keys.js', OLD, NEW)]);
   const recorded = ledger.ledger.find((e) => e.kind === 'edit').after.text;
-  assert.equal(recorded.includes('truncated at'), false, 'scrubbed whole, the side fits the cap: nothing is cut');
+  assert.equal(recorded.includes('truncated at'), false, 'nothing is cut');
   assert.ok(recorded.endsWith(`${ARG_SEP}${OLD}`), 'and the replaced side is whole');
   const [change] = write.changes;
   assert.equal(change.extent.truncated, false);
-  assert.equal(session.textOf(change, 'after'), 'const key = `\n`;', 'the text around the block, the block declared');
-  assert.ok(change.extent.redactedLines > 0, 'the key lines are counted as dropped');
-  noteIsRejected(session, write.id);
-  assert.ok(noKeyMaterial(session), 'no key line reaches the canonical model');
+  assert.equal(session.textOf(change, 'after'), NEW, 'the written side as written, the key block included');
+  assert.ok(!(change.extent.redactedLines > 0), 'no line is dropped');
+  assert.ok(quotable(session, write.id, keyLine(399)), 'the block\'s last line grounds a quote');
 });
 
-test('F185, D68 (E) a key block past the retired memory bound is dropped whole; the side, its separator and its replaced side are kept', async () => {
+test('F185, D68 (E), D90 a key block past the retired memory bound is kept whole, with its separator and its replaced side', async () => {
   const NEW = ['const key = `', BEGIN, ...keyBody(700), END, '`;'].join('\n');
   assert.ok(NEW.indexOf(END) > 2 * BEFORE_CAP, 'premise: the retired memory bound cut inside the key body');
   const OLD = 'const key = loadKey();   // W3E1_OLD_LOADER';
@@ -199,31 +209,26 @@ test('F185, D68 (E) a key block past the retired memory bound is dropped whole; 
 
   const [change] = write.changes;
   assert.equal(change.extent.truncated, false);
-  assert.equal(session.textOf(change, 'after'), 'const key = `\n`;', 'the text around the block, the block declared');
-  assert.ok(change.extent.redactedLines > 0, 'the key lines are counted as dropped');
+  assert.equal(session.textOf(change, 'after'), NEW, 'the written side as written, the key block included');
+  assert.ok(!(change.extent.redactedLines > 0), 'no line is dropped');
   assert.equal(change.extent.priorState, 'edit-text', 'the replaced side is the record\'s, not "none"');
   assert.equal(session.textOf(change, 'before'), OLD);
   assert.equal(change.beforeExtent.truncated, false);
   assert.ok(quotable(session, write.id, 'W3E1_OLD_LOADER'), 'the replaced text is quotable');
-  noteIsRejected(session, write.id);
-  assert.ok(noKeyMaterial(session), 'no key line reaches the canonical model');
 });
 
-test('F185 an edit whose replaced side is entirely a key says the side was redacted, not that there was none', async () => {
+test('F185, D90 an edit whose replaced side is entirely a key keeps that key as its replaced side', async () => {
   const { session, write } = await throughProductionPath([userTurn('load the key from disk'),
     ...rawEdit('e1', '/repo/src/keys.js', KEY(), 'const key = loadKey();')]);
   const [change] = write.changes;
-  assert.equal(change.extent.priorState, 'redacted');
-  assert.equal(session.textOf(change, 'before'), '', 'nothing of it is quotable');
-  assert.equal(change.beforeExtent.redactedLines > 0, true, 'the side declares its dropped lines');
-  assert.equal(change.redacted, true);
+  assert.equal(change.extent.priorState, 'edit-text');
+  assert.equal(session.textOf(change, 'before'), KEY(), 'the replaced side as recorded');
+  assert.notEqual(change.redacted, true);
   assert.equal(session.textOf(change, 'after'), 'const key = loadKey();');
-  noteIsRejected(session, write.id);
-  assert.ok(noKeyMaterial(session));
 });
 
 test('F185 a MultiEdit: only the segment redaction emptied is declared redacted', () => {
-  const { session, write } = reviewed([editOf(['a();', 'b();', 'old a', KEY(2)])]);
+  const { session, write } = reviewed([editOf(['a();', 'b();', 'old a', KEY_NOTE(4)], dropped(4, { lines: 10 }))]);
   assert.deepEqual(write.changes.map((c) => c.extent.priorState), ['edit-text', 'redacted']);
   assert.equal(session.textOf(write.changes[0], 'before'), 'old a');
   assert.ok(noKeyMaterial(session));
@@ -232,7 +237,7 @@ test('F185 a MultiEdit: only the segment redaction emptied is declared redacted'
 test('F185 a replaced side the record kept empty is still an empty edit text, whatever else was redacted', () => {
   // The redactor declares its drops per segment, so an empty old_string is never mistaken for a
   // side redaction removed.
-  const { session, write } = reviewed([editOf([['header();', `seed: ${BLOB}`].join('\n'), ''])]);
+  const { session, write } = reviewed([editOf([['header();', ENTROPY_NOTE].join('\n'), ''], dropped(1))]);
   const [change] = write.changes;
   assert.equal(change.extent.redactedLines, 1, 'premise: redaction dropped a line from this field');
   assert.equal(change.extent.priorState, 'edit-text');
@@ -253,7 +258,7 @@ test('F185 every prior-state reason the adapter emits is a member of its one clo
   assert.ok(members.has('redacted'), 'the new reason is declared where the others are');
   const { session } = reviewed([
     editOf(['a();', 'old a']),                                                       // edit-text
-    { ...editOf(['a();', KEY(1)]), seq: 1 },                                          // redacted
+    { ...editOf(['a();', KEY_NOTE(3)], dropped(3, { lines: 5 })), seq: 1 },               // redacted
     { turn: 1, seq: 2, kind: 'create', path: 'src/new.js', after: { text: 'x', truncated: false, lines: 1 } }, // none
     { turn: 1, seq: 3, kind: 'edit', path: 'src/old.js', after: { text: `b();${ARG_SEP}old b`, truncated: false, lines: 3, parts: 1, priorParts: 1 },
       before: { text: 'old b', source: 'read', turn: 1, partial: false, truncated: false, lines: 1 } }, // first-write

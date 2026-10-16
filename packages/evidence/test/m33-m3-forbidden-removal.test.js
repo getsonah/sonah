@@ -18,7 +18,6 @@ import { Session } from '../src/session.js';
 import * as ledger from '../src/ledger.js';
 import * as forbidden from '../src/forbidden.js';
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
 import * as challenge from '../src/challenge.js';
 import * as story from '../../render/session-story.js';
 
@@ -181,9 +180,8 @@ test('M3 Claude Code: "keep the line", then an Edit that takes it out → DECIDE
   const report = await reviewRun.runReview({ session, pr: null, reviewScope: 'session-only', judge: judgeOf(proposal) });
   const found = report.findings.filter((f) => f.kind === 'edit_under_negative_requirement');
   assert.deepEqual(found.map((f) => [f.status, f.breach]), [['DECIDE', 'removed']]);
-  assert.ok(review.renderReview(report).includes('| You said | The agent removed |'));
-  const told = story.renderSessionStory(session, report);
-  assert.ok(told.includes('**The agent removed:** This project grew out of SYNTHETIC\\_M3\\_ORIGIN.'));
+  const told = story.renderReportMarkdown(session, report);
+  assert.ok(told.includes('The agent removed: “This project grew out of SYNTHETIC\\_M3\\_ORIGIN.”'), told);
 });
 
 test('M3 review: an Edit whose before side is the whole file as found never certifies a line it left untouched as removed',
@@ -257,5 +255,5 @@ test('M3 review Codex: "do not delete it", then a patch deleting the file → wi
   const report = await reviewRun.runReview({ session, pr: null, reviewScope: 'session-only', judge: judgeOf(proposal) });
   assert.deepEqual(report.findings.filter((f) => f.kind === 'edit_under_negative_requirement'), []);
   assert.equal(report.counts.forbiddenEdits.withheld.violation_not_written, 1);
-  assert.ok(!review.renderReview(report).includes('The agent deleted'));
+  assert.ok(!story.renderReportMarkdown(session, report).includes('The agent deleted'));
 });

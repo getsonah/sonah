@@ -1,94 +1,63 @@
-// D87 (owner decisions 2026-10-13/14): what `sonah review --code-pass` reads from disk — the files the recorded
-// session changed, then the files it read (evidence/src/code-pass.js `codeSnapshotPlan`), as they are at review time,
-// under the recorded working directory. Read once, before the review's first call, and frozen
-// (`freezeCodeSnapshot`): every request of the pass shows these bytes and nothing read later.
+// D87 (owner decisions 2026-10-13/14), the code step (owner decision 2026-10-14), made agentic under D90 (owner decision
+// 2026-10-15: privacy is not a design constraint; the code step may see everything): what `sonah review` reads from
+// disk for the code step, by structure, before its first call.
 //
-// Withheld by the path as recorded, before anything is resolved (slicer/src/before.js `withheldFileReason`): a
-// credential-shaped path and a harness home folder; and a path outside the working directory, as recorded or by the
-// slicer's write scope. Then withheld by where the file REALLY is (`realpath`, which follows every symbolic link at any
-// depth: a linked folder anywhere on the path, or the file itself): a real path outside the working directory's own real
-// path, a real path that is credential-shaped or in a harness home folder (the same rule, on the real path, with the
-// home as given and as it really is), or one inside a harness home this computer names (`harness`: Claude Code's
-// configuration folder, Codex's home) outside its worktrees, which the slicer exempts the same way (slicer/src/before.js
-// `inHarnessHome`: a worktree there is the project under review). Only that real path is opened, never through a link
-// at its last part, and only a regular file is read, at most `maxBytes` (a larger one is declared `oversize`, never
-// clipped). Every refusal is a closed state (evidence/src/ledger.js CODE_FILE_STATES); nothing here reads a file's words.
+// The snapshot (`sonah.code-snapshot/10`): the change under review, the review agent's starting map — the paths the
+// recorded session changed (evidence/src/code-pass.js `codeSnapshotPlan`), then every path that differs from the session's
+// start commit (git's own list, and the untracked files a recorded edit wrote or that changed after the session began),
+// each one's file now, its file at that commit and git's own patch of it. The start commit is the one the recording
+// names, else the HEAD reflog entry in effect at the recording's first timestamp, else the newest first-parent commit of
+// HEAD made by then; with none (no repository, no start commit), the diff is the recorded edits (code-pass.js). Git's
+// lists stop at the working directory (a literal pathspec of it); how many paths differ outside it is counted
+// (`outside`). A recorded write outside the working directory — by its name, the slicer's write scope, or where a link
+// leads — is counted (`outside_root`), never part of the change reviewed. Only a regular file is read, never through a
+// link at the last part of its real path, at most `maxBytes` (a larger one is `oversize`, never clipped). Every state is
+// a closed one (evidence/src/ledger.js CODE_FILE_STATES); nothing here reads a file's words to decide anything. Nothing
+// is withheld for privacy's sake: a harness home, a credential-shaped path and the home folder as the repository are no
+// states any more (D90).
 //
-// The code step (`sonah.code-snapshot/2`): and the diff the step
-// reviews, from the session's start commit to these frozen files, read with git and never written: the start commit
-// (the one the recording names, else the HEAD reflog entry in effect at the recording's first timestamp, else the newest
-// first-parent commit of HEAD made by then), every path that differs from it (git's own list, and the untracked files a
-// recorded edit wrote or that changed after the session began), each one's file at that commit and git's own patch of
-// it. Every path passes the same withholding rules first: no line of a withheld file is read, before or after. When
-// there is no git base (no repository, no start commit), the diff is the recorded edits (code-pass.js). Git runs with
-// optional locks off, no external diff or text conversion, and no GIT_* variable of the caller's, so it reads the
-// repository as it is and writes nothing.
+// The repository reader (`createRepositoryReader`): what the code step's grounding reads, injected into evidence like
+// the judge — any file of the repository as it is now (`read`) or at the start commit (`base`), synchronous, each read
+// once. A path outside the repository's top folder (after its links are resolved), a missing, non-regular, binary or
+// over-bound file is none.
 //
-// /3 (the review of the code step, 2026-10-14): git's lists stop at the working directory (a pathspec of it), so a
-// working directory that is a folder of a larger repository never brings in the names of the repository's other paths;
-// how many paths differ outside it is counted (`outside`), never named. An untracked file's patch is git's own
-// (`git diff --no-index` from nothing), so a `binary` or `-diff` attribute withholds it as it withholds a tracked one.
+// The repository's state (`repositoryState`): a content hash of every file git lists as tracked or untracked and not
+// ignored, as it is now, and the start commit — computed before the code step's first request and again after its last
+// (cli/src/session-review.js `reviewCodePass`): when they differ the review records that the repository changed during
+// it; and it keys the code step's stored answers (D60), so a review of an unchanged repository asks nothing twice. The
+// places a review writes as it runs — what it writes in its state folder (by name, never the folder whole), Sonah's
+// home, and the coding agents' homes, where the review's own agents and any other session write — are no part of it
+// when they lie in the repository (a home folder kept in git). What Sonah writes is no part of the session's change
+// either: of a place Sonah writes, only the files git does not track and no recorded edit wrote are left out of the
+// change, since Sonah never writes one the session wrote and never adds one to git, so a project's own files there
+// (a folder of it named like a state folder's entry) are reviewed. A place that holds the working directory is never
+// left out of either; the CLI refuses a state folder that is the working directory or holds it.
 //
-// /4 (the second review of the code step, 2026-10-14): a file in a harness home — by its name as recorded, or by where it
-// really is — is `harness_home` before any other rule, a credential-shaped one included, so no request names it by any
-// name (with the working directory the user's home, as in a dotfiles repository, `.claude/secrets.json` was
-// `credential_path` and named).
+// Git runs with optional locks off, no external diff or text conversion, no lazy fetch from a partial clone's promisor
+// remote, and no GIT_* variable of the caller's, so it reads the repository as it is, writes nothing and reaches no
+// network.
 //
-// /5 (the third review of the code step, 2026-10-14): `harness_home` is decided before every other state, by every name
-// a file has and by wherever each name really leads, whether or not anything is there now (`wherever`: the real path of
-// a file that is there; of one that is not — deleted since the start commit — its folder's real place and its own name;
-// a link that leads nowhere now, where it leads). The harness homes are the default ones under the home folder, the ones
-// this computer sets (CLAUDE_CONFIG_DIR, CODEX_HOME), and wherever each of those really leads. A tracked file deleted
-// from a configured or linked home was `deleted` (its real path did not resolve), so it was named and its text at the
-// start commit sent.
-//
-// /6 (the fourth review of the code step, 2026-10-14): the harness files a harness keeps in the home folder itself,
-// beside its home folders — Claude Code's `~/.claude.json` and its backups — are harness home paths by the slicer's own
-// list (slicer/src/before.js `isHomeFile`, read through `harnessHomePath`), so with the home folder as the repository
-// that file is `harness_home`, never shown (it was read whole and sent). And a path that was a symbolic link at the
-// start commit (git's mode 120000) whose target lies in a harness home — wherever it leads, there or not — is
-// `harness_home` too (`startLinkInHarness`), so a tracked link into `~/.claude` deleted or changed since then never
-// names its target: a link's text at the start commit is that target, and it was sent as a removed line.
-//
-// /7 (the release review, 2026-10-14): with the code step on by default, a repository whose real top folder is the
-// home folder, or holds it (a dotfiles repository, a repository at the top of a disk), sent every file git saw as
-// changed, or untracked and new since the session began: Sonah's own stores, another harness's settings and chats, shell
-// history, credentials of every tool kept there. By structure (the real top folder against the home folder as given and
-// as it really is), such a repository is read only at the paths the session itself recorded changing or reading; every
-// other differing path is counted (`base.unrecorded`), never named, read or sent, and git is asked about untracked files
-// by those paths alone, never over the home folder (`readGitBase`, `recordedUntracked`). And the harness home that wrote
-// the recording is one, by where the recording lies (cli/src/claude-home.js `recordingHarnessHome`, passed in `harness`):
-// a Claude Code home set by CLAUDE_CONFIG_DIR when the session ran (a second config folder, `~/.claude-2`) and unset
-// now was neither a default nor a set home, and its files were named and sent.
-//
-// /8 (the second release review, 2026-10-15): /7 took any folder named `projects` two levels above a recording as a
-// Claude Code home, so a recording kept in the person's own `~/projects/app/` made every file of the home folder
-// `harness_home` and switched the code step off without a word. The recording now names a home only in its recorder's
-// own layout (`recordingHarnessHome`): for Claude Code, under the folder it names after the working directory the
-// recording states.
-//
-// Known limits. A hard link, like a copy, is a file of its own name: `config.js` hard-linked to `.env` is read as
-// `config.js` (no path rule can tell; refusing every file with more than one link would also refuse a package manager's
-// linked installs). A folder in the middle of the real path replaced by a link between `realpath` and `open` is
-// followed, since only the last part is opened without following a link; that takes another process changing that
-// path during the review. A file changed between its read and git's diff of it fails the diff's row-by-row check against
-// the frozen file and is shown by name only (`unreadable`).
-import { constants, createReadStream } from 'node:fs';
-import { lstat, open, readlink, realpath, stat } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+// Known limits. A file changed between its read and git's diff of it fails the diff's row-by-row check against the file
+// and is listed by name only (`unreadable`). Ignored files are no part of the repository's state (Grep skips them too;
+// Read opens them). A submodule's state is the commit git's index records for it. The state hashes every file git lists,
+// twice a review: on a repository of very many untracked, unignored files (a home folder kept in git with no ignore
+// file) that costs time in proportion, and a list larger than git's output bound leaves the state unknown (null).
+import { closeSync, constants, createReadStream, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, readSync,
+  realpathSync } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { harnessHomePath, inHarnessHome, withheldFileReason } from '../../slicer/src/before.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
 import { codeSnapshotPlan, freezeCodeSnapshot } from '../../evidence/src/code-pass.js';
-import { displayPath, HOME_SPELLED, namedUnderRoot } from '../../evidence/src/code-context.js';
+import { displayPath, HOME_SPELLED } from '../../evidence/src/code-context.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES, CODE_CHANGE_TYPES } from '../../evidence/src/ledger.js';
 
 const [GIT_BASE, RECORDED_EDITS_BASE] = CODE_DIFF_BASES;
 const [FROM_RECORDING, FROM_REFLOG, FROM_COMMIT_DATE] = CODE_START_COMMIT_SOURCES;
 const [ADDED, MODIFIED, DELETED_TYPE] = CODE_CHANGE_TYPES;
-
-const [, , , , HARNESS_HOME, OVERSIZE, , DELETED, OUTSIDE_ROOT, UNREADABLE] = CODE_FILE_STATES;
+const [, , OVERSIZE, , DELETED, OUTSIDE_ROOT, UNREADABLE] = CODE_FILE_STATES;
 
 /** How a file is opened: read only; never through a link at the last part of its real path (one there now was put
  *  there after the path was resolved); never waiting on a FIFO or a device, whose type is refused once it is open. */
@@ -99,105 +68,76 @@ const inside = (path, root) => {
   const rel = relative(root, path);
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
 };
+/** A path as the code step names it: relative to the working directory, slashes forward (`../…` for one elsewhere in the
+ *  repository). */
+const repoName = (real, realRoot) => relative(realRoot, real).split(sep).join('/');
 
 /** The errors that say a path is not there (it, or a folder on it, is missing). */
 const GONE = new Set(['ENOENT', 'ENOTDIR']);
-/** The most links `wherever` follows by hand: the length of a POSIX system's own chain (SYMLOOP_MAX is at least 8;
- *  Linux and macOS follow 40 and 32). A frozen literal. */
-const MAX_LINKS = 40;
 
-/**
- * Where `path` (absolute) really is, as far as the file system can say: `{ real, there }` — its real path when it is
- * there (`there`: true); else (`there`: false) for a link that leads nowhere now, where it leads, resolved the same way,
- * and for a path that is not there, its folder's place resolved the same way, then its own name — so a file deleted from
- * a folder a link leads to is placed where the link leads. Null when a part of it cannot be resolved for another reason
- * (no permission, a loop). Reads names only (`realpath`, `lstat`, `readlink`), never a file; follows at most MAX_LINKS
- * links by hand. Never throws.
- */
-async function wherever(path, links = MAX_LINKS) {
-  try { return { real: await realpath(path), there: true }; } catch (error) { if (!GONE.has(error?.code)) return null; }
-  let info = null;
-  try { info = await lstat(path); } catch (error) { if (!GONE.has(error?.code)) return null; }
-  if (info?.isSymbolicLink()) {
-    if (links <= 0) return null;
-    let target;
-    try { target = await readlink(path); } catch { return null; }
-    const led = await wherever(resolve(dirname(path), target), links - 1);
-    return led === null ? null : { real: led.real, there: false };
+/** Where an absolute path really leads: its real path, or, for a path not there, its nearest folder's real path with the
+ *  rest joined on. Null when nothing of it can be resolved. */
+async function realPlace(path) {
+  try { return await realpath(path); }
+  catch (error) {
+    if (!GONE.has(error?.code)) return null;
+    const parent = dirname(path);
+    if (parent === path) return null;
+    const above = await realPlace(parent);
+    return above === null ? null : join(above, basename(path));
   }
-  if (info) return null;
-  const parent = dirname(path);
-  if (parent === path) return null;
-  const up = await wherever(parent, links);
-  return up === null ? null : { real: join(up.real, basename(path)), there: false };
-}
-
-/** `real` lies in the harness home `dir` outside its worktrees: the slicer's own rule (`inHarnessHome`), on the path
- *  from `dir` to `real`, slashes forward. */
-const inHarness = (real, dir) => inside(real, dir) && inHarnessHome(relative(dir, real).split(sep).join('/'));
-
-/** The absolute place a recorded name gives, or null: a name the shell reads from the home folder (HOME_SPELLED) under
- *  `home` when it is known; an absolute name as it is; any other under `root`. String work only. */
-function placeOf(named, { root, home }) {
-  const spelled = HOME_SPELLED.exec(named);
-  if (spelled) return home === null ? null : resolve(home, `.${sep}${named.slice(spelled[0].length)}`);
-  return resolve(root, named);
 }
 
 /**
- * Whether a plan entry lies in a harness home, outside the homes' worktrees: by any name it has — the path rule's
- * harness half (`harnessHomePath`: under the home folder's `.claude` or `.codex`, or, outside the working directory,
- * any such folder), or under a harness home this computer names (`harness`) — or wherever each name's place really
- * leads, there or not (`placed`: each place and its `wherever`; a file deleted since the start commit from a home a link
- * leads to, or from one that is set). String work only.
+ * The places a review writes while it runs, or a harness does (`places`, absolute: what Sonah writes in its state
+ * folder, Sonah's home, the coding agents' homes), as git names them under the repository's real top folder `realTop`:
+ * the real place of each one that lies in the repository (`realPlace`, so a folder not made yet counts by where it will
+ * be) — never one that holds the working directory (`realRoot`; the top folder when none is given), which would leave
+ * out the change under review itself. What `leftOutBy` then tells apart.
  */
-function inAnyHarnessHome(names, placed, { root, realRoot, home, homes, harness }) {
-  if (names.some((named) => harnessHomePath(named, { home, cwd: root }))) return true;
-  return [...placed].some(([place, found]) => harness.some((dir) => inHarness(place, dir))
-    || (found !== null && (homes.some((at) => harnessHomePath(found.real, { home: at, cwd: realRoot }))
-      || harness.some((dir) => inHarness(found.real, dir)))));
-}
-
-/** Why a file whose real path is `real` (in no harness home: `inAnyHarnessHome` decided that first) is withheld, or
- *  null: the path rule (`withheldFileReason`: a credential-shaped path, with each home as given and as it really is,
- *  against the real working directory), or a real path outside the real working directory. */
-function realReason(real, { realRoot, homes }) {
-  for (const home of homes) {
-    const why = withheldFileReason(real, { home, cwd: realRoot });
-    if (why !== null) return why;
+async function leftOutPaths(places, realTop, realRoot = realTop) {
+  const paths = [];
+  for (const place of Array.isArray(places) ? places : []) {
+    if (typeof place !== 'string' || !isAbsolute(place)) continue;
+    const real = await realPlace(resolve(place));
+    if (real === null || !inside(real, realTop) || inside(realRoot, real)) continue;
+    paths.push(relative(realTop, real).split(sep).join('/'));
   }
-  return inside(real, realRoot) ? null : OUTSIDE_ROOT;
+  return paths;
+}
+/** Whether a path as git names it (from the top folder, slashes forward) is one of `paths` or lies under one. */
+const leftOutBy = (paths) => (gitPath) => paths.some((p) => gitPath === p || gitPath.startsWith(`${p}/`));
+
+/** Whether the real place of `place` (absolute; a folder not made yet counts by where it will be) is the real path of
+ *  `path` or holds it. False when either cannot be resolved. */
+export async function placeHolds(place, path) {
+  if (typeof place !== 'string' || !isAbsolute(place) || typeof path !== 'string' || !isAbsolute(path)) return false;
+  const [realPlaceOf, realPath] = [await realPlace(resolve(place)), await realpath(path).catch(() => null)];
+  return realPlaceOf !== null && realPath !== null && inside(realPath, realPlaceOf);
 }
 
 /**
- * What one plan entry is at review time: a closed state, a directory, or its bytes. Never throws. A file in a harness
- * home — by any name it has, or wherever it really is, there or not (`inAnyHarnessHome`) — is `harness_home` before every
- * other state (the second review of the code step: a credential-shaped file there was `credential_path`, and a request
- * named it; the third: a file deleted from a set or linked home was `deleted`, named, and its start-commit text sent),
- * so no request names it and no line of it is read, before or after; a credential-shaped name is then
- * `credential_path`, its content never read. Each name's place is resolved once (`wherever`), and the file is opened at
- * the real path that resolution gave.
+ * What one plan entry is at review time: a closed state, a directory, or its bytes. Never throws. A recorded write
+ * outside the working directory (`outside`: the slicer's write scope, a home-spelled name, a name or a real path outside
+ * it) is `outside_root` — and `repository: true` when it really lies in the repository's top folder (`realTop`): a part of
+ * the repository's change the review does not cover, so its coverage stays partial (a scratchpad file outside the
+ * repository is only counted); a path not there is `deleted`; only a regular file of at most `maxBytes` is read, at its
+ * real path, never through a link at the last part.
  */
-async function readEntry(entry, { root, realRoot, home, homes, harness, maxBytes }) {
+async function readEntry(entry, { root, realRoot, realTop = null, maxBytes }) {
   const at = { path: entry.path };
   const recorded = typeof entry.recordedPath === 'string' ? entry.recordedPath : entry.path;
-  const names = [...new Set([recorded, entry.path])];
-  const placed = new Map();
-  for (const named of names) {
-    const place = placeOf(named, { root, home });
-    if (place !== null && !placed.has(place)) placed.set(place, await wherever(place));
-  }
-  if (inAnyHarnessHome(names, placed, { root, realRoot, home, homes, harness })) return { ...at, state: HARNESS_HOME };
-  const byName = names.map((named) => withheldFileReason(named, { home, cwd: root })).find((why) => why !== null) ?? null;
-  if (entry.outside === true || HOME_SPELLED.test(recorded) || HOME_SPELLED.test(entry.path))
-    return { ...at, state: byName ?? OUTSIDE_ROOT };
+  if (HOME_SPELLED.test(recorded) || HOME_SPELLED.test(entry.path)) return { ...at, state: OUTSIDE_ROOT };
   const absolute = resolve(root, entry.path);
-  if (!inside(absolute, root)) return { ...at, state: byName ?? OUTSIDE_ROOT };
-  const found = placed.get(absolute) ?? null;
-  if (found === null || !found.there) return { ...at, state: byName ?? (found === null ? UNREADABLE : DELETED) };
-  const real = found.real;
-  const why = byName ?? realReason(real, { realRoot, homes });
-  if (why !== null) return { ...at, state: why };
+  const outsideRoot = async (place) => {
+    const real = typeof realTop === 'string' ? await realPlace(place) : null;
+    return { ...at, state: OUTSIDE_ROOT, ...(real !== null && inside(real, realTop) ? { repository: true } : {}) };
+  };
+  if (entry.outside === true || !inside(absolute, root)) return outsideRoot(absolute);
+  let real;
+  try { real = await realpath(absolute); }
+  catch (error) { return { ...at, state: GONE.has(error?.code) ? DELETED : UNREADABLE }; }
+  if (!inside(real, realRoot)) return outsideRoot(real);
   let handle = null;
   try {
     try { handle = await open(real, READ_FLAGS); }
@@ -220,9 +160,11 @@ async function readEntry(entry, { root, realRoot, home, homes, harness, maxBytes
 const GIT_FLAGS = Object.freeze(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false',
   '-c', 'color.ui=never']);
 /** The environment git runs in: the caller's, without any GIT_* variable (which could point it at another repository,
- *  index or diff program), with optional locks off. */
-const gitEnvironment = (env = process.env) => ({ ...Object.fromEntries(Object.entries(env)
-  .filter(([key]) => !key.startsWith('GIT_'))), GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' });
+ *  index or diff program), with optional locks off and lazy fetching off (`GIT_NO_LAZY_FETCH`: in a partial clone, a
+ *  read of an object the clone does not hold fails instead of fetching it from the promisor remote, so no git call
+ *  here reaches the network). */
+export const gitEnvironment = (env = process.env) => ({ ...Object.fromEntries(Object.entries(env)
+  .filter(([key]) => !key.startsWith('GIT_'))), GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C' });
 /** Run git with `args` in `cwd`: `{ ok, stdout }` (a Buffer), never a throw. `maxBuffer` bounds what it may print;
  *  `differ` reads exit status 1 as an answer (`git diff --no-index` exits 1 when the two sides differ). */
 export function runGit(args, { cwd, maxBuffer = 64 * 1024 * 1024, differ = false }) {
@@ -233,6 +175,26 @@ export function runGit(args, { cwd, maxBuffer = 64 * 1024 * 1024, differ = false
       if (differ && error.code === 1 && Buffer.isBuffer(stdout)) return done({ ok: true, stdout });
       return done({ ok: false, stdout: null, overflow: error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
     });
+  });
+}
+/** Run git with `args` in `cwd`, `input` on its standard input: `{ ok, stdout }`, never a throw. */
+function runGitInput(args, input, { cwd, maxBuffer = 256 * 1024 * 1024 }) {
+  return new Promise((done) => {
+    let child;
+    try { child = spawn('git', [...GIT_FLAGS, ...args], { cwd, env: gitEnvironment(), windowsHide: true }); }
+    catch { done({ ok: false, stdout: null }); return; }
+    const chunks = [];
+    let size = 0, over = false;
+    child.stdout.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBuffer) { over = true; child.kill(); } else chunks.push(chunk);
+    });
+    child.stderr.on('data', () => {});
+    child.on('error', () => done({ ok: false, stdout: null }));
+    child.on('close', (code) => done(code === 0 && !over ? { ok: true, stdout: Buffer.concat(chunks) } : { ok: false,
+      stdout: null }));
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
   });
 }
 const out = (result) => (result.ok ? result.stdout.toString('utf8') : null);
@@ -303,8 +265,21 @@ function nameStatus(text) {
   return changes;
 }
 
-/** How many entries a `-z` list holds. */
-const entries = (text) => text.split('\0').filter(Boolean).length;
+/** The paths of a `-z` list. */
+const names = (text) => text.split('\0').filter(Boolean);
+/** The paths of git's `--name-status -z` list (every second entry). */
+const listedNames = (text) => text.split('\0').filter((part, at) => at % 2 === 1 && part);
+
+/** The real top folder of the git repository the working directory `root` is in, when the working directory's real
+ *  path lies under it; null when there is none. */
+export async function gitTop({ root, git = runGit }) {
+  const topText = out(await git(['rev-parse', '--show-toplevel'], { cwd: root }));
+  if (!topText) return null;
+  const top = topText.endsWith('\n') ? topText.slice(0, -1) : topText;
+  const realTop = await realpath(top).catch(() => null);
+  const realRoot = await realpath(root).catch(() => null);
+  return realTop && realRoot && inside(realRoot, realTop) ? realTop : null;
+}
 
 /**
  * The git base of a review under `root`: the repository's top folder, the start commit (`startCommit`) and every path
@@ -312,17 +287,19 @@ const entries = (text) => text.split('\0').filter(Boolean).length;
  * ignored) a recorded edit names (`recorded`, as the code step names them) or whose modification time is at or after
  * the session's start — each with its path as the code step names it (`displayPath` under `root`) and its type. Git is
  * asked for paths under the working directory alone (a literal pathspec of it, from the top folder): a path elsewhere
- * in the repository is never listed by name, only counted (`outside`: how many tracked paths differ outside it). Null
- * when there is none.
+ * in the repository is counted (`outside`: how many tracked paths differ outside it). An untracked path in a place
+ * Sonah writes (`own`, absolute: what the review writes in its state folder, and Sonah's home) that no recorded edit
+ * wrote is no part of the session's change — unless the place holds the working directory. Every path git tracks (its
+ * list against the start commit names tracked paths only) and every path a recorded edit wrote stays part of it
+ * wherever it lies: Sonah never adds a file to git and never writes one the session wrote, so such a path is the
+ * project's, never Sonah's (the review of the code step: a project folder named like a state folder's entry, left out
+ * by its name, had its changes dropped unseen). Null when there is none.
  */
-export async function readGitBase({ root, start, recorded = new Set(), seen = recorded, homes = [], git = runGit }) {
-  const topText = out(await git(['rev-parse', '--show-toplevel'], { cwd: root }));
-  if (!topText) return null;
-  const top = topText.endsWith('\n') ? topText.slice(0, -1) : topText;
-  const realTop = await realpath(top).catch(() => null);
+export async function readGitBase({ root, start, recorded = new Set(), git = runGit, own = [] }) {
+  const realTop = await gitTop({ root, git });
   if (!realTop) return null;
   const realRoot = await realpath(root).catch(() => null);
-  if (!realRoot || !inside(realRoot, realTop)) return null;
+  if (!realRoot) return null;
   const found = await startCommit({ top: realTop, start, git });
   if (!found) return null;
   const below = relative(realTop, realRoot).split(sep).join('/');
@@ -331,84 +308,30 @@ export async function readGitBase({ root, start, recorded = new Set(), seen = re
   const listed = out(await git(['diff', '--name-status', '--no-renames', '-z', found.commit, '--', ...scope],
     { cwd: realTop }));
   if (listed === null) return null;
+  // What Sonah writes (`own`: what it writes in its state folder, and its home) is never part of the session's change:
+  // of a place it writes, the untracked files no recorded edit wrote. Git's lists against the start commit name tracked
+  // paths only, so they are kept whole.
+  const leftOut = leftOutBy(await leftOutPaths(own, realTop, realRoot));
   let outside = 0;
   if (below) {
     const all = out(await git(['diff', '--name-only', '--no-renames', '-z', found.commit, '--'], { cwd: realTop }));
     if (all === null) return null;
-    outside = Math.max(0, entries(all) - entries(listed) / 2);
+    outside = Math.max(0, names(all).length - listedNames(listed).length);
   }
   const named = (gitPath) => displayPath(join(realTop, gitPath), realRoot);
-  // The release review (medium): the repository is the home folder, or holds it — by structure, the repository's real
-  // top folder against the home folder as given and as it really is (`homes`), never by a name. Then a path is read only
-  // when the session itself recorded changing or reading it (`seen`: its typed changes and reads, as the code step names
-  // them); every other path git shows differing is counted (`unrecorded`), never named or read, and git is never asked
-  // to walk the home folder for untracked files: only the recorded paths are asked about, one by one.
-  const homeRepository = homes.some((home) => typeof home === 'string' && isAbsolute(home) && inside(home, realTop));
-  const all = nameStatus(listed).map((c) => ({ ...c, path: named(c.gitPath) }));
-  const changes = homeRepository ? all.filter((c) => seen.has(c.path)) : all;
-  const unrecorded = all.length - changes.length;
-  const untracked = homeRepository ? await recordedUntracked({ seen, realTop, realRoot, git })
-    : (out(await git(['ls-files', '--others', '--exclude-standard', '-z', '--', ...scope], { cwd: realTop })) ?? '')
-      .split('\0').filter(Boolean);
+  const changes = nameStatus(listed).map((c) => ({ ...c, path: named(c.gitPath) }));
+  const untracked = (out(await git(['ls-files', '--others', '--exclude-standard', '-z', '--', ...scope], { cwd: realTop }))
+    ?? '').split('\0').filter(Boolean).filter((gitPath) => !leftOut(gitPath) || recorded.has(named(gitPath)));
   const since = typeof start?.at === 'string' ? Date.parse(start.at) : NaN;
   for (const gitPath of untracked) {
     const path = named(gitPath);
-    if (homeRepository && !seen.has(path)) continue;
     let fresh = false;
     if (!recorded.has(path) && Number.isFinite(since)) {
       try { fresh = (await stat(join(realTop, gitPath))).mtimeMs >= since; } catch { fresh = false; }
     }
     if (recorded.has(path) || fresh) changes.push({ gitPath, type: ADDED, path, untracked: true });
   }
-  return { top: realTop, commit: found.commit, how: found.how, changes, outside,
-    ...(homeRepository ? { homeRepository: true, unrecorded } : {}) };
-}
-
-/** How many recorded paths one `git ls-files` call asks about: a frozen literal that keeps one command line short. */
-const PATHSPECS_PER_CALL = 200;
-/**
- * The release review (medium), with the home folder as the repository: which of the paths the session recorded
- * changing or reading (`seen`) git lists as untracked and not ignored — asked by those paths alone, each a literal
- * pathspec of a file there now under the working directory (never a folder, which would list everything under it, and
- * never the working directory itself), so git never walks the home folder. Git's paths, from the top folder. Names only.
- */
-async function recordedUntracked({ seen, realTop, realRoot, git }) {
-  const specs = [];
-  for (const path of [...seen].sort()) {
-    if (!namedUnderRoot(path)) continue;
-    const absolute = join(realRoot, path);
-    if (absolute === realRoot || !inside(absolute, realRoot)) continue;
-    let info = null;
-    try { info = await lstat(absolute); } catch { info = null; }
-    if (info === null || info.isDirectory()) continue;
-    specs.push(`:(top,literal)${relative(realTop, absolute).split(sep).join('/')}`);
-  }
-  const found = [];
-  for (let at = 0; at < specs.length; at += PATHSPECS_PER_CALL) {
-    const listed = out(await git(['ls-files', '--others', '--exclude-standard', '-z', '--',
-      ...specs.slice(at, at + PATHSPECS_PER_CALL)], { cwd: realTop }));
-    found.push(...(listed ?? '').split('\0').filter(Boolean));
-  }
-  return found;
-}
-
-/** git's mode of a symbolic link in a tree. */
-const LINK_MODE = '120000';
-/**
- * The fourth review of the code step (L1): whether a differing path was a symbolic link at the start commit (git's
- * mode LINK_MODE, from its tree entry) whose target, placed from the link's folder, lies in a harness home by any rule
- * `inAnyHarnessHome` reads, there or not (`wherever`). Reads git's tree entry, and for a link alone its target (the
- * blob of a link is its target path): names only, never a file's words. A path that was no link, or a link git cannot
- * read, is not one (its base and patch are read, or found unreadable, as before).
- */
-async function startLinkInHarness(change, { top, commit, git, ...where }) {
-  if (change.type === ADDED) return false;
-  const entry = await git(['ls-tree', '-z', commit, '--', `:(literal)${change.gitPath}`], { cwd: top, maxBuffer: 65536 });
-  if (!entry.ok || !entry.stdout.toString('utf8').startsWith(`${LINK_MODE} `)) return false;
-  const blob = await git(['cat-file', 'blob', `${commit}:${change.gitPath}`], { cwd: top, maxBuffer: 65536 });
-  if (!blob.ok) return false;
-  const place = resolve(dirname(join(top, change.gitPath)), blob.stdout.toString('utf8'));
-  return inAnyHarnessHome([place], new Map([[place, await wherever(place)]]), where);
+  return { top: realTop, commit: found.commit, how: found.how, changes, outside };
 }
 
 /** The file at the start commit and git's own patch of one differing path, for a path the reader showed or found
@@ -432,19 +355,176 @@ async function readGitSide(change, head, { top, commit, maxBytes, git }) {
   return { base, patch: patch.ok ? patch.stdout.toString('utf8') : null };
 }
 
+/** A file's SHA-256 in hex, read a megabyte at a time, never through a link at the last part of its path. Throws when it
+ *  cannot be read. */
+function hashFileSync(path) {
+  const hash = createHash('sha256');
+  const chunk = Buffer.alloc(1024 * 1024);
+  const fd = openSync(path, READ_FLAGS);
+  try {
+    for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) hash.update(chunk.subarray(0, read));
+  } finally { closeSync(fd); }
+  return hash.digest('hex');
+}
+
 /**
- * The frozen snapshot of `session`'s files under `root` (the recorded working directory, absolute), as they are now,
- * and the diff the code step reviews: `{ root: true, dir, base, plan, files }`, or `{ root: false, plan, files: [] }`
- * when there is no root to read under (the recording names none, or it is not a directory now) — the pass then does
- * not run. `home` is the user's home folder; `harness` the absolute harness homes this computer names, and the one
- * that wrote the recording (a file whose real path lies in one, outside its worktrees, is `harness_home`); `maxBytes`
- * is the most one file may be (the
- * review's request bound); `recording` the recording's path (its opening timestamp and commit place the start commit);
- * `git` runs git (a test may pass another). `base` is `{ kind: 'git', commit, how }` or `{ kind: 'recorded_edits' }`.
- * Reads only; writes nothing.
+ * The repository's state: SHA-256 over the start commit (`commit`, or none) and the sorted lines, one per path git lists
+ * as tracked or untracked and not ignored (`git ls-files --cached --others --exclude-standard`) that exists now, each
+ * `[mode, path, id]` as JSON: a regular file its blob id as git hashes it with no filter (`git hash-object --no-filters
+ * --stdin-paths`, the bytes the agent reads) and mode 100644 or 100755, a symbolic link its target text (120000), a
+ * submodule the commit git's index records (160000). The same content gives the same state, committed or not; any edit,
+ * pull or checkout of other content changes it. A path in a place the review itself writes while it runs, or a harness
+ * does (`omit`, absolute: what Sonah writes in its state folder, its home, the coding agents' homes, when they lie in
+ * the repository), is no part of it, so the review's own writes never read as the repository changing — but for a
+ * place that holds the working directory (`root`), which is never left out. A regular file git cannot read
+ * (`hash-object` refuses the list) is hashed here instead, or named unreadable. Null when git cannot list the
+ * repository. Reads names, modes and git's hashes only, but for such a file.
  */
-export async function readCodeSnapshot(session, { root, home = null, harness = [], maxBytes, recording = null,
-  git = runGit }) {
+export async function repositoryState({ top, commit = null, git = runGit, omit = [], root = null }) {
+  if (typeof top !== 'string' || !isAbsolute(top)) return null;
+  const cached = out(await git(['ls-files', '-z', '-s', '--cached'], { cwd: top, maxBuffer: 256 * 1024 * 1024 }));
+  const others = out(await git(['ls-files', '-z', '--others', '--exclude-standard'], { cwd: top,
+    maxBuffer: 256 * 1024 * 1024 }));
+  if (cached === null || others === null) return null;
+  const realTop = await realpath(top).catch(() => top);
+  const realRoot = typeof root === 'string' && isAbsolute(root) ? await realpath(root).catch(() => null) : null;
+  const leftOut = leftOutBy(await leftOutPaths(omit, realTop, realRoot ?? realTop));
+  const gitlinks = new Map();
+  const paths = new Set();
+  for (const row of cached.split('\0').filter(Boolean)) {
+    const tab = row.indexOf('\t');
+    if (tab < 0) continue;
+    const [mode, object] = row.slice(0, tab).split(' ');
+    const path = row.slice(tab + 1);
+    if (leftOut(path)) continue;
+    paths.add(path);
+    if (mode === '160000') gitlinks.set(path, object);
+  }
+  for (const path of others.split('\0').filter(Boolean)) if (!leftOut(path)) paths.add(path);
+  const lines = [], hashed = [];
+  // One synchronous lstat per path: a promise per path cost seconds on a repository of a few thousand files.
+  for (const path of [...paths].sort()) {
+    let info;
+    try { info = lstatSync(join(top, path)); } catch { continue; }
+    if (gitlinks.has(path)) { lines.push(JSON.stringify(['160000', path, gitlinks.get(path)])); continue; }
+    if (info.isSymbolicLink()) {
+      let target = null;
+      try { target = readlinkSync(join(top, path), 'utf8'); } catch { target = null; }
+      if (target !== null) lines.push(JSON.stringify(['120000', path, target]));
+      continue;
+    }
+    if (!info.isFile()) continue;
+    hashed.push({ path, mode: (info.mode & 0o111) !== 0 ? '100755' : '100644' });
+  }
+  // One git process hashes every regular file, one path per line; a name holding a line break is hashed here instead,
+  // and so is every file when git refuses the list (one file it cannot open stops it).
+  const piped = hashed.filter((h) => !h.path.includes('\n'));
+  const ids = piped.length ? out(await runGitInput(['hash-object', '--no-filters', '--stdin-paths'],
+    `${piped.map((h) => h.path).join('\n')}\n`, { cwd: top })) : '';
+  const idList = ids === null ? [] : ids.split('\n').filter(Boolean);
+  if (idList.length === piped.length) piped.forEach((h, at) => { h.id = idList[at]; });
+  for (const h of hashed) {
+    if (h.id === undefined) {
+      try { h.id = `sha256:${hashFileSync(join(top, h.path))}`; } catch { h.id = UNREADABLE; }
+    }
+    lines.push(JSON.stringify([h.mode, h.path, h.id]));
+  }
+  lines.sort();
+  return createHash('sha256').update(`${typeof commit === 'string' ? commit : ''}\n${lines.join('\n')}`).digest('hex');
+}
+
+/**
+ * The repository reader the code step's grounding reads through (evidence/src/code-pass.js `groundingContext`): `{ root,
+ * top, read(path), base(path) }`, both synchronous, each path read once. `read(path)`: the file as it is now, by a path
+ * relative to the working directory (else to the repository's top folder), or absolute under the top folder — `{ path,
+ * text, sha256, lines }` (`path` as the code step names it: relative to the working directory, slashes forward) or null
+ * for a missing, non-regular, binary (a NUL byte, or not UTF-8) or over-`maxBytes` file, or one whose real path lies
+ * outside the top folder. `base(path)`: the file at the start commit (`commit`; git's blob), the same shape, or null.
+ * `root` is the working directory and `top` the repository's top folder (the working directory when there is none).
+ */
+export function createRepositoryReader({ root, top = null, commit = null, maxBytes }) {
+  let realRoot = null, realTop = null;
+  try { realRoot = realpathSync(root); realTop = realpathSync(typeof top === 'string' && top ? top : root); }
+  catch { realRoot = null; }
+  const usable = realRoot !== null && inside(realRoot, realTop);
+  const decode = (bytes) => {
+    if (bytes.includes(0)) return null;
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return null; }
+  };
+  const shaped = (real, bytes) => {
+    const text = decode(bytes);
+    return text === null ? null : { path: repoName(real, realRoot), text, lines: text.split('\n').length,
+      sha256: createHash('sha256').update(bytes).digest('hex') };
+  };
+  /** The absolute places a path may name: as given when absolute (a spelling of the working directory mapped to its
+   *  real path), else under the working directory, then under the top folder. */
+  const places = (path) => {
+    if (typeof path !== 'string' || !path || path.includes('\0')) return [];
+    if (isAbsolute(path)) {
+      return [inside(resolve(path), resolve(root)) ? resolve(realRoot, relative(resolve(root), resolve(path)))
+        : resolve(path)];
+    }
+    return [...new Set([resolve(realRoot, path), resolve(realTop, path)])];
+  };
+  const now = new Map(), before = new Map();
+  const readNow = (path) => {
+    for (const place of places(path)) {
+      let real;
+      try { real = realpathSync(place); } catch { continue; }
+      if (!inside(real, realTop)) return null;
+      let fd = null;
+      try {
+        fd = openSync(real, READ_FLAGS);
+        const info = fstatSync(fd);
+        if (!info.isFile() || info.size > maxBytes) return null;
+        const bytes = readFileSync(fd);
+        return bytes.length > maxBytes ? null : shaped(real, bytes);
+      } catch { return null; }
+      finally { if (fd !== null) try { closeSync(fd); } catch { /* closed */ } }
+    }
+    return null;
+  };
+  const readBase = (path) => {
+    if (typeof commit !== 'string' || !HASH.test(commit)) return null;
+    for (const place of places(path)) {
+      // Lexical: a file deleted since the start commit is no longer there to resolve.
+      if (!inside(place, realTop) || place === realTop) continue;
+      const gitPath = relative(realTop, place).split(sep).join('/');
+      let bytes;
+      try {
+        bytes = execFileSync('git', [...GIT_FLAGS, 'cat-file', 'blob', `${commit}:${gitPath}`], { cwd: realTop,
+          maxBuffer: maxBytes, encoding: 'buffer', env: gitEnvironment(), stdio: ['ignore', 'pipe', 'ignore'],
+          windowsHide: true });
+      } catch { continue; }
+      return bytes.length > maxBytes ? null : shaped(place, bytes);
+    }
+    return null;
+  };
+  const once = (cache, reader) => (path) => {
+    const key = String(path);
+    if (!cache.has(key)) cache.set(key, usable ? reader(path) : null);
+    return cache.get(key);
+  };
+  return { root, top: realTop, read: once(now, readNow), base: once(before, readBase) };
+}
+
+/**
+ * The frozen snapshot of `session`'s change under `root` (the recorded working directory, absolute), as it is now:
+ * `{ root: true, dir, realRoot, top, base, plan, files, repoState }` (`realRoot` the working directory's real path), or
+ * `{ root: false, plan, files: [] }` when there is no root to read under (the recording names none, or it is not a
+ * directory now) — the code step then does not run. `top` is the
+ * repository's real top folder (the working directory's real path when there is no repository); `maxBytes` is the most
+ * one file may be (the review's request bound); `recording` the recording's path (its opening timestamp and commit
+ * place the start commit); `git` runs git (a test may pass another). `base` is `{ kind: 'git', commit, how, outside }`
+ * or `{ kind: 'recorded_edits' }`. `repoState` the repository's state (`repositoryState`), or null with no repository.
+ * `own`: what Sonah writes (what the review writes in its state folder, by name, and Sonah's home): no part of the state,
+ * and of the change only the untracked files there that no recorded edit wrote (`readGitBase`); `harnessHomes`: the coding agents' homes (claude-home.js `harnessHomePlaces`), written by any of
+ * their sessions while the review runs, never part of the state (they stay part of the change like any path). A place
+ * of either that holds the working directory is never left out. `stateOmits` keeps both lists, so the state taken
+ * again after the code step leaves out the same places. Reads only; writes nothing.
+ */
+export async function readCodeSnapshot(session, { root, maxBytes, recording = null, git = runGit, own = [],
+  harnessHomes = [] }) {
   const none = { root: false, plan: codeSnapshotPlan(session), files: [] };
   if (typeof root !== 'string' || !isAbsolute(root)) return none;
   const dir = resolve(root);
@@ -453,52 +533,33 @@ export async function readCodeSnapshot(session, { root, home = null, harness = [
   try { if (!(await stat(realRoot)).isDirectory()) return none; }
   catch { return none; }
   const recordedPlan = codeSnapshotPlan(session, { root: dir });
-  const given = typeof home === 'string' && isAbsolute(home) ? resolve(home) : null;
-  const realHome = given === null ? null : (await wherever(given))?.real ?? null;
-  const homes = given === null ? [null] : [...new Set([given, realHome ?? given])];
-  // The harness homes: the default ones under the home folder, the ones this computer sets and the one that wrote the
-  // recording (the caller's `harness`), each as given and wherever it really leads (a home that is a link, even one
-  // whose folder is gone).
-  const dirs = [];
-  const defaults = given === null ? [] : [join(given, '.claude'), join(given, '.codex')];
-  for (const entry of [...defaults, ...(Array.isArray(harness) ? harness : [])]) {
-    if (typeof entry !== 'string' || !isAbsolute(entry)) continue;
-    const resolved = resolve(entry);
-    const real = (await wherever(resolved))?.real ?? null;
-    for (const at of [resolved, real]) if (at !== null && !dirs.includes(at)) dirs.push(at);
-  }
-  // The diff's base: git's, when the working directory is in a repository whose start commit can be placed. With the
-  // home folder as the repository (or inside it), only the paths the session recorded changing or reading are read.
-  const recorded = new Set(recordedPlan.filter((e) => e.changed).map((e) => e.path));
-  const seen = new Set(recordedPlan.map((e) => e.path));
-  const gitBase = await readGitBase({ root: dir, start: await recordingStart(recording), recorded, seen,
-    homes: homes.filter((at) => at !== null), git });
+  const recorded = new Set(recordedPlan.map((e) => e.path));
+  const gitBase = await readGitBase({ root: dir, start: await recordingStart(recording), recorded, git, own });
+  const repository = gitBase?.top ?? await gitTop({ root: dir, git });
   const types = new Map((gitBase?.changes ?? []).map((c) => [c.path, c]));
-  const plan = [];
-  for (const entry of recordedPlan.filter((e) => e.changed)) plan.push(entry);
+  const plan = [...recordedPlan];
   for (const change of [...types.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)))
     if (!recorded.has(change.path)) plan.push({ path: change.path, recordedPath: join(gitBase.top, change.gitPath),
       changed: true, recorded: false, outside: false, last: null, edits: [] });
-  for (const entry of recordedPlan.filter((e) => !e.changed)) if (!types.has(entry.path)) plan.push(entry);
   const reads = [];
-  const where = { root: dir, realRoot, home: given, homes, harness: dirs };
   for (const entry of plan) {
-    let head = await readEntry(entry, { ...where, maxBytes });
+    const head = await readEntry(entry, { root: dir, realRoot, realTop: repository, maxBytes });
     const change = types.get(entry.path);
     if (!change) { reads.push(head); continue; }
-    // A link into a harness home at the start commit: never named, its target never sent (`startLinkInHarness`).
-    if (head.state !== HARNESS_HOME && await startLinkInHarness(change, { top: gitBase.top, commit: gitBase.commit, git,
-      ...where })) head = { path: entry.path, state: HARNESS_HOME };
     const side = await readGitSide(change, head, { top: gitBase.top, commit: gitBase.commit, maxBytes, git });
     reads.push({ ...head, type: change.type, ...side });
   }
-  const base = gitBase ? { kind: GIT_BASE, commit: gitBase.commit, how: gitBase.how, outside: gitBase.outside,
-    ...(gitBase.homeRepository ? { homeRepository: true, unrecorded: gitBase.unrecorded } : {}) }
+  const base = gitBase ? { kind: GIT_BASE, commit: gitBase.commit, how: gitBase.how, outside: gitBase.outside }
     : { kind: RECORDED_EDITS_BASE };
-  return { root: true, dir, base, plan, files: freezeCodeSnapshot(plan, reads, { base }) };
+  const stateOmits = [...own, ...harnessHomes].filter((place) => typeof place === 'string' && isAbsolute(place));
+  const repoState = repository ? await repositoryState({ top: repository, commit: gitBase?.commit ?? null, git,
+    omit: stateOmits, root: realRoot }) : null;
+  return { root: true, dir, realRoot, top: repository ?? realRoot, base, plan,
+    files: freezeCodeSnapshot(plan, reads, { base }), repoState, stateOmits };
 }
 
-/** The snapshot's file texts (readable files, and the start commit's text of each differing one): what the output
- *  masking scans (redact `peopleSecretsOfTexts`). */
+/** The snapshot's file texts (readable files, and the start commit's text of each differing one). D90: nothing masks or
+ *  scans them now; the tests read the snapshot through it. */
 export const snapshotTexts = (snapshot) => (Array.isArray(snapshot?.files) ? snapshot.files : [])
   .flatMap((file) => [file?.text, file?.base?.text]).filter((text) => typeof text === 'string');
+

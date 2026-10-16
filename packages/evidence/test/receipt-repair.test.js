@@ -26,11 +26,18 @@ const SAID = 'He said “don’t — ever” &amp; left…  twice';
 const NEXT = 'Then we shipped it on Friday';
 // A commentary the recorder capped: `[…]` is the RECORDER's word, never the speaker's.
 const CAPPED = 'The cache key was stale […] so we cleared it';
-// Redaction's own marker, likewise never spoken.
-const HIDDEN = 'The token was  ‹redacted:api-key›  in the log';
+// An earlier redactor's marker, likewise never spoken: where the record declares that redactor's work the adapter places
+// it outside both refs (D90; sonah-ledger.js `redactorDeclared`), as `around` does.
+const MARK = '‹redacted:api-key›';
+const HIDDEN = `The token was  ${MARK}  in the log`;
 
 const BLOBS = { said: SAID, next: NEXT, capped: CAPPED, hidden: HIDDEN };
 const whole = (key) => [{ sourceKey: key, fromByte: 0, untilByte: Buffer.byteLength(BLOBS[key], 'utf8') }];
+const around = (key, mark) => {
+  const text = BLOBS[key], at = text.indexOf(mark), bytes = (s) => Buffer.byteLength(s, 'utf8');
+  return [{ sourceKey: key, fromByte: 0, untilByte: bytes(text.slice(0, at)) },
+    { sourceKey: key, fromByte: bytes(text.slice(0, at + mark.length)), untilByte: bytes(text) }];
+};
 
 const session = new Session({
   sessionKey: 'sess-repair',
@@ -38,7 +45,7 @@ const session = new Session({
     { id: 'E1', kind: 'commentary', sequence: 0, phase: 'working', text: whole('said') },
     { id: 'E2', kind: 'commentary', sequence: 1, phase: 'working', text: whole('next') },
     { id: 'E3', kind: 'commentary', sequence: 2, phase: 'working', text: whole('capped') },
-    { id: 'E4', kind: 'commentary', sequence: 3, phase: 'working', text: whole('hidden') },
+    { id: 'E4', kind: 'commentary', sequence: 3, phase: 'working', text: around('hidden', MARK) },
   ],
   blobs: BLOBS,
 });

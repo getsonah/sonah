@@ -11,7 +11,6 @@ import { join } from 'node:path';
 import { WORKFLOW_GAP_NOTES } from '../adapters/sonah-ledger.js';
 import { adapt, labelOf } from './stable-ids-fixture.js';
 import { GAP_CODES } from '../src/ledger.js';
-import { GAP_SENTENCE_CHILDREN } from '../src/review.js';
 import { loadSessionEvidence } from '../../cli/src/session-evidence.js';
 import { redact } from '../../redact/index.js';
 import { AGENTS, RUN, SID, SLUG, linkedRun, mkdir, rm, scratch, writeTree } from '../../cli/test/m33-w-workflow-fixture.js';
@@ -51,7 +50,7 @@ test('M33 W2 the launch-placement note is one fixed note of the closed Workflow 
   assert.ok(Object.isFrozen(WORKFLOW_GAP_NOTES));
   const notes = Object.values(WORKFLOW_GAP_NOTES);
   assert.equal(new Set(notes).size, notes.length);
-  assert.ok(GAP_CODES.includes('incomplete_inventory') && GAP_SENTENCE_CHILDREN.incomplete_inventory);
+  assert.ok(GAP_CODES.includes('incomplete_inventory'));
 });
 
 test('M33 W2 a valid receipt places the agents after the actions recorded before it, though no Claude action records a row', async (t) => {

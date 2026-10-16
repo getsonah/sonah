@@ -46,7 +46,11 @@ test('settled level: the versions are the branch\'s unreleased ones, not new num
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
 });
 
 const LEVEL = 'Report a choice such words settle as "You settled it" at the level the words address it, even when the'

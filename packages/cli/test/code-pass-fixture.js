@@ -1,16 +1,16 @@
-// D87 (the code pass): a synthetic session, a repository folder its files are written to, and a deterministic fake
-// reviewer that answers the session review, step 1, step 2 and every challenge. Every byte is invented: no recording, no
-// model, no network. Nothing prints.
+// D87 (the code pass), made agentic (code-pass/7, D90): a synthetic session, a repository folder its files are written
+// to, and a deterministic fake reviewer that answers the session review, the review agent, its repair and every checking
+// agent. Every byte is invented: no recording, no model, no network. Nothing prints.
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Session } from '../../evidence/src/session.js';
 
-const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
-/** A FAKE key (the GitHub token shape the redactor knows), planted in a file the pass shows. Not a credential. */
+/** A FAKE key (the GitHub token shape the redactor knows), planted in a file the step reads. Not a credential. */
 export const FAKE_KEY = `ghp_${'FAKEfake0123456789'.repeat(2)}ab`;
 
 /** The files of the synthetic repository at review time. `parse.js` is what the session wrote; `util.js` it read. */
@@ -43,10 +43,13 @@ export const CODE_TEXT = Object.freeze({
 });
 
 /** A synthetic session from `specs` (one event each, in order): an instruction, a commentary, an observation of
- *  `invocation`, a `write` of a path or a `read` of one; `blob` names the text in `blobs` its field refers to. */
-export function buildCodeSession(sessionKey, blobs, specs) { return build(sessionKey, blobs, specs); }
+ *  `invocation`, a `write` of a path or a `read` of one; `blob` names the text in `blobs` its field refers to.
+ *  `projectInstructions`: the project instruction files the harness gave it, each `{ path, blob, … }`. */
+export function buildCodeSession(sessionKey, blobs, specs, { projectInstructions = [] } = {}) {
+  return build(sessionKey, blobs, specs, projectInstructions);
+}
 
-function build(sessionKey, blobs, specs) {
+function build(sessionKey, blobs, specs, projectInstructions = []) {
   const whole = (key) => [{ sourceKey: key, fromByte: 0, untilByte: Buffer.byteLength(blobs[key], 'utf8') }];
   const events = specs.map((spec, sequence) => {
     const { blob, ...event } = spec;
@@ -66,14 +69,18 @@ function build(sessionKey, blobs, specs) {
     }
     return { ...event, sequence };
   });
-  return new Session({ sessionKey, adapter: 'claude', blobs, events });
+  const files = projectInstructions.map(({ blob, ...entry }, k) => ({ id: `P${k}`, kind: 'project-instructions',
+    afterSequence: -1, childId: null, text: whole(blob), ...entry }));
+  return new Session({ sessionKey, adapter: 'claude', blobs, events, projectInstructions: files });
 }
 
 /** One turn: the ask, a write of `src/parse.js`, reads of `src/util.js` and `.env`, a claim and a final message.
- *  `reads`: more paths the session read after `.env` (none by default: the session is then byte for byte as before). */
-export function codeSession({ reads = [] } = {}) {
+ *  `reads`: more paths the session read after `.env`; `askTail`: more words after the ask, in the same message (none of
+ *  either by default: the session is then byte for byte as before). */
+export function codeSession({ reads = [], askTail = '' } = {}) {
   const T1 = { turn: 'T1' };
-  const blobs = { ...CODE_TEXT, ...Object.fromEntries(reads.map((path, at) => [`more${at}`, path])) };
+  const blobs = { ...CODE_TEXT, ...(askTail ? { ask: `${CODE_TEXT.ask}${askTail}` } : {}),
+    ...Object.fromEntries(reads.map((path, at) => [`more${at}`, path])) };
   return build('sess-code-pass', blobs, [
     { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
     { id: 'W1', kind: 'invocation', write: 'src/parse.js', blob: 'body', ...T1 },
@@ -113,37 +120,100 @@ export async function repoWith(t, files = CODE_FILES) {
   return root;
 }
 
-/** The ids and paths of the files a code-pass request shows (its FILE lines). */
-export function shownFiles(text) {
-  return [...String(text).matchAll(/^FILE (\{.*\})$/gm)].map((m) => JSON.parse(m[1]));
-}
-/** The rows a step-1 request lists (its JSON lines). */
-export function checkRows(prompt) {
-  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"R')).map((line) => JSON.parse(line));
+/** `repoWith`, then made a git repository with every file in one commit (fixed dates and names, no GIT_* variable of
+ *  the caller's): its state (code-snapshot.js `repositoryState`) is then known, so the code step's stored answers are
+ *  keyed by it. */
+export async function gitRepoWith(t, files = CODE_FILES) {
+  const root = await repoWith(t, files);
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+    GIT_AUTHOR_DATE: '2029-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2029-01-01T00:00:00Z', GIT_AUTHOR_NAME: 'synthetic',
+    GIT_AUTHOR_EMAIL: 's@example.invalid', GIT_COMMITTER_NAME: 'synthetic', GIT_COMMITTER_EMAIL: 's@example.invalid' };
+  for (const args of [['init', '-q', '-b', 'main'], ['add', '-A'], ['commit', '-q', '-m', 'base']])
+    execFileSync('git', args, { cwd: root, env, stdio: 'pipe' });
+  return root;
 }
 
+/** An in-memory repository reader (code-snapshot.js `createRepositoryReader`'s shape): `now` the files as they are, `before`
+ *  at the start commit, by a path relative to `root` (or absolute under it). `reads` receives every read. */
+export function memoryRepo({ root = '/repo', now = CODE_FILES, before = {}, reads = [] } = {}) {
+  const named = (path) => String(path).replace(/^\.\//, '').replace(`${root}/`, '');
+  const fileOf = (files, path) => (Object.hasOwn(files, named(path)) ? { path: named(path), text: files[named(path)],
+    sha256: sha256(files[named(path)]) } : null);
+  return { root, top: root, read: (path) => { reads.push(['now', path]); return fileOf(now, path); },
+    base: (path) => { reads.push(['before', path]); return fileOf(before, path); } };
+}
+
+/** The dossier lines of a review request (one JSON line each). */
+export function dossierItems(prompt) {
+  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line));
+}
+
+export const PARSE_QUOTE = 'const parts = input.split(",");';
+/** A finding on parse.js line 2 with a one-step trace, in the review agent's contract. */
+export const reviewFinding = (over = {}) => ({ kind: 'bug', lens: 'behaviour', title: 'parse("") returns [""] instead of []',
+  claims: ['Empty input splits into one empty part.'], input: 'parse("")',
+  trace: [{ step: 'An empty string splits into one empty part.', path: 'src/parse.js', side: 'new', startLine: 2,
+    endLine: 2, quote: PARSE_QUOTE }],
+  anchor: { path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2 }, leadsFrom: [], ...over });
+/** The review agent's answer: the claim's dossier item contradicted by line 2 of parse.js (a `claim_false` finding
+ *  following from it), no question. */
+export const contradictClaim = (prompt) => {
+  const claim = dossierItems(prompt).find((entry) => entry.kind === 'claim');
+  return { findings: [reviewFinding({ kind: 'claim_false', lens: 'claims',
+    title: 'parse("") returns [""], not the empty list the agent said', leadsFrom: claim ? [claim.key] : [] })],
+  questions: [] };
+};
+/** The review agent's answer: the empty-input bug, following from the claim's dossier item. */
+export const findEmptyInput = (prompt) => {
+  const claim = dossierItems(prompt).find((entry) => entry.kind === 'claim');
+  return { findings: [reviewFinding({ leadsFrom: claim ? [claim.key] : [] })], questions: [] };
+};
+
+/** The finding a finding's checking agent was shown (its request's JSON line). */
+export function verifiedFinding(prompt) {
+  const [, after] = String(prompt).split('# The finding to check — untrusted\n\n');
+  return after ? JSON.parse(after.split('\n')[0]) : null;
+}
+/** The questions a batch checking agent was shown (its request's JSON lines), by key. */
+export function batchItems(prompt) {
+  return String(prompt).split('\n').filter((line) => /^\{"key":"Q\d+"/.test(line)).map((line) => JSON.parse(line));
+}
+/** A "holds" verdict on a finding, quoting every code step of its trace (the anchor's lines among them), every claim
+ *  holding. */
+export const holds = (finding) => ({ verdict: 'holds', reason: null,
+  claims: finding.claims.map(({ claim }) => ({ claim, verdict: 'holds' })),
+  receipts: finding.trace.filter((t) => t.side !== 'session').map(({ path, side, startLine, endLine, quote }) => ({ path,
+    side, startLine, endLine, quote })), explanation: 'Synthetic: traced and found to hold.' });
+/** Every question sound. */
+export const allSound = (items) => ({
+  questions: items.filter((i) => i.key.startsWith('Q')).map(({ key }) => ({ key, verdict: 'sound', receipts: [],
+    explanation: 'Synthetic.' })) });
 /**
- * The deterministic fake reviewer. A session narrative request: `narrative`. A step-1 request (`code-check`, and its
- * re-ask `code-check:reask`): `check(rows, files)`'s checks. A lens request (`code-pass:<lens>`): `pass(prompt, files,
- * lens)`'s findings and `questions(prompt, lens)`'s questions. A receipt repair: `repair(request)`, or an empty answer.
- * A challenge: the session's (every item not-refuted, citing the item's first receipt) or the code step's
- * (`codeVote(item, request)`, by default upheld citing the candidate's anchor and every quote it carries). `seen`
- * receives every request, in call order.
+ * How many items of the record the review agent's lists ended as, `[findings, questions]`: a finding published, sent
+ * to you as a question, or withheld with its own record; a question published, or withheld with its own record. For an
+ * answer whose items are distinct, these are its lists' lengths when no item merged into another or was lost. One item
+ * lost and another shown twice leaves the counts the same, so the counts cannot see that.
  */
-export function codeJudge({ narrative = codeNarrative, check = () => [], pass = () => [], questions = () => [],
-  repair = null, codeVote = null, seen = [] } = {}) {
+export const itemsEnded = ({ codePass: p }) => [p.findings.length
+  + p.questions.filter((q) => q.from === 'finding').length + p.withheld.filter((w) => w.what === 'finding').length,
+p.questions.filter((q) => q.from === 'review').length + p.withheld.filter((w) => w.what === 'question').length];
+
+/**
+ * The deterministic fake reviewer. A session narrative request: `narrative`. The review agent (`code-review:agent`):
+ * `review(prompt, request)`'s answer; its repair (`code-review:repair`): `repair(request)`, or the review's answer again.
+ * A finding's checking agent (`code-verify:F<n>`, and its re-ask): `verify(finding, request)`; the batch checking agent:
+ * `batch(items, request)`. A session challenge: every item not-refuted, citing the item's first receipt. `seen` receives
+ * every request, in call order.
+ */
+export function codeJudge({ narrative = codeNarrative, review = contradictClaim, repair = null, verify = holds,
+  batch = allSound, seen = [] } = {}) {
   return async (request) => {
     seen.push(request);
-    const files = shownFiles(request.prompt);
-    if (/^code-check(:reask)?$/.test(request.label)) return { checks: check(checkRows(request.prompt), files, request) };
-    const lens = /^code-pass:([a-z]+)(?::g\d+)?$/.exec(request.label ?? '');
-    if (lens) return { findings: pass(request.prompt, files, lens[1]), questions: questions(request.prompt, lens[1]) };
-    if (/receipt-repair$/.test(request.label ?? '')) return repair ? repair(request, files)
-      : request.label.startsWith('code-check') ? { checks: [] } : { findings: [], questions: [] };
-    if (request.challenge && /^challenge:code-(check|finding)/.test(request.label)) {
-      return { votes: candidatesOf(request.prompt, request.challenge.items).map((item) => (codeVote ? codeVote(item, request)
-        : upheld(item))) };
-    }
+    const label = request.label ?? '';
+    if (label === 'code-review:agent') return review(request.prompt, request);
+    if (label === 'code-review:repair') return repair ? repair(request) : review(request.prompt, request);
+    if (/^code-verify:F\d+(?::reask)?$/.test(label)) return verify(verifiedFinding(request.prompt), request);
+    if (/^code-verify:batch(?::reask)?$/.test(label)) return batch(batchItems(request.prompt), request);
     if (request.challenge) {
       return { votes: request.challenge.items.map((item) => ({ key: item.key, verdict: 'not-refuted',
         explanation: 'Synthetic support.', receipts: [firstReceipt(item.candidate)].filter(Boolean) })) };
@@ -152,52 +222,11 @@ export function codeJudge({ narrative = codeNarrative, check = () => [], pass = 
   };
 }
 
-/** The candidates a code-step challenge request shows (one JSON line each, after its first heading), by its keys. */
-export function candidatesOf(prompt, items) {
-  const keys = new Set(items.map((item) => item.key));
-  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"')).map((line) => JSON.parse(line))
-    .filter((candidate) => keys.has(candidate.key));
-}
-
-/** An upheld vote on a code-step candidate (verdict first) citing every code quote it carries: a check's receipts, or a
- *  finding's trace steps (whose last step and anchor they cover). */
-export function upheld(candidate, verdict = 'upheld') {
-  const quotes = [...(candidate.receipts ?? []), ...(candidate.trace ?? []).filter((t) => t.source !== 'session')]
-    .map(({ path, side, startLine, endLine, quote }) => ({ path, side, startLine, endLine, quote }));
-  return { key: candidate.key, verdict, reason: verdict === 'upheld' ? null : 'incorrect', receipts: quotes,
-    explanation: 'Synthetic.' };
-}
-
 function firstReceipt(value) {
   if (Array.isArray(value)) { for (const v of value) { const found = firstReceipt(v); if (found) return found; } return null; }
-  if (!plain(value)) return null;
+  if (value === null || typeof value !== 'object') return null;
   if (typeof value.eventId === 'string' && typeof value.role === 'string' && typeof value.quote === 'string')
     return { eventId: value.eventId, role: value.role, quote: value.quote };
   for (const v of Object.values(value)) { const found = firstReceipt(v); if (found) return found; }
   return null;
 }
-
-export const PARSE_QUOTE = 'const parts = input.split(",");';
-/** Step 1 answers: the claim contradicted by line 2 of parse.js, every other row cannot-tell. */
-export const contradictClaim = (rows) => rows.map((row) => (row.kind === 'claim'
-  ? { key: row.key, answer: 'contradicts', explanation: 'split on an empty string gives [""], not [].',
-    receipts: [{ path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2, quote: PARSE_QUOTE }] }
-  : { key: row.key, answer: 'cannot-tell', explanation: 'The code does not settle it.', receipts: [] }));
-
-/** The dossier lines of a lens request (one JSON line each). */
-export function dossierItems(prompt) {
-  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line));
-}
-/** A finding on parse.js line 2 with a one-step trace, in the lens contract. */
-export const parseFinding = (over = {}) => ({ kind: 'bug', title: 'parse("") returns [""] instead of []',
-  explanation: 'Empty input splits into one empty part.', input: 'parse("")',
-  trace: [{ step: 'An empty string splits into one empty part.', source: 'file', path: 'src/parse.js', side: 'new',
-    startLine: 2, endLine: 2, quote: PARSE_QUOTE }],
-  anchor: { path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2 }, leadsFrom: [], ...over });
-/** Step 2 answers: the behaviour lens finds the empty-input bug, following from the claim's dossier item; the other
- *  lenses find nothing. */
-export const findEmptyInput = (prompt, files, lens = 'behaviour') => {
-  if (lens !== 'behaviour') return [];
-  const claim = dossierItems(prompt).find((entry) => entry.kind === 'claim');
-  return [parseFinding({ leadsFrom: claim ? [claim.key] : [] })];
-};

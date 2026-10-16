@@ -29,27 +29,52 @@ export function confirmPrSharing({ target, input = process.stdin, output = proce
     };
     terminal.once('close', () => finish(false));
     terminal.once('SIGINT', () => finish(false));
-    terminal.question(`After reading the page, type '${expected}' to confirm you may post this comment on that pull `
-      + 'request and accept its limits: ',
+    terminal.question(`${PR_SHARING_WORDS.readFirst}\n${PR_SHARING_WORDS.confirm(expected)}`,
       (answer) => finish(answer === expected));
   });
 }
 
-const FIXES = Object.freeze({
+/** The advice printed after "Fix:" when sharing fails, by its closed code. */
+export const PR_SHARING_FIXES = Object.freeze({
   publication_disabled: 'Remove --post-comment for a local review. To post the comment, use a GitHub App token that '
-    + 'can write reviews and checks, set SONAH_GITHUB_ACTOR_ID and SONAH_GITHUB_APP_ID, and name a pull request of a '
+    + 'can write reviews and checks. Set SONAH_GITHUB_ACTOR_ID and SONAH_GITHUB_APP_ID, and name a pull request of a '
     + 'private repository.',
-  stale_revision: 'The PR changed before the comment was posted. Run the same review again with a new --output '
-    + 'filename (stored answers are reused) to share against its current head.',
-  operation_uncertain: 'Keep the publication journal and inspect the PR. Rerun with the same review arguments and state directory, choosing a new --output filename to reconcile; do not delete the journal or start a fresh publication.',
-  operation_busy: 'Wait for the other publisher. After a crash, confirm it stopped and inspect the publication journal before removing its lock.',
-  operation_conflict: 'Preserve the publication journal and inspect the conflicting operation before sharing again.',
-  operation_store_failed: 'Check that the review state directory is owned by you and writable; keep its existing publication journal.',
+  stale_revision: 'The pull request changed before Sonah posted the comment. To share against its current head, run '
+    + 'the same review again with a new --output file name. Sonah reuses its stored answers.',
+  operation_uncertain: 'Keep the publication journal and inspect the pull request. To reconcile, run the same review '
+    + 'again with the same arguments and state directory, and a new --output file name. Do not delete the journal or '
+    + 'start a new publication.',
+  operation_busy: 'Wait for the other publisher. After a crash, check that it stopped, and inspect the publication '
+    + 'journal before you remove its lock.',
+  operation_conflict: 'Keep the publication journal, and inspect the other operation before you share again.',
+  operation_store_failed: 'Check that you own the state directory of this review and can write to it. Keep the '
+    + 'publication journal that is there.',
+});
+/** The lines the sharing step prints, and the question it asks before it posts. The answer is the consent that the
+ *  publication policy records (`ownerAuthorized`, `limitsAcknowledged`): the person confirms that they have the right
+ *  to post this comment on that pull request, and accepts its limits. These words change form only, never that
+ *  meaning. */
+export const PR_SHARING_WORDS = Object.freeze({
+  readFirst: 'Read the saved page before you answer.',
+  confirm: (expected) => `Type '${expected}' to confirm your right to post this comment on that pull request and `
+    + 'accept its limits: ',
+  failed: (code) => `Sharing could not finish: ${code}. Sonah keeps the local page and the history of this review.`,
+  fix: (words) => `Fix: ${words}`,
+  otherFix: 'Check the access of the GitHub App and the pull request.',
+  again: 'For another attempt, keep the state of this review and choose a new --output file name.',
+  preview: (target, head, body) => `PR comment preview for ${target}, head ${head}:\n${body}`,
+  posts: 'Sharing posts this COMMENT, which holds counts only, and a neutral advisory check. Quotes, items and the '
+    + 'local page stay on this computer.',
+  notPosted: 'Sonah did not post the PR comment.',
+  needsTerminal: 'Fix: the confirmation needs an interactive terminal. Read the saved page. Then run Sonah there again '
+    + 'with the same state directory and a new --output file name, or remove --post-comment.',
+  posted: 'Sonah posted the PR comment and the neutral advisory check.',
 });
 const sharingFailure = (code, stderr) => {
-  stderr.write(`Sharing could not complete: ${code}. The local page and review history are retained.\n`);
-  stderr.write(`Fix: ${FIXES[code] ?? 'Check GitHub App access and the PR.'}\n`);
-  stderr.write('For another attempt, keep the existing review state and choose a new --output filename.\n');
+  const W = PR_SHARING_WORDS;
+  stderr.write(`${W.failed(code)}\n`);
+  stderr.write(`${W.fix(Object.hasOwn(PR_SHARING_FIXES, code) ? PR_SHARING_FIXES[code] : W.otherFix)}\n`);
+  stderr.write(`${W.again}\n`);
 };
 
 /** The pull request a comment is for (`github`: `{ owner, repo, number }` as the person typed it), read by its
@@ -63,19 +88,20 @@ export async function readPrTarget({ client, github }) {
 }
 
 export async function sharePrReview({ client, github, report, stateDir, env = process.env,
-  stdout = process.stdout, stderr = process.stderr, confirm = confirmPrSharing, mask = undefined }) {
+  stdout = process.stdout, stderr = process.stderr, confirm = confirmPrSharing }) {
   try {
     const principals = validatePrSharing({ env });
     const pr = await readPrTarget({ client, github });
-    const plan = createPublicationPlan({ report, pr, mask });
-    stdout.write(`PR comment preview for ${plan.target.owner}/${plan.target.repo}#${plan.target.number}, head ${plan.headOid}:\n${plan.review.body}\n`);
-    stdout.write('Sharing posts this counts-only COMMENT and a neutral advisory check. '
-      + 'Quotes, rows and the local page stay on this machine.\n');
+    const plan = createPublicationPlan({ report, pr });
+    const W = PR_SHARING_WORDS;
+    stdout.write(`${W.preview(`${plan.target.owner}/${plan.target.repo}#${plan.target.number}`, plan.headOid,
+      plan.review.body)}\n`);
+    stdout.write(`${W.posts}\n`);
     const confirmed = await confirm({ target: plan.target, body: plan.review.body, check: plan.check });
     if (confirmed !== true) {
-      stdout.write('PR comment not posted.\n');
+      stdout.write(`${W.notPosted}\n`);
       if (confirmed === null) {
-        stderr.write('Fix: confirmation needs an interactive terminal. Read the saved page, then rerun there with the same review state and a new --output filename, or remove --post-comment.\n');
+        stderr.write(`${W.needsTerminal}\n`);
         return { state: 'cancelled', exitCode: 2 };
       }
       return { state: 'cancelled' };
@@ -85,7 +111,7 @@ export async function sharePrReview({ client, github, report, stateDir, env = pr
       policy: { mode: 'private-preview', ownerAuthorized: true, limitsAcknowledged: true,
         repositoryId: plan.target.repositoryId, ...principals } });
     if (operation.state === 'complete') {
-      stdout.write('PR comment and neutral advisory check posted.\n');
+      stdout.write(`${PR_SHARING_WORDS.posted}\n`);
       return { state: 'complete' };
     }
     const code = operation.state === 'stale' ? 'stale_revision' : 'operation_uncertain';
@@ -97,3 +123,13 @@ export async function sharePrReview({ client, github, report, stateDir, env = pr
     return { state: 'failed', exitCode: 3 };
   }
 }
+
+/** The kind of each of this file's word tables, for the style linter (packages/render/test/style-lint.js). */
+export const STYLE_KINDS = Object.freeze({ PR_SHARING_FIXES: 'notice', PR_SHARING_WORDS: 'notice',
+  'PR_SHARING_WORDS.readFirst': 'action', 'PR_SHARING_WORDS.confirm': 'action', 'PR_SHARING_WORDS.preview': 'label' });
+/** The arguments each function of a word table is rendered with for the style linter. */
+export const STYLE_FIXTURES = Object.freeze({
+  'PR_SHARING_WORDS.confirm': [['share owner/repo#7']], 'PR_SHARING_WORDS.failed': [['stale_revision']],
+  'PR_SHARING_WORDS.fix': [[PR_SHARING_FIXES.stale_revision]],
+  'PR_SHARING_WORDS.preview': [['owner/repo#7', 'a'.repeat(40), 'Sonah advisory review']],
+});

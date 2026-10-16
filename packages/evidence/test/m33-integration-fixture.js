@@ -1168,6 +1168,14 @@ export const RELEASE_REVIEW_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/33', after: 'sonah.session-page/34' }),
   story: Object.freeze({ before: 'sonah.session-story/28', after: 'sonah.session-story/29' }),
 });
+/** The agentic code step's release item (2026-10-15, D90 and the builds that ship with it): the readers it moves, once
+ *  for the whole item, the next link after RELEASE_REVIEW_READER_VERSIONS (page /34, story /29), to which they render
+ *  back, one number below. One link for every build of the item that moves page or story bytes, so their merges agree:
+ *  an ask's status shown beside what the code step tied to it; the page and the story rendered from the session as
+ *  loaded — no people view, no output masking — their footers saying they are generated from the recorded session;
+ *  and what the code review found reading the new report (the finding's claims and check, what held, the questions
+ *  from a finding, the withheld fold, a finding beside the first of its rows in the checklist's order). */
+export const AGENTIC_READER_VERSIONS = Object.freeze({ page: 'sonah.session-page/35', story: 'sonah.session-story/30' });
 /** The session run profile's code-pass member as the code step left it (a literal: this fixture imports no module
  *  under test). */
 export const CODE_PASS_PROFILE_CODE_STEP = Object.freeze(JSON.parse('{"snapshot":"sonah.code-snapshot/2",'
@@ -1327,11 +1335,245 @@ export const SECOND_RELEASE_REVIEW_VERSIONS = Object.freeze({
  *  and code-check and code-pass still /5 (a literal: this fixture imports no module under test). */
 export const CODE_PASS_PROFILE_RELEASE_REVIEW = Object.freeze({ ...CODE_PASS_PROFILE_CODE_STEP_FOURTH_REVIEW,
   snapshot: 'sonah.code-snapshot/7' });
+/**
+ * The agent transport (cli/src/review-judge.js `sonah.review-agent-transport/1`, 2026-10-15): two codes joined the
+ * closed judge failure list every run profile holds (`judgeFailureCodes`, ledger.js JUDGE_FAILURE_CODES), for the CLI
+ * stopping an agent run (`model_turn_limit`) or its answer never matching the request's schema
+ * (`model_structured_output_failed`). No version, request byte or reader moved; every run profile moved by its list.
+ */
+export const AGENT_TRANSPORT_FAILURE_CODES = Object.freeze(['model_turn_limit', 'model_structured_output_failed']);
+/** A run profile with the agent transport's failure codes taken out of its closed list (`AGENT_TRANSPORT_FAILURE_CODES`),
+ *  rendered back to the second release review's; anything else untouched. `profileBeforeSecondReleaseReview` applies it
+ *  first. The re-ask of a void vote: it applies `profileBeforeVoidVoteReask` first. */
+export function profileBeforeAgentTransport(profile) {
+  const copy = profileBeforeVoidVoteReask(profile);
+  if (copy && typeof copy === 'object' && Array.isArray(copy.judgeFailureCodes))
+    copy.judgeFailureCodes = copy.judgeFailureCodes.filter((code) => !AGENT_TRANSPORT_FAILURE_CODES.includes(code));
+  return copy;
+}
+/**
+ * The re-ask of a void vote (2026-10-15): the one instrument version it moved. A vote a readable reply cast
+ * that the challenge did not count (a receipt that did not check out, a vote outside its shape, a support that quotes no
+ * output of the result its item rests on, a quote of a write that never ran; never a support that does not bind) is
+ * asked again once in
+ * the run's re-ask round, in batches of its own, naming its closed cause (`sonah.challenge/43`); the session run
+ * profile's code-pass member names the challenge version too. No first-round request byte and no re-ask of skipped slots
+ * moved: the void re-asks are new requests. No reader moved.
+ */
+export const VOID_VOTE_REASK_VERSIONS = Object.freeze({
+  challenge: Object.freeze({ before: 'sonah.challenge/42', after: 'sonah.challenge/43' }),
+});
+/** A run profile with the re-ask of a void vote's version rendered back to the agent transport's
+ *  (`VOID_VOTE_REASK_VERSIONS`): the challenge version, and the code-pass member's; anything else untouched.
+ *  `profileBeforeAgentTransport` applies it first. G2: it applies `profileBeforeChoiceReanchor` first. */
+export function profileBeforeVoidVoteReask(profile) {
+  const copy = profileBeforeChoiceReanchor(profile);
+  const { before, after } = VOID_VOTE_REASK_VERSIONS.challenge;
+  if (copy?.challenge?.version === after) copy.challenge.version = before;
+  if (copy?.codePass?.challenge?.version === after) copy.codePass.challenge.version = before;
+  return copy;
+}
+/**
+ * G2 (owner decision 2026-10-15): the instrument version it moved. A session-only choice not to act whose existence
+ * check refuted the words it was anchored on is put to the reviewer once more, a new request with fixed words of its own
+ * (prompt.js `reanchorRequest`): `sonah.narrative/37`, rendered back to /36. No request sent before moved: a window whose
+ * existence check refutes no such choice sends exactly the bytes the second release review's did; no reader moved.
+ */
+export const CHOICE_REANCHOR_VERSIONS = Object.freeze({
+  prompt: Object.freeze({ before: 'sonah.narrative/36', after: 'sonah.narrative/37' }),
+});
+/** A run profile with G2's version rendered back to the re-ask of a void vote's (`CHOICE_REANCHOR_VERSIONS`); anything
+ *  else untouched. `profileBeforeVoidVoteReask` applies it first. The agentic code step: it applies
+ *  `profileBeforeAgenticCodeStep` first. */
+export function profileBeforeChoiceReanchor(profile) {
+  const copy = profileBeforeAgenticCodeStep(profile);
+  if (copy?.promptVersion === CHOICE_REANCHOR_VERSIONS.prompt.after)
+    copy.promptVersion = CHOICE_REANCHOR_VERSIONS.prompt.before;
+  return copy;
+}
+/**
+ * The agentic code step (D90, 2026-10-15): the instrument versions it moved, once each. The session run
+ * profile's code-pass member (code-pass.js `CODE_PASS_PROFILE`): `sonah.code-snapshot/9` (no privacy state; the change
+ * under review is the agent's starting map), `sonah.code-pass/7` (one review agent with Read, Grep and Glob over the
+ * repository), the new `sonah.code-verify/1` (one checking agent per finding, one for the held statements and the
+ * questions) and step 1's `sonah.code-check/6` retired; its closed vocabularies and limits, rendered back to the second
+ * release review's with G2's challenge version (`CODE_PASS_PROFILE_CHOICE_REANCHOR`). No request byte of a session
+ * batch, a combined request or a dossier moved; `CHALLENGE_PROFILE` did not move.
+ */
+export const AGENTIC_CODE_STEP_VERSIONS = Object.freeze({
+  snapshot: Object.freeze({ before: 'sonah.code-snapshot/8', after: 'sonah.code-snapshot/9' }),
+  pass: Object.freeze({ before: 'sonah.code-pass/6', after: 'sonah.code-pass/7' }),
+  check: Object.freeze({ before: 'sonah.code-check/6', after: null }),
+  verify: Object.freeze({ before: null, after: 'sonah.code-verify/1' }),
+});
+/** The session run profile's code-pass member as the second release review left it: the release review's, with
+ *  code-snapshot /8 and code-check and code-pass /6 (a literal: this fixture imports no module under test). */
+export const CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW = Object.freeze({ ...CODE_PASS_PROFILE_RELEASE_REVIEW,
+  snapshot: 'sonah.code-snapshot/8', check: 'sonah.code-check/6', pass: 'sonah.code-pass/6' });
+/** The session run profile's code-pass member as G2 left it, just before the agentic code step: the second release
+ *  review's, with the challenge version the re-ask of a void vote moved (`VOID_VOTE_REASK_VERSIONS`). */
+export const CODE_PASS_PROFILE_CHOICE_REANCHOR = Object.freeze({ ...CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW,
+  challenge: Object.freeze({ ...CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW.challenge,
+    version: VOID_VOTE_REASK_VERSIONS.challenge.after }) });
+/** A run profile with the agentic code step's versions rendered back to G2's (`AGENTIC_CODE_STEP_VERSIONS`,
+ *  `CODE_PASS_PROFILE_CHOICE_REANCHOR`); anything else untouched. `profileBeforeChoiceReanchor` applies it first. A
+ *  file changed since the session, shown: it applies `profileBeforeChangedSinceShown` first. */
+export function profileBeforeAgenticCodeStep(profile) {
+  const copy = profileBeforeChangedSinceShown(profile);
+  if (copy && typeof copy === 'object' && copy.codePass !== undefined)
+    copy.codePass = structuredClone(CODE_PASS_PROFILE_CHOICE_REANCHOR);
+  return copy;
+}
+/**
+ * A file changed since the session, shown (D90 amended, 2026-10-16: never blank what the reviewer needs): the
+ * instrument versions it moved, once each. A file whose last recorded write is no longer literally in it (it changed
+ * after the session's last recorded edit) keeps its diff from the start commit, its hunks in the change block and its
+ * changed lines in the scope rule like any changed file's; its table-of-contents row says so in fixed words, the record
+ * names it `changed_since_session` as a fact, and coverage is not lowered for it (`sonah.code-snapshot/10`,
+ * `sonah.code-pass/8`). No closed vocabulary or limit moved; the session-only run profile moved by these two strings,
+ * rendered back to the agentic code step's. No request byte of a session batch, a combined request or a dossier moved;
+ * the review agent's and the checking agents' requests move only for a session with such a file. No reader version
+ * moved: a report of the agentic code step reads as before.
+ */
+export const CHANGED_SINCE_SHOWN_VERSIONS = Object.freeze({
+  snapshot: Object.freeze({ before: 'sonah.code-snapshot/9', after: 'sonah.code-snapshot/10' }),
+  pass: Object.freeze({ before: 'sonah.code-pass/7', after: 'sonah.code-pass/8' }),
+});
+/** A run profile with the versions a file changed since the session, shown, moved rendered back to the agentic code
+ *  step's (`CHANGED_SINCE_SHOWN_VERSIONS`); anything else untouched. `profileBeforeAgenticCodeStep` applies it
+ *  first. The cleanup: it applies `profileBeforeCleanup` first. */
+export function profileBeforeChangedSinceShown(profile) {
+  const copy = profileBeforeCleanup(profile);
+  const { snapshot, pass } = CHANGED_SINCE_SHOWN_VERSIONS;
+  if (copy?.codePass?.snapshot === snapshot.after) copy.codePass.snapshot = snapshot.before;
+  if (copy?.codePass?.pass === pass.after) copy.codePass.pass = pass.before;
+  return copy;
+}
+/**
+ * The cleanup of the session challenge and the code step (2026-10-16): the instrument versions it moved, once each.
+ * The session challenge no longer asks a vote a reply cast that could not be counted again (`sonah.challenge/44`, which
+ * withdraws what /43 added: such a vote is an answer and stands; a slot a reply left without a vote is asked again as
+ * before). The code step's review agent no longer gives statements it traced and found to hold (`sonah.code-pass/9`:
+ * its contract, its brief, its item limits and its repair hold findings and questions alone, and only a published
+ * `claim_false` finding sets a row's code check), and its batch checking agent checks the questions alone
+ * (`sonah.code-verify/2`). Every run profile moved by the challenge version, rendered back to /43; the session-only
+ * one by its code-pass member too (`CLEANUP_CODE_PASS_MEMBERS`). No first-round request byte of the session review and
+ * no re-ask of a skipped slot moved; the re-asks of void votes are no longer sent, so a case that sent them sends what
+ * the agent transport's sent. The review agent's and the batch checking agent's requests moved; a finding's checking
+ * agent's did not.
+ */
+export const CLEANUP_VERSIONS = Object.freeze({
+  challenge: Object.freeze({ before: 'sonah.challenge/43', after: 'sonah.challenge/44' }),
+  pass: Object.freeze({ before: 'sonah.code-pass/8', after: 'sonah.code-pass/9' }),
+  verify: Object.freeze({ before: 'sonah.code-verify/1', after: 'sonah.code-verify/2' }),
+});
+/** The members of the session run profile's code-pass member the cleanup moved besides its versions, as a file changed
+ *  since the session, shown left them (literals: this fixture imports no module under test): the row outcomes with
+ *  `shown-in-code`, the withheld items with `held`, the text limits with a held statement's, and the answer's item
+ *  limits with held statements'. */
+export const CLEANUP_CODE_PASS_MEMBERS = Object.freeze({
+  outcomes: Object.freeze(['shown-in-code', 'contradicted-by-code', 'not-checked-in-code']),
+  withheldItems: Object.freeze(['finding', 'held', 'question']),
+  trace: Object.freeze({ statementChars: 300, heldReceipts: 4 }),
+  answerItems: Object.freeze({ held: 20 }),
+});
+/** The readers the cleanup moved, once each, one link: the page (/36) and the story (/31) no longer show what the review
+ *  found to hold, a row shown in the code, a supporting claim found false, or a footer that says everything was covered. */
+export const CLEANUP_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/35', after: 'sonah.session-page/36' }),
+  story: Object.freeze({ before: 'sonah.session-story/30', after: 'sonah.session-story/31' }),
+});
+/** D97 (owner decisions 2026-10-16): the page renders the report model — the header, the count line,
+ *  your prompt marked up, then Must act, Must know and Good to know — one link after the cleanup's. The story keeps /31
+ *  (its own link is the Markdown report's). No instrument version moved: no request byte moved. */
+export const REPORT_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/36', after: 'sonah.session-page/37' }),
+});
+/** D97: the story is the report .md — the report model rendered for a pull request comment — one link after the
+ *  cleanup's (/31); its charts and its product, lead and engineer sections are removed. The page keeps /37 (the .md moved
+ *  no page byte). No instrument version moved: no request byte moved. */
+export const REPORT_MD_READER_VERSIONS = Object.freeze({
+  story: Object.freeze({ before: 'sonah.session-story/31', after: 'sonah.session-story/32' }),
+});
+/** A run profile with the cleanup's versions rendered back to a file changed since the session, shown's
+ *  (`CLEANUP_VERSIONS`, `CLEANUP_CODE_PASS_MEMBERS`); anything else untouched. `profileBeforeChangedSinceShown` applies
+ *  it first. */
+export function profileBeforeCleanup(profile) {
+  const copy = profileBeforeTriage(profile);
+  const { challenge, pass, verify } = CLEANUP_VERSIONS;
+  if (copy?.challenge?.version === challenge.after) copy.challenge.version = challenge.before;
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.pass === pass.after) {
+    member.pass = pass.before;
+    if (member.verify === verify.after) member.verify = verify.before;
+    const { outcomes, withheldItems, trace, answerItems } = structuredClone(CLEANUP_CODE_PASS_MEMBERS);
+    member.outcomes = outcomes;
+    member.withheldItems = withheldItems;
+    member.trace = { ...member.trace, ...trace };
+    member.answerItems = { ...member.answerItems, ...answerItems };
+  }
+  return copy;
+}
+/**
+ * The code step's triage (D96, 2026-10-16): the instrument version it moved, once. The code step's review agent may give
+ * a `triage` list (a level, the impact, an action, a label and a place for a finding, a question or a dossier item the
+ * report shows as an item) and a `files` list beside its findings and questions (`sonah.code-pass/10`): its brief, its
+ * contract (both lists optional, types only), its dossier lines (each such item's kind) and its repair moved, and the
+ * session run profile's code-pass member gained `triage` (the levels, the limits, the errors, the tier table's version
+ * `sonah.tiers/1` and its kinds). Rendered back (`profileBeforeTriage`), the cleanup's member. No session request byte
+ * moved; the review agent's requests moved; a finding's checking agent's and the batch checking agent's did not. No
+ * reader version moved with it.
+ */
+export const TRIAGE_VERSIONS = Object.freeze({
+  pass: Object.freeze({ before: 'sonah.code-pass/9', after: 'sonah.code-pass/10' }),
+});
+/** A run profile with the triage's version rendered back to the cleanup's (`TRIAGE_VERSIONS`), its code-pass member's
+ *  `triage` taken out; anything else untouched. `profileBeforeCleanup` applies it first; it applies
+ *  `profileBeforeTiedTier` first. */
+export function profileBeforeTriage(profile) {
+  const copy = profileBeforeTiedTier(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.pass === TRIAGE_VERSIONS.pass.after) {
+    member.pass = TRIAGE_VERSIONS.pass.before;
+    delete member.triage;
+  }
+  return copy;
+}
+/**
+ * The owner's decision of 2026-10-16 on "you asked, the agent decided how" (D96 amended): the tier table
+ * (`sonah.tiers/1`, unreleased, as `sonah.code-pass/10` is) gives every kind a `tiedTier`, and `decision_chose` defaults
+ * to Good to know, Must know when a published finding or question of the code review is tied to it. No version moved;
+ * the session run profile's code-pass member moved by its `triage.kinds` alone. Rendered back (`profileBeforeTiedTier`:
+ * every `tiedTier` taken out, `decision_chose` back in Must know), the triage's member. No request byte moved.
+ */
+export function profileBeforeTiedTier(profile) {
+  const copy = profileBeforeRepairUnchecked(profile);
+  const kinds = copy?.codePass?.triage?.kinds;
+  if (kinds && typeof kinds === 'object') for (const [kind, k] of Object.entries(kinds)) {
+    if (!k || typeof k !== 'object' || !Object.hasOwn(k, 'tiedTier')) continue;
+    if (kind === 'decision_chose' && k.tier === 'good_to_know' && k.tiedTier === 'must_know') k.tier = 'must_know';
+    delete k.tiedTier;
+  }
+  return copy;
+}
+/**
+ * The beta.2 release check (2026-10-16): an item the code step withheld by its shape or its grounding records why Sonah
+ * checked no repaired version of it, when it checked none (`withheld[].repair`, ledger.js CODE_REPAIR_UNCHECKED), so no
+ * reader says it failed "even after one repair". No version moved (`sonah.code-pass/10` is unreleased); the session run
+ * profile's code-pass member gained the closed list (`repairUnchecked`). Rendered back (`profileBeforeRepairUnchecked`:
+ * the list taken out), the tied tier's member. No request byte moved. `profileBeforeTiedTier` applies it first.
+ */
+export function profileBeforeRepairUnchecked(profile) {
+  const copy = structuredClone(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object') delete member.repairUnchecked;
+  return copy;
+}
 /** A run profile with the second release review's versions rendered back to the release review's
  *  (`SECOND_RELEASE_REVIEW_VERSIONS`, `CODE_PASS_PROFILE_RELEASE_REVIEW`); anything else untouched.
- *  `profileBeforeReleaseReview` applies it first. */
+ *  `profileBeforeReleaseReview` applies it first. The agent transport: it applies `profileBeforeAgentTransport` first. */
 export function profileBeforeSecondReleaseReview(profile) {
-  const copy = structuredClone(profile);
+  const copy = profileBeforeAgentTransport(profile);
   if (copy?.promptVersion === SECOND_RELEASE_REVIEW_VERSIONS.prompt.after)
     copy.promptVersion = SECOND_RELEASE_REVIEW_VERSIONS.prompt.before;
   if (copy && typeof copy === 'object' && copy.codePass !== undefined)

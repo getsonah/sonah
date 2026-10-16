@@ -20,7 +20,6 @@ import * as reviewRun from '../src/run-review.js';
 import { provenFailure, carriedContext, bytesOfTokens, WINDOW_SETTINGS } from '../src/windows.js';
 import { serveEvidence, EVIDENCE_REQUEST_LIMITS } from '../src/evidence-requests.js';
 import { RECORDED_FACT_KEYS, PRIOR_WITHHELD_REASONS, sessionFromLedger } from '../adapters/sonah-ledger.js';
-import { PRIOR_WITHHELD } from '../../slicer/src/before.js';
 import { RECORDED_FACTS } from '../../redact/index.js';
 import { load, humanAsk, call, result, said } from './m33-u-unasked-fixture.js';
 
@@ -295,7 +294,7 @@ test('M36 phase 3 review (4): an edit\'s own lines and an empty output are not r
     { out_of_range: 1 });
 });
 
-test('M36 phase 3 review (4): the file before a change whose prior state Sonah withheld is refused withheld', async (t) => {
+test('M36 phase 3 review (4), D90: the file before a change of a credential-shaped path is served as any other', async (t) => {
   const rows = [
     humanAsk('Rotate the token in .env and fix src/cli.js.'),
     call('r1', 'Read', { file_path: '/repo/.env' }),
@@ -311,17 +310,19 @@ test('M36 phase 3 review (4): the file before a change whose prior state Sonah w
   const { session } = await load(t, rows);
   const edits = session.events.filter((event) => event.kind === 'invocation' && event.operation === 'edit');
   assert.equal(edits.length, 2);
-  assert.deepEqual(edits.map((event) => event.changes.map((change) => change.priorWithheld === true)), [[true], [false]]);
+  // D90 (owner decision 2026-10-15): the slicer withholds no prior state for its path (D68 R withheld `.env`'s).
+  assert.deepEqual(edits.map((event) => event.changes.map((change) => change.priorWithheld === true)), [[false], [false]]);
   const a = (id) => reviewRun.planWindowRequests({ session, reviewScope: 'session-only' }).requests[0].aliases.of(id);
-  const withheld = serve(session, [{ eventId: a(edits[0].id), fileBefore: true, fromLine: 1, throughLine: 1 }]);
-  assert.deepEqual(nonzero(withheld.record.refused), { withheld: 1 });
-  const shown = serve(session, [{ eventId: a(edits[1].id), fileBefore: true, fromLine: 1, throughLine: 1 }]);
-  assert.deepEqual([shown.record.served, nonzero(shown.record.refused)], [1, {}]);
+  for (const edit of edits) {
+    const shown = serve(session, [{ eventId: a(edit.id), fileBefore: true, fromLine: 1, throughLine: 1 }]);
+    assert.deepEqual([shown.record.served, nonzero(shown.record.refused)], [1, {}]);
+  }
 });
 
 test('D69 review F6: `withheld` refuses a prior state only for a credential or a harness folder; an earlier "unreadable" one is not_requestable', async (t) => {
-  // The adapter's closed list is the slicer's produced reasons and M36's `harness files` (re-declared, never imported).
-  assert.deepEqual([...PRIOR_WITHHELD_REASONS].sort(), [...Object.values(PRIOR_WITHHELD), 'harness files'].sort());
+  // The adapter's closed list is what an earlier slicer wrote: D68 R's and D69 b's reasons and M36's `harness files`
+  // (D90: the slicer produces none of them now; a ledger an earlier one wrote is still read).
+  assert.deepEqual([...PRIOR_WITHHELD_REASONS].sort(), ['credential-shaped path', 'harness files', 'harness home']);
   const rows = [
     humanAsk('Fix src/cli.js.'),
     call('r2', 'Read', { file_path: '/repo/src/cli.js' }),

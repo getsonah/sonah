@@ -11,8 +11,10 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Session } from '../../evidence/src/session.js';
 import { runReview } from '../../evidence/src/run-review.js';
 import { REVIEW_RUN_STATES } from '../../evidence/src/ledger.js';
-import { REVIEW_RUN_EXIT_CODES, reviewExitCode, runStateLine, attentionCliLines, ATTENTION_CLI_HEADING,
-  ATTENTION_CLI_NONE, notCoveredLine } from '../src/session-review-command.js';
+import { REVIEW_RUN_EXIT_CODES, reviewExitCode, runStateLine, notCoveredLine } from '../src/session-review-command.js';
+import { countLines } from '../src/report-output.js';
+import { reportModel } from '../../render/report-model.js';
+import { REPORT_COUNT_WORDS } from '../../render/report-words.js';
 
 const HARNESS = pathToFileURL(fileURLToPath(new URL('../../../scripts/session-review.mjs', import.meta.url))).href;
 const harness = await import(HARNESS);
@@ -58,19 +60,19 @@ test('D71 the CLI says what of its own review ran, and prints no status', async 
   const completed = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(runStateLine(completed, 'initial'), "Sonah's review: complete (session review complete). initial review.");
   const failed = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => null });
-  assert.equal(runStateLine(failed, 'cached'), "Sonah's review: incomplete (session review did not complete). cached review.");
-  // S6 (S5 review M2): after the run state, the checklist's attention lines (counts and fixed words), never a lone count
-  // of findings that reads as a pass; a choice not to act and a failure passed over marked `!`.
-  const lines = attentionCliLines(completed);
-  assert.equal(lines[0], ATTENTION_CLI_HEADING);
-  assert.ok(lines.length >= 2);
-  const marked = attentionCliLines({ ...completed, findings: [], decisions: [{ notActing: true, column: null }],
-    failures: [{ eventId: 'R1', handling: 'passed-over', outcome: 'ran-failed', form: 'exit' }] });
-  assert.ok(marked.includes('  ! 1 choice not to act — under What the agent decided.'));
-  assert.ok(marked.includes('  ! 1 failure the agent passed over — under Failures it passed over.'));
+  assert.equal(runStateLine(failed, 'cached'), "Sonah's review: incomplete (session review did not finish). cached review.");
+  // D97 (S6, S5 review M2 before it): after the run state, the count line — counts from the items in their tiers,
+  // never a lone count of findings that reads as a pass; a decision not to act and a failure passed over are items.
+  const session = delegatedSession();
+  const lines = countLines(reportModel(session, completed));
+  // (Sonah's own row for the message no row of the review cited is an ask it did not check.)
+  assert.deepEqual(lines, ['Must act 0 · Must know 0 · Good to know 0 · Your prompt: 1 not checked',
+    REPORT_COUNT_WORDS.emptyTiers], 'nothing found is never said to mean the work is right');
+  const marked = countLines(reportModel(session, { ...completed, findings: [],
+    decisions: [{ notActing: true, column: null, chosen: 'skip the docs' }],
+    failures: [{ eventId: 'O1', action: 'A1', handling: 'passed-over', outcome: 'ran-failed', form: 'exit' }] }));
+  assert.match(marked[0], /^Must act 0 · Must know 2 · Good to know 0 · /);
   assert.ok(marked.every((line) => !line.includes('**')));
-  assert.deepEqual(attentionCliLines({ findings: [], coverage: 'complete', codeCoverage: 'missing', reviewScope: 'session-only' }),
-    [ATTENTION_CLI_HEADING, `  ${ATTENTION_CLI_NONE}`]);
   for (const line of [runStateLine(completed, 'initial'), runStateLine(failed, 'initial'), ...lines, ...marked])
     assert.doesNotMatch(line, STATUS_WORDS);
 });
@@ -78,10 +80,10 @@ test('D71 the CLI says what of its own review ran, and prints no status', async 
 test('M33 wherever the coverage is partial, every declared cause is printed with its count', async () => {
   const report = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.equal(notCoveredLine(report), 'Not covered: 1 delegation(s) have no verified child evidence.');
+  assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper.');
   // D71 (a): the line follows the coverage, never a status; a complete coverage prints none.
   assert.equal(notCoveredLine({ ...report, sessionStatus: 'UNCHECKED', reviewStatus: 'UNCHECKED', codeStatus: 'UNCHECKED' }),
-    'Not covered: 1 delegation(s) have no verified child evidence.');
+    'Not covered: Sonah found no checked recording for 1 delegation to a helper.');
   assert.equal(notCoveredLine({ ...report, coverage: 'complete', codeCoverage: 'missing' }), null);
   assert.doesNotMatch(notCoveredLine(report), STATUS_WORDS);
   assert.doesNotMatch(notCoveredLine(report), new RegExp(SENTINEL));
@@ -118,8 +120,9 @@ test('M33 G2 a declared cause with no count is printed with the count of its dec
     sessionKey: 'session', lossOrdinal: 0 }];
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.equal(notCoveredLine(report), 'Not covered: 1 delegation(s) have no verified child evidence; '
-    + 'at least 1 part of the session evidence was incomplete.');
+  // The causes are listed as the PR comment lists them, with no semicolon (S6).
+  assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper · '
+    + 'at least 1 part of the session evidence is incomplete.');
 });
 
 /** The delegated session plus the agent's own words: a claim the challengers can uphold. */

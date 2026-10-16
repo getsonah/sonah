@@ -7,21 +7,10 @@
 // What fits is the DELTA: changed lines plus one line of context, git-shaped, capped with a
 // declared elision. Deterministic (line LCS, no clock, no randomness), zero dependencies.
 //
-// M33 R repair: every cut of a change is made AFTER redaction has scrubbed the whole change. A diff
-// used to be rendered from the raw texts and cut there — one line of context around each change, a
-// Write's first 30 lines, the 900/400 head and tail budget — and redaction saw only the lines left.
-// When a cut took away the line that makes the lines below it secret (a YAML block's `signing_key: |`,
-// a PEM block's BEGIN line, the first line of a continued one), those lines reached the ledger
-// verbatim while the same lines were masked in the write's own text. Now `editChange` and
-// `createChange` hand the WHOLE change, as diff lines, to redaction (redact/index.js
-// `scrubDiffWhole`: the diff channel's own rules), render the diff from the lines it returns, and only
-// then cut: which lines a diff shows is still decided by the raw change (a masked secret that changed
-// is still shown changing), but what each shown line holds is what redaction left of it. A line it
-// dropped is not shown and is counted in its note; what it declared over the lines shown is carried
-// to redaction, which declares it (`diffRedaction`). A change with nothing to redact renders exactly
-// the bytes it always did.
-
-import { scrubDiffWhole, diffDropNotes } from '../../redact/index.js';
+// D90 (owner decision 2026-10-15, privacy is not a design constraint): a diff is rendered from the change as recorded.
+// M33 R repair had it rendered from the change as redaction scrubbed it whole (redact `scrubDiffWhole`), then cut; with
+// nothing masked, those are the recorded lines, and the cuts are the same: one line of context around each change, a
+// Write's first 30 lines, the 900/400 head and tail budget.
 
 export const DIFF_BUDGET = 1_400;           // chars per event, head/tail split below
 const HEAD = 900;
@@ -91,8 +80,7 @@ function fallback(A, B, line) {
     ...head('+', A.length, B.length), `[… ${Math.max(0, B.length - FALLBACK_LINES)} new lines elided …]`];
 }
 
-/** Line-level minimal diff between two strings: changed lines with `ctx` lines of context. Of the RAW texts: the
- *  slicer never emits it (`editChange` renders the same lines from the change as redaction scrubbed it whole). */
+/** Line-level minimal diff between two strings: changed lines with `ctx` lines of context. */
 export function minimalDiff(oldText, newText, { ctx = 1 } = {}) {
   const A = String(oldText ?? '').split('\n');
   const B = String(newText ?? '').split('\n');
@@ -116,60 +104,15 @@ export function budgetDiff(diff, budget = DIFF_BUDGET) {
   return [...head, `[… ${Math.max(0, elided)} diff lines elided …]`, ...tail].join('\n');
 }
 
-/**
- * What a change's diff carries once it is rendered from `whole` (`scrubDiffWhole` of every line of the change): the
- * text, then a note for each line redaction dropped among the `shown` ones; and what redaction declared over them —
- * `reasons`, and `lost` when it dropped one.
- */
-function settled(text, whole, shown) {
-  const on = new Set(shown);
-  const drops = shown.filter((k) => whole.lines[k] === null && whole.drops[k] !== null).map((k) => whole.drops[k]);
-  const notes = diffDropNotes(drops);
-  const reasons = whole.groups.filter((g) => g.at.some((k) => on.has(k))).flatMap((g) => g.reasons);
-  const diff = notes.length ? [...(text === '' ? [] : [text]), ...notes].join('\n') : text;
-  return { diff, reasons, lost: drops.length > 0 };
-}
+/** The diff of an Edit-shaped write (old -> new): its changed lines with one line of context, within the budget.
+ *  D69 (c): no computed hunk header. */
+export const editDiff = (oldText, newText) => budgetDiff(minimalDiff(oldText, newText));
 
-/**
- * The diff for an Edit-shaped write (old -> new): `{ diff, reasons, lost }`. M33 R repair: rendered from the whole change
- * as redaction scrubbed it (`scrubDiffWhole`), and only then cut. D69 (c): no computed hunk header. D84: `mask: false`
- * (a session review's load) renders it from the change as recorded; the cut is the same.
- */
-export function editChange(oldText, newText, { mask = true } = {}) {
-  const A = String(oldText ?? '').split('\n');
-  const B = String(newText ?? '').split('\n');
-  const ops = editScript(A, B);
-  const whole = scrubDiffWhole(ops ? ops.map(([marker, line]) => marker + line)
-    : [...A.map((line) => `-${line}`), ...B.map((line) => `+${line}`)], { mask });
-  const at = (k) => whole.lines[k];
-  let shown;
-  let body;
-  if (ops) {
-    shown = windowOf(ops, 1);
-    body = render(shown, at).join('\n');
-  } else {
-    const side = (from, count) => Array.from({ length: Math.min(FALLBACK_LINES, count) }, (_, k) => from + k);
-    shown = [...side(0, A.length), ...side(A.length, B.length)];
-    body = fallback(A, B, (_, k) => at(k)).join('\n');
-  }
-  return settled(budgetDiff(body), whole, shown);
-}
-
-/** The diff for a whole-file write: all additions, head shown — `{ diff, reasons, lost }`. M33 R repair: rendered from
- *  the whole body as redaction scrubbed it (`scrubDiffWhole`), and only then cut to its head. D69 (c): no names listed.
- *  D84: `mask: false` renders it from the body as recorded. */
-export function createChange(content, { mask = true } = {}) {
+/** The diff of a whole-file write: all additions, its first lines shown, within the budget. D69 (c): no names listed. */
+export function createDiff(content) {
   const lines = String(content ?? '').split('\n');
-  const whole = scrubDiffWhole(lines.map((line) => `+${line}`), { mask });
-  const shown = Array.from({ length: Math.min(CREATE_LINES, lines.length) }, (_, k) => k);
-  const head = shown.map((k) => whole.lines[k]).filter((line) => line !== null);
-  const rest = lines.length - shown.length;
-  const parts = [...head];
-  if (rest > 0) parts.push(`[… ${rest} more lines …]`);
-  return settled(budgetDiff(parts.join('\n')), whole, shown);
+  const head = lines.slice(0, CREATE_LINES).map((line) => `+${line}`);
+  const rest = lines.length - head.length;
+  if (rest > 0) head.push(`[… ${rest} more lines …]`);
+  return budgetDiff(head.join('\n'));
 }
-
-/** The diff text of an Edit-shaped write (`editChange`). */
-export const editDiff = (oldText, newText) => editChange(oldText, newText).diff;
-/** The diff text of a whole-file write (`createChange`). */
-export const createDiff = (content) => createChange(content).diff;

@@ -12,7 +12,7 @@ import { sessionFromLedger, WORKFLOW_GAP_NOTES, WORKFLOW_RUN_GAP_NOTES } from '.
 // C-01 event identity: sessions are registered, and their events named by positional labels (stable-ids-fixture.js).
 import { adapt, named, labelOf, withoutIdentity, withoutRecordedFacts } from '../../evidence/test/stable-ids-fixture.js';
 import { runReview, planWindowRequests } from '../../evidence/src/run-review.js';
-import { renderSessionStory } from '../../render/session-story.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
 import { captureCase, windowNarrative, fixtureJudge } from './m33-fast-profile-fixture.js';
 import { modulesBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fixture.js';
 import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
@@ -147,13 +147,16 @@ test('M33 W moving request bytes is intended for a linked session, and only for 
   'an unresolved run keeps its M33 D declaration (workflow_run_unresolved)');
 });
 
-test('M33 W a run that resolves but links no agent moves the ledger and its gaps only, never a request or story byte', async (t) => {
+test('M33 W a run that resolves but links no agent moves the ledger and its gaps only, never a request, and the report only where it says them', async (t) => {
+  // D97: the report .md (the story since /32) says what Sonah could not check, the gaps among it: that section is the
+  // only one a gap moves, so it is left out of the comparison; every other byte of the report holds.
+  const unchecked = (md) => md.slice(0, md.indexOf('<details><summary>What Sonah could not check'));
   const capture = async (session) => {
     const requests = await captureCase({ runReview, planWindowRequests },
       { name: 'x', session, narrativeOf: (s, r) => windowNarrative(s, r.window) });
     const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
       judge: fixtureJudge({ narrativeOf: (r) => windowNarrative(session, r.window) }) });
-    return { ...requests, story: renderSessionStory(session, report) };
+    return { ...requests, story: unchecked(renderReportMarkdown(session, report)) };
   };
   const unresolved = await capture((await load(t, { run: null })).session);
   const base = linkedRun();
@@ -343,8 +346,10 @@ test('M33 W a run directory is accepted only at its exact recorded place', async
   assert.equal(await at(own, { sessionIds: ['someone-else'] }), null, 'a session the lineage never recorded');
   assert.deepEqual(await at('/nowhere', { sessionIds: [], callSessionId: SID }), { dir: own, sessionId: SID },
     'else the call\'s own session\'s run directory');
-  assert.deepEqual(keptIdentities([RUN, SID, `ghp_${'Zk3Qw8Rt'.repeat(4)}Ab9x`]), [RUN, SID],
-    'a value the identity scan withholds is never a key');
+  // D90 (owner decision 2026-10-15): nothing scans an identity: every text is kept (its shape is checked where it names
+  // a directory, above); a value that is not text is never a key.
+  assert.deepEqual(keptIdentities([RUN, SID, `ghp_${'Zk3Qw8Rt'.repeat(4)}Ab9x`, null, 7, {}]),
+    [RUN, SID, `ghp_${'Zk3Qw8Rt'.repeat(4)}Ab9x`]);
 });
 
 test('M33 W a symlink never links a run or an agent', async (t) => {
@@ -397,7 +402,7 @@ test('M33 W linking is deterministic: identical bytes twice, whatever order the 
   const bytes = (ledger) => JSON.stringify(redact(ledger).ledger);
   assert.equal(bytes(again), bytes(first.raw));
   assert.equal(bytes(reversed.raw), bytes(first.raw), 'no path, listing order or creation order reaches the ledger');
-  const story = async (s) => renderSessionStory(s, await runReview({ session: s, pr: null, reviewScope: 'session-only',
+  const story = async (s) => renderReportMarkdown(s, await runReview({ session: s, pr: null, reviewScope: 'session-only',
     concurrency: 1, judge: fixtureJudge({ narrativeOf: (r) => windowNarrative(s, r.window) }) }));
   assert.equal(await story(reversed.session), await story(first.session));
 });
@@ -550,7 +555,7 @@ const MOVED_BY_INTEGRATION = Object.freeze({
   ]),
 });
 const STABLE_MODULES = Object.freeze({ loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests,
-  captureCase, windowNarrative, fixtureJudge, renderSessionStory });
+  captureCase, windowNarrative, fixtureJudge, renderStory: renderReportMarkdown });
 
 /**
  * M34 labels (C-02 "Slice-time labels"): the one value the labels moved in this file — each case's whole-ledger digest,
@@ -830,6 +835,47 @@ const MOVED_BY_JUDGMENT_FIRST = Object.freeze([
   { story: 'f47a4d705a2df11f8992b3a8e787f3ef95d0473452960f3466b45eadaad9d2fe' },
   { story: 'c4abb0c395d9948dccebae7d8bc24aa83df603be04882b4a80e7ad93bd838ec5' },
   { story: '7df06cb837b7f49ec3ff19d2cc697c6f5e6460e66a6cb7e8d8021ef54051350b' }]);
+/** D90 (owner decision 2026-10-15; story /30, the agentic code step's release item): every case's story, by its footer
+ *  alone — it is generated from the recorded session, no longer "from a redacted recording" (nothing is masked for a
+ *  person). Nothing renders a story back, so every capture below carries it. No ledger, gap, request, label, window or
+ *  window failure moved. */
+const MOVED_BY_AGENTIC = Object.freeze([
+  { story: 'f46231e377eda71968b8f7142ac551ba0e2aab8f9c90089676c95330ca1fc971' },
+  { story: 'b9ff29033506a2eeed76a03a3c93174635aafc14b8d12df7d74df3a35b0ba904' },
+  { story: 'c80799e91498322e46c1abd1bd1608060abb6571f405b5e6dd7d3eaae762e6d5' }]);
+/** D97 (STE at about 80%): every case's story, by the fixed words it reads from review.js and code-report.js alone
+ *  (the attention lines, the folded section, the coverage causes and the code review's words, rewritten in STE).
+ *  Nothing renders a story back, so every capture below carries it. No ledger, gap, request, label, window or window
+ *  failure moved. */
+const MOVED_BY_STE = Object.freeze([
+  { story: '385936d63c52c70e5cb034bc3301cb25e40d8e6e1eb3b06af307886c9ac68d32' },
+  { story: '9942528a0abb93402c1f0ddd1bf13b37e61c77ed80d71a0b10ca22839e46dd5f' },
+  { story: 'febbb1e8e711547e91b58657b923fa0706b741d83624174760a7f4ee48c74b82' }]);
+/** D97 (owner decisions 2026-10-16; story /32): every case's story, by what the story is — the report .md, the report
+ *  model rendered for a pull request comment, in the STE words (MOVED_BY_STE's tables). Nothing renders a story back,
+ *  so every capture below carries it. No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_REPORT_MD = Object.freeze([
+  { story: '6dbadfc7f5ec2c3d3649935fc707d00728348b231a020f8fd5d38bbc0b3c0ec0' },
+  { story: '08cbf4a58e4a4f0111ca8bc31b323f6d22b3972cf331538974170120aa1ba925' },
+  { story: 'eafd2147169b2d8db8e956b93d576f2bc299d9c9b30b76af8b75f749fa012394' }]);
+/** D97 (the review of the .md and its samples, story /32 unreleased): every case's story, by the report's fixes alone —
+ *  the word count, the prompt table's one coverage line, code spans, labels that name their item, a repository's
+ *  missing links said once, the tiers of "you asked, the agent decided how" (D96 amended). Nothing renders a story
+ *  back, so every capture below carries it. No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_MD_FIXES = Object.freeze([
+  { story: '9da95f12bc363d397e3d0c1073ae800878f86319672eba01ed3ab3fbddb38b86' },
+  { story: '717a74c510fa5c786d27699b4b793b3737854100d6b024d41a57272a98220a42' },
+  { story: '076cd70a85f709bd946fb40afe7755154dad86d148c8d8574cc8d65b4c50da3d' }]);
+/** The beta.2 release check's render fixes (story /32 unreleased): every case's story, by the report's words alone — no
+ *  sentence of silence for an unlinked quote, a decision's dimension in its what line, the evidence fold's count gone,
+ *  a refused command said apart, and the claims list's own statuses and words; and, as none of these cases has an edit
+ *  that landed, no line about a last edit, and an empty list of what the agent said it did not do said as what Sonah
+ *  found. Nothing renders a story back, so every capture below carries it. No ledger, gap, request, label, window or
+ *  window failure moved. */
+const MOVED_BY_RELEASE_CHECK = Object.freeze([
+  { story: 'ef0c7dfed30b560cd0c19ae6de28da70c69656b39d107c2be5054367aa980579' },
+  { story: '24eafcef3838bea79e0b0790bf321ebc8842e683c67ee218177bde7c95a0a6e2' },
+  { story: '9f50a0cce2915bdfd6f772c4ac85e36b8ca4ad21a3d0ea9be69062c4fb3152e8' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -937,10 +983,14 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // D77 C: and one case's story (MOVED_BY_REQUEST_STEPS). The column fix: and every case's requests
   // (MOVED_BY_FIX_COLUMN). The asks fixes: and every case's requests once more (MOVED_BY_ASKS_FIXES). W1 B: and once
   // more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte. D88: and every story once
-  // more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back.
+  // more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back. D90: and every story once more
+  // (MOVED_BY_AGENTIC), the same way. D97: and every story once more (MOVED_BY_STE), the same way; and once more
+  // (MOVED_BY_REPORT_MD), the story now the report .md; and once more (MOVED_BY_MD_FIXES), by the report's fixes; and
+  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes.
   const asksFixes = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
     ...MOVED_BY_D71_CHANNELS[at], ...MOVED_BY_D71_FIX[at], ...MOVED_BY_S7[at], ...MOVED_BY_REQUEST_STEPS[at],
-    ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at] }));
+    ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at], ...MOVED_BY_AGENTIC[at],
+    ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at] }));
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: and once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

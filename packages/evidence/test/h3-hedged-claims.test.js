@@ -34,9 +34,10 @@ import { HEDGED_CLAIMS_TEXT, HEDGED_CLAIMS_VERSIONS, beforeHedgedClaims, request
   from './h3-hedged-claims-fixture.js';
 import { beforeStatusFact } from './status-fact-fixture.js';
 import { INTEGRATION_VERSIONS, LABELS_MERGE_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_NARROW_VERSIONS, INTEGRATION_SUPPORT_SENTENCE,
-  beforeIntegrationText, DISCLOSURE_WORDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS, D71_FIX_VERSIONS, S7_VERSIONS, RELEASE_REVIEW_VERSIONS, SECOND_RELEASE_REVIEW_VERSIONS } from './m33-integration-fixture.js';
+  beforeIntegrationText, DISCLOSURE_WORDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS, D71_FIX_VERSIONS, S7_VERSIONS, RELEASE_REVIEW_VERSIONS, SECOND_RELEASE_REVIEW_VERSIONS,
+  CHOICE_REANCHOR_VERSIONS } from './m33-integration-fixture.js';
 import { FIX_COLUMN_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS,
-  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS } from './m33-integration-fixture.js';
+  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS } from './m33-integration-fixture.js';
 import { D80_VERSIONS } from './m33-integration-fixture.js';
 
 const PROFILES = [null, 'm33-fast', 'm33-lean'];
@@ -222,7 +223,10 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   // The second release review moved it once more (SECOND_RELEASE_REVIEW_VERSIONS: prompt): that file's path is
   // compared under the working directory.
   assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.before, RELEASE_REVIEW_VERSIONS.prompt.after);
-  assert.equal(prompt.PROMPT_VERSION, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+  // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt): the re-ask of a choice not to act whose existence check
+  // refuted its words.
+  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+  assert.equal(prompt.PROMPT_VERSION, CHOICE_REANCHOR_VERSIONS.prompt.after);
   // The disclosure narrowing moved the challenge once more (DISCLOSURE_NARROW_VERSIONS: /15 -> /16).
   assert.equal(DISCLOSURE_NARROW_VERSIONS.challenge.before, INTEGRATION_VERSIONS.challenge.after);
   // Stable event ids moved it once more (/16 -> /17): a recorded session's event ids alone (C-01 event identity).
@@ -267,7 +271,13 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   // check's checker sees what its row states again.
   assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before, CODE_STEP_REREVIEW_VERSIONS.challenge.after);
 
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
   // M33 integration moved it once more (`sonah.narrative/17`): one version above every branch's own (C-05 integration).
   // The M33 labels merge moved it once more (`sonah.narrative/18`): the slice-time marker headers.
   // Stable event ids moved it once more (`sonah.narrative/19`): every recorded event's id (C-01 event identity).
@@ -284,8 +294,9 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
   // M33 integration moved it once more (`sonah.challenge/15`): one version above every branch's own (C-05 integration).
   // The disclosure narrowing moved it once more (`sonah.challenge/16`): a disclosure item's proposition and note only.
   // Stable event ids moved it once more (`sonah.challenge/17`): every recorded event's id (C-01 event identity).
@@ -312,7 +323,11 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/44');
   const base = session();
   // D71 (S2): a session-only request carries no task text — the brief says H3's rules once (SESSION_NOW) — so only the
   // combined request still carries these texts, exactly as before (D71 i).

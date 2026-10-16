@@ -6,8 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionFromLedger, INSTRUCTION_GAP_NOTES, UNREAD_ANSWER_NOTE } from '../adapters/sonah-ledger.js';
-import { renderReview, coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { instructionReviewScope, rootInstructionLossOf } from '../src/ledger.js';
+
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line). */
+const causeLine = (report) => coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
 
 const NOTE = INSTRUCTION_GAP_NOTES.refusal_session_unknown;
 const led = ({ capture, marks = [] }) => ({ version: 1, session: 'l1s-unknown', claim: {},
@@ -55,8 +58,11 @@ test('L1 session-type review: a count the marks do not cover, a count out of sha
 
 test('L1 session-type review: the loss is named by its own cause', () => {
   assert.ok(COVERAGE_CAUSES.includes('instructions_refusal_session_unknown'));
-  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 1 }), '1 refused call was recorded in a '
-    + 'session that does not record whether a human was there to answer, so it may hold an answer that was not read');
+  // The refused call is the subject, so "the call" (or "any of them") is what can hold an answer, never the session.
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 1 }), '1 refused call is in a session that '
+    + 'does not record whether you were there to answer, so the call can hold an answer that Sonah did not read');
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 2 }), '2 refused calls are in a session that '
+    + 'does not record whether you were there to answer, so any of them can hold an answer that Sonah did not read');
   const report = { repo: { host: 'github.com', id: 'l1s' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 2, instructions: 2,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -66,8 +72,8 @@ test('L1 session-type review: the loss is named by its own cause', () => {
     coverage: 'partial', codeCoverage: 'complete' };
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]),
     [['instructions_refusal_session_unknown', 3]]);
-  const header = renderReview(report).split('\n').find((line) => line.startsWith('Not covered:'));
-  assert.match(header, /3 refused calls were recorded in a session that does not record whether a human was there/);
+  const header = causeLine(report);
+  assert.match(header, /3 refused calls are in a session that does not record whether you were there to answer/);
 });
 
 // Review finding L1S-headless-parent-helper-refusal (not built: a helper run under a non-interactive parent is not

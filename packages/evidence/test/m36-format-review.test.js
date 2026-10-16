@@ -204,21 +204,38 @@ const toolCall = (id, name, input) => row({ type: 'assistant', message: { role: 
   content: [{ type: 'tool_use', id, name, input }] } });
 const toolResult = (id, content, sidecar) => row({ type: 'user', ...(sidecar ? { toolUseResult: sidecar } : {}),
   message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] } });
-async function recorded(rows) {
+/** `rows` as one recording, sliced, `persisted` (the ledger as an earlier Sonah may have written it; itself by default),
+ *  redacted and adapted. */
+async function recorded(rows, persisted = (ledger) => ledger) {
   const dir = await mkdtemp(join(tmpdir(), 'm36r-'));
   try {
     const path = join(dir, `${SID}.jsonl`);
     await writeFile(path, `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`);
-    const s = sessionFromLedger(redact(await sliceLineage([path], { cwd: '/repo' })).ledger, { sessionKey: 's' });
+    const s = sessionFromLedger(redact(persisted(await sliceLineage([path], { cwd: '/repo' }))).ledger,
+      { sessionKey: 's' });
     return { session: s, prompt: planWindowRequests({ session: s, reviewScope: 'session-only' }).requests[0].request.prompt };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
-test('M36 review R, L: an output Sonah withheld is said to be withheld — never labelled a recorded empty result', async () => {
+test('M36 review R, L, D90: an output an earlier Sonah withheld is said to be withheld — never labelled a recorded empty result', async () => {
   const settings = '/repo/config/.env';
-  const { session: s, prompt } = await recorded([human('Check the settings.'), toolCall('r9', 'Read', { file_path: settings }),
+  const rows = [human('Check the settings.'), toolCall('r9', 'Read', { file_path: settings }),
     toolResult('r9', '     1\tMODE=x\n     2\tLEVEL=y', { type: 'text', file: { filePath: settings, content: 'MODE=x\nLEVEL=y',
-      numLines: 2, startLine: 1, totalLines: 2 } }), agentSaid('Read it.')]);
+      numLines: 2, startLine: 1, totalLines: 2 } }), agentSaid('Read it.')];
+  // D90 (owner decision 2026-10-15): the slicer withholds no output for the file it read (D68 R withheld a credential-
+  // shaped file's): the result is shown.
+  const shown = (await recorded(rows)).session.events.find((e) => e.kind === 'observation');
+  assert.notEqual(shown.outputWithheld, true);
+  assert.deepEqual(shown.output.length > 0, true);
+  // A ledger an earlier slicer wrote with that output withheld (`observationWithheld`, its text gone) is still read as
+  // withheld.
+  const withheldBefore = (ledger) => {
+    for (const event of ledger.ledger) if (Array.isArray(event.tailLines) && event.path === 'config/.env') {
+      delete event.tailLines; delete event.outputSpans; event.observationWithheld = true;
+    }
+    return ledger;
+  };
+  const { session: s, prompt } = await recorded(rows, withheldBefore);
   const result = s.events.find((e) => e.kind === 'observation');
   assert.equal(result.outputWithheld, true);
   const label = prompt.split('\n').find((l) => l.startsWith('  recorded: tool Read'));

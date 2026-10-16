@@ -1,5 +1,5 @@
-// The clock for the linearity tests (redaction, and the slicer's). A test file, not a test: `npm test` runs
-// `*.test.js` only.
+// The clock for the linearity tests (the slicer's; redaction's went with its detectors, D90). A test file, not a test:
+// `npm test` runs `*.test.js` only.
 //
 // Each linearity test bounds the process CPU time that redacting one adversarial megabyte takes. CPU time
 // is not wall time, but a busy machine still adds to it: other processes on shared cores, frequency

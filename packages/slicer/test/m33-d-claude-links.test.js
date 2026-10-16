@@ -88,12 +88,13 @@ test('M33 D F6: a scrubbed hand-off session blocks the resumed proof and never b
   const scrubbed = delegation({ sessionId: null, identityUncheckedFields: ['sessionId'] });
   assert.equal(delegationIdentityUnverified(scrubbed), false, 'the child identity itself survived');
   assert.equal(resolveChildLinks([scrubbed], [child()], [resumed])[0].reason, R.PARENT_INVALID);
-  const secret = `ghp_${'A'.repeat(36)}`;
-  const cleaned = redact({ ask: [], ledger: [], claim: {}, delegations: [delegation({ sessionId: secret })], dropped: [] })
-    .ledger.delegations[0];
+  // D90 (owner decision 2026-10-15): redaction scrubs no identity now; one a ledger declared unchecked stays unchecked.
+  const cleaned = redact({ ask: [], ledger: [], claim: {}, delegations: [scrubbed], dropped: [] }).ledger.delegations[0];
   assert.equal(cleaned.sessionId, null);
   assert.deepEqual(cleaned.identityUncheckedFields, ['sessionId']);
-  assert.equal(JSON.stringify(cleaned).includes(secret), false);
+  const keyShaped = `ghp_${'A'.repeat(36)}`;
+  assert.equal(redact({ ask: [], ledger: [], claim: {}, delegations: [delegation({ sessionId: keyShaped })], dropped: [] })
+    .ledger.delegations[0].sessionId, keyShaped, 'a recorded session id is carried as recorded');
 });
 
 test('M33 D F6: recording identity names a conflict that is only two recorded sessionIds', () => {

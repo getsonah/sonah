@@ -14,7 +14,7 @@ import { supportCheck } from '../src/claims.js';
 import { runReview } from '../src/run-review.js';
 import { CLAIM_NOTE, CHALLENGE_PROFILE } from '../src/challenge.js';
 import { SUPPORT_ASKED, RESOLUTION_CHALLENGE_OUTCOMES } from '../src/ledger.js';
-import { W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS,
+import { W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS,
   textBeforeW3, textBeforeFixReview }
   from './m33-integration-fixture.js';
 
@@ -70,14 +70,24 @@ test('W3 F2: CLAIM_NOTE says what a failed result can support; one version bump,
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   assert.deepEqual([W3_VERSIONS.challenge.before, W3_VERSIONS.challenge.after, FIX_REVIEW_VERSIONS.challenge.after],
     [W2_VERSIONS.challenge.after, FIX_REVIEW_VERSIONS.challenge.before, CODE_PASS_VERSIONS.challenge.before]);
   assert.equal(CODE_PASS_VERSIONS.challenge.after, CODE_STEP_VERSIONS.challenge.before);
   assert.equal(CODE_STEP_VERSIONS.challenge.after, CODE_STEP_REVIEW_VERSIONS.challenge.before);
   assert.equal(CODE_STEP_REVIEW_VERSIONS.challenge.after, CODE_STEP_REREVIEW_VERSIONS.challenge.before);
   assert.equal(CODE_STEP_REREVIEW_VERSIONS.challenge.after, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before);
-  assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after, CHALLENGE_PROFILE.version);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(CLEANUP_VERSIONS.challenge.after, CHALLENGE_PROFILE.version);
   assert.ok(!textBeforeW3(CLAIM_NOTE).includes('never that a run or check passed'));
   assert.deepEqual([...SUPPORT_ASKED], ['staleAsked', 'failedAsked']);
 });

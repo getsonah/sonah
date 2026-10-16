@@ -55,15 +55,14 @@ test('result identity stays within one source and duplicate result records remai
   }
 });
 
-test('redaction clears secret-shaped identities before hashes or links can use them', async () => {
+test('D90: a secret-shaped identity is carried as recorded, and hashed as recorded', async () => {
   const secret = 'sk-ant-api03-' + 'A'.repeat(80);
   const raw = await sliceLineage([await fixture([user('Review it.'), call(secret), result(secret, { agentId: secret })])]);
   assert.equal(raw.delegations[0].childId, secret);
   const cleaned = redact(raw).ledger;
-  assert.equal(cleaned.delegations[0].childId, null);
-  assert.equal(cleaned.delegations[0].callId, null);
-  assert.equal(cleaned.delegations[0].identityUnchecked, true);
-  assert.equal(JSON.stringify(cleaned).includes(secret), false);
+  assert.equal(cleaned.delegations[0].childId, secret);
+  assert.equal(cleaned.delegations[0].callId, secret);
+  assert.notEqual(cleaned.delegations[0].identityUnchecked, true);
   assert.equal(typeof sliceHash(cleaned), 'string');
 });
 

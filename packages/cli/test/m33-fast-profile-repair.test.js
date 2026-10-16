@@ -16,7 +16,6 @@ import assert from 'node:assert/strict';
 import * as reviewRun from '../../evidence/src/run-review.js';
 import { reviewInputBytes } from '../../evidence/src/challenge.js';
 import { WINDOW_REQUEST_MAX_BYTES } from '../../evidence/src/windows.js';
-import { renderReview } from '../../evidence/src/review.js';
 import { contradictedNarrative, contradictedSession, ownReceipt, fixtureJudge, inventorySession,
   turnNarrative, turnSession, windowNarrative } from './m33-fast-profile-fixture.js';
 
@@ -129,8 +128,6 @@ test('M33 J a tiered window\'s challenge shortfall states no single pass count',
   assert.equal(fastWindow.shortfall.challenge.reason, 'votes_invalid');
   assert.equal(fastWindow.shortfall.challenge.passes, null, 'items asked once and items asked three times');
   assert.ok(Number.isSafeInteger(fastWindow.shortfall.challenge.validVotes));
-  assert.doesNotMatch(renderReview(fast), /valid votes of \d+ passes/);
   const standard = await run(null);
   assert.equal(standard.windowResults[0].shortfall.challenge.passes, 3, 'standard is unchanged');
-  assert.match(renderReview(standard), /valid votes of 3 passes/);
 });

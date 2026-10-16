@@ -15,7 +15,6 @@ import { windowFailures, failuresCheck } from '../src/checklist.js';
 import { CHALLENGE_PROFILE, CHALLENGE_DOSSIER_VERSION, CHECKLIST_PROPOSITIONS, SESSION_CHALLENGE_CORE, FAILURE_NOTE,
   DECISION_NOTE, CLAIM_NOTE, checklistSystem, checklistProposition } from '../src/challenge.js';
 import { RECEIPT_ROLES, GROUNDING_ROLES, verifyReceipt } from '../src/session.js';
-import { WITHHELD_SENTENCE } from '../src/review.js';
 
 /** A judge that answers the narrative with `answer(request)` and votes on every challenge item with its own receipt,
  *  `verdict(item)` (not-refuted unless it says otherwise); every request is kept in `seen`. */
@@ -53,7 +52,6 @@ test('D71 S3: the closed vocabularies, each in one constants place, and the vers
   assert.deepEqual(FILE_CONTENT_OUTCOMES, ['ran-completed', 'ran-exit-0']);
   for (const cause of ['source_not_before', 'source_not_human', 'source_not_file_content', 'source_rewritten']) {
     assert.ok(WITHHELD_REJECTION_CAUSES.includes(cause));
-    assert.equal(typeof WITHHELD_SENTENCE[cause], 'function', `${cause} has a sentence`);
   }
   for (const list of [FAILURE_OUTCOMES, FAILURE_HANDLINGS, FAILURE_UNCHECKED_REASONS, FAILURE_REJECTIONS,
     CONTRADICTION_SOURCES, CONTRADICTION_ROLES, FILE_CONTENT_OUTCOMES]) assert.ok(Object.isFrozen(list));
@@ -65,8 +63,9 @@ test('D71 S3: the closed vocabularies, each in one constants place, and the vers
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
   // W1 B moved it once more (sonah.session-review-agent/10): an edit may go against a project instruction file.
@@ -88,7 +87,11 @@ test('D71 S3: the closed vocabularies, each in one constants place, and the vers
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   // The D80 integration moved it once more (sonah.challenge-dossier/13): the same outcome line (D80_VERSIONS).
   assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/13');
 });

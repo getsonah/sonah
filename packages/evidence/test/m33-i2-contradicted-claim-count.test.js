@@ -10,7 +10,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 import { runReview } from '../src/run-review.js';
-import { renderReview } from '../src/review.js';
 
 const TEXT = {
   ask: 'SYNTHETIC_I2_ASK: add the retry helper, then run the unit, lint, build, push, migrate and integration steps.',
@@ -129,7 +128,9 @@ const windowOf = (report) => {
   assert.equal(report.windowResults.length, 1, 'the synthetic session is one window');
   return report.windowResults[0];
 };
-const WITHHELD_LINE = /proposal\(s\) withheld: their quotes did not match the record/;
+/** The withheld proposals no specific cause names: those whose quotes did not match the record. */
+const quotesWithheld = (report) => (report.withheld?.proposals ?? 0)
+  - Object.values(report.withheld?.causes ?? {}).reduce((n, k) => n + k, 0);
 
 test('M33 I2 a contradicted claim whose quotes match exactly is published and not withheld', async () => {
   const report = await reviewOf([CLAIMS.exact]);
@@ -141,7 +142,7 @@ test('M33 I2 a contradicted claim whose quotes match exactly is published and no
   assert.equal(windowOf(report).grounding.withheld, 0);
   assert.equal(windowOf(report).grounding.claimsRejected, 0);
   assert.equal(windowOf(report).sessionGroundingComplete, true);
-  assert.doesNotMatch(renderReview(report), WITHHELD_LINE);
+  assert.equal(quotesWithheld(report), 0);
 });
 
 test('M33 I2 a contradicted claim whose stated quote grounds only after its snap is published, never also withheld', async () => {
@@ -158,7 +159,7 @@ test('M33 I2 a contradicted claim whose stated quote grounds only after its snap
   assert.equal(windowOf(report).grounding.claimsRejected, 0);
   assert.equal(windowOf(report).sessionGroundingComplete, true);
   assert.deepEqual(report.rejectedFindings, []);
-  assert.doesNotMatch(renderReview(report), WITHHELD_LINE);
+  assert.equal(quotesWithheld(report), 0);
   // The per-part verdict is the exact quote's: the published finding, and nothing withheld beside it.
   assert.deepEqual(report.parts, exact.parts);
   assert.equal(report.sessionStatus, exact.sessionStatus);
@@ -184,7 +185,7 @@ test('M33 I2 a contradicted claim whose quote cannot be repaired is not publishe
     assert.equal(report.withheld.proposals, 1, `${name}: counted once, never again as its finding`);
     assert.equal(windowOf(report).grounding.withheld, 1, name);
     assert.equal(windowOf(report).sessionGroundingComplete, true, `${name}: a withheld claim does not cap grounding`);
-    assert.match(renderReview(report), WITHHELD_LINE, name);
+    assert.ok(quotesWithheld(report) > 0, name);
   }
 });
 
@@ -261,7 +262,7 @@ test('M33 I2 a contradicted claim with blank text is counted once, as unread, an
       assert.equal(report.sessionStatus, 'UNCHECKED', `${name}: no DECIDE rests on an unread claim`);
       assert.deepEqual(report.parts.map((part) => [part.part, part.status, part.reasons]),
         [['T1', 'UNCHECKED', ['window_incomplete']]], name);
-      assert.doesNotMatch(renderReview(report), WITHHELD_LINE, name);
+      assert.equal(quotesWithheld(report), 0, name);
     }
   }
   // An exact promise copy of its statement is not folded into a finding that was never published: it is

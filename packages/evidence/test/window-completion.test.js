@@ -407,7 +407,9 @@ test('W3d-1 a window records the transport class beside its closed failure token
     assert.ok(!JSON.stringify(report).includes('SYNTHETIC_NOT_A_CLASS'));
   }
   assert.deepEqual(reviewRun.TRANSPORT_SHORTFALL,
-    ['timeout', 'exit_nonzero', 'output_limit', 'spawn_failed', 'no_output', 'unknown']);
+    ['timeout', 'exit_nonzero', 'output_limit', 'spawn_failed', 'no_output', 'unknown',
+      // The agent transport's two limits (cli/src/review-judge.js AGENT_RESULT_FAILURES).
+      'turn_limit', 'structured_output_failed']);
   for (const token of reviewRun.TRANSPORT_SHORTFALL) assert.match(token, /^[a-z][a-z_]*$/);
 });
 

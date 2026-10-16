@@ -312,13 +312,13 @@ export function parseHarnessArgs(argv) {
 }
 
 /** The recorded session, exactly as the session count replay loads it: parent and linked children,
- *  redacted before anything else reads it — with masking off (D84: the model reads the session unredacted; this
- *  utility writes only owner-only files, 0600 in a 0700 directory). */
+ *  bounded and validated before anything else reads it (redact; D90: nothing is masked; this utility writes only
+ *  owner-only files, 0600 in a 0700 directory). */
 async function loadRecordedSession({ parent, codexHome, sessionKey }) {
   const files = [resolve(parent)];
   const raw = await loadSessionEvidence(files, { outcomes: await outcomesFor(files), reviewLinkedChildren: true,
-    recordingRoots: { codex: join(resolve(codexHome), 'sessions') }, mask: false });
-  const { ledger } = redact(raw, { mask: false });
+    recordingRoots: { codex: join(resolve(codexHome), 'sessions') } });
+  const { ledger } = redact(raw);
   return sessionFromLedger(ledger, { sessionKey });
 }
 

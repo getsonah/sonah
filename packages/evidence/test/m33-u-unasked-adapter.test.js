@@ -285,11 +285,17 @@ test('U a Codex capped ask is named too: windows and decisions before it keep a 
 });
 
 test('U two closed causes of one ask are two losses, never de-duplicated into one', async (t) => {
-  // An ask both capped (over the budget) and partly withheld by redaction: two gaps naming I1, two identities.
+  // An ask both capped (over the budget) and partly withheld by redaction — as an earlier Sonah persisted it (D90: no
+  // Sonah masks an ask now): two gaps naming I1, two identities.
   const secret = ['gh', 'p_', 'W3e3SplitToken', 'AbcdefGhij', 'KlmnPqrs12', '3456'].join('');
   const rows = claudeRows({ longAsk: true });
   rows[0] = { ...rows[0], message: { ...rows[0].message, content: `${rows[0].message.content}\nUse ${secret} to publish.` } };
-  const { session } = await load(t, rows, { legacyCap: true });
+  const { ledger } = await load(t, rows, { legacyCap: true });
+  assert.ok(ledger.ask[0].text.includes(`Use ${secret} to publish.`), 'today, as recorded');
+  const persisted = structuredClone(ledger);
+  persisted.ask[0] = { ...persisted.ask[0], text: persisted.ask[0].text.replace(secret, '‹redacted:github-token›'),
+    redacted: true };
+  const session = adapt(persisted, 'm33-u-two-causes');
   const gaps = instructionGaps(session);
   assert.deepEqual(gaps.map((g) => [g.note, g.eventIds]), [[INSTRUCTION_GAP_NOTES.capped_before_review, ['I1']],
     [INSTRUCTION_GAP_NOTES.redaction_withheld, ['I1']]]);

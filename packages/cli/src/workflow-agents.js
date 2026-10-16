@@ -1,28 +1,24 @@
 // M33 W (Claude Code Workflow agents), the IO half. Locates one Workflow run's directory by exact recorded identity
 // and reads what it holds: its journal (bounded, through the same verified read as every recording) and the names of
 // its agent recordings. Nothing here joins, infers or orders by time: the plan is the slicer's (slicer/src/
-// workflow-runs.js), and every agent recording is verified, sliced and redacted by the caller (session-evidence.js)
+// workflow-runs.js), and every agent recording is verified, sliced and bounded by the caller (session-evidence.js)
 // exactly as an Agent/Task child is. No model, no network; paths never leave this module.
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { readRecording, readRecordingRows } from './recording-read.js';
-import { redact } from '../../redact/index.js';
 import { JOURNAL_FILE, WORKFLOW_LIMITS, agentIdOfMeta, readJournal, safeRunId, safeSessionId }
   from '../../slicer/src/workflow-runs.js';
 
 const canonical = (path) => realpath(path).catch(() => null);
 
 /**
- * The recorded identities the redactor keeps, in order: each value goes through the same fail-closed identity scan a
- * recording's own identity passes (a source row's `sessionId`), BEFORE it is compared or used to name a directory. A
- * value the scan withholds is never a join key; it is simply not kept.
+ * The recorded identities kept as join keys, in order: the values that are text. D90 (owner decision 2026-10-15,
+ * privacy is not a design constraint): nothing scans them (an identity scan once dropped a value it read as
+ * secret-shaped); where one names a directory or is compared, its shape is checked there (`safeRunId`,
+ * `safeSessionId`, `runAt`, the slicer's `copiedCallProven`).
  */
 export function keptIdentities(values) {
-  const rows = values.map((value) => ({ adapter: 'claude', sessionId: value }));
-  if (!rows.length) return [];
-  const scrubbed = redact({ ask: [], ledger: [], claim: {}, sources: rows, dropped: [] }).ledger.sources;
-  return values.filter((value, index) => typeof value === 'string' && scrubbed?.[index]?.sessionId === value
-    && scrubbed[index].identityUncheckedFields === undefined && scrubbed[index].identityUnchecked !== true);
+  return values.filter((value) => typeof value === 'string');
 }
 
 /**

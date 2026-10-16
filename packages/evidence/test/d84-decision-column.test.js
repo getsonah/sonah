@@ -20,10 +20,9 @@ import { CHALLENGE_PROFILE, CHECKLIST_PROPOSITIONS, CHECKLIST_CHALLENGE_SCHEMA, 
   checklistProposition, challengeItems, challengeSystem } from '../src/challenge.js';
 import { SONAH_SESSION_REVIEW_AGENT, SESSION_REVIEW_AGENT_VERSION } from '../src/review-agent.js';
 import { PROMPT_VERSION, SESSION_NARRATIVE_SCHEMA, NARRATIVE_SCHEMA } from '../src/prompt.js';
-import { renderReview, REFERRED_FROM_HEADING } from '../src/review.js';
-import { renderSessionPage, PAGE_REFERRED_LABEL, PAGE_VOICE_LABELS, PAGE_LABELS, PAGE_VERSION, checkedWithFiles }
-  from '../../render/session-page.js';
-import { renderSessionStory, STORY_REFERRED_FROM, STORY_VERSION } from '../../render/session-story.js';
+import { renderSessionPage, PAGE_VERSION } from '../../render/session-page.js';
+import { REPORT_ITEM_WORDS } from '../../render/report-words.js';
+import { renderReportMarkdown, STORY_VERSION } from '../../render/session-story.js';
 
 const ASK = 'Write the parser in src/parser.js.';
 const RULE = 'Trim every input with s.trim() before parsing it.';
@@ -62,10 +61,6 @@ const judgeOf = (answer, receiptOf) => async (request) => (!request.challenge ? 
 const review = (session, judge) => runReview({ session, judge, reviewScope: 'session-only' });
 const only = (report) => { assert.equal(report.decisions.length, 1); return report.decisions[0]; };
 const label = (text) => `<span class="label">${text}</span>`;
-const decisionRow = (html) => {
-  const at = html.indexOf('id="decision-1"');
-  return html.slice(at, html.indexOf('</li>', at));
-};
 const ground = (session, write, constrainedBy) => groundDecision({ repo: { host: 'github.com', id: '0' }, session,
   pr: null, candidate: { actorSession: session.sessionKey, dimension: 'input trimming', chosen: 'trim the input',
     actions: [write.id], constrainedBy }, instructionHistoryComplete: true, notActing: true }).decision;
@@ -90,7 +85,11 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   // W1 A moved it once more (sonah.session-page/25): a decision kept "could not tell" for a refuted column says why.
   // W2 moved it once more (sonah.session-page/26): the agent's own earlier text that contradicts a claim says so.
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
@@ -103,7 +102,12 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // footer counts paths outside the working directory.
   // The judgment-first review moved it once more (sonah.session-page/33): one counting, folded groups by their count.
   // The release review moved it once more (sonah.session-page/34): the home folder as the repository, in the footer.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/34', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // The agentic code step's release item moved it once more (sonah.session-page/35): an ask's status beside what the
+  // code step tied to it, the session shown as loaded, and the code step's new report.
+  // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/37', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -116,17 +120,21 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // footer counts paths outside the working directory.
   // The judgment-first review moved it once more (sonah.session-story/28): one counting, the claims every reader lists.
   // The release review moved it once more (sonah.session-story/29): the home folder as the repository, in the footer.
-  assert.equal(STORY_VERSION, 'sonah.session-story/29', 'renumbered later: /18 is D84\'s masking');
+  // The agentic code step's release item moved it once more (sonah.session-story/30): an ask's status beside what the
+  // code step tied to it, the session shown as loaded, and the code step's new report.
+  // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // D97 moved it once more (sonah.session-story/32): the story is the report .md, the report model rendered for a pull
+  // request comment.
+  assert.equal(STORY_VERSION, 'sonah.session-story/32', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/36', 'no narrative request byte moved here (/31)');
-  assert.equal(PAGE_REFERRED_LABEL('CLAUDE.md'), 'Referred from CLAUDE.md');
-  assert.equal(STORY_REFERRED_FROM('CLAUDE.md'), '(referred from `CLAUDE.md`)');
-  assert.equal(REFERRED_FROM_HEADING('CLAUDE.md'),
-    '**Referred from CLAUDE.md** (the project\'s instruction file the agent was given, not said in this session).');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/37', 'no narrative request byte moved here (/31)');
+  assert.equal(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'), 'The project instruction file CLAUDE.md says:');
 });
 
 test('fix-column: a project instruction file that fixed the value -> asked and settled, named by its file everywhere',
@@ -144,14 +152,13 @@ test('fix-column: a project instruction file that fixed the value -> asked and s
       { instruction: { eventId: file.id, role: 'project-instructions', quote: RULE }, settles: true,
         settledValueQuote: 's.trim()', referredFrom: 'CLAUDE.md' });
     // The page, the story and the report name the file; none says the words were said in the session.
-    const html = decisionRow(renderSessionPage(session, report));
-    assert.ok(html.includes(`${label('Referred from CLAUDE.md')}<blockquote>`), 'the page names the file');
-    assert.ok(!html.includes(label(PAGE_VOICE_LABELS.settled)) && !html.includes(label(PAGE_VOICE_LABELS.instruction)));
-    const story = renderSessionStory(session, report);
-    assert.ok(story.includes(`you settled ${STORY_REFERRED_FROM('CLAUDE.md')}`), 'the story names the file');
-    const markdown = renderReview(report);
-    assert.ok(markdown.includes(REFERRED_FROM_HEADING('CLAUDE.md')), 'the report names the file');
-    assert.ok(!markdown.includes('**Your instruction.**'));
+    // D97: a decision you settled is listed under What the agent did, the file's words under the file's name.
+    const html = renderSessionPage(session, report);
+    assert.ok(html.includes(`${label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'))} <q class="said">`), 'the page names the file');
+    assert.ok(!html.includes(label(REPORT_ITEM_WORDS.youSaid)) && !html.includes(label(REPORT_ITEM_WORDS.youAsked)));
+    const story = renderReportMarkdown(session, report);
+    assert.ok(story.includes(`${REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')} “`), 'the report .md names the file');
+    assert.ok(!story.includes(`${REPORT_ITEM_WORDS.youSaid} “`) && !story.includes(`${REPORT_ITEM_WORDS.youAsked} “`));
   });
 
 test('fix-column: a vote citing the project file is counted; the combined route still admits its five roles only',
@@ -192,9 +199,9 @@ test('fix-column: the role comes from the cited source, never from the model\'s 
   assert.equal(checklistProposition(asked), CHECKLIST_PROPOSITIONS.decisionChoseHowFile,
     'its proposition names the file');
   // The page shows the file's words under its path, never "You asked".
-  const html = decisionRow(renderSessionPage(session, report));
-  assert.ok(html.includes(`${label('Referred from CLAUDE.md')}<blockquote>`));
-  assert.ok(!html.includes(label(PAGE_LABELS.youAsked)), 'never "You asked" for words the file holds');
+  const html = renderSessionPage(session, report);
+  assert.ok(html.includes(`${label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'))} <q class="said">`));
+  assert.ok(!html.includes(label(REPORT_ITEM_WORDS.youAsked)), 'never "You asked" for words the file holds');
   // A human instruction cited with the file's role stays refused, as before.
   const human = ground(session, write, { instruction: { eventId: ask.id, role: 'project-instructions', quote: ASK },
     settles: false, settledValueQuote: null });
@@ -253,16 +260,20 @@ test('fix-column: a helper\'s decision takes no column from the main agent\'s pr
     { column: null, columnState: 'unchecked', reason: 'instructions_partial' });
 });
 
-test('fix-column: the story names the file only when the covering words ground in it', async (t) => {
+test('fix-column: the report .md names the file only when the covering words ground in it', async (t) => {
   const { session, write, file } = await fixture(t);
   const report = await review(session, judgeOf(answerOf(write, { instruction: fileQuote(file), settles: true,
     settledValueQuote: 's.trim()' }), () => fileQuote(file)));
-  assert.ok(renderSessionStory(session, report).includes(STORY_REFERRED_FROM('CLAUDE.md')), 'control');
+  assert.ok(renderReportMarkdown(session, report).includes(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')), 'control');
   // A report whose receipt no longer grounds in the file (edited, or from another recording) names no file.
   const d = only(report);
   const edited = { ...report, decisions: [{ ...d, constrainedBy: { ...d.constrainedBy,
     instruction: { ...d.constrainedBy.instruction, quote: 'SYNTHETIC words the file does not hold.' } } }] };
-  assert.ok(!renderSessionStory(session, edited).includes('referred from'));
+  // D97: the report .md shows no words that do not ground, and names the file only beside words found in it.
+  const story = renderReportMarkdown(session, edited);
+  assert.ok(!story.includes('SYNTHETIC words the file does not hold.'));
+  for (const [, words] of story.matchAll(/The project instruction file CLAUDE\.md says: “([^”]*)”/g))
+    assert.ok(session.textSpansOf(file, 'text').some((span) => span.includes(words)), words);
 });
 
 test('fix-column: the ledger itself gives a covering receipt the role of the source it cites', async (t) => {
@@ -573,21 +584,21 @@ test('D84: the propositions, the brief, the note and the contract name the files
 
 test('D84: the page counts the checked files apart and names them; a page with none reads as before',
   async (t) => {
-    assert.equal(checkedWithFiles(1, ['CLAUDE.md']),
-      'The review checked your 1 earlier instruction and the project\'s instruction file CLAUDE.md; none of them'
-        + ' covered this.');
-    assert.equal(checkedWithFiles(2, ['CLAUDE.md', 'AGENTS.md']), 'The review checked your 2 earlier instructions and'
-      + ' the project\'s instruction files CLAUDE.md and AGENTS.md; none of them covered this.');
-    assert.equal(checkedWithFiles(0, ['CLAUDE.md']),
-      'The review checked the project\'s instruction file CLAUDE.md; it did not cover this.');
+    // D97: the item's evidence says it in one sentence.
+    assert.equal(REPORT_ITEM_WORDS.checkedAgainst(1, ['CLAUDE.md']), 'The session review checked it against 1 earlier '
+      + 'message and the project instruction file CLAUDE.md. None of them covered it.');
+    assert.equal(REPORT_ITEM_WORDS.checkedAgainst(2, ['CLAUDE.md', 'AGENTS.md']), 'The session review checked it against '
+      + '2 earlier messages and the project instruction files CLAUDE.md, AGENTS.md. None of them covered it.');
+    // One message or one file: the second sentence is singular.
+    assert.equal(REPORT_ITEM_WORDS.checkedAgainst(0, ['CLAUDE.md']), 'The session review checked it against the project '
+      + 'instruction file CLAUDE.md. It did not cover it.');
     const { session, write, ask, file } = await fixture(t);
     const html = renderSessionPage(session, await unaskedReview(session, write, () => [askCheck(ask),
       fileCheck(file)]));
-    assert.ok(html.includes(checkedWithFiles(1, ['CLAUDE.md']).replace(/'/g, '&#39;')), 'the sentence');
-    assert.ok(html.includes(`${label('Referred from CLAUDE.md')} <q class="said">`), 'the file\'s quote, folded');
+    assert.ok(html.includes(REPORT_ITEM_WORDS.checkedAgainst(1, ['CLAUDE.md'])), 'the sentence');
     assert.ok(!html.includes('not found in this recording'));
     const late = await fixture(t, { late: true });
     const before = renderSessionPage(late.session, await unaskedReview(late.session, late.write,
       () => [askCheck(late.ask)]));
-    assert.ok(before.includes('The review checked your 1 earlier instruction; it did not cover this.'));
+    assert.ok(before.includes(REPORT_ITEM_WORDS.checkedAgainst(1)));
   });

@@ -1,13 +1,12 @@
-// M33 F repair 3. A closing statement (slicer `sayings`: a turn's last assistant text) is never cut before redaction.
+// M33 F repair 3. A closing statement (slicer `sayings`: a turn's last assistant text) is never cut.
 //
 // The slicer used to cut a statement over 8000 UTF-16 units to its first 6000 and last 2000, mid-line, around '[…]' —
-// BEFORE redaction. A token straddling either cut then reached redaction as two halves neither of which any rule knew:
-// a 40-character ghp_ token kept up to 39 of its characters, a 93-character sk-ant key up to 92, in the redacted
-// ledger, the session and the review requests. This is the cut M33 F repair 2 removed for helper reports, and it is
-// removed the same way: the slicer keeps the whole statement and redaction scrubs it whole. D68 (E) (owner decision
-// 2026-10-07): what the agent PRODUCED is kept whole, so redaction no longer bounds the scrubbed statement either
-// (`STATEMENT_CAP`, `boundStatement`, `FINAL_ANSWER_CAP` and `boundFinalAnswer` are deleted); a persisted ledger an
-// earlier Sonah bounded keeps its marker, and a second pass changes nothing.
+// BEFORE redaction, so a token straddling either cut reached redaction as two halves. M33 F repair 3 removed the cut:
+// the slicer keeps the whole statement. D68 (E) (owner decision 2026-10-07): what the agent PRODUCED is kept whole, so
+// nothing bounds the statement either (`STATEMENT_CAP`, `boundStatement`, `FINAL_ANSWER_CAP` and `boundFinalAnswer`
+// are deleted); a persisted ledger an earlier Sonah bounded keeps its marker, and a second pass changes nothing. D90
+// (owner decision 2026-10-15, privacy is not a design constraint): nothing in it is masked either — a token where an
+// old cut fell stands whole, as recorded.
 //
 // Also here, the M33 F recheck's minors: redaction rebuilds a helper report from an allow-list and bounds one a ledger
 // already marks truncated unless it carries Sonah's cut; and a report the recording shows arrived before its only
@@ -41,9 +40,6 @@ const points = (text) => [...text].length;
 /** A 40-character GitHub token and the 93-character Anthropic-shaped key the fixture carries. */
 const GHP = `ghp_${'Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2Yz'.slice(0, 36)}`;
 const TOKENS = Object.freeze({ ghp: GHP, sk: SECRET });
-/** Every 8-character run of `token` that `text` still holds. */
-const leaks = (text, token) => Array.from({ length: token.length - 7 }, (_, i) => token.slice(i, i + 8))
-  .filter((fragment) => text.includes(fragment));
 
 const LINE = 'checked the parser module and left it as it was';
 /** Exactly `n` code points of prose: whole lines, then a partial line of `y` with no line break. */
@@ -98,9 +94,9 @@ test('D68 (E) redaction keeps a long statement whole: no marker, no cut, a secon
   assert.deepEqual(redact(led({ sayings: [{ turn: 1, text: persisted }] })).ledger.sayings[0], { turn: 1, text: persisted });
 });
 
-// ---- redaction sees the whole statement --------------------------------------------------------------------------------
+// ---- the whole statement, as recorded -----------------------------------------------------------------------------------
 
-test('M33 F repair 3 no fragment of a token at a retired cut survives: redaction sees it whole (every offset)', () => {
+test('M33 F repair 3, D90 a token at a retired cut stands whole, as recorded (every offset)', () => {
   for (const [name, token] of Object.entries(TOKENS)) {
     for (const [side, build] of [['head', acrossHead], ['tail', acrossTail]]) {
       for (const offset of offsets(token)) {
@@ -109,10 +105,9 @@ test('M33 F repair 3 no fragment of a token at a retired cut survives: redaction
         const once = redact(led({ sayings: [{ turn: 1, text: statement }] }));
         const saying = once.ledger.sayings[0];
         const where = `${name} across the ${side} cut at ${offset}`;
-        assert.deepEqual(leaks(JSON.stringify(once), token), [], where);
+        assert.equal(saying.text, statement, `${where}: as recorded`);
         assert.equal(saying.text.includes(STATEMENT_OMISSION), false, `${where}: nothing bounds it (D68 E)`);
-        assert.ok(saying.text.includes('‹redacted'), `${where}: the token is masked whole where it stood`);
-        assert.equal(saying.redacted, true, where);
+        assert.equal(saying.redacted, undefined, where);
         // A second pass leaves the statement as the first left it.
         const twice = redact({ ...once.ledger, dropped: [] }).ledger.sayings[0];
         assert.deepEqual(twice, saying, where);
@@ -121,7 +116,7 @@ test('M33 F repair 3 no fragment of a token at a retired cut survives: redaction
   }
 });
 
-test('M33 F repair 3 a key block or a secret-named block at a retired cut keeps no line of its value', () => {
+test('M33 F repair 3, D90 a key block or a secret-named block at a retired cut keeps every line of its value', () => {
   // The key-block edges are assembled here, so this source carries no key-block header of its own.
   const [begin, end] = ['-----BEGIN', '-----END'].map((edge) => [edge, 'PRIVATE', 'KEY-----'].join(' '));
   const pem = [begin, 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5',
@@ -140,31 +135,29 @@ test('M33 F repair 3 a key block or a secret-named block at a retired cut keeps 
       assert.equal(points(tail) - RETIRED.tail, tailAt - shift);
       for (const [side, statement] of [['head', head], ['tail', tail]]) {
         const saying = redact(led({ sayings: [{ turn: 1, text: statement }] })).ledger.sayings[0];
-        for (const body of bodies[name]) assert.equal(saying.text.includes(body), false, `${name} ${side} ${shift}`);
+        for (const body of bodies[name]) assert.ok(saying.text.includes(body), `${name} ${side} ${shift}`);
         assert.equal(saying.text.includes(STATEMENT_OMISSION), false, `${name} ${side} ${shift}`);
       }
     }
   }
 });
 
-test('D68 (E) a secret in what was the cut-away middle is masked where it stands, and declared', () => {
+test('D68 (E), D90 a token in what was the cut-away middle is kept where it stands, and nothing is declared', () => {
   const statement = `${prose(7_000)}\nThe key is ${GHP} here.\n${prose(3_000)}`;
   const saying = redact(led({ sayings: [{ turn: 1, text: statement }] })).ledger.sayings[0];
-  assert.equal(saying.text.includes('The key is ‹redacted:github-token› here.'), true, 'the whole statement is kept');
-  assert.equal(saying.redacted, true);
-  // A short statement is scrubbed exactly as before, and never marked.
+  assert.deepEqual(saying, { turn: 1, text: statement }, 'the whole statement is kept, as recorded');
   const short = redact(led({ sayings: [{ turn: 1, text: `Rotated ${GHP} today.` }] })).ledger.sayings[0];
-  assert.deepEqual(short, { turn: 1, text: 'Rotated ‹redacted:github-token› today.', redacted: true });
+  assert.deepEqual(short, { turn: 1, text: `Rotated ${GHP} today.` });
 });
 
-test('M33 F repair 3 through the slicer and redaction: nothing of a straddling token reaches the ledger', async (t) => {
+test('M33 F repair 3, D90 through the slicer and redaction: a token at a retired cut reaches the ledger whole', async (t) => {
   for (const [name, token] of Object.entries(TOKENS)) {
     for (const [side, build] of [['head', acrossHead], ['tail', acrossTail]]) {
       for (const offset of offsets(token, name === 'ghp' ? 1 : 5)) {
         const raw = await sliceLineage([await write(t, [rootMeta(), ask(), said(build(token, offset))])]);
         const clean = redact(raw).ledger;
         const where = `${name} across the ${side} cut at ${offset}`;
-        assert.deepEqual(leaks(JSON.stringify(clean), token), [], where);
+        assert.ok(clean.sayings[0].text.includes(token), where);
         assert.equal(clean.sayings[0].text.includes(STATEMENT_OMISSION), false, where);
       }
     }
@@ -195,14 +188,15 @@ test('D68 (E) a helper report is kept whole; one an earlier Sonah bounded keeps 
 test('M33 F repair 3 redaction rebuilds a report from its allow-list: text, row, turn and two flags, nothing else', () => {
   const kept = reportAfter(withReport({ text: 'Done.', record: 9, turn: 1, note: `the key was ${GHP}`,
     extra: { nested: GHP }, truncated: false, redacted: 'yes', sender: '/root/fix_parser' }));
-  assert.deepEqual(kept, { text: 'Done.', record: 9, turn: 1 });
-  assert.deepEqual(leaks(JSON.stringify(kept), GHP), []);
+  assert.deepEqual(kept, { text: 'Done.', record: 9, turn: 1 }, 'no other field passes');
   // A row or turn that is not a count in range places nothing.
   for (const [record, turn] of [[0, -1], [1.5, '1'], ['9', null], [-3, 2.5]])
     assert.deepEqual(reportAfter(withReport({ text: 'Done.', record, turn })), { text: 'Done.' }, JSON.stringify([record, turn]));
-  // The flags are only ever true.
+  // The flags are only ever true (D90: a token in the text is kept as recorded).
   assert.deepEqual(reportAfter(withReport({ text: `Rotated ${GHP}.`, record: 9, turn: 1, redacted: true })),
-    { text: 'Rotated ‹redacted:github-token›.', record: 9, turn: 1, redacted: true });
+    { text: `Rotated ${GHP}.`, record: 9, turn: 1, redacted: true });
+  assert.deepEqual(reportAfter(withReport({ text: `Rotated ${GHP}.`, record: 9, turn: 1 })),
+    { text: `Rotated ${GHP}.`, record: 9, turn: 1 });
   // The slicer's own shape keeps its bytes: text, record, turn, in that order.
   assert.equal(JSON.stringify(reportAfter(withReport({ text: TEXT.fixReport, record: 9, turn: 1 }))),
     JSON.stringify({ text: TEXT.fixReport, record: 9, turn: 1 }));

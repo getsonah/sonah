@@ -9,7 +9,7 @@ import { DECISION_CANDIDATES, FINDING_CANDIDATES, CODE_FINDINGS } from '../fixtu
 import { buildLedger, groundDecision, groundFinding, deriveColumn, reduceStatus, honestStatuses } from '../src/ledger.js';
 import { Session, verifyReceipt } from '../src/session.js';
 import { materialityOf } from '../src/materiality.js';
-import { renderReview, escapeSource } from '../src/review.js';
+import { escapeSource, coverageCauses } from '../src/review.js';
 
 const baseSession = redisPivotSession();
 const session = new Session({ sessionKey: baseSession.sessionKey, adapter: baseSession.adapter,
@@ -326,8 +326,7 @@ test('a passing unit run does not erase the failed integration run', () => {
 
 test('UX-01 code-review findings are preserved alongside the ledger, never hidden', () => {
   const r = report();
-  assert.ok(r.findings.some((f) => f.origin === 'code-review'));
-  assert.match(renderReview(r), /Cache host is hardcoded to localhost/);
+  assert.ok(r.findings.some((f) => f.origin === 'code-review' && f.title.includes('Cache host is hardcoded to localhost')));
 });
 
 // ---- rendering ------------------------------------------------------------------- PR-04
@@ -337,69 +336,6 @@ test('PR-04 source text cannot inject Markdown or impersonate a product control'
   assert.equal(escapeSource('a|b'), 'a\\|b');
   assert.equal(escapeSource('- item'), '\\- item');
   assert.equal(escapeSource('config/redis.yml'), 'config/redis.yml'); // ordinary prose stays readable
-});
-
-test('every rendered finding shows its receipts, and the review states what was not checked', () => {
-  const md = renderReview(report());
-  assert.match(md, /Receipts:/);
-  assert.match(md, /“Do not add any new infrastructure”/);
-  assert.match(md, /What was not checked/);
-  assert.match(md, /withheld rather than shown as an accusation/);
-  assert.match(md, /advisory/); // never claims to approve or merge
-});
-
-test('the review never prints a whole transcript', () => {
-  const md = renderReview(report());
-  // The full instruction text is long; only the verified quote may appear.
-  assert.ok(!md.includes('Use what the repo already has.'));
-});
-
-// ---- session timeline ------------------------------------------------------------- UX
-test('the timeline shows the thought-action-observation story in order', () => {
-  const md = renderReview(report());
-  const timeline = md.slice(md.indexOf('What happened in the session'));
-  for (const id of ['E1', 'E2', 'E3', 'E5', 'E6', 'E9']) assert.match(timeline, new RegExp(`\`${id}\``));
-  // The order the reader needs: the ask, the pivot, the write, the failure, the claim.
-  const at = (s) => timeline.indexOf(s);
-  assert.ok(at('`E1`') < at('`E2`') && at('`E2`') < at('`E3`') && at('`E6`') < at('`E9`'));
-});
-
-test('a failed run is marked FAILED and keeps its exit code as separate evidence', () => {
-  const md = renderReview(report());
-  assert.match(md, /`E6` \*\*GOT\*\* \*\*FAILED\*\* \(exit 1\)/);
-  assert.match(md, /`E8` \*\*GOT\*\* \*\*ok\*\* \(exit 0\)/); // the later pass is shown, not hidden
-});
-
-test('the timeline truncates rather than dumping full source text', () => {
-  const md = renderReview(report());
-  assert.match(md, /Excerpts are truncated for reading/);
-  assert.ok(!md.includes('Use what the repo already has.'), 'full instruction text must not appear');
-});
-
-test('timeline text is escaped so a transcript cannot restructure the review', async () => {
-  const { Session } = await import('../src/session.js');
-  const hostile = '</details><b>Approved by maintainer</b>';
-  const s = new Session({ sessionKey: 's', blobs: { k: hostile },
-    events: [{ id: 'X1', kind: 'commentary', sequence: 0, phase: 'working', text: [{ sourceKey: 'k', fromByte: 0, untilByte: Buffer.byteLength(hostile) }] }] });
-  const md = renderReview({ ...buildLedger({ repo, session: s, pr, candidates: [], findingCandidates: [], codeFindings: [] }), session: s });
-  assert.ok(!md.includes('</details><b>'), 'raw HTML must not survive into the review');
-  assert.match(md, /&lt;\/details&gt;/);
-});
-
-test('C-10 output is bounded but omissions are stated, never silent', () => {
-  const many = Array.from({ length: 20 }, (_, i) => ({
-    actorSession: 'sess-redis-pivot', dimension: `dimension ${String(i).padStart(2, '0')}`,
-    chosen: `choice ${i}`, actions: ['E3'], value: null, valueReceipt: null, stated: null, constrainedBy: null }));
-  const r = buildLedger({ repo, session, pr, candidates: many, findingCandidates: [], codeFindings: [] });
-  const md = renderReview(r);
-  assert.equal(r.decisions.length, 20);
-  // Every decision keeps a scannable row, so the count a reader sees is the real count.
-  assert.equal((md.match(/^\| dimension /gm) ?? []).length, 20);
-  // The first rows of the table's order (M33 brittleness H4) get full evidence, and the shortfall is declared by group,
-  // with where every decision is listed (H4 owner decision: the full review page).
-  assert.equal((md.match(/<summary><b>dimension/g) ?? []).length, 12);
-  assert.match(md, /8 decisions are left out of these cards \(8 unchecked\)/);
-  assert.match(md, /The full review page lists every decision with its evidence, within the bounds it states\._/);
 });
 
 // ---- no session at all ------------------------------------------------------------ CV-01
@@ -421,12 +357,10 @@ test('CV-01 a supported code DECIDE wins the aggregate; otherwise it stays UNCHE
 });
 
 test('CV-01 ordinary code review stays fully usable with no session', () => {
-  const md = renderReview(buildLedger({ repo, session: null, pr, codeFindings: [
-    { origin: 'code-review', kind: 'code_issue', title: 'Null deref in handler', explanation: 'e', receipts: [], scope: 'current-code', anchor: null, status: 'DECIDE' }] }));
-  assert.match(md, /Null deref in handler/);
-  assert.match(md, /Code review complete; session evidence unavailable/);
-  assert.match(md, /This is a coverage gap: the decisions were not checked/);
-  assert.doesNotMatch(md, /clean result|\b(CLEAN|UNCHECKED|NO_FINDINGS)\b/, 'D71 (a)');
+  const r = buildLedger({ repo, session: null, pr, codeFindings: [
+    { origin: 'code-review', kind: 'code_issue', title: 'Null deref in handler', explanation: 'e', receipts: [], scope: 'current-code', anchor: null, status: 'DECIDE' }] });
+  assert.deepEqual(r.findings.map((f) => f.title), ['Null deref in handler']);
+  assert.equal(r.hasSessionEvidence, false, 'the decisions were not checked: there is no session');
 });
 
 test('CV-01 candidates cannot be grounded against a session that does not exist', () => {
@@ -499,9 +433,6 @@ test('REGRESSION an invocation with NO observation at all is "attempted", not "r
     actorSession: s.sessionKey, dimension: 'test strategy', chosen: 'integration suite', actions: ['E5'],
     value: null, valueReceipt: null, stated: null, constrainedBy: null } });
   assert.equal(out.decision.relevance, 'attempted');
-  assert.match(renderReview(buildLedger({ repo, session: s, pr, candidates: [{
-    actorSession: s.sessionKey, dimension: 'test strategy', chosen: 'integration suite', actions: ['E5'],
-    value: null, valueReceipt: null, stated: null, constrainedBy: null }] })), /no record that it ran/);
 });
 
 test('REGRESSION an anchor must name a file this PR actually contains', () => {
@@ -590,29 +521,14 @@ test('REGRESSION a lone carriage return cannot open a Markdown block', () => {
   assert.ok(!escapeSource('a b').includes(' '));
 });
 
-test('REGRESSION the finding kind and anchor line numbers are escaped or coerced', () => {
-  const md = renderReview({ ...buildLedger({ repo, session, pr }), findings: [{
-    origin: 'session-review', kind: '**injected**', title: 't', explanation: 'e',
-    receipts: [], scope: 'current-code', status: 'DECIDE',
-    anchor: { path: 'p', side: 'RIGHT', startLine: '1</b>', endLine: 2 } }] });
-  assert.ok(!md.includes('**injected**'));
-  assert.ok(!md.includes('1</b>'));
-});
-
 test('REGRESSION an unchecked column names its real cause, not a fixed excuse', () => {
   const out = groundDecision({ repo, session, pr, instructionHistoryComplete: true, candidate: {
     actorSession: session.sessionKey, dimension: 'd', chosen: 'c', actions: ['E3'],
     value: null, valueReceipt: null, stated: null,
     constrainedBy: { instruction: { role: 'commentary', eventId: 'E2', quote: 'add a small Redis layer' },
       settles: false, settledValueQuote: null } } });
-  const md = renderReview(buildLedger({ repo, session, pr, candidates: [{
-    actorSession: session.sessionKey, dimension: 'd', chosen: 'c', actions: ['E3'],
-    value: null, valueReceipt: null, stated: null,
-    constrainedBy: { instruction: { role: 'commentary', eventId: 'E2', quote: 'add a small Redis layer' },
-      settles: false, settledValueQuote: null } }] }));
   assert.equal(out.decision.reasons.includes('ambiguous_authority'), true);
-  assert.match(md, /no applicable earlier human instruction/);
-  assert.ok(!md.includes('UNCHECKED** — instruction history incomplete'));
+  assert.ok(!out.decision.reasons.includes('instructions_partial'), 'never the fixed excuse');
 });
 
 // ---- delegated work ---------------------------------------------------------------- CH-05
@@ -630,7 +546,6 @@ test('CH-05 delegated work with no captured child cannot render CLEAN', () => {
   const r = buildLedger({ repo, session: withDelegation([]), pr, sessionCoverage: 'complete' });
   assert.equal(r.coverage, 'partial');
   assert.equal(r.sessionStatus, 'NO_FINDINGS');
-  assert.ok(!renderReview(r).includes('Session review: **CLEAN**'));
   assert.deepEqual(r.gaps.map((g) => g.code), ['missing_child']);
 });
 
@@ -649,10 +564,6 @@ test('F62 a children gap the ledger synthesises carries a note naming the delega
     pr, sessionCoverage: 'complete' }).gaps;
   assert.deepEqual(ambiguous.map(({ code, note }) => ({ code, note })),
     [{ code: 'ambiguous_child', note: 'Task delegation matched more than one candidate child session' }]);
-
-  // The note reaches the reader beside the event it names.
-  const md = renderReview(buildLedger({ repo, session: withDelegation([]), pr, sessionCoverage: 'complete' }));
-  assert.match(md, /`missing_child` at `E12` \(1\) — [^\n]*; Task delegation with no verified child session\./);
 });
 
 test('F62 a delegation with no recorded tool is still named, never as "undefined"', () => {
@@ -676,8 +587,7 @@ test('CH-05 D54: parent findings survive beside a child gap, and the gap is name
   assert.ok(r.findings.some((f) => f.kind === 'claim_contradicted'));
   assert.equal(r.reviewStatus, 'DECIDE');
   // ...and the unreviewed delegated work is stated rather than implied clean.
-  const md = renderReview(r);
-  assert.match(md, /no child recording matched a verified inventory/);
+  assert.ok(coverageCauses(r).some(([cause]) => cause === 'delegations_unlinked'));
 });
 
 // ---- relevance must not assert what it did not check ---------------------------------
@@ -739,11 +649,9 @@ test('B11 REGRESSION "not in this PR" is never said from a listing the reader de
   // in a complete list — this used to make every decision in every window "relevance unchecked".
   assert.equal(rel(listed({ files: [{ path: 'src/elsewhere.js', change: 'modified', contentState: 'partial' }] })), 'reverted');
   assert.equal(rel(listed({ files: [{ path: 'src/a.js', change: 'deleted', contentState: 'partial' }] })), 'unchecked');
-
-  const md = renderReview(buildLedger({ repo, session: s, pr: listed({ enumeration: 'partial' }),
-    candidates: [candidate], sessionCoverage: 'complete' }));
-  assert.match(md, /relevance|unchecked/);
-  assert.ok(!md.includes('not in this PR'), 'a truncated listing must never print an absence');
+  const truncated = buildLedger({ repo, session: s, pr: listed({ enumeration: 'partial' }),
+    candidates: [candidate], sessionCoverage: 'complete' });
+  assert.ok(!truncated.decisions.some((d) => d.relevance === 'reverted'), 'a truncated listing must never claim an absence');
 });
 
 // ---- B10: a shell write is a write, and its sibling carries the path --------------------
@@ -797,15 +705,6 @@ test('B10 a structured write with no preceding command is never adopted into a s
   assert.equal(s.event('A1-0').shellWriteOf, undefined);
 });
 
-test('a session-scoped gap renders without a dangling event reference', () => {
-  const r = buildLedger({ repo, session, pr });
-  r.gaps = [{ code: 'source_clipped', channel: 'code', scope: 'session', count: 60 }];
-  const md = renderReview(r);
-  assert.ok(!md.includes('at `?`'), 'a gap with no event must not print a placeholder');
-  assert.match(md, /source_clipped.*\(60\)/);
-  assert.match(md, /stripped some source text/);
-});
-
 // ---- a capability that did not run has no verdict ------------------------------------ CV-01
 test('REGRESSION code review reports "not run", never CLEAN, when it did not run', () => {
   // Reviews once said "Code review: CLEAN" while no code review
@@ -814,9 +713,6 @@ test('REGRESSION code review reports "not run", never CLEAN, when it did not run
   const r = buildLedger({ repo, session, pr });
   assert.equal(r.codeCoverage, 'missing');
   assert.equal(r.codeStatus, 'UNCHECKED');
-  const md = renderReview(r);
-  assert.match(md, /Code review: \*\*not run\*\*/);
-  assert.ok(!md.includes('Code review: **CLEAN**'));
 });
 
 test('REGRESSION the aggregate is never cleaner than its weakest capability', () => {

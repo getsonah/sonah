@@ -15,11 +15,6 @@ import { identityDigest } from '../contracts/canonical.js';
 import { INSTRUCTION_GAP_NOTES, PRIOR_STATE } from '../adapters/sonah-ledger.js';
 
 export const DECISION_COLUMNS = Object.freeze(['asked-settled', 'asked-chose', 'unasked']);
-export const COLUMN_LABELS = Object.freeze({
-  'asked-settled': 'Asked and settled',
-  'asked-chose': 'Asked, agent chose how',
-  unasked: 'Unasked',
-});
 
 // A model that emits any of these is not trusted to have stayed inside its contract, so the
 // whole candidate is rejected rather than quietly stripped.
@@ -38,11 +33,14 @@ export const FORBIDDEN_MODEL_FIELDS = Object.freeze([
 // not a model proposes a finding. A shell/test command with unknown exit status does likewise.
 // A finding resting on either unknown result is withheld; a positively failed write is known
 // evidence, and a finding resting on it is only withheld (`action_failed` below).
+// The agentic code step (code-pass/7): `code_step_backend` is the code step not run because the review's backend is
+// not claude-cli, the one backend whose reviewer can read the repository with read-only tools (CODE_STEP_BACKEND_GAP).
+export const CODE_STEP_BACKEND_GAP = 'code_step_backend';
 export const GAP_CODES = Object.freeze([
   'missing_child', 'ambiguous_child', 'incomplete_inventory', 'source_clipped', 'unsupported_message',
   'code_unreviewable', 'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit',
   'identity_redacted', 'identity_conflict', 'source_changed', 'source_unreadable',
-  'storage_limit', 'missing_result', 'redacted_content',
+  'storage_limit', 'missing_result', 'redacted_content', CODE_STEP_BACKEND_GAP,
 ]);
 
 // Why a judge call failed, as the window failure reports it. Closed: a code outside this set is
@@ -61,11 +59,18 @@ export const GAP_CODES = Object.freeze([
 // `model_response_incomplete` (the API stopped before `end_turn`) are the transport's own codes for
 // a reply it could not take whole. Undeclared, both read `model_unavailable` — a model that could not
 // be reached — for a model that answered, at length.
+// The agent transport (cli/src/review-judge.js, `sonah.review-agent-transport/1`): `model_turn_limit` (the CLI's result
+// subtype `error_max_turns`: the agent used every turn its request allows and gave no answer) and
+// `model_structured_output_failed` (`error_max_structured_output_retries`: its answer never matched the request's JSON
+// schema). The model ran in both and the CLI said why it stopped; an identical request runs into the same limit, so
+// neither is retryable. Undeclared, both read `model_unavailable` and were retried. Each carries its transport class
+// (run-review.js TRANSPORT_SHORTFALL: `turn_limit`, `structured_output_failed`).
 export const JUDGE_FAILURE_CODES = Object.freeze([
   'model_unavailable', 'anthropic_key_missing', 'budget_exhausted', 'model_tool_use',
   'unsupported_backend', 'invalid_model', 'explicit_api_model_required',
   'model_timeout', 'model_response_invalid', 'invalid_model_input',
   'model_output_limit', 'model_response_incomplete',
+  'model_turn_limit', 'model_structured_output_failed',
 ]);
 
 // F48: moved here from packages/cli/src/review-judge.js, beside JUDGE_FAILURE_CODES, now that
@@ -104,24 +109,25 @@ export const RUN_FAILURE_CODES = Object.freeze([
 // needs them, rather than this evidence package importing github (the CLI imports evidence, not
 // the other way around). D82 step 10 (B5 P17): `invalid_revision`, `incomplete_inventory` and
 // `unsupported_profile`, which only the removed PR route raised, are no longer members.
-/** D84: what a review would write or print for a person could not be masked; nothing was written or printed. The
- *  output layer throws it (render/session-story.js `forPeople`, `asPeopleRead`), and the CLI reports it. */
-export const OUTPUT_NOT_MASKED = 'output_not_masked';
-/** The codes the review command may print by name. `output_folder_missing` and `output_folder_unwritable`: the folder
- *  `--output` names is not there, or is not one the person can write to (before, both were `review_failed`).
+/** The codes the review command may print by name. D90 (owner decision 2026-10-15): `output_not_masked` (D84: an output
+ *  that could not be masked, so nothing was written) is no longer a member — nothing is masked. `output_folder_missing`
+ *  and `output_folder_unwritable`: the folder `--output` names is not there, or is not one the person can write to
+ *  (before, both were `review_failed`).
  *  `config_invalid` (owner decision 2026-10-14): Sonah's settings file (cli/src/settings.js) cannot be read, and no
  *  `--code-pass` or `--no-code-pass` says whether the code step runs, so the review stops before it reads anything. */
 export const CLI_SAFE_ERROR_CODES = Object.freeze([
   'github_auth_missing', 'stale_revision', 'review_in_progress', 'review_state_invalid',
   'budget_exhausted', 'unsupported_backend', 'invalid_model', 'explicit_api_model_required',
-  'anthropic_key_missing', 'session_not_found', 'output_exists', OUTPUT_NOT_MASKED,
-  'output_folder_missing', 'output_folder_unwritable', 'config_invalid',
+  'anthropic_key_missing', 'session_not_found', 'output_exists',
+  'output_folder_missing', 'output_folder_unwritable', 'config_invalid', 'state_dir_holds_root',
 ]);
 
 // W3d-4: `unsettled` — a challenge item every pass voted on that was not settled (D58: ran,
 // inconclusive, withheld). It is not `unreviewed_scope`, which is an item some pass never voted on.
 // W1 A (owner decision 2026-10-13): `decision_column_refuted` — a session-only decision whose check refuted who decided
-// it, whose choice its own check upheld, and for which no other column held (DECISION_COLUMN_REFUTED).
+// it, whose choice its own check upheld, and for which no other column held (DECISION_COLUMN_REFUTED). G2 (owner decision
+// 2026-10-15): the same cause for a choice not to act anchored anew (run-review.js `reanchoredChoices`) — its choice
+// upheld on its new words, and its check with the column its re-ask gave refuted.
 export const JUDGMENT_REASONS = Object.freeze([
   'no_session_evidence', 'no_actions', 'capture_partial', 'instructions_partial',
   'ambiguous_authority', 'unlinked_revision', 'unreviewed_scope', 'receipt_rejected',
@@ -1102,6 +1108,10 @@ function relevanceOf(session, actionEvents, pr) {
  * (it is left out: that is not unsure). W1 A (owner decision 2026-10-13): except one refuted only on who decided it — its
  * choice upheld by its own check, and no other column upheld after the reviewer was asked once more (run-review.js
  * `recolumnedDecisions`) — marked DECISION_COLUMN_REFUTED and published "could not tell" with that reason, the same way.
+ * G2 (owner decision 2026-10-15): a choice not to act anchored anew whose choice its existence check upheld, and whose
+ * check with the column its re-ask gave refuted it, is marked DECISION_COLUMN_REFUTED too; one whose check with that
+ * column did not settle or did not run is marked with how it ended (UNSETTLED_CHALLENGE), as S6 marks a decision
+ * (run-review.js `reanchoredChoices`).
  */
 export const CHALLENGE_ENDED = Symbol('sonah.challenge-ended');
 /** W1 A: the closed reason of a decision kept "could not tell" because its check refuted who decided it and no other
@@ -1679,6 +1689,14 @@ export const STOPPED_OUTCOME_FORMS = Object.freeze(['interrupted', 'cancelled'])
 export const NOT_COMPLETED_OUTCOMES = Object.freeze(['did-not-run', 'no-terminal-status', 'failed-or-refused']);
 /** The classes an action a row rests on (`restsOn`) must have: its check did not run or did not finish. */
 export const RESTS_ON_OUTCOMES = Object.freeze(['did-not-run', 'no-terminal-status']);
+/** The style linter's declarations (docs/STYLE.md, packages/render/test/style-lint.js) for the words of this file that a
+ *  person reads. Every session-only review request carries them (prompt.js writes each result's `outcome:` line), so
+ *  they are not rewritten in place: `request-bytes` lists their style errors and counts them, and none fails. */
+export const STYLE_KINDS = Object.freeze({ STOPPED_WORDS: 'fragment', RESULT_OUTCOME_WORDS: 'fragment',
+  shellWriteWords: 'fragment' });
+export const STYLE_FIXTURES = Object.freeze({ shellWriteWords: [['failed'], ['stopped']] });
+export const STYLE_ALLOW = Object.freeze({ STOPPED_WORDS: ['request-bytes'], RESULT_OUTCOME_WORDS: ['request-bytes'],
+  shellWriteWords: ['request-bytes'] });
 
 
 const TYPED_RESULT_SOURCES = Object.freeze(['native', 'hook']);
@@ -1907,6 +1925,34 @@ export const DECISION_RECOLUMN_RECORD = Object.freeze(['refuted', 'existence', '
 export const DECISION_RECOLUMN_WITHHELD = Object.freeze(['request_bound', 'no_answer', 'no_row', 'could_not_tell',
   'ungrounded', 'same_column']);
 /**
+ * G2 (owner decision 2026-10-15): a session-only choice not to act (a decision proposal with `notActing` true) that the
+ * challenge refuted and whose existence check (W1 A, run-review.js `recolumnedDecisions`) refuted too is put to the
+ * reviewer once more, for the agent's own words that state the choice (run-review.js `reanchoredChoices`). Why no new
+ * anchor went on to its own existence check — counted per window, never a row's reason:
+ *   request_bound  the re-ask's request does not fit the review's request bound, or there is no request to re-ask
+ *   no_answer      the re-ask's call failed, or its answer is not in the narrative's shape
+ *   none_stated    the answer gives no decision row: the reviewer found no words of the agent that state the choice
+ *   no_row         the answer gives rows, but not exactly one readable decision row that is this choice: a choice not
+ *                  to act on the decision's own set of actions, dimension, choice and value, character for character
+ *   same_anchor    the row's `stated` is in the refuted anchor's event, and one of the two quotes holds the other
+ *   ungrounded     the choice on the row's anchor does not hold under code's checks (ledger.js `groundDecision`)
+ */
+export const NOT_ACTING_REANCHOR_WITHHELD = Object.freeze(['request_bound', 'no_answer', 'none_stated', 'no_row',
+  'same_anchor', 'ungrounded']);
+/** G2: why no check of who decided it was asked for a re-anchored choice its existence check upheld — the column words
+ *  of DECISION_RECOLUMN_WITHHELD, the same meanings: `could_not_tell` (the row gives neither constrainedBy nor
+ *  instructionReview), `ungrounded` (that column does not hold under code's checks). Such a choice is published as the
+ *  ledger grounds any decision whose column does not hold (`groundDecision`: "could not tell", with the ledger's own
+ *  column reason), never with a check's reason. Counted per window; never a row's reason. Closed. */
+export const NOT_ACTING_REANCHOR_COLUMN_WITHHELD = Object.freeze(['could_not_tell', 'ungrounded']);
+/** G2: the members of a window's `reanchor` record, in order — `refuted` (its choices not to act whose existence check
+ *  refuted them: the re-asks proposed), `asked` (the re-asks sent), `withheld` (by NOT_ACTING_REANCHOR_WITHHELD),
+ *  `existence` (how the new anchor's existence check ended, by RESOLUTION_CHALLENGE_OUTCOMES: `upheld` is the choices
+ *  kept), `columnWithheld` (by NOT_ACTING_REANCHOR_COLUMN_WITHHELD) and `challenged` (how the new column's check ended,
+ *  by RESOLUTION_CHALLENGE_OUTCOMES). Closed. */
+export const NOT_ACTING_REANCHOR_RECORD = Object.freeze(['refuted', 'asked', 'withheld', 'existence', 'columnWithheld',
+  'challenged']);
+/**
  * A fact code adds beside a requirement row at report time, never a stronger status:
  *   no_deliverable_by_end  a not-checked row with no deliverable, whose last reporting window holds the recording's last
  *                          event (fixed words: REQUIREMENT_FACT_WORDS)
@@ -1914,6 +1960,25 @@ export const DECISION_RECOLUMN_WITHHELD = Object.freeze(['request_bound', 'no_an
 export const REQUIREMENT_FACTS = Object.freeze(['no_deliverable_by_end']);
 export const REQUIREMENT_FACT_WORDS = Object.freeze({
   no_deliverable_by_end: 'the recording ends in this part; the review cites nothing that delivers this ask' });
+
+/**
+ * An ask's status never contradicts Sonah's own findings (D87, amended): how the code step tied a published item to an
+ * ask, read from structure only (ask-code-links.js `askCodeLinks`) and written as `codeLinks` on a copy of the ask's row
+ * beside its status — never in it: no status, receipt, reason or fact is read from or written by a link. Closed.
+ *   leads_from            a published finding's `leadsFrom` names the ask's row (`source` requirements, its `index`)
+ *   trace_quotes_ask      a published finding's trace has a step quoting the person's instruction in the ask's own
+ *                         instruction event, at a place that overlaps the ask's instruction quote by half the shorter
+ *                         (the rule "Cited in" uses: `locateQuote`, `overlapping`)
+ *   contradicted_by_code  the row's code check reads contradicted by the code at review time
+ *   withheld_finding      a withheld finding's `leadsFrom` names the ask's row
+ *   question_concerns     a published open question of the code review concerns the ask's row
+ * ASK_CODE_ATTENTION_LINKS: the links that make an ask done (or addressed) or not checked an attention row (review.js
+ * `askRowKind`, `asksCodeFinding`); the others are a line beside the row only. (`shown_in_code`, a row's code check
+ * reading shown in the code, went with code-pass/9: a link of that name on an earlier report is read as no link.)
+ */
+export const ASK_CODE_LINKS = Object.freeze(['leads_from', 'trace_quotes_ask', 'contradicted_by_code', 'withheld_finding',
+  'question_concerns']);
+export const ASK_CODE_ATTENTION_LINKS = Object.freeze(ASK_CODE_LINKS.slice(0, 3));
 
 /**
  * Why an id a row cites in `restsOn` was not accepted (counted; the row keeps its status, and a claim whose
@@ -2159,8 +2224,8 @@ export const humanChoice = (event) => event?.kind === 'invocation' && event.huma
  */
 export const FORBIDDEN_EDIT_REVERTED_MARK = 'revertedInTurn';
 
-/** The withheld cause (`withheld.causes`, review.js WITHHELD_CAUSES) a forbidden edit a code check withheld is counted
- *  under — one sentence for every reason but `malformed`; each reason is in `counts.forbiddenEdits.withheld`. */
+/** The withheld cause (`withheld.causes`) a forbidden edit a code check withheld is counted under, for every reason but
+ *  `malformed`; each reason is in `counts.forbiddenEdits.withheld`. */
 export const FORBIDDEN_WITHHELD_CAUSE = 'forbidden_edits';
 
 const RESOLUTION_ROLES = Object.freeze({ observation: 'observation', statement: 'commentary' });
@@ -2874,18 +2939,21 @@ export function mergeDuplicateFindings(findings = [], { sourcesOf = null } = {})
 // ---- D87: the code pass (owner decisions 2026-10-13/14; code-pass.js) -----------------------------------------------
 
 /**
- * D87: what the code check (step 1, `sonah.code-check/1`) published on a row, in its own `codeCheck` — beside the row's
- * status, never in it: no promise, requirement or decision status is read from or written by it, and no attention
- * count is lowered by it. Closed.
- *   shown-in-code         the code at review time shows what the row states (said so, never "verified": the files are
- *                         read as they are at review time, never run)
- *   contradicted-by-code  the code at review time shows what the row states is not so
- *   not-checked-in-code   the check did not settle it either way: its `reason` (CODE_CHECK_REASONS) says why
+ * D87: what the code step published on a row of the session review, in its own `codeCheck` — beside the row's status,
+ * never in it: no promise, requirement or decision status is read from or written by it, and no attention count is
+ * lowered by it. Closed.
+ *   contradicted-by-code  the code at review time shows what the row states is not so. The agentic code step: a
+ *                         published `claim_false` finding keyed to the row (`by: 'finding'`), the only code check it
+ *                         sets
+ *   not-checked-in-code   the check did not settle it either way: its `reason` (CODE_CHECK_REASONS) says why. Written
+ *                         only by the code step before code-pass/7; a reader shows nothing for it
+ * (`shown-in-code`, the code at review time showing what the row states, went with code-pass/9: a statement the review
+ * agent traced and found to hold no longer marks a row, and a reader shows nothing for an earlier report's.)
  */
-export const CODE_CHECK_OUTCOMES = Object.freeze(['shown-in-code', 'contradicted-by-code', 'not-checked-in-code']);
+export const CODE_CHECK_OUTCOMES = Object.freeze(['contradicted-by-code', 'not-checked-in-code']);
 /**
- * D87: why a row reads not-checked-in-code, and why a code-pass finding was withheld (its `cause`, beside its
- * JUDGMENT_REASONS reason). Closed; never constructed in a prompt or inline.
+ * D87: why a row read not-checked-in-code before code-pass/7 (step 1, retired by the agentic code step). Kept so a
+ * reader can still read a report written then; the code step writes none of them. Closed.
  *   file_not_shown              a receipt or an anchor names a file the pass did not show, or no file was shown
  *   quote_ungrounded            a quote is not word for word in its frozen file after the one repair, or is shorter than
  *                               MIN_QUOTE_CHARS or longer than EVIDENCE_QUOTE_MAX characters
@@ -2894,52 +2962,48 @@ export const CODE_CHECK_OUTCOMES = Object.freeze(['shown-in-code', 'contradicted
  *   file_changed_since_session  a file the row's events named, or the answer cites, no longer holds what the session
  *                               last wrote to it, so the file is not the session's
  *   request_bound               the request was over the review's request bound, so it was never sent
- *   no_answer                   the reviewer gave no usable answer for the row: it left the row out, or its entry broke
- *                               the contract, and the one re-ask (code-check/2) did not mend it
+ *   no_answer                   the reviewer gave no usable answer for the row
  *   challenge_refuted           the checking passes refuted the answer (a majority of definite votes)
  *   challenge_unsettled         every pass voted and they did not all uphold it (the run is unanimous)
  *   challenge_unexecuted        a pass never voted on it
- *   cannot_tell                 code-check/2 (the code step): the reviewer answered that the
- *                               shown code cannot settle the row — a correct abstention, never counted as no answer
+ *   cannot_tell                 the reviewer answered that the shown code cannot settle the row
  */
 export const CODE_CHECK_REASONS = Object.freeze(['file_not_shown', 'quote_ungrounded', 'anchor_off_quote',
   'file_changed_since_session', 'request_bound', 'no_answer', 'challenge_refuted', 'challenge_unsettled',
   'challenge_unexecuted', 'cannot_tell']);
 /**
- * D87: the closed state of every file of the frozen snapshot (`sonah.code-snapshot/1`), changed files first, then read
- * files. A file is shown whole or declared by one of these, never clipped.
- *   shown                  sent whole, in every request of the pass
- *   not_shown              readable and within the bound alone, but the files before it left no room
- *   binary                 holds a NUL byte, or is not UTF-8; or (code-snapshot/3, the review of the code step) git
- *                          reports it binary: its diff from the start commit has no text hunk though its text changed
- *                          (a `binary` or `-diff` attribute, git's "Binary files … differ"), so no line of it is shown
- *   credential_path        a credential-shaped path (slicer before.js `credentialPath`) outside a harness home:
- *                          withheld unread
- *   harness_home           in a harness home folder (slicer before.js `harnessHomePath`, or a home this computer
- *                          names): withheld unread and never named; before any other state (code-snapshot/4, the
- *                          second review of the code step), a credential-shaped file there included; by every name
- *                          and wherever each really leads, there or not (code-snapshot/5, the third review): a file
- *                          deleted from a set or linked home is never `deleted`; or (code-snapshot/6, the fourth
- *                          review) a harness file kept in the home folder itself (before.js `isHomeFile`: Claude
- *                          Code's `~/.claude.json` and its backups), or a path that was a link into a harness home at
- *                          the start commit
- *   oversize               its own block is over what one request can carry
- *   changed_since_session  its last recorded successful write is no longer literally in it, or the session deleted it
- *                          and it is there again: the file is not the session's
- *   deleted                not there at review time
- *   outside_root           outside the recorded working directory (the path, its link target, or the slicer's scope)
- *   unreadable             could not be read as a regular file, or its content id collided (fail closed)
+ * D87, as the agentic code step reads it (code-snapshot/9, D90: nothing is withheld for privacy's sake, so a harness
+ * home, a credential-shaped path and the home folder as the repository are no states any more): the closed state of
+ * each path of the change under review (the paths a recorded write, edit or delete changed, then the paths git shows
+ * differing from the session's start commit) — the review agent's starting map, never its limit: it may read any file
+ * of the repository itself.
+ *   shown                  its hunks are in the review request's change block
+ *   binary                 holds a NUL byte, or is not UTF-8; or git reports it binary: its diff from the start commit has
+ *                          no text hunk though its text changed (a `binary` or `-diff` attribute, git's "Binary files …
+ *                          differ"), so no line of it is in the change block
+ *   oversize               the file is over the review's request bound, or its hunks are over the change block's bound
+ *                          (code-pass.js CODE_CHANGE_BLOCK_MAX_BYTES): its hunks are not in the change block
+ *   changed_since_session  a fact: its last recorded successful write is no longer literally in it (it changed after
+ *                          the session's last recorded edit, so its lines now may not all be the agent's). Since
+ *                          code-snapshot/10 its hunks are in the change block like any changed file's, the footer says
+ *                          so, and its coverage is not lowered; unless the footer names it as withheld: the session
+ *                          deleted it and it is there again, and its hunks are not shown
+ *   deleted                not there at review time (a deleted path of the diff shows its removed lines)
+ *   outside_root           a recorded write outside the working directory: not part of the change block. One that still
+ *                          lies in the repository's top folder is a part of its change the review did not cover (named
+ *                          in the footer as withheld; coverage partial); one outside the repository is only counted
+ *   unreadable             could not be read as a regular file, or its diff could not be read consistently (fail closed)
  * Its declarations are the gaps `code_unreviewable` and `source_changed` on the `code` channel with scope `repository`
  * — kept in the code pass's own record, never among the report's gaps, so no session coverage reads them.
  */
-export const CODE_FILE_STATES = Object.freeze(['shown', 'not_shown', 'binary', 'credential_path', 'harness_home',
-  'oversize', 'changed_since_session', 'deleted', 'outside_root', 'unreadable']);
-// ---- the code step (code-pass/2): closed vocabularies -----------------------------------------
+export const CODE_FILE_STATES = Object.freeze(['shown', 'binary', 'oversize', 'changed_since_session', 'deleted',
+  'outside_root', 'unreadable']);
+// ---- the code step (code-pass/2; agentic since code-pass/7): closed vocabularies ---------------------------------
 
 /**
  * Where the code step's diff starts. Closed.
  *   git             the session's start commit, read with git (cli/src/code-snapshot.js); every differing path
- *   recorded_edits  no git base: each changed file is shown whole (`base_unknown`) and its hunks are the recorded edits
+ *   recorded_edits  no git base: each changed file's hunks are the recorded edits
  */
 export const CODE_DIFF_BASES = Object.freeze(['git', 'recorded_edits']);
 /**
@@ -2956,59 +3020,132 @@ export const CODE_CHANGE_TYPES = Object.freeze(['added', 'modified', 'deleted'])
  *   recorded           a recorded write, edit or delete names the path: its hunks are shown
  *   unrecorded_change  it differs from the start commit, but no recorded edit names it (a `sed -i`, a generator): its
  *                      hunks are shown, marked
- *   base_unknown       no git base: the file is shown whole, and its hunks are the session's recorded edits
- *   withheld           the file's own state withholds it (CODE_FILE_STATES: credential_path, harness_home, outside_root,
- *                      binary, oversize, changed_since_session, unreadable): listed by name, no hunk shown — but a path
- *                      outside the working directory or in a harness home is never named (counted only)
- *   unreadable         its diff could not be read consistently (git failed, a hunk does not match the frozen file or
- *                      the base, or, code-snapshot/3, the hunks do not turn the base into the file now): listed by name,
- *                      no hunk shown (fail closed)
+ *   base_unknown       no git base: its hunks are the session's recorded edits
+ *   withheld           the file's own state keeps its hunks out (CODE_FILE_STATES: binary, oversize,
+ *                      changed_since_session for a file the session deleted that is there again, unreadable): listed
+ *                      by name, no hunk shown
+ *   unreadable         its diff could not be read consistently (git failed, a hunk does not match the file or the base,
+ *                      or the hunks do not turn the base into the file now): listed by name, no hunk shown (fail closed)
  * A path whose diff is withheld or unreadable keeps the code step's coverage from reading complete.
  */
 export const CODE_DIFF_STATES = Object.freeze(['recorded', 'unrecorded_change', 'base_unknown', 'withheld', 'unreadable']);
 /**
- * The lenses of step 2, one call each, in this order: the calls send the same bytes but for the closing lens paragraph
- * (code-pass.js CODE_LENS_TEXT). Closed, so each lens's wrong rate stays computable.
+ * The lenses of the code step's review (code-pass/7: one review agent works through them all, as its method's
+ * checklist; each finding names the one it came from). Closed, so each lens's wrong rate stays computable.
  *   behaviour  trace concrete inputs through the changed lines: missed cases, edge inputs, error paths
  *   tests      can each new assertion fail with the bug present; does a cited test reach the changed lines
  *   contracts  callers, callees, defaults, exceptions and docs the change makes wrong
- *   ask        each ask done, not done, or needing a human, judged on the diff; broken project rules
+ *   ask        each ask of the person's delivered or not, judged on the code
+ *   rules      a rule of the project's files or the person's words that the change breaks
+ *   claims     a claim or decision of the agent's that the code settles
  */
-export const CODE_PASS_LENSES = Object.freeze(['behaviour', 'tests', 'contracts', 'ask']);
-/** What a step-2 finding is: closed. No severity, confidence or rank is ever attached to one. */
-export const CODE_FINDING_KINDS = Object.freeze(['bug', 'missed_case', 'weak_test', 'contract_break', 'ask_not_met']);
-/** A checking pass's verdict on a code-step item, given first (verdict-first, after BitsAI-CR): closed. */
-export const CODE_VOTE_VERDICTS = Object.freeze(['upheld', 'refuted']);
+export const CODE_PASS_LENSES = Object.freeze(['behaviour', 'tests', 'contracts', 'ask', 'rules', 'claims']);
+/** What a code-step finding is: closed. No severity, confidence or rank is ever attached to one. `rule_break`: a rule of
+ *  the project's files or the person's words the change breaks; `claim_false`: a claim or decision of the agent's that
+ *  the code contradicts. */
+export const CODE_FINDING_KINDS = Object.freeze(['bug', 'missed_case', 'weak_test', 'contract_break', 'ask_not_met',
+  'rule_break', 'claim_false']);
+/** A checking agent's verdict on a finding's title (code-pass/7): closed. `holds` — the code, as it traced it, shows
+ *  the stated problem; `refuted` — it does not; `cannot_tell` — settling it needs something outside the repository (a
+ *  run, a dependency's source, the platform). */
+export const CODE_VERIFY_VERDICTS = Object.freeze(['holds', 'refuted', 'cannot_tell']);
+/** A checking agent's verdict on each supporting claim of a finding: closed. A claim judged `false` is cut from the
+ *  finding: the record keeps it with its verdict, and no reader shows it. */
+export const CODE_CLAIM_VERDICTS = Object.freeze(['holds', 'false']);
+/** A checking agent's verdict on an open question for the person: closed. `false_premise` — the code shows what it rests
+ *  on is not so. */
+export const CODE_QUESTION_VERDICTS = Object.freeze(['sound', 'false_premise']);
 /**
- * Why a checking pass refuted a code-step item: ReviewBench's false-positive classes (MIT) plus the trace checks.
- * Closed, so each reason's rate stays computable.
- *   incorrect              the statement misreads the code
- *   step_unsupported       a trace step does not follow from its quote
- *   mitigation_shown       another shown line handles the case
- *   input_unreachable      the input cannot reach the anchor through the shown callers
- *   rests_on_unshown_code  a step rests on code that is not shown
- *   out_of_scope           the root cause is not in lines the change added or modified
- *   unverifiable           the shown code cannot settle it
- * (`duplicate`, ReviewBench's "repeats another comment", was dropped by the review of the code step: a finding is
- * checked alone, so no checker can see what it would repeat.)
+ * Why a checking agent refuted a finding: ReviewBench's false-positive classes (MIT) plus the trace check and the goal
+ * test. Closed, so each reason's rate stays computable.
+ *   incorrect          the finding misreads the code (its refutation must quote the code that shows it)
+ *   mitigation_shown   another line handles the case (quoted)
+ *   input_unreachable  the input cannot reach the anchor (quoted)
+ *   step_unsupported   a step does not follow from its quote
+ *   out_of_scope       the root cause is not in the change
+ *   not_against_goal   the behaviour is as stated, but it does not defeat what the person asked for or what a caller is
+ *                      promised: the finding becomes an open question for the person, never a silent withholding
+ * (`rests_on_unshown_code` and `unverifiable` went with code-pass/7: the checker reads the repository itself, and the
+ * verdict `cannot_tell` says what it cannot settle. `duplicate` went with the review of the code step.)
  */
-export const CODE_REFUTATION_REASONS = Object.freeze(['incorrect', 'step_unsupported', 'mitigation_shown',
-  'input_unreachable', 'rests_on_unshown_code', 'out_of_scope', 'unverifiable']);
+export const CODE_REFUTATION_REASONS = Object.freeze(['incorrect', 'mitigation_shown', 'input_unreachable',
+  'step_unsupported', 'out_of_scope', 'not_against_goal']);
 /**
- * Why a step-2 finding or open question was withheld (`rejected[].reason`). Closed; its grounding cause, when there is
- * one, is a CODE_CHECK_REASONS member (`cause`).
- *   malformed                  the entry broke the contract (a field outside it, a kind or lens outside the lists, a
- *                              step over 300 characters, a key the dossier does not hold)
- *   evidence_grounding_failed  a quote or an anchor did not ground in what the request showed, after the one repair
- *   out_of_scope               the anchor does not overlap a changed hunk (and, for a contract break, no step quotes
- *                              one)
- *   request_bound              its request was over the review's request bound, so it was never sent
- *   challenge_refuted          a majority of the checking passes refuted it
- *   challenge_unsettled        every pass voted, and not every one cast a grounded upheld vote (the run is unanimous)
- *   challenge_unexecuted       a pass never voted on it
+ * Why the code step withheld a finding or a question it was given (`withheld[].reason`; code-pass/7, which replaced
+ * CODE_FINDING_WITHHELD). A withheld item keeps its text and is shown folded with its reason, never
+ * counted. Closed.
+ *   malformed                  it broke the contract after the one repair (its `cause`: a CODE_ITEM_ERRORS member; its
+ *                              `repair`, a CODE_REPAIR_UNCHECKED member, when no repaired version of it was checked)
+ *   evidence_grounding_failed  a quote or an anchor did not ground after the one repair (its `cause`, its `repair`)
+ *   out_of_scope               the anchor does not touch the change, and no step quotes a changed line where its kind
+ *                              allows that (contract_break, rule_break, claim_false)
+ *   verify_refuted             its checking agent refuted it, with a quoted reason where the reason needs one
+ *   verify_cannot_tell         its checking agent could not settle it from the repository
+ *   verify_unexecuted          its check did not complete: the verdict was void after its one re-ask (its `cause`: a
+ *                              CODE_VOID_CAUSES member)
+ *   false_premise              a question whose premise its checking agent showed false in the code
+ *   request_failed             its checking request was not answered (the call failed, or it was over the bound)
  */
-export const CODE_FINDING_WITHHELD = Object.freeze(['malformed', 'evidence_grounding_failed', 'out_of_scope',
-  'request_bound', 'challenge_refuted', 'challenge_unsettled', 'challenge_unexecuted']);
+export const CODE_WITHHELD_REASONS = Object.freeze(['malformed', 'evidence_grounding_failed', 'out_of_scope',
+  'verify_refuted', 'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed']);
+/**
+ * Why Sonah checked no repair of an item it withheld by its shape or its grounding (`withheld[].repair`, code-pass/10;
+ * reasons `malformed`, `evidence_grounding_failed` and `out_of_scope`). Absent, the one repair's item at the item's
+ * index was the same item, was checked again and failed too; present, Sonah checked no repaired version of it, so no
+ * reader says it failed "even after one repair". Closed; set by structure (which call was made, and what the repair
+ * returned at the item's index: code-pass.js `sameItem`, `PUBLISHED_AS`).
+ *   different  the repair returned another item at the item's index: a member that names the item and that the
+ *              answer gave valid is not the same there (a finding's kind, its anchor's path or side; a question's
+ *              dossier key). A member the answer gave outside its list, or not at all, takes no part
+ *   absent     the repair returned no item at the item's index (its list is shorter, is no list, or holds no object
+ *              there)
+ *   repeated   the repair returned at the item's index the same item that stands at another index: the same value as
+ *              the answer's item there, or, checked, what the step publishes once with an item kept there (a repair
+ *              that shifted its list). Taking it would merge the item into that one, with no record of its own
+ *   failed     the repair's call failed, its answer was not an object, or its request was over the bound
+ *   spent      the one repair went to asking again for an answer that could not be used whole, and the item is of
+ *              the answer that it brought
+ *   unasked    the item is past its list's limit (CODE_REVIEW_ITEMS_MAX): withheld unchecked, named in no repair
+ */
+export const CODE_REPAIR_UNCHECKED = Object.freeze(['different', 'absent', 'repeated', 'failed', 'spent', 'unasked']);
+/** What a withheld item of the code step is (`withheld[].what`): a finding or an open question. Closed. (`held`, a
+ *  statement found to hold, went with code-pass/9: an earlier report's such entry is listed nowhere.) */
+export const CODE_WITHHELD_ITEMS = Object.freeze(['finding', 'question']);
+/**
+ * What is wrong with one item of the review agent's answer, by code (code-pass/7): named, with the item's index and
+ * the offending key or quote, in the one repair request, and kept as a withheld item's `cause`. Closed.
+ *   key_missing           a key of the contract is missing
+ *   key_outside_contract  a key the contract does not hold
+ *   value_outside_list    a value outside its closed list, or of the wrong type
+ *   text_over_limit       a text or a list outside its length limits
+ *   dossier_key_unknown   a key that is not one of the dossier's
+ *   ask_key_required      an ask_not_met that names no ask of the dossier
+ *   claim_key_required    a claim_false that names no claim or decision of the dossier
+ *   quote_ungrounded      a quote is not word for word in the file (or the session text) it names
+ *   anchor_off_quote      the lines named are no lines of the file, hold no occurrence of the quote, or the anchor
+ *                         touches no line the trace quotes
+ *   file_not_readable     the file named is not a readable text file of the repository (now, or at the start commit)
+ *   out_of_scope          the anchor does not touch the change, and no step quotes a changed line where its kind allows
+ */
+export const CODE_ITEM_ERRORS = Object.freeze(['key_missing', 'key_outside_contract', 'value_outside_list',
+  'text_over_limit', 'dossier_key_unknown', 'ask_key_required', 'claim_key_required', 'quote_ungrounded',
+  'anchor_off_quote', 'file_not_readable', 'out_of_scope']);
+/**
+ * Why a checking agent's verdict is void (code-pass/7): named in its one re-ask, and kept as a `verify_unexecuted`
+ * item's `cause`. Closed.
+ *   shape               the verdict broke its contract
+ *   receipt_ungrounded  a receipt's quote is not word for word on the lines of the file it names
+ *   support_off_anchor  a "holds" quotes no line of the anchor
+ *   support_off_trace   a "holds" quotes no line any code step of the trace quotes
+ *   refutation_uncited  a refutation that must quote the code (incorrect, mitigation_shown, input_unreachable; a
+ *                       question's false premise) quotes none that grounds
+ */
+export const CODE_VOID_CAUSES = Object.freeze(['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace',
+  'refutation_uncited']);
+/** How the review agent's request ended (code-pass/7, `codePass.agent.terminal`): closed. `answered` — an answer in the
+ *  contract's top-level shape; `unusable` — an answer outside it; `failed` — the call failed; `not_sent` — no change to
+ *  review, or a request over the review's bound. */
+export const CODE_REVIEW_TERMINALS = Object.freeze(['answered', 'unusable', 'failed', 'not_sent']);
 /** The kinds of the session dossier's items (code-context.js `codeDossier`), built by code from the saved report. */
 export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pivot', 'failure',
   'edit_against_instruction']);
@@ -3024,20 +3161,126 @@ export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pi
  *   never_ran                 no command was recorded after the file's last edit: the final state never ran
  *   ask_short                 an ask partly done or not done: find the shortfall in the diff
  *   edit_against_instruction  an edit against an instruction: find what it broke
+ *   ask_done                  (code-pass/7) an ask the session review shows done: check the change delivers every part
+ *                             of it
  */
 export const CODE_DOSSIER_MOVES = Object.freeze(['claim_unconfirmed', 'claim_confirmed', 'design_point', 'not_acting',
-  'failure_passed_over', 'never_ran', 'ask_short', 'edit_against_instruction']);
+  'failure_passed_over', 'never_ran', 'ask_short', 'edit_against_instruction', 'ask_done']);
 /**
- * What the code step's coverage footer names, by kind (after PR-Agent `pr_reviewer.py:1350-1376`). Closed.
- *   listed_by_name  a readable file no request had room to show whole (its hunks, if any, were shown)
- *   clipped         a file whose own hunks or whole text are over what one request can carry
- *   withheld        a file a privacy or drift rule kept out, by its closed state
- *   failed          a call that did not answer (a lens of a group, step 1, or a check)
+ * What the code step's coverage footer names (`footer[]`, each `{ kind, path?, count?, part? }`; code-pass/7, after
+ * PR-Agent `pr_reviewer.py:1350-1376`). Closed.
+ *   withheld        a path of the change whose hunks are not in the change block, by its own state (`path`; its
+ *                   `files[]` entry gives the state), a recorded write outside the working directory in the repository
+ *                   included
+ *   clipped         a path of the change whose hunks are over the change block's bound (`path`): the agent may read the
+ *                   file, not its diff
+ *   failed          calls of a part of the code step (`part`, CODE_STEP_PARTS) that gave no usable answer (`count`)
+ *   outside_root    recorded writes outside the repository (`count`): an agent's scratch files, counted, not part of
+ *                   the change reviewed
+ *   source_changed  the repository changed while the code step ran (its state before the first request and after the
+ *                   last differ), so what the agents read may mix two states
  */
-export const CODE_FOOTER_KINDS = Object.freeze(['listed_by_name', 'clipped', 'withheld', 'failed']);
-/** The parts of the code step a failed call is named by in the footer (`failed[].step`): step 1, a lens of a group,
- *  step 1's checking passes, a finding's checking passes. Closed. */
-export const CODE_STEP_PARTS = Object.freeze(['check', 'lens', 'check_challenge', 'finding_challenge']);
+export const CODE_FOOTER_KINDS = Object.freeze(['withheld', 'clipped', 'failed', 'outside_root', 'source_changed']);
+/** The parts of the code step (code-pass/7): the review agent, its one repair, a finding's checking agent, the batch
+ *  checking agent of the questions. A failed call is named by its part in the footer. Closed. */
+export const CODE_STEP_PARTS = Object.freeze(['review', 'repair', 'verify', 'batch']);
+
+// ---- the report's items and their tiers (D96, D97): closed vocabularies ----------------------------------------------
+
+/** The three tiers of the report, in display order (D97): what you must act on, what you must know, what is good to
+ *  know (folded). The tier is the section, never a badge or a colour. Each item kind's default, floor and ceiling are
+ *  frozen literals in triage.js (`ITEM_KIND_TABLE`). Closed. */
+export const REPORT_TIERS = Object.freeze(['must_act', 'must_know', 'good_to_know']);
+/** The importance the code step's review agent may propose for one item (D96, its `triage` list): `high` (must act),
+ *  `medium` (must know) or `low` (good to know). Code maps it to a tier and keeps it inside the floor and ceiling of
+ *  the item's kind (triage.js `boundTier`); no other rating, score, rank or confidence is accepted from a model.
+ *  Closed. */
+export const TRIAGE_LEVELS = Object.freeze(['high', 'medium', 'low']);
+/**
+ * The type of a report item, its first word, set by its kind (triage.js `ITEM_KIND_TABLE`), never by a model. Closed.
+ *   fix     something checked is wrong in what the agent delivered
+ *   decide  a decision the agent made on its own, or a question only you can settle
+ *   read    something Sonah could not settle
+ *   verify  something not proven, or proven false by the recording
+ */
+export const REPORT_ITEM_TYPES = Object.freeze(['fix', 'decide', 'read', 'verify']);
+/**
+ * The kinds of a report item (D97), in display order within a tier, each read from one row's closed tokens by
+ * triage.js `itemKindOf`, never from its words. Closed.
+ *   ask_not_done             an ask the session review shows not done (a legacy report's open)
+ *   ask_partly_done          an ask shown partly done (a legacy report's partly addressed)
+ *   code_ask_not_met         a published code finding of kind ask_not_met
+ *   claim_contradicted       a session finding: a claim of the agent's the recording contradicts (DECIDE)
+ *   code_claim_false         a published code finding of kind claim_false
+ *   edit_against_instruction a session finding: an edit against something you said (DECIDE)
+ *   code_bug                 a published code finding of kind bug or missed_case
+ *   code_contract            a published code finding of kind contract_break or rule_break
+ *   written_contradicted     a statement the agent wrote into a file, contradicted
+ *   code_weak_test           a published code finding of kind weak_test
+ *   failure_passed_over      a failure the agent passed over
+ *   decision_not_acting      a decision not to act
+ *   decision_unasked         a decision made without asking you
+ *   code_question            a question of the code review for you
+ *   decision_chose           you asked, and the agent decided how
+ *   pivot                    a change of approach
+ *   decision_whether_asked   a decision where Sonah could not check whether you asked
+ *   code_question_finding    a code finding its check found real but not against your goal, asked of you
+ *   claim_corrected          a contradicted claim the agent corrected or told you about, or a helper's (FYI)
+ *   edit_undone              an edit against your words the agent undid or told you about, or a helper's (FYI)
+ *   claim_not_checked        a claim Sonah did not check (listed; an item only when the code review raises it)
+ *   claim_incomplete         a claim that rests on a check that did not finish (listed, as above)
+ *   written_not_checked      a statement in a file Sonah did not check (listed, as above)
+ *   code_finding_legacy      a finding of an earlier code review (the retired combined route, or a code finding of a
+ *                            kind outside CODE_FINDING_KINDS)
+ */
+export const REPORT_ITEM_KINDS = Object.freeze(['ask_not_done', 'ask_partly_done', 'code_ask_not_met',
+  'claim_contradicted', 'code_claim_false', 'edit_against_instruction', 'code_bug', 'code_contract',
+  'written_contradicted', 'code_weak_test', 'failure_passed_over', 'decision_not_acting', 'decision_unasked',
+  'code_question', 'decision_chose', 'pivot', 'decision_whether_asked', 'code_question_finding', 'claim_corrected',
+  'edit_undone', 'claim_not_checked', 'claim_incomplete', 'written_not_checked', 'code_finding_legacy']);
+/**
+ * Why an item's final tier is not the one proposed for it (triage.js `boundTier`). Closed.
+ *   kind_floor            the proposal was below the floor of the item's kind
+ *   kind_ceiling          the proposal was above the ceiling of the item's kind
+ *   refused_call_ceiling  the item cites a call a permission rule or auto mode refused before it ran: never Must act
+ */
+export const TIER_BOUND_REASONS = Object.freeze(['kind_floor', 'kind_ceiling', 'refused_call_ceiling']);
+/**
+ * What is wrong with one entry of the code review's `triage` or `files` list, beside the shape errors of
+ * CODE_ITEM_ERRORS (code-pass/10): named in the one repair when a failing finding or question asks for it, and kept as
+ * a dropped entry's `cause`, one record an entry. Closed.
+ *   triage_key_unknown   a key that names no finding or question of the answer and no dossier item; or, in a file
+ *                        note's `asks`, a key that names no ask of the dossier
+ *   triage_key_repeated  a later entry for a key (or a file path) an earlier entry holds
+ *   triage_not_item      a dossier key whose row can be no item of the report (a done ask, a settled decision, a
+ *                        confirmed claim)
+ *   file_not_in_change   a file note for a path that is no file of the change
+ *   where_ungrounded     an entry's `where` did not ground: the place alone is dropped, the entry is kept (a reader
+ *                        counts it among the kept entries, not the dropped ones)
+ *   item_withheld        the finding or question the entry names was withheld, so the entry has nothing to stand on
+ */
+export const TRIAGE_ERRORS = Object.freeze(['triage_key_unknown', 'triage_key_repeated', 'triage_not_item',
+  'file_not_in_change', 'where_ungrounded', 'item_withheld']);
+
+// ---- two readers of a row's closed tokens, shared by the report's readers and triage.js -------------------------------
+
+const rowObject = (row) => row !== null && typeof row === 'object' && !Array.isArray(row);
+const [, CLAIM_VERIFIED_STATUS, CLAIM_INCOMPLETE_STATUS] = PROMISE_STATUSES;
+/** D88: the kind of one claim (a published promise) by its status: confirmed by a recorded result is neither (it is
+ *  listed under what the agent told you); resting on a check that never completed is folded; any other status reads not
+ *  checked (PROMISE_STATUS_WORDS) and is folded. (Moved here from review.js, which re-exports it, so triage.js reads it
+ *  without importing review.js.) */
+export const claimRowKind = (p) => (!rowObject(p) || p.status === CLAIM_VERIFIED_STATUS ? null
+  : p.status === CLAIM_INCOMPLETE_STATUS ? 'claimsIncomplete' : 'claimsOpen');
+/** The state of a column the ledger derived (`deriveColumn`: `columnState` grounded); every other decision's column is
+ *  null with `columnState` unchecked. */
+export const DERIVED_COLUMN_STATE = 'grounded';
+/** The judgment-first review (low, one counting): who decided a decision, as every reader reads it — its column only
+ *  when the ledger derived it (DECISION_COLUMNS, `columnState` DERIVED_COLUMN_STATE), else null (the review could not
+ *  tell whether you asked). The page's and the story's groups and the attention summary's kinds read this one rule.
+ *  (Moved here from review.js, which re-exports it.) */
+export const derivedColumn = (d) => (rowObject(d) && DECISION_COLUMNS.includes(d.column)
+  && d.columnState === DERIVED_COLUMN_STATE ? d.column : null);
 
 // ---- status reduction -----------------------------------------------------------------
 
@@ -3533,8 +3776,8 @@ export function aggregateStatus(statuses) {
 export const SESSION_WIDE = 'session-wide';
 
 /**
- * Why a part (or the session-wide entry) is not CLEAN. Closed; one rendered sentence each
- * (review.js `PART_REASON_SENTENCE`); never built from text, so a per-reason rate stays computable.
+ * Why a part (or the session-wide entry) is not CLEAN. Closed; never built from text, so a per-reason rate stays
+ * computable.
  *   finding_decide, finding_fyi  a published session finding cites its events, DECIDE / FYI
  *   decide_unsettled             (M33 K) a claim citing the result that contradicts it — DECIDE-bound — cites
  *                                its events (its stated or contradictedBy event), and that claim's challenge

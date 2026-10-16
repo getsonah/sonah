@@ -4,7 +4,6 @@ import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { redact } from '../../redact/index.js';
 import { DIGEST_PATTERN } from '../../evidence/contracts/canonical.js';
 
 export const DECISION_REVIEW_VERBS = Object.freeze(['accept', 'change', 'clarify']);
@@ -15,15 +14,11 @@ const HASH = /^[0-9a-f]{64}$/;
 const DECISION_ID = DIGEST_PATTERN;
 const HOME = () => process.env.SONAH_HOME ?? join(homedir(), '.sonah');
 const FILE = () => join(HOME(), 'decision-reviews.ndjsonl');
-// Reuse the full prose redactor for human reasons.
-function scrub(value) {
-  return redact({ ask: [], ledger: [], claim: { finalMessage: String(value ?? '') }, dropped: [] })
-    .ledger.claim.finalMessage;
-}
-/** A reason a record may carry: words, trimmed, at most the limit, and nothing the redactor would change. */
+/** A reason a record may carry: words, trimmed, at most the limit. D90 (owner decision 2026-10-15): it is kept as the
+ *  person wrote it; nothing is refused for what a redactor would have masked. */
 export function acceptableReason(reason) {
   return typeof reason === 'string' && reason.trim() === reason && reason.length > 0
-    && reason.length <= DECISION_REVIEW_REASON_LIMIT && scrub(reason) === reason;
+    && reason.length <= DECISION_REVIEW_REASON_LIMIT;
 }
 /** v2 (D69 f (g)): an M33 report's decision by its ledger id. A v1 record (a legacy tree's choice by `decisionKey`) left
  *  by an older build is not valid here: it is neither written nor loaded. */

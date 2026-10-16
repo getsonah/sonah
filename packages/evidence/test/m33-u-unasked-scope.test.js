@@ -369,8 +369,9 @@ test('U an incomplete window states which decisions its scope is complete for; a
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
   const session = sessionOf({ partial: true });
   const [window] = planWindows(session);
   const { evidencePrompt } = buildNarrativePrompt({ session, window });

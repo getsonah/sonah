@@ -13,7 +13,6 @@ import { NOW_ANSWER, PROMPT_VERSION, RECOLUMN_HEADING, RECOLUMN_WORDS, RECOLUMN_
 import { DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, RESOLUTION_CHALLENGE_OUTCOMES, JUDGMENT_REASONS }
   from '../src/ledger.js';
 import { CHECKLIST_PROPOSITIONS, checklistProposition, SESSION_DOSSIER_NOTE } from '../src/challenge.js';
-import { renderReview } from '../src/review.js';
 import { renderSessionPage, PAGE_COLUMN_REASON_WORDS } from '../../render/session-page.js';
 import { windowOfLabel } from '../../cli/src/session-review.js';
 
@@ -80,8 +79,9 @@ test('W1 A: the vocabularies, the version and the label', () => {
   // One bump for the new request (the re-ask's fixed words).
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
   assert.equal(windowOfLabel('narrative:w2:recolumn:3'), 2, 'a re-ask belongs to its window (F226)');
 });
 
@@ -148,8 +148,7 @@ test('W1 A: a new column its own check does not uphold is published "could not t
       verdict: verdicts({ column: 'refuted' }), recolumn: () => narrative([choseHow(n)]) }));
     const html = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) });
     const words = PAGE_COLUMN_REASON_WORDS[DECISION_COLUMN_REFUTED];
-    assert.ok(html.includes(`${words[0].toUpperCase()}${words.slice(1).replace(/'/g, '&#39;')}.`));
-    assert.ok(renderReview(report).includes('**not checked** — the review\'s own check rejected'));
+    assert.ok(html.includes(words.replace(/'/g, '&#39;')));
   });
 
 test('W1 A: precision — the refuted column is never published again, and a re-ask that fails changes no more',

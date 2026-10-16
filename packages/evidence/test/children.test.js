@@ -21,7 +21,6 @@ import { buildLedger, sessionCoverageFacts, instructionReviewScope, deriveColumn
 import { verifyReceipt } from '../src/session.js';
 import { planWindows } from '../src/windows.js';
 import { buildNarrativePrompt } from '../src/prompt.js';
-import { renderTimeline } from '../src/review.js';
 import { runReview } from '../src/run-review.js';
 
 const AGENT_A = '0123456789abcdef';
@@ -324,17 +323,4 @@ test('B2: a delegation linked to evidence this ledger does not carry stays a mis
   }, { sessionKey: 'parent' });
   assert.deepEqual(session.children.map((c) => c.state), ['missing']);
   assert.deepEqual(buildLedger({ repo, session, pr: null }).gaps.map((g) => g.code), ['missing_child']);
-});
-
-// ---- the timeline ----------------------------------------------------------------------
-
-test('B2: the timeline shows the hand-off and marks the child\'s events as the child\'s', async (t) => {
-  const f = await fixture(t);
-  const { session } = await reviewed(f.root, f.options);
-  const rendered = renderTimeline(session).join('\n');
-  const delegate = session.delegations()[0];
-  assert.match(rendered, new RegExp(`\`${delegate.id}\``), 'the delegate event is on the timeline');
-  assert.match(rendered, /↳ child 01234567/, 'the child\'s events are marked as the child\'s');
-  assert.ok(!/↳ child/.test(rendered.split('\n').find((l) => l.includes(`\`${delegate.id}\``))),
-    'the hand-off itself is the parent\'s action');
 });

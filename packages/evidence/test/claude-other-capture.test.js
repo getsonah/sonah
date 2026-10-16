@@ -67,7 +67,7 @@ test('ToolSearch references remain separate quotable observations after redactio
   assert.equal(report.sessionStatus, 'CLEAN');
 });
 
-test('redacting one ToolSearch reference leaves the next one separate and declares the cut', () => {
+test('a ToolSearch reference an earlier Sonah masked leaves the next one separate and declares the cut', () => {
   const built = buildEvents([{ kind: 'assistant', adapter: 'claude', raw: { type: 'assistant',
     message: { role: 'assistant', content: [{ type: 'tool_use', id: 'q1', name: 'ToolSearch',
       input: { query: 'Find file tools.' } }] } } },
@@ -77,8 +77,14 @@ test('redacting one ToolSearch reference leaves the next one separate and declar
       { type: 'tool_reference', tool_name: 'mcp__safe__read' },
     ] },
   ] } } }]);
-  const cleaned = redact({ ask: [{ turn: 1, text: 'Find file tools.' }],
-    ledger: built.events, claim: {} }).ledger;
+  // D90 (owner decision 2026-10-15): today's redaction keeps each reference as recorded; the ledger an earlier one wrote,
+  // its first reference masked and the mask in its own list of what it dropped (`dropped`), is read below.
+  assert.deepEqual(redact({ ask: [{ turn: 1, text: 'Find file tools.' }], ledger: structuredClone(built.events), claim: {} })
+    .ledger.ledger[0].tailLines, ['API_KEY=abcdefghijklmnopqrstuv', 'mcp__safe__read']);
+  const persisted = structuredClone(built.events);
+  persisted[0].tailLines = ['API_KEY=‹redacted›', 'mcp__safe__read'];
+  const cleaned = redact({ ask: [{ turn: 1, text: 'Find file tools.' }], ledger: persisted, claim: {},
+    dropped: [{ turn: 0, reason: 'redacted:assigned-secret', where: 'tailLines' }] }).ledger;
   const session = sessionFromLedger(cleaned, { sessionKey: 'tool-reference-redaction-synthetic' });
   const observation = session.events.find((event) => event.kind === 'observation');
   assert.deepEqual(session.textSpansOf(observation, 'output'), ['API_KEY=', 'mcp__safe__read']);
@@ -89,10 +95,14 @@ test('redacting one ToolSearch reference leaves the next one separate and declar
 
 test('a dropped token in ask or commentary creates gaps and cannot ground a receipt', async () => {
   const marker = '‹dropped:high-entropy›';
+  // A ledger an earlier Sonah's redactor wrote: its marks, and its own list of what it dropped (D90: the declaration
+  // that makes them its marks; d90-recorded-marks.test.js reads the same text with none).
   const session = sessionFromLedger({
     ask: [{ turn: 1, text: `Before ${marker} after.` }],
     commentary: [{ turn: 1, beforeEvent: 0, text: `Working ${marker} now.` }],
     ledger: [],
+    dropped: [{ turn: 1, reason: 'dropped:unclassified-high-entropy-token', where: 'ask' },
+      { turn: 1, reason: 'dropped:unclassified-high-entropy-token', where: 'commentary' }],
   }, { sessionKey: 'claude-dropped-synthetic' });
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'instructions'));
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'commentary'));
@@ -103,11 +113,13 @@ test('a dropped token in ask or commentary creates gaps and cannot ground a rece
     assert.equal(verifyReceipt(session,
       { eventId: event.id, role: event.kind, quote: 'high-entropy' }).ok, false);
   }
+  // D90: a Session reads a ref as the adapter cut it and never splits one again by what its text says; the adapter keeps
+  // a declared mark out of every ref (above), and anywhere else the same characters are recorded text.
   const direct = new Session({ sessionKey: 'persisted-older-route', blobs: { text: `Before ${marker} after.` },
     events: [{ id: 'I1', kind: 'instruction', authority: 'human', sequence: 0,
       supersedes: [], text: [{ sourceKey: 'text', fromByte: 0,
         untilByte: Buffer.byteLength(`Before ${marker} after.`) }] }] });
-  assert.equal(direct.textSpanInfoOf(direct.event('I1')).complete, false);
+  assert.deepEqual(direct.textSpanInfoOf(direct.event('I1')), { spans: [`Before ${marker} after.`], complete: true });
   const report = await runReview({ session, pr, judge: empty });
   assert.equal(report.sessionStatus, RECORDER_LIMITED);
 });
@@ -192,8 +204,7 @@ test('one later redacted, native completed TaskOutput closes only its Workflow c
   assert.equal(report.sessionStatus, RECORDER_LIMITED);
 });
 
-test('a native completion can be established while redacted result text remains unchecked', async () => {
-  const secret = ['gh', 'p_', 'AbCdEfGhIj', 'KlMnOpQrSt', 'UvWxYz0123', '456789'].join('');
+test('a native completion can be established while result text an earlier Sonah masked remains unchecked', async () => {
   const session = sessionFromLedger(redact({ ask: [{ turn: 1, text: 'Run it.' }], ledger: [
     { turn: 1, seq: 0, kind: 'other', tool: 'Workflow', argsExcerpt: 'script: check',
       inputRecorded: true, workflowAsyncUnresolved: true, workflowTaskId: 'task-1',
@@ -201,8 +212,9 @@ test('a native completion can be established while redacted result text remains 
     { turn: 1, seq: 1, kind: 'other', tool: 'TaskOutput', argsExcerpt: 'task_id: task-1',
       inputRecorded: true, taskOutputTaskId: 'task-1', taskOutputResultTaskId: 'task-1',
       taskOutputCompleted: true, result: { seen: true, outcome: 'unknown' },
-      tailLines: [`API_KEY=${secret}`] },
-  ] }).ledger, { sessionKey: 'redacted-completion-synthetic' });
+      tailLines: ['API_KEY=‹redacted:github-token›'] },
+  ], dropped: [{ turn: 1, reason: 'redacted:github-token', where: 'tailLines' }] }).ledger,
+  { sessionKey: 'redacted-completion-synthetic' });
   assert.ok(!session.adapterGaps.some((gap) => gap.channel === 'observations'
     && String(gap.note ?? '').includes('launched asynchronously')));
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'observations'
@@ -306,11 +318,17 @@ test('whole-redacted generic input cannot disappear into an apparently complete 
   assert.equal(report.sessionStatus, RECORDER_LIMITED);
 });
 
-test('a masked delegation brief retains a gap and its marker is never quotable', async () => {
-  const raw = { ask: [{ turn: 1, text: 'Delegate the implementation.' }], ledger: [],
-    delegations: [{ turn: 1, status: 'unresolved', kind: 'spawn',
-      parentInstruction: { tool: 'Agent', text: 'Use API_KEY=abcdefghijklmnopqrstuv in the task.' } }] };
-  const cleaned = redact(raw).ledger;
+test('a delegation brief an earlier Sonah masked retains a gap and its marker is never quotable', async () => {
+  const raw = (text, persisted = {}) => ({ ask: [{ turn: 1, text: 'Delegate the implementation.' }], ledger: [],
+    delegations: [{ turn: 1, status: 'unresolved', kind: 'spawn', parentInstruction: { tool: 'Agent', text,
+      ...persisted.brief } }], ...persisted.ledger });
+  // D90 (owner decision 2026-10-15): today's redaction keeps the brief as recorded.
+  const today = redact(raw('Use API_KEY=abcdefghijklmnopqrstuv in the task.')).ledger.delegations[0].parentInstruction;
+  assert.deepEqual(today, { tool: 'Agent', text: 'Use API_KEY=abcdefghijklmnopqrstuv in the task.' });
+  // The ledger an earlier one wrote, its value masked and declared (on the brief and in its list of what it dropped),
+  // is still read as masked.
+  const cleaned = redact(raw('Use API_KEY=‹redacted› in the task.', { brief: { redacted: true },
+    ledger: { dropped: [{ turn: 1, reason: 'redacted:assigned-secret', where: 'parent agent instruction' }] } })).ledger;
   assert.equal(cleaned.delegations[0].parentInstruction.redacted, true);
   const session = sessionFromLedger(cleaned, { sessionKey: 'masked-brief-synthetic' });
   const delegate = session.events.find((event) => event.operation === 'delegate');
@@ -327,7 +345,8 @@ test('token-level removal inside a code body declares missing code evidence', as
     { turn: 1, seq: 0, kind: 'create', path: 'src/a.js',
       after: { text: 'const key = ‹dropped:high-entropy›;', truncated: false, lines: 1 },
       result: { seen: true, outcome: 'succeeded', provenance: 'native' } },
-  ] }, { sessionKey: 'dropped-code-synthetic' });
+  ], dropped: [{ turn: 1, reason: 'dropped:unclassified-high-entropy-token', where: 'after' }] },
+  { sessionKey: 'dropped-code-synthetic' });
   const write = session.event('A1-0');
   assert.equal(write.changes[0].redacted, true);
   assert.ok(session.adapterGaps.some((gap) => gap.channel === 'code'

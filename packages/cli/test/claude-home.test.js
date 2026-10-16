@@ -17,7 +17,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, isAbsolute } from 'node:path';
-import { claudeConfigDir, claudeProjectsDir, claudeProjectFolder, recordingHarnessHome } from '../src/claude-home.js';
+import { claudeConfigDir, claudeProjectsDir, harnessHomePlaces } from '../src/claude-home.js';
 import { detectAdapters } from '../src/doctor.js';
 
 const exec = promisify(execFile);
@@ -61,6 +61,14 @@ test('claude home: the rule reads only the env it is given, and the home only wh
   assert.deepEqual(where({ CLAUDE_CONFIG_DIR: undefined, SONAH_CLAUDE_PROJECTS: null }), MATRIX[0][2]);
   assert.equal(claudeConfigDir({ env: { CLAUDE_CONFIG_DIR: '/synthetic/c' }, home: '/elsewhere' }), '/synthetic/c');
   assert.equal(claudeConfigDir({ env: {}, home: '/elsewhere' }), '/elsewhere/.claude');
+});
+
+test('the coding agents\' homes: Claude Code\'s folder and state file, as the review\'s own agents and the person\'s set them, and Codex\'s', () => {
+  assert.deepEqual(harnessHomePlaces({ env: {}, home: '/h' }), ['/h/.claude', '/h/.claude.json', '/h/.codex']);
+  // CLAUDE_CONFIG_DIR keeps the person's sessions (and its own .claude.json) elsewhere; the review's agents run with HOME.
+  assert.deepEqual(harnessHomePlaces({ env: { CLAUDE_CONFIG_DIR: '/c', CODEX_HOME: 'x' }, home: '/h' }),
+    ['/c', '/h/.claude', '/h/.claude.json', resolve('x')]);
+  assert.ok(harnessHomePlaces({ env: { CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' }, home: '/h' }).every(isAbsolute));
 });
 
 // (packages/pr's own copy of the rule was checked here; packages/pr is retired with `sonah pr`, owner decision
@@ -216,55 +224,4 @@ test('the live projects root ignores SONAH_CLAUDE_PROJECTS and follows CLAUDE_CO
   assert.equal(claudeLiveProjectsDir({ env: { SONAH_CLAUDE_PROJECTS: '/synthetic/copy', CLAUDE_CONFIG_DIR: '/synthetic/cfg' }, home: HOME }),
     join('/synthetic/cfg', 'projects'));
   assert.equal(claudeLiveProjectsDir({ env: {}, home: HOME }), claudeProjectsDir({ env: {}, home: HOME }));
-});
-
-test('release review (low): the harness home that wrote a recording, by the recorder\'s own layout below it', () => {
-  // Claude Code: <home>/projects/<project>/<session>.jsonl, a helper's under <session>/subagents/, where <project> is
-  // its name for the working directory the recording states; the home's own name does not matter (a second config
-  // folder, set by CLAUDE_CONFIG_DIR only when the session ran).
-  assert.equal(claudeProjectFolder('/srv/u/my app.v2'), '-srv-u-my-app-v2');
-  assert.equal(recordingHarnessHome('/srv/u/.claude-2/projects/-srv-u-app/s.jsonl', 'claude', '/srv/u/app'),
-    '/srv/u/.claude-2');
-  assert.equal(recordingHarnessHome('/opt/agent cfg/projects/-p/s/subagents/agent-a1.jsonl', 'claude', '/p'),
-    '/opt/agent cfg');
-  assert.equal(recordingHarnessHome('/srv/u/.claude/projects/-p/s.jsonl', 'claude', '/p'), '/srv/u/.claude');
-  // A helper may run in a folder under its parent's (a worktree, a sub-folder): its folder is the parent's.
-  assert.equal(recordingHarnessHome('/srv/u/.claude/projects/-p/s/subagents/agent-a1.jsonl', 'claude',
-    '/p/.claude/worktrees/agent-a1'), '/srv/u/.claude');
-  // Codex: <home>/sessions/<y>/<m>/<d>/rollout-<that date>T….jsonl, or <home>/archived_sessions/rollout-….jsonl.
-  assert.equal(recordingHarnessHome('/srv/cx/sessions/2030/01/02/rollout-2030-01-02T00-00-00-a.jsonl', 'codex'), '/srv/cx');
-  assert.equal(recordingHarnessHome('/srv/cx/archived_sessions/rollout-2030-01-02T00-00-00-a.jsonl', 'codex'), '/srv/cx');
-  // Any other path, or a layout of the other recorder, is none: a copy, a folder in the root, a malformed day folder.
-  for (const [file, adapter, cwd = '/p'] of [['/tmp/recording.jsonl', 'claude'], ['/projects/p/s.jsonl', 'claude'],
-    ['/srv/u/.claude/projects/-p/s.jsonl', 'codex'], ['/srv/cx/sessions/2030/01/02/rollout-a.jsonl', 'claude'],
-    ['/srv/cx/sessions/20x0/01/02/rollout-a.jsonl', 'codex'], ['/srv/cx/sessions/2030/01/02/other.jsonl', 'codex'],
-    ['/srv/u/.claude/projects/-p/s.json', 'claude'], ['relative/projects/-p/s.jsonl', 'claude'],
-    ['/srv/u/.claude/projects/-p/s.jsonl', 'cursor'], [null, 'claude']])
-    assert.equal(recordingHarnessHome(file, adapter, cwd), null, `${file} ${adapter}`);
-});
-
-test('second release review (medium): a folder that only happens to be named projects or sessions is no harness home', () => {
-  // The reviewer's probes: G1, the recording kept in the project it records (~/projects/app/session.jsonl, the
-  // repository at ~/projects/app); G2, recordings kept together (~/projects/recordings/session.jsonl, the project at
-  // ~/code/app). Neither folder is Claude Code's name for the working directory, so neither names a home: the person's
-  // own files are read as any project's.
-  assert.equal(recordingHarnessHome('/srv/u/projects/app/session.jsonl', 'claude', '/srv/u/projects/app'), null);
-  assert.equal(recordingHarnessHome('/srv/u/projects/recordings/session.jsonl', 'claude', '/srv/u/code/app'), null);
-  assert.equal(recordingHarnessHome('/srv/u/projects/app/s/subagents/agent-a1.jsonl', 'claude', '/srv/u/projects/app'),
-    null);
-  // A Claude Code recording that states no absolute working directory names none either (fails toward reading).
-  for (const cwd of [null, '', 'app', undefined])
-    assert.equal(recordingHarnessHome('/srv/u/.claude-2/projects/app/s.jsonl', 'claude', cwd), null, String(cwd));
-  // A helper's folder is the parent's, or one holding it, never the file system's root.
-  assert.equal(recordingHarnessHome('/srv/u/projects/-/s/subagents/agent-a1.jsonl', 'claude', '/srv/u/app'), null);
-  assert.equal(recordingHarnessHome('/srv/u/projects/-srv-u-other/s/subagents/agent-a1.jsonl', 'claude',
-    '/srv/u/app'), null);
-  // The real layout still names its home, by any name, the working directory spelled as Claude Code spells it.
-  assert.equal(recordingHarnessHome('/srv/u/.claude-2/projects/-srv-u-code-my-app/s.jsonl', 'claude',
-    '/srv/u/code/my_app'), '/srv/u/.claude-2');
-  // Codex: day folders that are not the rollout's date, or a file not named as a rollout, name none.
-  for (const file of ['/srv/u/sessions/2030/01/03/rollout-2030-01-02T00-00-00-a.jsonl',
-    '/srv/u/notes/sessions/2030/1/2/rollout-2030-01-02T00-00-00-a.jsonl',
-    '/srv/u/sessions/2030/01/02/rollout-backup.jsonl', '/srv/u/archived_sessions/rollout-a.jsonl'])
-    assert.equal(recordingHarnessHome(file, 'codex'), null, file);
 });

@@ -136,9 +136,9 @@ function usage() {
     '  A review runs to the end and says up front how long it should take; Ctrl-C',
     '  stops it (answers are kept). Optional stops, off by default: --max-calls N',
     '  --max-input-bytes N --stop-at-utilization U.',
-    '  The code step: a review also reads the files the session changed or read,',
-    '  as they are now, and sends them to the reviewer. It is on unless you run',
-    '  sonah config code-pass off, or add --no-code-pass to one review.',
+    '  The code step: a review agent also reads your repository with read-only',
+    '  tools and reviews the session\'s change (claude-cli only). It is on unless',
+    '  you run sonah config code-pass off, or add --no-code-pass to one review.',
     '  sonah review --help lists the review options.'].join('\n');
 }
 

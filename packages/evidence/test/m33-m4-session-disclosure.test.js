@@ -28,11 +28,12 @@ import * as challenge from '../src/challenge.js';
 import * as review from '../src/review.js';
 import * as forbidden from '../src/forbidden.js';
 import * as story from '../../render/session-story.js';
+import { REPORT_WHAT_WORDS, REPORT_DISCLOSURE_WORDS, REPORT_ITEM_WORDS } from '../../render/report-words.js';
 import * as R from './m33-n-forbidden-edit-rows.js';
 import { MOVED_BY_M4_SESSION } from './m33-m4-disclosure-fixture.js';
 import { INTEGRATION_VERSIONS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS, S7_VERSIONS } from './m33-integration-fixture.js';
 import { FIX_COLUMN_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS,
-  CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS }
+  CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS }
   from './m33-integration-fixture.js';
 
 const PROFILES = [null, 'm33-fast', 'm33-lean'];
@@ -134,7 +135,13 @@ test('M4 session: the version moved once, and the forbidden-edit note no longer 
   // check's checker sees what its row states again.
   assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before, CODE_STEP_REREVIEW_VERSIONS.challenge.after);
 
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
   const [before, after] = MOVED_BY_M4_SESSION.texts.forbiddenNote;
   assert.ok(challenge.FORBIDDEN_EDIT_NOTE.includes(after) && !challenge.FORBIDDEN_EDIT_NOTE.includes(before));
   assert.ok(!challenge.FORBIDDEN_EDIT_NOTE.includes('reportedBy'));
@@ -180,21 +187,19 @@ test('M4 session: an upheld disclosure of a forbidden edit publishes FYI `disclo
   }
 });
 
-test('M4 session: the review and the story say the agent told you, with its words, under Findings (D71: no status)', async (t) => {
+test('M4 session: the story says the agent told you, with its words (D71: no status)', async (t) => {
   const session = await claude(t);
   const said = sayingOf(session, R.WORDS.strength);
   const report = await reviewOf(session, [edit(session)]);
-  const md = review.renderReview(report);
-  assert.ok(md.includes(review.DISCLOSURE_SENTENCE.disclosed(`“${R.WORDS.strength}” \`${said}\``)));
-  assert.ok(md.includes('| You said | The agent wrote |'));
-  const told = story.renderSessionStory(session, report);
-  const at = told.indexOf('## Edits against what you said');
-  assert.ok(at >= 0 && !told.includes('## Needs your decision') && !told.includes('## Worth a look'));
-  const section = told.slice(at);
-  assert.ok(section.includes(story.STORY_SENTENCES.forbiddenEdit));
-  assert.ok(section.includes(story.STORY_SENTENCES.editDisclosed));
-  assert.ok(section.indexOf(`**You said:** ${R.WORDS.constraint}`) < section.indexOf(`**The agent wrote:** ${R.WORDS.origin}`));
-  assert.ok(section.includes(`**${story.STORY_FORBIDDEN_EDIT_LABELS.reported}:** ${R.WORDS.strength}`));
+  // D97: the report .md says it as what it is, an item of its own kind: what you said, what the agent wrote, and what
+  // the agent told you, each in its own words.
+  const told = story.renderReportMarkdown(session, report);
+  assert.ok(!told.includes('Needs your decision') && !told.includes('Worth a look'));
+  const esc = review.escapeSource;
+  assert.ok(told.includes(`${REPORT_WHAT_WORDS.editAgainst} ${REPORT_DISCLOSURE_WORDS.edit.disclosed}`), told);
+  const yours = told.indexOf(`${REPORT_ITEM_WORDS.youSaid} “${esc(R.WORDS.constraint)}”`);
+  assert.ok(yours >= 0 && yours < told.indexOf(`${REPORT_ITEM_WORDS.breach.wrote} “${esc(R.WORDS.origin)}”`), told);
+  assert.ok(told.includes(`${REPORT_ITEM_WORDS.agentTold} “${esc(R.WORDS.strength)}”`), told);
   assert.equal(story.disclosedEdit(report.findings[0]), report.findings[0].disclosedBy);
 });
 
@@ -208,7 +213,6 @@ test('M4 session: a refuted, unbound or unvoted disclosure leaves the edit DECID
     assert.equal(report.sessionStatus, 'DECIDE', disclosure);
     // The disclosure's run is kept apart from the window's: it never makes the review incomplete.
     assert.equal(report.sessionReview, 'complete', disclosure);
-    assert.ok(!review.renderReview(report).includes('The agent told you'), disclosure);
   }
 });
 
@@ -368,9 +372,8 @@ test('M4 session review: a helper\'s own statement about its own forbidden edit 
     assert.deepEqual(report.counts.disclosures, { proposed: 1, rejected: { ...zeros, cross_actor: 1 }, upheld: 0 }, label);
     assert.deepEqual(disclosureLabels(seen), [], label);
     assert.equal(report.sessionStatus, 'DECIDE', label);
-    assert.ok(!review.renderReview(report).includes('The agent told you'), label);
-    const told = story.renderSessionStory(session, report);
-    assert.ok(told.includes('## Edits against what you said') && !told.includes(story.STORY_SENTENCES.editDisclosed), label);
+    const told = story.renderReportMarkdown(session, report);
+    assert.ok(told.includes(REPORT_WHAT_WORDS.editAgainst) && !told.includes(REPORT_DISCLOSURE_WORDS.edit.disclosed), label);
     // M35: the main agent's statement is the parent's session's, which a helper's own window is never shown: its
     // disclosure is `unsupplied`, and the helper's edit stays DECIDE. M36 phase 3 (D68 K): this small helper shares its
     // parent's window, which shows the main agent's statement: it is the main agent's own words to the human, asked and

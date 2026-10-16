@@ -408,7 +408,7 @@ test('a legacy recording without the paginated item stream is unchanged', async 
     'nativeInventoryGaps']) assert.equal(Object.hasOwn(ledger.capture, key), false, key);
 });
 
-test('native command text and output pass through redaction and fail closed', async (t) => {
+test('D90: native command text and output pass through redaction as recorded', async (t) => {
   const V = ['hunt', 'er2', 'xW3e7'].join('');
   const script = `export API_TOKEN=${V} && node build.js`;
   const ledger = await slice(t, [meta, started('t1'), ask('Build.'),
@@ -417,10 +417,9 @@ test('native command text and output pass through redaction and fail closed', as
   assert.equal(natives(ledger).length, 1);
   const clean = redact(ledger);
   const [native] = clean.ledger.ledger.filter((e) => e.provenance === NATIVE);
-  assert.equal(JSON.stringify(native).includes(V), false);
-  assert.equal(JSON.stringify(clean.ledger).includes(V), false);
-  assert.ok(clean.dropped.some((d) => d.where === 'cmd'));
-  assert.ok(clean.dropped.some((d) => d.where === 'tailLines'));
+  assert.equal(native.cmd, script);
+  assert.ok(native.tailLines.includes(`password=${V}`));
+  assert.deepEqual(clean.dropped, []);
 });
 
 test('the same recording slices to the same bytes twice', async (t) => {

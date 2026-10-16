@@ -1,5 +1,6 @@
-// D87 (owner decisions 2026-10-13/14): `sonah review --code-pass` — the flag, the files it reads, the session part it
-// leaves byte for byte as it was, the stored answers it reuses, and what it never lets reach a page or a story.
+// D87 (owner decisions 2026-10-13/14), the agentic code step (code-pass/7, D90): `sonah review --code-pass` — the
+// flag, what it reads, the session part it leaves byte for byte as it was, the stored answers it reuses, the backend it
+// runs on, and (D90) what the agents read, shown as it is.
 //
 // Synthetic sessions, synthetic files and a deterministic fake reviewer: no recording, no model, no network.
 import test from 'node:test';
@@ -7,22 +8,24 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CODE_PASS_NO_ROOT, codeSnapshotLine, parseSessionReviewArgs, runSessionReviewCommand, sessionReviewUsage,
-  runStateLine } from '../src/session-review-command.js';
-import { readCodeSnapshot } from '../src/code-snapshot.js';
-import { estimateLine } from '../src/review-budget.js';
-import { CODE_FILES, FAKE_KEY, codeSession, codeJudge, contradictClaim, findEmptyInput, repoWith, sha256 }
+import { CODE_PASS_NO_ROOT, CODE_STEP_BACKEND_LINE, codeSnapshotLine, codeStepLine, parseSessionReviewArgs,
+  runSessionReviewCommand, sessionReviewUsage, runStateLine } from '../src/session-review-command.js';
+import { createRepositoryReader, readCodeSnapshot } from '../src/code-snapshot.js';
+import { reviewCodePass } from '../src/session-review.js';
+import { Session } from '../../evidence/src/session.js';
+import { estimateLine, CODE_STEP_ESTIMATE_MINUTES } from '../src/review-budget.js';
+import { CODE_FILES, FAKE_KEY, PARSE_QUOTE, codeSession, codeJudge, gitRepoWith, repoWith, reviewFinding, sha256 }
   from './code-pass-fixture.js';
 
-const CODE_LABEL = /^(?:code-check|code-pass|challenge:code-check|challenge:code-finding)(?::|$)/;
+const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
 const strip = (report) => {
   const { codePass: _pass, ...rest } = report;
   return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
 };
 
 /** One `sonah review` run on the synthetic session, its files under `root`, its state under `state`. */
-async function review(t, { root, state = null, argv = [], judge = codeJudge({ check: contradictClaim, pass: findEmptyInput }),
-  session = codeSession(), cwd = root, maskOutput = undefined, format = 'md' } = {}) {
+async function review(t, { root, state = null, argv = [], judge = codeJudge(), session = codeSession(), cwd = root,
+  format = 'md', runCode = undefined } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'sonah-code-pass-run-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const home = join(dir, 'home'), file = join(dir, 'recording.jsonl');
@@ -37,10 +40,11 @@ async function review(t, { root, state = null, argv = [], judge = codeJudge({ ch
     stdout: { write: (text) => { out += text; } }, stderr: { write: (text) => { err += text; } }, cwd: root ?? dir, env,
     installSignals: false, loadReviews: async () => new Map(), openPage: async () => {},
     loadSession: async () => ({ session, hash: sha256('synthetic'), cwd }),
-    ...(maskOutput ? { maskOutput } : {}),
-    createJudge: ({ onResult }) => async (request) => {
+    ...(runCode ? { runCode } : {}),
+    createJudge: ({ config, onResult }) => async (request) => {
       calls.push(request);
-      onResult({ ok: true, backend: 'claude-cli', attestation: 'attested', contextWindow: 1_000_000 });
+      onResult({ ok: true, backend: config.backend, attestation: config.backend === 'claude-cli' ? 'attested' : 'unattested',
+        contextWindow: config.backend === 'claude-cli' ? 1_000_000 : null });
       return judge(request);
     } });
   const written = await readFile(output, 'utf8').catch(() => null);
@@ -62,21 +66,22 @@ test('D87 --code-pass and --no-code-pass: each parses once, never both, is liste
     }
     assert.throws(() => parseSessionReviewArgs(['--code-pass', '--no-code-pass']),
       (error) => error.code === 'usage' && error.problem === 'give --code-pass or --no-code-pass, not both');
-    assert.match(sessionReviewUsage, /^ {2}--code-pass, --no-code-pass\n {27}the code step, on or off for this review/m);
+    assert.match(sessionReviewUsage, /^ {2}--code-pass, --no-code-pass\n {27}the code review, on or off for this review/m);
+    // The agentic code step: what the step does, in the help.
+    assert.match(sessionReviewUsage, / It\n {27}reads the repository \(Read, Grep, Glob, no shell\)/);
+    assert.match(sessionReviewUsage, /runs only on claude-cli$/m);
     assert.ok(sessionReviewUsage.split('\n').every((line) => line.length <= 80));
   });
 
-test('D87: the session part is byte-identical with the code pass on and off — every request, the report and its statuses', async (t) => {
+test('D87: the session part is byte-identical with the code step on and off — every request, the report and its statuses', async (t) => {
   const root = await repoWith(t);
   const off = await review(t, { root, argv: ['--no-code-pass'] });
   const on = await review(t, { root, argv: ['--code-pass'] });
   // Owner decision 2026-10-14: with no flag the code step runs (the default), the same requests as --code-pass.
   const byDefault = await review(t, { root });
   assert.equal(off.code, 0);
-  assert.equal(on.code, 0);
+  assert.equal(on.code, 0, on.err);
   assert.equal(byDefault.code, 0);
-  // Sorted: one lane does not fix the order of a challenge's passes, which start together and each read the answer
-  // store first (answer-cache.js `memoizeJudge`), so under load p3 can be sent before p2 (lean-default.test.js).
   const session = (calls) => calls.filter((r) => !CODE_LABEL.test(r.label))
     .map((r) => JSON.stringify([r.label, r.system, r.prompt])).sort();
   assert.ok(session(off.calls).length > 0);
@@ -84,25 +89,33 @@ test('D87: the session part is byte-identical with the code pass on and off — 
   assert.equal(off.calls.filter((r) => CODE_LABEL.test(r.label)).length, 0, 'with --no-code-pass the step asks nothing');
   const all = (calls) => calls.map((r) => JSON.stringify([r.label, r.system, r.prompt])).sort();
   assert.deepEqual(all(byDefault.calls), all(on.calls), 'no flag sends what --code-pass sends');
-  assert.match(byDefault.out, /^Code step: on \(the default\)\. /m);
-  assert.match(on.out, /^Code step: on \(--code-pass\)\. /m);
-  assert.match(off.out, /^Code step: off \(--no-code-pass\)\. Only the session is reviewed; no file is read or sent\. /m);
-  assert.ok(on.calls.some((r) => r.label === 'code-check') && on.calls.some((r) => r.label === 'code-pass:behaviour'));
-  // The report: the session's members as they were; the pass beside them, and each checked row's codeCheck.
+  assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole repository \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  assert.match(on.out, /^Code review: on \(--code-pass\)\. /m);
+  assert.match(off.out, /^Code review: off \(--no-code-pass\)\. Sonah reviews only the session, and reads or sends no file\. /m);
+  // The agent requests: the review agent, then the checking agent of its one finding, each with its agent fields.
+  const code = on.calls.filter((r) => CODE_LABEL.test(r.label));
+  assert.deepEqual(code.map((r) => r.label), ['code-review:agent', 'code-verify:F1']);
+  assert.deepEqual(code.map((r) => [r.agent.maxTurns, r.agent.timeoutMs]), [[150, 45 * 60_000], [60, 30 * 60_000]]);
+  assert.ok(code.every((r) => r.agent.root === root && Array.isArray(r.agent.addDirs) && r.schema));
+  // The report: the session's members as they were; the pass beside them, and the row its claim_false finding names.
   assert.equal(off.report.codePass, undefined);
   assert.deepEqual(strip(on.report), JSON.parse(JSON.stringify(off.report)));
   assert.equal(on.report.promises[0].status, off.report.promises[0].status);
-  assert.equal(on.report.promises[0].codeCheck.outcome, 'contradicted-by-code');
-  // The story keeps the session's sections; it adds the code review's and the code check beside each checked row.
-  assert.match(on.written, /## What the code review found/);
-  assert.doesNotMatch(off.written, /What the code review found|code check:/);
-  assert.match(on.out, /code pass read every file it showed/);
-  assert.match(on.out, /1 claim \(asks, decisions\) contradicted by the code at review time/);
-  assert.doesNotMatch(off.out, /code pass|Code pass/);
-  assert.equal(off.out.match(/code step/gi).length, 1, 'off: only the line that says so');
+  assert.deepEqual([on.report.promises[0].codeCheck.outcome, on.report.promises[0].codeCheck.by],
+    ['contradicted-by-code', 'finding']);
+  // D97: the report .md (the story since /32) shows what the code review found as items, in its own words.
+  assert.match(on.written, /How the code gets there:/);
+  assert.doesNotMatch(off.written, /How the code gets there:|contradicted by the code review|code check:/);
+  assert.match(on.out, /code review covered the whole change/);
+  // D97: the terminal's count line names the code review's finding by its place, a Must act item.
+  assert.match(on.out, /^Must act: ask 1 · src\/parse\.js:2 \(item 2\)$/m);
+  assert.doesNotMatch(off.out, /src\/parse\.js:2/);
+  assert.doesNotMatch(off.out, /code review (covered|did|had)/);
+  assert.equal(off.out.match(/code review/gi).length, 1, 'off: only the line that says so');
 });
 
-/** The FAKE secrets planted in a shown file: a key of a known shape, and a value only its key name reveals. */
+/** FAKE secrets in a file the review agent reads and the session only read: a key of a known shape, and a value only its
+ *  key name reveals. Not credentials. */
 const CONTEXT_SECRET = 'Zk3vQ9pLm2Xw7Rt8yU4n';
 const PLANTED = Object.freeze({ ...CODE_FILES, 'src/util.js': [
   'export const SEPARATOR = ",";',
@@ -112,95 +125,143 @@ const PLANTED = Object.freeze({ ...CODE_FILES, 'src/util.js': [
   '};',
   '',
 ].join('\n') });
-/** A reviewer that quotes the planted lines and restates both values in its own words. */
-const leakingJudge = () => codeJudge({
-  check: (rows) => rows.map((row) => ({ key: row.key, answer: 'contradicts',
-    explanation: `It keeps ${FAKE_KEY} and ${CONTEXT_SECRET} in code.`,
-    receipts: [{ path: 'src/util.js', side: 'new', startLine: 2, endLine: 2, quote: `export const TOKEN = "${FAKE_KEY}";` }] })),
-  // The secrets are in a file the session read (not changed), so the finding is a contract break traced from the
-  // changed line of parse.js into util.js.
-  pass: (prompt, files, lens) => (lens !== 'behaviour' ? [] : [{ kind: 'contract_break',
-    title: `Hard-coded ${CONTEXT_SECRET} and ${FAKE_KEY}`, explanation: `The value ${CONTEXT_SECRET} is a password; ${FAKE_KEY} is a token.`,
-    input: `parse("${CONTEXT_SECRET}")`,
-    trace: [{ step: 'parse splits its input.', source: 'file', path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2,
-      quote: 'const parts = input.split(",");' },
-    { step: `It meets ${FAKE_KEY}.`, source: 'file', path: 'src/util.js', side: 'new', startLine: 4, endLine: 4,
-      quote: `password: "${CONTEXT_SECRET}",` },
-    { step: 'And the token.', source: 'file', path: 'src/util.js', side: 'new', startLine: 2, endLine: 2,
-      quote: `export const TOKEN = "${FAKE_KEY}";` }],
-    anchor: { path: 'src/util.js', side: 'new', startLine: 2, endLine: 4 }, leadsFrom: [] }]),
-  questions: (prompt) => {
-    const item = String(prompt).split('\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line))
-      .find((entry) => entry.kind === 'ask');
-    return item ? [{ question: `Should ${FAKE_KEY} stay?`, key: item.key, quote: 'add a parse function' }] : [];
-  },
+/** A reviewer whose finding is traced from parse.js into util.js, a file outside the change, quoting both values. */
+const plantedJudge = () => codeJudge({
+  review: () => ({ findings: [reviewFinding({ kind: 'contract_break', lens: 'contracts',
+    title: 'parse feeds its parts to settings that hold a hard-coded password and token',
+    trace: [reviewFinding().trace[0],
+      { step: 'The settings hold a password.', path: 'src/util.js', side: 'new', startLine: 4, endLine: 4,
+        quote: `password: "${CONTEXT_SECRET}",` },
+      { step: 'And a token.', path: 'src/util.js', side: 'new', startLine: 2, endLine: 2,
+        quote: `export const TOKEN = "${FAKE_KEY}";` }],
+    anchor: { path: 'src/util.js', side: 'new', startLine: 2, endLine: 4 } })], questions: [] }),
 });
-const fragments = (secret) => Array.from({ length: secret.length - 7 }, (_, at) => secret.slice(at, at + 8));
+/** A page's or a story's text with its escapes read back (HTML entities, Markdown backslashes). */
+const unescaped = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&').replace(/\\(.)/g, '$1');
 
-test('D87: a FAKE key planted in a shown file never reaches the page or the story, quoted or restated', async (t) => {
+test('D90: a file outside the change, credential-shaped values in it included, is read, quoted and shown as it is', async (t) => {
   const root = await repoWith(t, PLANTED);
   for (const format of ['html', 'md']) {
-    const { code, written, report, calls } = await review(t, { root, argv: ['--code-pass'], judge: leakingJudge(), format });
+    const { code, written, report } = await review(t, { root, argv: ['--code-pass'], judge: plantedJudge(), format });
     assert.equal(code, 0, format);
-    // The model read the file as it is (D84: unredacted), and the report keeps what it said, on this computer only.
-    assert.ok(calls.some((r) => r.label === 'code-pass:behaviour' && r.prompt.includes(CONTEXT_SECRET)));
-    assert.equal(report.codePass.findings.length, 1, format);
-    // The code step: a finding's trace quotes both planted lines, and an open question restates the key.
-    assert.equal(report.codePass.findings[0].trace.length, 3, format);
-    assert.equal(report.codePass.questions.length, 1, format);
-    for (const secret of [FAKE_KEY, CONTEXT_SECRET])
-      for (const piece of fragments(secret)) assert.ok(!written.includes(piece), `${format}: ${piece}`);
-    assert.match(written, /What the code review found/);
+    // The finding's steps ground in util.js as it is now, though the session only read it: nothing is withheld (D90).
+    const [finding] = report.codePass.findings;
+    assert.deepEqual(finding.trace.map((s) => [s.path, s.startLine, s.quote]), [['src/parse.js', 2, PARSE_QUOTE],
+      ['src/util.js', 4, `password: "${CONTEXT_SECRET}",`], ['src/util.js', 2, `export const TOKEN = "${FAKE_KEY}";`]]);
+    assert.ok(finding.trace.every((s) => s.span.includes(s.quote) && /^[0-9a-f]{64}$/.test(s.sha256)));
+    assert.equal(report.codePass.withheld.length, 0);
+    assert.deepEqual(report.codePass.files.map((f) => f.path), ['src/parse.js'], 'the change is parse.js alone');
+    // The page (/37) and the report .md show the finding as an item in the code review's words.
+    assert.match(written, format === 'html' ? /<em class="by-code-review">/ : /How the code gets there:/, format);
+    // Nothing is masked for a person (D90): the quoted lines reach the page and the report .md as the agent read them.
+    for (const secret of [FAKE_KEY, CONTEXT_SECRET]) assert.ok(unescaped(written).includes(secret), `${format}: ${secret}`);
+    assert.doesNotMatch(written, /‹(?:redacted|dropped)/, format);
   }
 });
 
-test('D87: when the output cannot be masked, nothing is written (output_not_masked)', async (t) => {
-  const root = await repoWith(t);
-  const refuse = (text) => { if (text.includes('What the code review found')) throw new Error('no'); return text; };
-  const { code, err, written } = await review(t, { root, argv: ['--code-pass'], maskOutput: refuse });
-  assert.equal(code, 3);
-  assert.match(err, /output_not_masked/);
-  assert.equal(written, null);
-});
-
-test('D87: the same tree asks nothing twice (D60), and an existing state replays the session part with 0 calls', async (t) => {
-  const root = await repoWith(t);
+test('D60: the same repository asks nothing twice, and an existing state replays the session part with 0 calls', async (t) => {
+  // A git repository, so the code step's answers are keyed by its state (an agent request without one is never stored).
+  const root = await gitRepoWith(t);
   const dir = await mkdtemp(join(tmpdir(), 'sonah-code-pass-state-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const state = join(dir, 'state');
-  // The reuse dry run: a review without the pass, then `--code-pass --state-dir <existing>`.
   const first = await review(t, { root, state, argv: ['--no-code-pass'] });
   assert.ok(first.calls.length > 0);
   const second = await review(t, { root, state, argv: ['--code-pass'] });
   assert.ok(second.calls.length > 0);
   assert.deepEqual(second.calls.filter((r) => !CODE_LABEL.test(r.label)), [], 'the session part makes no call');
   assert.match(second.out, /Model answers: (\d+) of \1 reused \(no call\)/);
-  // And the same files again: nothing at all is asked.
+  // And the same repository again: nothing at all is asked, the review agent and its checkers included.
   const third = await review(t, { root, state, argv: ['--code-pass'] });
   assert.deepEqual(third.calls, []);
-  assert.match(third.out, /Code pass answers: (\d+) of \1 reused \(no call\)/);
-  // The same report but for the counts of what was asked live and what was reused.
+  assert.match(third.out, /Code review answers: 2 of 2 reused \(no call\)/);
   const uncounted = (report) => JSON.parse(JSON.stringify(report, (key, value) => (['answers', 'resume'].includes(key)
     ? undefined : value)));
   assert.deepEqual(uncounted(third.report), uncounted(second.report));
   assert.deepEqual(third.report.codePass.answers, { calls: 0, reused: second.report.codePass.answers.calls });
+  assert.ok(!third.report.codePass.footer.some((f) => f.kind === 'source_changed'), 'the repository did not change');
 });
 
-test('D87: a dry run reads and counts the files, sends nothing, and the estimate includes the pass', async (t) => {
+test('agentic code step: the repository\'s state is taken again after the step; a change during it is said, never complete', async (t) => {
+  const root = await gitRepoWith(t);
+  // The review agent's answer arrives after someone changed a file of the repository the step did not change.
+  const judge = codeJudge({ review: async (prompt) => {
+    await writeFile(join(root, 'README.md'), 'edited while the review ran\n');
+    return { findings: [], questions: [] };
+  } });
+  const run = await review(t, { root, argv: ['--code-pass'], judge });
+  assert.equal(run.code, 1, 'a required code step that may have read two states is not complete');
+  assert.deepEqual(run.report.codePass.footer, [{ kind: 'source_changed' }]);
+  assert.deepEqual(run.report.codePass.gaps.map((g) => g.code), ['source_changed']);
+  assert.equal(run.report.codePass.coverage, 'partial');
+  // Unchanged during the step: nothing said, complete.
+  const still = await review(t, { root: await gitRepoWith(t), argv: ['--code-pass'], judge: codeJudge({
+    review: () => ({ findings: [], questions: [] }) }) });
+  assert.deepEqual([still.code, still.report.codePass.footer, still.report.codePass.coverage], [0, [], 'complete']);
+  // A state that cannot be taken again after the step is no proof the repository stayed as it was: said the same way.
+  for (const stateNow of [async () => null, async () => { throw new Error('git is gone'); }]) {
+    const unknown = await review(t, { root: await gitRepoWith(t), argv: ['--code-pass'], judge: codeJudge({
+      review: () => ({ findings: [], questions: [] }) }), runCode: (args) => reviewCodePass({ ...args, stateNow }) });
+    assert.deepEqual([unknown.code, unknown.report.codePass.footer], [1, [{ kind: 'source_changed' }]]);
+  }
+});
+
+test('agentic code step: on another backend than claude-cli the step does not run, and says why, everywhere', async (t) => {
+  const root = await repoWith(t);
+  for (const [argv, exit] of [[['--code-pass'], 1], [[], 0]]) {
+    const run = await review(t, { root, argv: ['--backend', 'codex-cli', '--model', 'gpt-5.5-codex', ...argv] });
+    assert.equal(run.code, exit, run.err);
+    assert.equal(run.calls.filter((r) => CODE_LABEL.test(r.label)).length, 0);
+    assert.match(run.out, /^Code review: on \([^)]*\), but it did not run\. It runs only on the claude-cli backend, whose reviewer can read the repository\. /m);
+    assert.ok(run.out.includes(CODE_STEP_BACKEND_LINE));
+    assert.match(run.out, /code review did not run, because it runs only on the claude-cli backend/);
+    assert.deepEqual([run.report.codePass.ran, run.report.codePass.coverage, run.report.codePass.gaps.map((g) => g.code)],
+      [false, 'missing', ['code_step_backend']]);
+  }
+  const dry = await review(t, { root, argv: ['--dry-run', '--backend', 'anthropic-api', '--model', 'claude-sonnet-5-5'] });
+  assert.equal(dry.code, 0);
+  assert.ok(dry.out.includes(CODE_STEP_BACKEND_LINE));
+  assert.equal(codeSnapshotLine({ root: false, gate: 'code_step_backend', files: [] }), CODE_STEP_BACKEND_LINE);
+  assert.match(codeStepLine({ on: true, source: 'flag' }, { root: false, gate: 'code_step_backend' }), /but it did not run/);
+});
+
+test('D87: a dry run reads the change, sends nothing, and the estimate includes the step\'s range', async (t) => {
   const root = await repoWith(t);
   const plain = await review(t, { root, argv: ['--dry-run', '--no-code-pass'] });
   const { code, out, calls } = await review(t, { root, argv: ['--dry-run', '--code-pass'] });
   assert.equal(code, 0);
   assert.deepEqual(calls, []);
-  assert.match(out, /^Code pass: 3 files the session changed, read or git shows differing; 2 readable now; not readable: credential_path ×1\. No git base: the diff is the session's recorded edits\. /m);
-  // Owner decision 2026-10-14: beside the estimate, that the step runs and roughly what it adds: its first requests (the
-  // check, then one per lens), then the checking passes no plan can count.
-  assert.match(out, /^A review should take roughly [^\n]*\nCode step: on \(--code-pass\)\. It reads the files the session changed or read, as they are now, and sends them to the reviewer; it adds about 5 model calls after the session's review, then three checking passes for each answer and finding they give\. Turn it off with --no-code-pass, or for every review with sonah config code-pass off\.$/m);
-  assert.match(plain.out, /^A review should take roughly [^\n]*\nCode step: off \(--no-code-pass\)\. /m);
+  assert.match(out, /^Code review: the change holds 1 path that the session changed or that git shows as different\. Sonah can read 1 of them now\. Git does not show where the session started, so the change is the edits that the session recorded\. The code review can read any file of the repository\.$/m);
+  assert.match(out, /^A review should take roughly [^\n]*\nCode review: on \(--code-pass\)\. It reviews the change/m);
+  assert.match(plain.out, /^A review should take roughly [^\n]*\nCode review: off \(--no-code-pass\)\. /m);
   assert.notEqual(out.match(/A review should take roughly [^\n]*/)[0], plain.out.match(/A review should take roughly [^\n]*/)[0]);
-  assert.notEqual(estimateLine({ requestBytes: [100_000], lanes: 4, after: [400_000, 400_000] }),
+  // The code step's share is a literal range until it is timed on real reviews: reported, never a limit.
+  assert.deepEqual(CODE_STEP_ESTIMATE_MINUTES, [3, 15]);
+  assert.notEqual(estimateLine({ requestBytes: [100_000], lanes: 4, extra: CODE_STEP_ESTIMATE_MINUTES }),
     estimateLine({ requestBytes: [100_000], lanes: 4 }));
   assert.equal(estimateLine({ requestBytes: [100_000], lanes: 4, after: [] }), estimateLine({ requestBytes: [100_000], lanes: 4 }));
+});
+
+test('agentic code step: a dry run counts the review agent\'s first request as a review sends it — the skill files it loads included', async (t) => {
+  const SKILL = `SYNTHETIC_SKILL ${'tidy the parser. '.repeat(400)}`;
+  const root = await repoWith(t, { ...CODE_FILES, '.claude/skills/tidy/SKILL.md': SKILL });
+  const base = codeSession();
+  // The session also loaded a skill of the repository (a recorded Skill call naming it).
+  const session = new Session({ sessionKey: 's-skill', adapter: 'claude', blobs: { ...base.blobs, skill: '{"skill":"tidy"}' },
+    events: [...base.events, { id: 'K1', kind: 'invocation', tool: 'Skill', operation: 'other', paths: [], changes: [],
+      command: [], input: [{ sourceKey: 'skill', fromByte: 0, untilByte: 16 }], callKey: 'K1', turn: 'T1',
+      sequence: base.events.length }] });
+  // The dry run on the live run's state: the same session answers, so the same dossier.
+  const dir = await mkdtemp(join(tmpdir(), 'sonah-code-pass-state-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const state = join(dir, 'state');
+  const live = await review(t, { root, state, argv: ['--code-pass'], session });
+  const sent = live.calls.find((r) => r.label === 'code-review:agent');
+  assert.ok(sent.prompt.includes(SKILL.trim().slice(0, 200)), 'the review agent is given the skill the session loaded');
+  const dry = await review(t, { root, state, argv: ['--dry-run', '--code-pass'], session });
+  const kb = Math.ceil((Buffer.byteLength(sent.system) + Buffer.byteLength(sent.prompt)) / 1024);
+  assert.match(dry.out, new RegExp(`^Code review: it would first send 1 call \\(code-review:agent ${kb} KB\\)`, 'm'));
 });
 
 test('D87: with no working directory to read under, the pass is not run, says so, and the run is incomplete', async (t) => {
@@ -211,41 +272,53 @@ test('D87: with no working directory to read under, the pass is not run, says so
   assert.equal(calls.filter((r) => CODE_LABEL.test(r.label)).length, 0);
   assert.equal(report.codePass.coverage, 'missing');
   assert.equal(report.codePass.ran, false);
-  assert.match(out, /code pass not run/);
+  assert.match(out, /code review did not run/);
   assert.equal(codeSnapshotLine({ root: false, files: [] }), CODE_PASS_NO_ROOT);
 });
 
-test('D87 reader: credential, harness, outside, linked-out, deleted and oversize files are declared; a read directory is no file', async (t) => {
+test('D90 reader: any file of the repository is read — .env and a .claude folder too; outside the top folder, nothing', async (t) => {
   const outside = await mkdtemp(join(tmpdir(), 'sonah-code-pass-outside-'));
   t.after(() => rm(outside, { recursive: true, force: true }));
   await writeFile(join(outside, 'secret.js'), 'export const x = 1;\n');
-  const root = await repoWith(t, { ...CODE_FILES, 'big.js': 'x'.repeat(5000), '.claude/settings.json': '{}' });
+  const root = await repoWith(t, { ...CODE_FILES, 'big.js': 'x'.repeat(5000), '.claude/settings.json': '{"a":1}\n',
+    'bin.dat': 'a\u0000b' });
   await symlink(join(outside, 'secret.js'), join(root, 'linked.js'));
-  const { Session } = await import('../../evidence/src/session.js');
-  const read = (path, id) => ({ id, kind: 'invocation', tool: 'read', operation: 'other', paths: [{ path }],
-    command: [], input: [], changes: [], sequence: 0 });
-  const session = new Session({ sessionKey: 's', events: ['.env', '.claude/settings.json', '../outside.js',
-    join(outside, 'secret.js'), 'linked.js', 'gone.js', 'big.js', 'src', 'src/util.js']
-    .map((path, at) => ({ ...read(path, `R${at}`), sequence: at })) });
-  const snapshot = await readCodeSnapshot(session, { root, home: null, maxBytes: 1000 });
+  const repo = createRepositoryReader({ root, maxBytes: 1000 });
+  // A file the change does not touch, a credential-shaped one and one in a `.claude` folder: all read (D90).
+  for (const path of ['src/util.js', '.env', '.claude/settings.json', './src/util.js', join(root, 'src/util.js')]) {
+    const file = repo.read(path);
+    assert.ok(file, path);
+    assert.equal(file.path, path.includes('settings') ? '.claude/settings.json' : path.includes('.env') ? '.env' : 'src/util.js');
+    assert.equal(file.sha256, sha256(file.text));
+  }
+  assert.equal(repo.read('.env').text, CODE_FILES['.env']);
+  assert.equal(repo.read('src/util.js').lines, CODE_FILES['src/util.js'].split('\n').length);
+  // Outside the top folder (by a path, an absolute name or a link), binary, too large, missing, a folder: nothing.
+  for (const path of ['../x.js', join(outside, 'secret.js'), 'linked.js', 'bin.dat', 'big.js', 'gone.js', 'src', '', null])
+    assert.equal(repo.read(path), null, String(path));
+  // No start commit: no file at it.
+  assert.equal(repo.base('src/util.js'), null);
+  // The snapshot is the change under review: the session's write, as it is now; what it only read is not part of it.
+  const session = codeSession();
+  const snapshot = await readCodeSnapshot(session, { root, maxBytes: 1000 });
   assert.equal(snapshot.root, true);
-  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state]), [['.env', 'credential_path'],
-    ['.claude/settings.json', 'harness_home'], ['../outside.js', 'outside_root'], [join(outside, 'secret.js'), 'outside_root'],
-    ['linked.js', 'outside_root'], ['gone.js', 'deleted'], ['big.js', 'oversize'], ['src/util.js', 'readable']]);
-  assert.equal(snapshot.files.at(-1).text, CODE_FILES['src/util.js']);
+  assert.deepEqual(snapshot.files.map((f) => [f.path, f.state]), [['src/parse.js', 'readable']]);
+  assert.equal(snapshot.repoState, null, 'no repository, no state');
   assert.deepEqual(await readCodeSnapshot(session, { root: join(root, 'nowhere'), maxBytes: 1000 }),
     { root: false, plan: snapshot.plan, files: [] });
   assert.deepEqual((await readCodeSnapshot(session, { root: null, maxBytes: 1000 })).root, false);
 });
 
-test('D87 low: a pass over a session that changed or read no file says it had none, never that it read every file', () => {
+test('D87 low: a pass over a session that changed no file says it had none, never that it reviewed the whole change', () => {
   const base = { reviewScope: 'session-only', findings: [], sessionReview: 'complete', coverage: 'complete' };
   const line = (codePass) => runStateLine({ ...base, codePass });
   assert.match(line({ ran: true, coverage: 'complete', files: [] }),
-    /code pass had no file to read: the session changed or read none/);
+    /code review had no change to review, because the session changed no file here/);
   assert.match(line({ ran: true, coverage: 'complete', files: [{ path: 'a.js', state: 'shown' }] }),
-    /code pass read every file it showed/);
-  assert.match(line({ ran: false, coverage: 'missing', files: [] }), /code pass not run/);
-  assert.match(line({ ran: true, coverage: 'partial', files: [{ path: 'a.js', state: 'not_shown' }] }),
-    /code pass did not read every file it showed/);
+    /code review covered the whole change/);
+  assert.match(line({ ran: false, coverage: 'missing', files: [] }), /code review did not run/);
+  assert.match(line({ ran: true, coverage: 'partial', files: [{ path: 'a.js', state: 'binary' }] }),
+    /code review did not cover all of the change and its checks/);
+  assert.match(line({ ran: false, coverage: 'missing', files: [], gaps: [{ code: 'code_step_backend' }] }),
+    /code review did not run, because it runs only on the claude-cli backend/);
 });

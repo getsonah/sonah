@@ -3,9 +3,11 @@ import { redact, sliceHash } from '../redact/index.js';
 import { outcomesFor } from './src/outcomes.js';
 import { loadSessionEvidence } from './src/session-evidence.js';
 
-/** One lineage -> {ledger, hash, tokens}: the recording and its linked children, redacted, then hashed. The children
- *  stay pending, as `sonah slice` shows them (a review reads them through recorded-session.js); D82 step 10 removed
- *  the PR route, the one caller that had them reviewed here, and the option it passed. */
+/** One lineage -> {ledger, hash, tokens}: the recording and its linked children, bounded and validated (redact), then
+ *  hashed. The children stay pending, as `sonah slice` shows them (a review reads them through recorded-session.js); D82
+ *  step 10 removed the PR route, the one caller that had them reviewed here, and the option it passed. D90 (owner
+ *  decision 2026-10-15, privacy is not a design constraint): nothing is masked — `sonah slice` prints the recording as
+ *  the review's load reads it. */
 export async function analyze(files, { cwd } = {}) {
   // Capture-time exit codes, recorded by the PostToolUse hook per session file, joined at slice
   // time. Sessions without recordings get an empty map — the join is a no-op.

@@ -26,6 +26,15 @@ const ref = (text) => {
   blobs[key] = text;
   return [{ sourceKey: key, fromByte: 0, untilByte: Buffer.byteLength(text, 'utf8') }];
 };
+/** `text` in a fresh blob, as two refs around `mark`: how the adapter places an earlier redactor's declared mark (D90). */
+const refAround = (text, mark) => {
+  const key = `m36f${++counter}`;
+  blobs[key] = text;
+  const at = text.indexOf(mark);
+  const bytes = (s) => Buffer.byteLength(s, 'utf8');
+  return [{ sourceKey: key, fromByte: 0, untilByte: bytes(text.slice(0, at)) },
+    { sourceKey: key, fromByte: bytes(text.slice(0, at + mark.length)), untilByte: bytes(text) }];
+};
 const ask = (id, text) => ({ id, kind: 'instruction', authority: 'human', supersedes: [], text: ref(text) });
 const said = (id, text) => ({ id, kind: 'commentary', phase: 'working', beforeInvocation: null, text: ref(text) });
 const run = (id, command, over = {}) => ({ id, kind: 'invocation', callKey: id, tool: 'bash', operation: 'command',
@@ -107,8 +116,10 @@ test('M36 T: a numbered read names the file lines it omitted only when its outpu
   const read = (id, text, numLines) => [{ id, kind: 'invocation', callKey: id, tool: 'read', operation: 'other',
     paths: [{ path: 'src/big.js' }], command: [], input: ref('{"file_path":"src/big.js"}'), changes: [],
     recorded: { tool: 'Read', read: { startLine: 101, numLines, totalLines: 900 } } }, out(`${id}-r`, id, text)];
+  const masked = numbered.replace('synthetic source line 150;', '‹redacted:aws-key›');
+  const [r3, r3out] = read('R3', masked, 300);
   const s = session([...read('R1', numbered, 300), ...read('R2', numbered, 299),
-    ...read('R3', numbered.replace('synthetic source line 150;', '‹redacted:aws-key›'), 300)]);
+    r3, { ...r3out, output: refAround(masked, '‹redacted:aws-key›') }]);
   const v1 = eventView(s, s.event('R1-r'));
   const { fromLine, throughLine } = v1.fields[0].omitted;
   assert.deepEqual(v1.fileLines, { from: 100 + fromLine, through: 100 + throughLine });

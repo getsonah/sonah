@@ -31,9 +31,10 @@ import { INTEGRATION_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSIONS, W
 import { PRELAUNCH_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W1_READER_VERSIONS, W2_READER_VERSIONS,
   W4_READER_VERSIONS, CODE_PASS_READER_VERSIONS, W4_REVERT_READER_VERSIONS, JUDGMENT_FIRST_READER_VERSIONS,
   W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_READER_VERSIONS,
-  CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
-  JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS }
+  CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
+  JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
+  CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS, REPORT_MD_READER_VERSIONS,
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS }
   from './m33-integration-fixture.js';
 
 let n = 0;
@@ -218,7 +219,7 @@ test('C-01: a Codex rollout names a call by its call_id and part, a message by i
   for (const id of idsOf(prefix.session)) assert.ok(idsOf(session).includes(id));
 });
 
-test('C-01: a recorder id redaction withholds is never an id: the event is named by its row position, counted', async () => {
+test('C-01: a recorder id an earlier redaction withheld is never an id: the event is named by its row position, counted', async () => {
   const rec = (payload) => JSON.stringify({ type: 'response_item', timestamp: '', payload });
   // A synthetic call id redaction's backstop scans as a possible credential (mixed case and digits, high entropy).
   const secretShaped = 'call_7CrfqsOSIDBHB0nXutiLsYj4';
@@ -228,8 +229,14 @@ test('C-01: a recorder id redaction withholds is never an id: the event is named
     rec({ type: 'function_call', name: 'exec_command', call_id: secretShaped, arguments: '{"cmd":"make build"}' }),
     rec({ type: 'function_call_output', call_id: secretShaped, output: 'Process exited with code 0\nOutput:\nbuilt' }),
   ];
-  const { ledger, session } = await sessionOf(lines, 'rollout-2026-10-07T10-00-00-withheld.jsonl');
-  // Fails closed: the scanned id is withheld whole, never masked into an id.
+  const { ledger: today } = await sessionOf(lines, 'rollout-2026-10-07T10-00-00-withheld.jsonl');
+  // D90 (owner decision 2026-10-15): today the id is kept as recorded; a ledger an earlier Sonah wrote carries it
+  // withheld whole (fails closed), never masked into an id, and is read so.
+  assert.deepEqual(today.ledger[0].identity, { stream: 0, record: 3, block: 0, native: secretShaped });
+  const ledger = structuredClone(today);
+  for (const event of ledger.ledger)
+    if (event.identity?.native === secretShaped) event.identity = { stream: 0, record: event.identity.record, block: 0, withheld: true };
+  const session = sessionFromLedger(redact(ledger).ledger, { sessionKey: 'stable' });
   assert.deepEqual(ledger.ledger[0].identity, { stream: 0, record: 3, block: 0, withheld: true });
   assert.deepEqual(session.events.filter((e) => e.kind === 'invocation').map((e) => e.id), ['s0.L3.0']);
   assert.ok(!idsOf(session).some((id) => id.includes(secretShaped)));
@@ -320,8 +327,17 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // The second release review moved it once more (SECOND_RELEASE_REVIEW_VERSIONS: prompt): that file's path is compared
   // under the working directory.
   assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.before, RELEASE_REVIEW_VERSIONS.prompt.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt): the re-ask of a choice not to act whose existence check
+  // refuted its words.
+  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
   assert.deepEqual([PROMPT_VERSION, CHALLENGE_PROFILE.version, CHALLENGE_DOSSIER_VERSION, CODE_REVIEW_VERSION,
-    WINDOWING_VERSION], [SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after,
+    WINDOWING_VERSION], [CHOICE_REANCHOR_VERSIONS.prompt.after, CLEANUP_VERSIONS.challenge.after,
     D80_VERSIONS.dossier.after, ...['codeReview', 'windows'].map((k) => D71_BRIEF_VERSIONS[k].after)]);
   for (const k of ['prompt', 'challenge', 'dossier', 'codeReview', 'windows'])
     assert.equal(D69_VERSIONS[k].before, CONVERSATION_VERSIONS[k].after, k);
@@ -421,7 +437,19 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // RELEASE_REVIEW_READER_VERSIONS.)
   assert.deepEqual([RELEASE_REVIEW_READER_VERSIONS.story.before, RELEASE_REVIEW_READER_VERSIONS.page.before],
     [JUDGMENT_FIRST_REVIEW_READER_VERSIONS.story.after, JUDGMENT_FIRST_REVIEW_READER_VERSIONS.page.after]);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [RELEASE_REVIEW_READER_VERSIONS.story.after,
-    RELEASE_REVIEW_READER_VERSIONS.page.after]);
+  // (And both once more by the agentic code step's release item: AGENTIC_READER_VERSIONS, one link for the item — an
+  // ask's status beside what the code step tied to it, the session shown as loaded, the code step's new report on
+  // every reader — rendering back to the release review's.)
+  assert.deepEqual([RELEASE_REVIEW_READER_VERSIONS.story.after, RELEASE_REVIEW_READER_VERSIONS.page.after],
+    ['sonah.session-story/29', 'sonah.session-page/34']);
+  // (And both once more by the cleanup: CLEANUP_READER_VERSIONS, one link — no statement found to hold, no row shown in
+  // the code, no claim found false and no all-clear footer — rendering back to the agentic code step's.)
+  assert.deepEqual([CLEANUP_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.page.before],
+    [AGENTIC_READER_VERSIONS.story, AGENTIC_READER_VERSIONS.page]);
+  // (And the page once more by the report model, D97: REPORT_READER_VERSIONS, one link after the cleanup's; and the
+  // story, now the report .md: REPORT_MD_READER_VERSIONS, one link after the cleanup's.)
+  assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
+  assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
+  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [REPORT_MD_READER_VERSIONS.story.after, REPORT_READER_VERSIONS.page.after]);
   for (const k of ['story', 'page']) assert.equal(DISCLOSURE_WORDS_VERSIONS[k].before, INTEGRATION_VERSIONS[k].after);
 });

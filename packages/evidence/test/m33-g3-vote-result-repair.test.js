@@ -14,7 +14,6 @@ import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 import * as reviewRun from '../src/run-review.js';
 import { challengeItems } from '../src/challenge.js';
-import { renderReview } from '../src/review.js';
 
 const { runReview } = reviewRun;
 
@@ -114,7 +113,6 @@ test('M33 G3 an action id cited as its observation is repaired to the one suppli
   assert.equal(report.challenge.unresolvedItems, 0, 'every item resolved on valid votes');
   assert.equal(report.requirements.length, 1, 'the upheld requirement is published');
   assert.equal(report.promises.length, 1, 'the upheld claim is published');
-  assert.match(renderReview(report), /6 vote receipt\(s\) citing an action were moved to its one recorded result by code/);
 });
 
 test('M33 G3 a vote citing the result id itself is valid and not counted as repaired', async () => {
@@ -125,7 +123,6 @@ test('M33 G3 a vote citing the result id itself is valid and not counted as repa
     assert.equal(Object.hasOwn(vote.receipts[0], 'eventRepaired'), false);
   }
   assert.equal(report.challenge.eventRepairedVotes, 0);
-  assert.doesNotMatch(renderReview(report), /moved to its one recorded result/);
 });
 
 const rejectedEverywhere = (report, window = 0) => {

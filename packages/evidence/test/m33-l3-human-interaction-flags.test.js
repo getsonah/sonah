@@ -19,7 +19,7 @@ import { instructionReviewScope, windowEnd, asksHuman, humanChoice } from '../sr
 import { humanInstructionsBetween } from '../src/forbidden.js';
 import { planWindows } from '../src/windows.js';
 import { runReview } from '../src/run-review.js';
-import { renderReview, coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
 
 /** Write `rows` as one recording and load it as the review does: sliced with its parser's source identity, redacted,
  *  adapted. */
@@ -120,11 +120,8 @@ test('L3 review: a recorder with no known schema is named as that in the header,
     assert.deepEqual(causes.filter(([cause]) => cause.startsWith('instructions_')), [], 'no instruction was elided');
     assert.deepEqual(causes.find(([cause]) => cause === 'human_interaction_unknown'), ['human_interaction_unknown',
       { n: actions }]);
-    const md = renderReview(report);
-    assert.ok(!md.includes('were elided by the recorder'));
-    assert.ok(md.includes(COVERAGE_SENTENCE.human_interaction_unknown({ n: actions })));
     assert.equal(COVERAGE_SENTENCE.human_interaction_unknown({ n: actions }),
-      'the recorder\'s schema does not say which actions asked you a question or recorded your choice');
+      'the format of the recorder does not say which actions asked you a question or kept your answer');
     // Still a declared loss: the session is never certified complete on it (fail closed).
     assert.notEqual(report.coverage, 'complete');
   });

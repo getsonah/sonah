@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDecisionArgs, resolveDecisionId, runDecisionCommand, DECISION_COMMAND_REFUSALS,
   DECISION_COMMAND_USAGE } from '../src/decision-command.js';
-import { answersFor, loadDecisionReviews, recordDecisionReview } from '../src/decision-reviews.js';
+import { acceptableReason, answersFor, loadDecisionReviews, recordDecisionReview } from '../src/decision-reviews.js';
 
 const exec = promisify(execFile);
 const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
@@ -68,7 +68,7 @@ test('D69 f (g) an answer is recorded owner-only, keyed by the session hash and 
   assert.equal(answersFor(HASH, await loadDecisionReviews()).size, 1);
 });
 
-test('D69 f (g) an id the report does not hold, an unreadable report or a reason with a secret is refused, never recorded', async (t) => {
+test('D69 f (g) an id the report does not hold, an unreadable report or a reason too long is refused, never recorded', async (t) => {
   const { dir, report } = await home(t);
   const refused = async (argv, code, exit = 1) => {
     const { out, err, io } = quiet();
@@ -82,7 +82,6 @@ test('D69 f (g) an id the report does not hold, an unreadable report or a reason
   await refused(['accept', HASH, '1234567890ab', '--report', join(dir, 'missing.json'), '--reason', 'x'], 'report_unreadable');
   await writeFile(join(dir, 'list.json'), '[]');
   await refused(['accept', HASH, '1234567890ab', '--report', join(dir, 'list.json'), '--reason', 'x'], 'report_unreadable');
-  await refused(['accept', HASH, '1234567890ab', '--report', report, '--reason', `token sk-ant-${'z'.repeat(30)}`], 'reason_rejected');
   await refused(['accept', HASH, '1234567890ab', '--report', report, '--reason', 'x'.repeat(2001)], 'reason_rejected');
   await assert.rejects(stat(join(dir, 'decision-reviews.ndjsonl')), { code: 'ENOENT' }, 'nothing was written');
   // A usage error prints the usage line and exits 2.
@@ -91,6 +90,17 @@ test('D69 f (g) an id the report does not hold, an unreadable report or a reason
   assert.deepEqual(err, [`${DECISION_COMMAND_USAGE}\n`]);
   assert.deepEqual([...DECISION_COMMAND_REFUSALS], ['report_unreadable', 'decision_not_in_report', 'decision_ambiguous',
     'reason_rejected', 'not_recorded']);
+});
+
+test('D90: a reason holding a key-shaped string is recorded as the person wrote it', async (t) => {
+  // D90 (owner decision 2026-10-15): a reason is kept as written; nothing is refused for what a redactor would have
+  // masked. A FAKE key, built at run time.
+  const { report } = await home(t);
+  const reason = `token ${['sk', 'ant', 'api03', 'FAKE'.repeat(10)].join('-')} stays in the deploy script`;
+  assert.equal(acceptableReason(reason), true);
+  assert.equal(await runDecisionCommand(['accept', HASH, '1234567890ab', '--report', report, '--reason', reason],
+    quiet().io), 0);
+  assert.deepEqual([...answersFor(HASH, await loadDecisionReviews())], [[ID, { verb: 'accept', reason }]]);
 });
 
 test('D69 f (g) through the binary: recorded with exit 0, refused with 1, a usage error with 2', async (t) => {

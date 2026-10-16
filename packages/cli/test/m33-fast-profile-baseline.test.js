@@ -54,7 +54,11 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   profileBeforeCodeStepReview, CODE_STEP_REREVIEW_VERSIONS, profileBeforeCodeStepRereview,
   CODE_STEP_THIRD_REVIEW_VERSIONS, profileBeforeCodeStepThirdReview, CODE_STEP_FOURTH_REVIEW_VERSIONS,
   profileBeforeCodeStepFourthReview, RELEASE_REVIEW_VERSIONS, profileBeforeReleaseReview, SECOND_RELEASE_REVIEW_VERSIONS,
-  profileBeforeSecondReleaseReview }
+  profileBeforeSecondReleaseReview, AGENT_TRANSPORT_FAILURE_CODES, profileBeforeAgentTransport,
+  VOID_VOTE_REASK_VERSIONS, profileBeforeVoidVoteReask, CHOICE_REANCHOR_VERSIONS, profileBeforeChoiceReanchor,
+  AGENTIC_CODE_STEP_VERSIONS, profileBeforeAgenticCodeStep, CHANGED_SINCE_SHOWN_VERSIONS,
+  profileBeforeChangedSinceShown, CLEANUP_VERSIONS, profileBeforeCleanup, TRIAGE_VERSIONS, profileBeforeTriage,
+  profileBeforeTiedTier, profileBeforeRepairUnchecked }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1054,12 +1058,157 @@ const MOVED_BY_SECOND_RELEASE_REVIEW = Object.freeze({
     combined: '8ef54b7c2ce2320cd586091947646272a14f6ed3ab3907054f2a74c199afbb7a' },
   sessionProfileDigest: '8fa0a7cd5fdecfc04a9653017836699573f4d340ce9968d5790bd5140e90bb2a',
 });
+/** What the second release review sent. */
+const SECOND_RELEASE_REVIEW_CURRENT = Object.freeze({ ...withMoves(RELEASE_REVIEW_CURRENT,
+  MOVED_BY_SECOND_RELEASE_REVIEW.cases), runProfile: MOVED_BY_SECOND_RELEASE_REVIEW.runProfile,
+sessionProfileDigest: MOVED_BY_SECOND_RELEASE_REVIEW.sessionProfileDigest });
+/**
+ * The agent transport (m33-integration-fixture.js `AGENT_TRANSPORT_FAILURE_CODES`; 2026-10-15): the values that moved
+ * from `SECOND_RELEASE_REVIEW_CURRENT` — the run profiles alone, both through their closed judge failure list
+ * (`judgeFailureCodes`: `model_turn_limit`, `model_structured_output_failed`). No case's request moved. Rendered back
+ * (`profileBeforeAgentTransport`), the second release review's.
+ */
+const MOVED_BY_AGENT_TRANSPORT = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '658d0ec60a8bb9c5f62c1f1468044cbb8ac7f1dfbae2b3d164f95d386be4c43c',
+    combined: '58af4f15cf136d00d81e88284d13e2d86403e9e2b5125100397f67e6db8ee389' },
+  sessionProfileDigest: '658d0ec60a8bb9c5f62c1f1468044cbb8ac7f1dfbae2b3d164f95d386be4c43c',
+});
+/** What the agent transport sent. */
+const AGENT_TRANSPORT_CURRENT = Object.freeze({ ...withMoves(SECOND_RELEASE_REVIEW_CURRENT,
+  MOVED_BY_AGENT_TRANSPORT.cases), runProfile: MOVED_BY_AGENT_TRANSPORT.runProfile,
+sessionProfileDigest: MOVED_BY_AGENT_TRANSPORT.sessionProfileDigest });
+/**
+ * The re-ask of a void vote (m33-integration-fixture.js `VOID_VOTE_REASK_VERSIONS`; `sonah.challenge/43`, 2026-10-15):
+ * the values that moved from `AGENT_TRANSPORT_CURRENT`. The fake judge cites no receipt for a decision, so each
+ * decision vote it casts breaks the vote's shape and was asked again once, in batches of their own (`:reask:void:pN`):
+ * the `large` and `lanes` cases sent more requests (3 and 12), after every request they sent before, which kept their
+ * bytes and order; no planned request moved. The run profiles moved by the challenge version (the session-only one by
+ * its code-pass member too). Rendered back (`profileBeforeVoidVoteReask`), with those re-asks left out, the agent
+ * transport's. The cleanup withdrew those re-asks (`MOVED_BY_CLEANUP`).
+ */
+const MOVED_BY_VOID_VOTE_REASK = Object.freeze({
+  cases: [{ sentCount: 11, sentInOrder: '570c689ab0fd09cd6d966096e7917ee1170bb895ba1d1f8f65e59217d096e15d',
+    sentSorted: 'a47f3bc73c98554021455e592cc2fafebfc41654dbeecfccdbe944765b88cb3e',
+    labels: '3b8d9184c393a04cb68ca0fa9a3ba597363342b25903bd03e4916c4efc6e60f2' }, {},
+  { sentCount: 32, sentInOrder: '2ca4cacc042b991b0f4fc183fac036d76d1457375d0a0879e3d2428db7ab0dd9',
+    sentSorted: '559bc7c8108154510bf4bf9279e2be8676e8bb83a6f932a0ae65db35878cf1df',
+    labels: 'bc28f6a82b0345542b0a102d34a74d8539b23f6cf65aa3b229cb4e733c06b2ce' }],
+  runProfile: { 'session-only': '862abc35c586327ad3872a5587d494c7995a34671cce7bc3aced84c8524214bc',
+    combined: '8e277843261470cf224b47a67d506647e3501b812d95acef76340edaa8d79f94' },
+  sessionProfileDigest: '862abc35c586327ad3872a5587d494c7995a34671cce7bc3aced84c8524214bc',
+});
+/** What the re-ask of a void vote sent. */
+const VOID_VOTE_REASK_CURRENT = Object.freeze({ ...withMoves(AGENT_TRANSPORT_CURRENT, MOVED_BY_VOID_VOTE_REASK.cases),
+  runProfile: MOVED_BY_VOID_VOTE_REASK.runProfile,
+  sessionProfileDigest: MOVED_BY_VOID_VOTE_REASK.sessionProfileDigest });
+/**
+ * G2 (m33-integration-fixture.js `CHOICE_REANCHOR_VERSIONS`; 2026-10-15): the values that moved from
+ * `VOID_VOTE_REASK_CURRENT` — the run profiles alone, both through the prompt version (narrative/37: the re-ask of
+ * a choice not to act whose existence check refuted its words, a new request). No case's request moved. Rendered back
+ * (`profileBeforeChoiceReanchor`), the re-ask of a void vote's.
+ */
+const MOVED_BY_CHOICE_REANCHOR = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '41dbc6fc866ae136aa15492cd2523c0802b1fe5d77565fffc093f0da4e55a47c',
+    combined: '6fe96f0feca7e15dc24d308f51e5000eed09cdaf556edab0b86f974041ace5e6' },
+  sessionProfileDigest: '41dbc6fc866ae136aa15492cd2523c0802b1fe5d77565fffc093f0da4e55a47c',
+});
+/** What G2 sent. */
+const CHOICE_REANCHOR_CURRENT = Object.freeze({ ...withMoves(VOID_VOTE_REASK_CURRENT, MOVED_BY_CHOICE_REANCHOR.cases),
+  runProfile: MOVED_BY_CHOICE_REANCHOR.runProfile,
+  sessionProfileDigest: MOVED_BY_CHOICE_REANCHOR.sessionProfileDigest });
+/**
+ * The agentic code step (m33-integration-fixture.js `AGENTIC_CODE_STEP_VERSIONS`; 2026-10-15): the values that moved
+ * from `CHOICE_REANCHOR_CURRENT` — the session-only run profile alone, through the code pass's member
+ * (code-snapshot/9, code-pass/7, code-verify/1, step 1 retired, its closed vocabularies, the review agent's answer
+ * limits). No case's request moved, and the combined profile did not move. Rendered back
+ * (`profileBeforeAgenticCodeStep`), G2's.
+ */
+const MOVED_BY_AGENTIC_CODE_STEP = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '7d1f1fe6885150c5d01b42b6b8a6e09411a2808f7215d36fcf90b5580f0123d0',
+    combined: '6fe96f0feca7e15dc24d308f51e5000eed09cdaf556edab0b86f974041ace5e6' },
+  sessionProfileDigest: '7d1f1fe6885150c5d01b42b6b8a6e09411a2808f7215d36fcf90b5580f0123d0',
+});
+/** What the agentic code step sent. */
+const AGENTIC_CODE_STEP_CURRENT = Object.freeze({
+  ...withMoves(CHOICE_REANCHOR_CURRENT, MOVED_BY_AGENTIC_CODE_STEP.cases),
+  runProfile: MOVED_BY_AGENTIC_CODE_STEP.runProfile,
+  sessionProfileDigest: MOVED_BY_AGENTIC_CODE_STEP.sessionProfileDigest });
+/**
+ * A file changed since the session, shown (m33-integration-fixture.js `CHANGED_SINCE_SHOWN_VERSIONS`): the values that
+ * moved from `AGENTIC_CODE_STEP_CURRENT` — the session-only run profile alone, through the code pass's member
+ * (code-snapshot/10, code-pass/8). No case's request moved, and the combined profile did not move. Rendered back
+ * (`profileBeforeChangedSinceShown`), the agentic code step's.
+ */
+const MOVED_BY_CHANGED_SINCE_SHOWN = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '6a2752c64d62be6c68da05601acff00bcc366fe703fee6d432a8abe82aa51188',
+    combined: '6fe96f0feca7e15dc24d308f51e5000eed09cdaf556edab0b86f974041ace5e6' },
+  sessionProfileDigest: '6a2752c64d62be6c68da05601acff00bcc366fe703fee6d432a8abe82aa51188',
+});
+/** What a file changed since the session, shown, sent. */
+const CHANGED_SINCE_SHOWN_CURRENT = Object.freeze({ ...withMoves(AGENTIC_CODE_STEP_CURRENT,
+  MOVED_BY_CHANGED_SINCE_SHOWN.cases), runProfile: MOVED_BY_CHANGED_SINCE_SHOWN.runProfile,
+sessionProfileDigest: MOVED_BY_CHANGED_SINCE_SHOWN.sessionProfileDigest });
+/**
+ * The cleanup (m33-integration-fixture.js `CLEANUP_VERSIONS`; `sonah.challenge/44`, 2026-10-16): the values that moved
+ * from `CHANGED_SINCE_SHOWN_CURRENT`. A vote a reply cast that could not be counted is no longer asked again, so the
+ * `large` and `lanes` cases send what the agent transport's sent (`AGENT_TRANSPORT_CURRENT`'s cases: the re-asks of
+ * void votes, sent after every other request, are gone, and nothing else moved); no planned request moved. Both run
+ * profiles moved by the challenge version, the session-only one by its code-pass member too (code-pass/9,
+ * code-verify/2, its closed lists and limits without what held). Rendered back (`profileBeforeCleanup`), a file changed
+ * since the session, shown's run profiles.
+ */
+const MOVED_BY_CLEANUP = Object.freeze({
+  runProfile: { 'session-only': '47d29c3fefbf371a89c027bc230e6ea95e924309cb14904c9c40d08f3d5b851a',
+    combined: 'ef20ace31b7b4020371add1d00c694c7f6eda0c63fc5e834fac05f9f1da062c4' },
+  sessionProfileDigest: '47d29c3fefbf371a89c027bc230e6ea95e924309cb14904c9c40d08f3d5b851a',
+});
+/**
+ * The code step's triage (m33-integration-fixture.js `TRIAGE_VERSIONS`; `sonah.code-pass/10`, D96): the values that moved
+ * from the cleanup's — the session-only run profile alone, through the code pass's member (code-pass/10 and its
+ * `triage`: the levels, the limits, the errors and the tier table). No case's request moved, and the combined profile
+ * did not move. Rendered back (`profileBeforeTriage`), the cleanup's.
+ */
+const MOVED_BY_TRIAGE = Object.freeze({
+  runProfile: { 'session-only': '2c27ae3bf66161b064985a1d0fa2e5b4672beb938b9e8bc81f8e904c5780b63e',
+    combined: MOVED_BY_CLEANUP.runProfile.combined },
+  sessionProfileDigest: '2c27ae3bf66161b064985a1d0fa2e5b4672beb938b9e8bc81f8e904c5780b63e',
+});
+/**
+ * The tied tier (owner decision 2026-10-16, D96 amended; m33-integration-fixture.js `profileBeforeTiedTier`): the values
+ * that moved from the triage's — the session-only run profile alone, through its code-pass member's tier table
+ * (`decision_chose` Good to know by default, Must know when the code review is tied to it; every kind's `tiedTier`). No
+ * version moved, no case's request moved, and the combined profile did not move. Rendered back, the triage's.
+ */
+const MOVED_BY_TIED_TIER = Object.freeze({
+  runProfile: { 'session-only': '48f1ca502447bc9684aaa998bceb327c70efb289d425558e7b2d801336016656',
+    combined: MOVED_BY_TRIAGE.runProfile.combined },
+  sessionProfileDigest: '48f1ca502447bc9684aaa998bceb327c70efb289d425558e7b2d801336016656',
+});
+/**
+ * The beta.2 release check (2026-10-16; m33-integration-fixture.js `profileBeforeRepairUnchecked`): the values that moved
+ * from the tied tier's — the session-only run profile alone, through its code-pass member's new closed list
+ * (`repairUnchecked`: why Sonah checked no repaired version of an item it withheld; `different`, `absent`, `repeated`,
+ * `failed`, `spent`, `unasked`). No version moved, no case's request moved, and the combined profile did not move.
+ * Rendered back, the tied tier's.
+ */
+const MOVED_BY_REPAIR_UNCHECKED = Object.freeze({
+  runProfile: { 'session-only': '4ec6768825716dd7b7a5fe7a2e868d8ab7122b9dc03681b87b1074777f328392',
+    combined: MOVED_BY_TIED_TIER.runProfile.combined },
+  sessionProfileDigest: '4ec6768825716dd7b7a5fe7a2e868d8ab7122b9dc03681b87b1074777f328392',
+});
 /** What the code sends now. */
-const CURRENT = Object.freeze({ ...withMoves(RELEASE_REVIEW_CURRENT, MOVED_BY_SECOND_RELEASE_REVIEW.cases),
-  runProfile: MOVED_BY_SECOND_RELEASE_REVIEW.runProfile,
-  sessionProfileDigest: MOVED_BY_SECOND_RELEASE_REVIEW.sessionProfileDigest });
-/** A capture whose cases are what the code sends now: a run profile rendered back moves no request. */
-const withD71Cases = (capture) => ({ ...capture, cases: CURRENT.cases });
+const CURRENT = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT, cases: AGENT_TRANSPORT_CURRENT.cases,
+  runProfile: MOVED_BY_REPAIR_UNCHECKED.runProfile, sessionProfileDigest: MOVED_BY_REPAIR_UNCHECKED.sessionProfileDigest });
+/** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
+ *  code sends now (a run profile rendered back moves no request). */
+const withoutVoidReasks = (capture) => ({ ...capture, cases: CURRENT.cases });
+/** A capture whose cases are what the code sends now: a run profile rendered back moves no request. These are the
+ *  second release review's cases (the agent transport moved none, and the cleanup withdrew the void re-asks). */
+const withD71Cases = (capture) => ({ ...capture, cases: SECOND_RELEASE_REVIEW_CURRENT.cases });
 
 /**
  * The run profile members M35 windowing replaced, as d193257 froze them (the D64 wording's): the byte-budget
@@ -1144,10 +1293,78 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(typeof modulesBeforeDisclosureWords(modules).runReview, 'function');
   const now = await captureStandard(modules, digests);
   assert.deepEqual(now, CURRENT);
-  // The second release review: rendered back (`profileBeforeSecondReleaseReview`), every run profile is the release
-  // review's; no case moved, and the combined profile moved by its prompt version alone.
+  // The cleanup: the re-asks of void votes are no longer sent, and that is all that moved of any case — put back, the
+  // cases are a file changed since the session, shown's; rendered back (`profileBeforeCleanup`), every run profile is
+  // its too.
+  assert.deepEqual(withMoves(CURRENT, MOVED_BY_VOID_VOTE_REASK.cases).cases, CHANGED_SINCE_SHOWN_CURRENT.cases);
+  assert.equal(reviewRun.runProfile('combined').challenge.version, CLEANUP_VERSIONS.challenge.after);
+  const cleanupBack = (...args) => profileBeforeCleanup(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: cleanupBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(cleanupBack('session-only', ...args))) }),
+  withoutVoidReasks(CHANGED_SINCE_SHOWN_CURRENT));
+  // A file changed since the session, shown: rendered back (`profileBeforeChangedSinceShown`), every run profile is the
+  // agentic code step's; no case moved, and the combined profile did not move.
+  assert.deepEqual(MOVED_BY_CHANGED_SINCE_SHOWN.cases, [{}, {}, {}]);
+  assert.equal(MOVED_BY_CHANGED_SINCE_SHOWN.runProfile.combined, MOVED_BY_AGENTIC_CODE_STEP.runProfile.combined);
+  assert.equal(profileBeforeCleanup(reviewRun.runProfile('session-only')).codePass.pass,
+    CHANGED_SINCE_SHOWN_VERSIONS.pass.after);
+  // The triage moved the session-only profile alone (code-pass/10): rendered back (`profileBeforeTriage`), the
+  // cleanup's; no case moved.
+  assert.equal(reviewRun.runProfile('session-only').codePass.pass, TRIAGE_VERSIONS.pass.after);
+  assert.equal(TRIAGE_VERSIONS.pass.before, CLEANUP_VERSIONS.pass.after);
+  assert.equal(profileBeforeTriage(reviewRun.runProfile('session-only')).codePass.pass, CLEANUP_VERSIONS.pass.after);
+  assert.equal(CLEANUP_VERSIONS.pass.before, CHANGED_SINCE_SHOWN_VERSIONS.pass.after);
+  const sinceBack = (...args) => profileBeforeChangedSinceShown(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: sinceBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(sinceBack('session-only', ...args))) }),
+  withoutVoidReasks(AGENTIC_CODE_STEP_CURRENT));
+  // The agentic code step: rendered back (`profileBeforeAgenticCodeStep`), every run profile is G2's; no case moved,
+  // and the combined profile did not move.
+  assert.deepEqual(MOVED_BY_AGENTIC_CODE_STEP.cases, [{}, {}, {}]);
+  assert.equal(MOVED_BY_AGENTIC_CODE_STEP.runProfile.combined, MOVED_BY_CHOICE_REANCHOR.runProfile.combined);
+  assert.equal(CHANGED_SINCE_SHOWN_VERSIONS.pass.before, AGENTIC_CODE_STEP_VERSIONS.pass.after);
+  const agenticBack = (...args) => profileBeforeAgenticCodeStep(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: agenticBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(agenticBack('session-only', ...args))) }),
+  withoutVoidReasks(CHOICE_REANCHOR_CURRENT));
+  // G2: rendered back (`profileBeforeChoiceReanchor`), every run profile is the re-ask of a void vote's; no case moved,
+  // and both profiles moved by their prompt version alone.
+  assert.deepEqual(MOVED_BY_CHOICE_REANCHOR.cases, [{}, {}, {}]);
+  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.after, reviewRun.runProfile('combined').promptVersion);
+  const reanchorBack = (...args) => profileBeforeChoiceReanchor(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: reanchorBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(reanchorBack('session-only', ...args))) }),
+  withoutVoidReasks(VOID_VOTE_REASK_CURRENT));
+  // The re-ask of a void vote: rendered back (`profileBeforeVoidVoteReask`), every case and run profile is the agent
+  // transport's (its re-asks withdrawn by the cleanup); what it moved was only requests sent after the rest, never a
+  // planned one.
+  assert.deepEqual(MOVED_BY_VOID_VOTE_REASK.cases.map((c) => Object.keys(c).sort().join(',')),
+    ['labels,sentCount,sentInOrder,sentSorted', '', 'labels,sentCount,sentInOrder,sentSorted']);
+  const voidBack = (...args) => profileBeforeVoidVoteReask(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: voidBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(voidBack('session-only', ...args))) }),
+  AGENT_TRANSPORT_CURRENT);
+  // The agent transport: rendered back (`profileBeforeAgentTransport`, which applies `profileBeforeVoidVoteReask`
+  // first), every run profile is the second release review's; no case moved, and both profiles moved by their closed
+  // judge failure list alone.
+  assert.deepEqual(MOVED_BY_AGENT_TRANSPORT.cases, [{}, {}, {}]);
+  for (const scope of ['session-only', 'combined']) {
+    const codes = reviewRun.runProfile(scope).judgeFailureCodes;
+    assert.deepEqual(AGENT_TRANSPORT_FAILURE_CODES.filter((code) => codes.includes(code)), AGENT_TRANSPORT_FAILURE_CODES);
+    assert.deepEqual(profileBeforeAgentTransport(reviewRun.runProfile(scope)),
+      { ...profileBeforeVoidVoteReask(reviewRun.runProfile(scope)),
+        judgeFailureCodes: codes.filter((code) => !AGENT_TRANSPORT_FAILURE_CODES.includes(code)) });
+  }
+  const agentBack = (...args) => profileBeforeAgentTransport(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: agentBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(agentBack('session-only', ...args))) }),
+  SECOND_RELEASE_REVIEW_CURRENT);
+  // The second release review: rendered back (`profileBeforeSecondReleaseReview`, which applies
+  // `profileBeforeAgentTransport` first), every run profile is the release review's; no case moved, and the combined
+  // profile moved by its prompt version alone.
   assert.deepEqual(MOVED_BY_SECOND_RELEASE_REVIEW.cases, [{}, {}, {}]);
-  assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, reviewRun.runProfile('combined').promptVersion);
+  assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.after,
+    profileBeforeChoiceReanchor(reviewRun.runProfile('combined')).promptVersion);
   const secondReleaseBack = (...args) => profileBeforeSecondReleaseReview(reviewRun.runProfile(...args));
   assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: secondReleaseBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(secondReleaseBack('session-only', ...args))) }),
@@ -1273,7 +1490,12 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // The second release review moved it once more (SECOND_RELEASE_REVIEW_VERSIONS: prompt); rendered back
     // (`profileBeforeSecondReleaseReview`), the release review's.
     assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.before, RELEASE_REVIEW_VERSIONS.prompt.after);
-    assert.equal(reviewRun.runProfile(scope).promptVersion, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, scope);
+    // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt); rendered back (`profileBeforeChoiceReanchor`), the
+    // second release review's.
+    assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+    assert.equal(reviewRun.runProfile(scope).promptVersion, CHOICE_REANCHOR_VERSIONS.prompt.after, scope);
+    assert.equal(profileBeforeChoiceReanchor(reviewRun.runProfile(scope)).promptVersion,
+      SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeSecondReleaseReview(reviewRun.runProfile(scope)).promptVersion,
       RELEASE_REVIEW_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeReleaseReview(reviewRun.runProfile(scope)).promptVersion, W1_VERSIONS.prompt.after, scope);
@@ -1318,8 +1540,46 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // code-pass /6) and every profile's prompt version (narrative/36); rendered back
     // (`profileBeforeSecondReleaseReview`), the release review's.
     assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.snapshot.before, RELEASE_REVIEW_VERSIONS.snapshot.after);
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_SECOND_RELEASE_REVIEW.runProfile[scope],
+    // The agentic code step moved the session-only profile's code-pass member (code-snapshot/9, code-pass/7,
+    // code-verify/1); rendered back (`profileBeforeAgenticCodeStep`), G2's.
+    assert.equal(AGENTIC_CODE_STEP_VERSIONS.snapshot.before, SECOND_RELEASE_REVIEW_VERSIONS.snapshot.after);
+    // A file changed since the session, shown, moved the session-only profile's code-pass member (code-snapshot/10,
+    // code-pass/8); rendered back (`profileBeforeChangedSinceShown`), the agentic code step's.
+    assert.equal(CHANGED_SINCE_SHOWN_VERSIONS.snapshot.before, AGENTIC_CODE_STEP_VERSIONS.snapshot.after);
+    // The cleanup moved every profile's challenge version (/44), and the session-only profile's code-pass member
+    // (code-pass/9, code-verify/2); rendered back (`profileBeforeCleanup`), a file changed since the session, shown's.
+    // The triage moved the session-only profile's code-pass member (code-pass/10, the tier table); rendered back
+    // (`profileBeforeTriage`), the cleanup's. The tied tier moved it once more by the tier table alone; rendered back
+    // (`profileBeforeTiedTier`), the triage's. The release check's closed list of unchecked repairs moved it once more;
+    // rendered back (`profileBeforeRepairUnchecked`), the tied tier's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_REPAIR_UNCHECKED.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeRepairUnchecked(reviewRun.runProfile(scope)))),
+      MOVED_BY_TIED_TIER.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeTiedTier(reviewRun.runProfile(scope)))), MOVED_BY_TRIAGE.runProfile[scope],
       scope);
+    assert.equal(sha256(canonicalJson(profileBeforeTriage(reviewRun.runProfile(scope)))), MOVED_BY_CLEANUP.runProfile[scope],
+      scope);
+    assert.equal(sha256(canonicalJson(profileBeforeCleanup(reviewRun.runProfile(scope)))),
+      MOVED_BY_CHANGED_SINCE_SHOWN.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeChangedSinceShown(reviewRun.runProfile(scope)))),
+      MOVED_BY_AGENTIC_CODE_STEP.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeAgenticCodeStep(reviewRun.runProfile(scope)))),
+      MOVED_BY_CHOICE_REANCHOR.runProfile[scope], scope);
+    // G2 moved every profile's prompt version (narrative/37); rendered back (`profileBeforeChoiceReanchor`), the re-ask
+    // of a void vote's.
+    assert.equal(sha256(canonicalJson(profileBeforeChoiceReanchor(reviewRun.runProfile(scope)))),
+      MOVED_BY_VOID_VOTE_REASK.runProfile[scope], scope);
+    // The re-ask of a void vote moved the challenge version once more (both scopes, and the session-only profile's
+    // code-pass member); rendered back (`profileBeforeVoidVoteReask`), the agent transport's. The agent transport moved
+    // every profile's closed judge failure list; rendered back (`profileBeforeAgentTransport`), the second release
+    // review's.
+    assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+    assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+    assert.equal(reviewRun.runProfile(scope).challenge.version, CLEANUP_VERSIONS.challenge.after, scope);
+    assert.equal(sha256(canonicalJson(profileBeforeVoidVoteReask(reviewRun.runProfile(scope)))),
+      MOVED_BY_AGENT_TRANSPORT.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeAgentTransport(reviewRun.runProfile(scope)))),
+      MOVED_BY_SECOND_RELEASE_REVIEW.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeSecondReleaseReview(reviewRun.runProfile(scope)))),
       MOVED_BY_RELEASE_REVIEW.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeReleaseReview(reviewRun.runProfile(scope)))),
@@ -1463,7 +1723,8 @@ test('M33 N: rendered back as /13 and /10 sent it, the default review plans and 
 test('M33 J the default review plans and sends exactly what a2bc39d did — but for the bytes M33 C, M33 X, M33 C2 and M33 H moved', async () => {
   assert.deepEqual(await captureStandard(modules, digests), CURRENT);
   // Every other value is a2bc39d's: the windows, the requests sent, their labels and order, the failures — but for
-  // what M35 windowing moved (MOVED_BY_WINDOWING: the `large` case's windows, calls, labels and failure).
+  // what M35 windowing moved (MOVED_BY_WINDOWING: the `large` case's windows, calls, labels and failure). (The re-ask
+  // of a void vote added requests after them, MOVED_BY_VOID_VOTE_REASK, and the cleanup withdrew them.)
   for (const [at, c] of BASE_A2BC39D.cases.entries())
     for (const field of ['name', 'windows', 'sentCount', 'labels', 'windowFailures'])
       if (!Object.hasOwn(MOVED_BY_WINDOWING.cases[at], field)) assert.equal(CURRENT.cases[at][field], c[field]);

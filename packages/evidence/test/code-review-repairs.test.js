@@ -12,7 +12,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runCodeReview, snapshotDiff } from '../src/code-review.js';
-import { renderReview } from '../src/review.js';
 import { Session } from '../src/session.js';
 
 const REPO = { host: 'github.com', id: '187' };
@@ -64,13 +63,10 @@ const answering = ({ codeFindings = [], sessionFindings = [] }) => async (reques
   return { ...base, reviewedFiles: [] };
 };
 
-const footerCount = (md) => {
-  const lines = md.split('\n').filter((line) => /snapped to the exact recorded text/.test(line));
-  assert.ok(lines.length <= 1, 'at most one footer line');
-  return lines.length ? Number(/^_(\d+) receipt quote\(s\)/.exec(lines[0])?.[1]) : 0;
-};
+/** The receipts of the published findings that code marked as snapped to the recorded text. */
+const markedReceipts = (report) => report.findings.flatMap((f) => f.receipts ?? []).filter((r) => r.repaired === true).length;
 
-test('F187 a code finding with one repaired receipt is counted in counts.receiptsRepaired, and the footer equals it', async () => {
+test('F187 a code finding with one repaired receipt is counted in counts.receiptsRepaired, and the marks equal it', async () => {
   const report = await runCodeReview({ session: session(), pr: PR, diff: DIFF, judge: answering({ codeFindings: [CODE_FINDING] }) });
   const published = report.findings.filter((f) => f.origin === 'code-review');
   assert.equal(published.length, 1, `premise: the code finding is published:\n${JSON.stringify(report.rejectedCodeFindings)}`);
@@ -80,9 +76,7 @@ test('F187 a code finding with one repaired receipt is counted in counts.receipt
   assert.notEqual(marked[0].quote, NEAR_MISS, 'premise: the published quote is the recorded text');
 
   assert.equal(report.counts.receiptsRepaired, 1, 'the repair is counted');
-  const md = renderReview(report);
-  assert.equal((md.match(/ · repaired$/gm) ?? []).length, 1, 'and marked on its line');
-  assert.equal(footerCount(md), report.counts.receiptsRepaired, 'the footer says what the count says');
+  assert.equal(markedReceipts(report), report.counts.receiptsRepaired, 'the marks say what the count says');
 });
 
 test('F187 a finding offered again by a second request is one finding, and its repair is counted once', async () => {
@@ -94,7 +88,7 @@ test('F187 a finding offered again by a second request is one finding, and its r
   const report = await runCodeReview({ session: session(), pr: PR, diff: DIFF, judge });
   assert.equal(report.findings.filter((f) => f.origin === 'code-review').length, 1, 'premise: one finding');
   assert.equal(report.counts.receiptsRepaired, 1);
-  assert.equal(footerCount(renderReview(report)), 1);
+  assert.equal(markedReceipts(report), 1);
 });
 
 test('F187 a session finding the code review grounded with a repaired receipt is counted too', async () => {
@@ -106,7 +100,7 @@ test('F187 a session finding the code review grounded with a repaired receipt is
   assert.equal(published.length, 1, `premise: published:\n${JSON.stringify(report.rejectedFindings)}`);
   assert.equal(published[0].receipts.filter((r) => r.repaired === true).length, 1, 'premise: one repaired receipt');
   assert.equal(report.counts.receiptsRepaired, 1);
-  assert.equal(footerCount(renderReview(report)), report.counts.receiptsRepaired);
+  assert.equal(markedReceipts(report), report.counts.receiptsRepaired);
 });
 
 test('F187 a finding the session review already grounded is published as its copy, and counted as that copy', async () => {
@@ -144,7 +138,7 @@ test('F187 a finding the session review already grounded is published as its cop
   assert.notEqual(contradictions[0].title, again.title, 'premise: the session review\'s copy is the one published');
   assert.equal(contradictions[0].receipts.filter((r) => r.repaired === true).length, 0, 'premise: no line is marked');
   assert.equal(report.counts.receiptsRepaired, 0, 'the copy not published adds nothing');
-  assert.equal(footerCount(renderReview(report)), 0);
+  assert.equal(markedReceipts(report), 0);
 });
 
 test('F187 a code finding whose quotes were all exact adds nothing to the count', async () => {
@@ -152,5 +146,5 @@ test('F187 a code finding whose quotes were all exact adds nothing to the count'
   const report = await runCodeReview({ session: session(), pr: PR, diff: DIFF, judge: answering({ codeFindings: [exact] }) });
   assert.equal(report.findings.filter((f) => f.origin === 'code-review').length, 1, 'premise: published');
   assert.equal(report.counts.receiptsRepaired, 0);
-  assert.equal(footerCount(renderReview(report)), 0, 'no footer when nothing was repaired');
+  assert.equal(markedReceipts(report), 0, 'no mark when nothing was repaired');
 });

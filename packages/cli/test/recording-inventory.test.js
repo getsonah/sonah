@@ -14,7 +14,7 @@ async function fixture(t, contents = [meta('one'), meta('two'), meta('three')]) 
   return { dir, files };
 }
 
-test('an index retains redacted identity and aggregate accounting, without recording payloads', async t => {
+test('an index retains each identity as read and aggregate accounting, without recording payloads', async t => {
   const secret = 'sk-ant-api03-' + 'A'.repeat(80);
   const f = await fixture(t, [meta(secret) + '{"text":"private payload"}\n', meta('two')]);
   const found = await indexRecordings(f.dir, 'codex');
@@ -22,9 +22,10 @@ test('an index retains redacted identity and aggregate accounting, without recor
   assert.equal(found.stats.candidateFiles, 2);
   assert.equal(found.stats.verifiedFiles, 2);
   assert.equal(found.stats.records, 3);
-  assert.equal(found.sources[0].identityUnchecked, true);
-  assert.equal(JSON.stringify(found).includes(secret), false);
-  assert.equal(JSON.stringify(found).includes('private payload'), false);
+  // D90 (owner decision 2026-10-15): nothing scans an identity; a key-shaped one is kept as read.
+  assert.equal(found.sources[0].sessionId, secret);
+  assert.notEqual(found.sources[0].identityUnchecked, true);
+  assert.equal(JSON.stringify(found).includes('private payload'), false, 'a recording\'s payload is never indexed'); 
   assert.deepEqual(found.stats.reasons, []);
 });
 
@@ -175,9 +176,10 @@ test('inventory ceilings are frozen; callers can lower but cannot loosen them', 
   }
 });
 
-// M33 conflicting sources (C-03): conflicting sources keep a private, redacted candidate record
-// beside the inventory. It never enters sources, and nothing else gains a record.
-test('M33 A9 conflict candidates are redacted before storage, frozen and kept outside sources', async t => {
+// M33 conflicting sources (C-03): conflicting sources keep a private candidate record beside the inventory. It never
+// enters sources, and nothing else gains a record. D90 (owner decision 2026-10-15): nothing scans a candidate value (an
+// identity scan once hid a key-shaped one, its field `hidden`): each is kept as read.
+test('M33 A9, D90 conflict candidates are kept as read, frozen and kept outside sources', async t => {
   const secret = 'sk-ant-api03-' + 'B'.repeat(80);
   const f = await fixture(t, [meta('clean'), meta('fork-a') + meta(secret),
     meta('three-a') + meta('three-b') + meta('three-c'),
@@ -187,12 +189,11 @@ test('M33 A9 conflict candidates are redacted before storage, frozen and kept ou
   assert.deepEqual(found.sources.map(s => s.identityConflict), [false, true, true, true]);
   assert.ok(found.conflictCandidates instanceof Map);
   assert.deepEqual([...found.conflictCandidates.keys()], [1, 2, 3], 'conflicting sources only, by source key');
-  assert.deepEqual(found.conflictCandidates.get(1), { malformed: false, hidden: ['sessionId'], overflow: [],
-    values: { sessionId: ['fork-a'], childId: [], parentThreadId: [], taskPath: [] } });
+  assert.deepEqual(found.conflictCandidates.get(1), { malformed: false, hidden: [], overflow: [],
+    values: { sessionId: ['fork-a', secret], childId: [], parentThreadId: [], taskPath: [] } });
   assert.deepEqual(found.conflictCandidates.get(2), { malformed: false, hidden: [], overflow: ['sessionId'],
     values: { sessionId: ['three-a', 'three-b'], childId: [], parentThreadId: [], taskPath: [] } });
   assert.equal(found.conflictCandidates.get(3).malformed, true);
-  assert.equal(JSON.stringify([...found.conflictCandidates]).includes(secret), false);
   for (const source of found.sources) {
     assert.equal(Object.hasOwn(source, 'candidates'), false);
     assert.equal(Object.hasOwn(source, 'conflictCandidates'), false);

@@ -20,7 +20,6 @@ import assert from 'node:assert/strict';
 // whole file failing to link.
 import * as adapter from '../adapters/sonah-ledger.js';
 import * as reviewRun from '../src/run-review.js';
-import * as reviewRender from '../src/review.js';
 import * as ledgerModule from '../src/ledger.js';
 import { windowCompletionLine } from '../../cli/src/session-review-command.js';
 import { redact } from '../../redact/index.js';
@@ -196,7 +195,6 @@ test('F214 invalid_model_input is a declared judge failure code, not retryable, 
   assert.ok(!ledgerModule.RETRYABLE_JUDGE_CODES.includes('invalid_model_input'), 'retrying cannot help');
   assert.ok(reviewRun.NARRATIVE_SHORTFALL.includes('input_invalid'));
   assert.ok(reviewRun.WINDOW_INCOMPLETE_REASONS.includes('narrative:input_invalid'));
-  assert.equal(typeof reviewRender.SHORTFALL_SENTENCE.input_invalid, 'string');
   assert.deepEqual(reviewRun.windowIncompleteReasons({ failure: 'invalid_model_input' }), ['narrative:input_invalid']);
 });
 
@@ -213,11 +211,7 @@ test('F214 a judge that refuses the input: the window, the CLI completion line a
 
   const line = windowCompletionLine(report.instrument.windowCompletion);
   assert.equal(line, 'Windows complete: 0 of 1; incomplete: narrative:input_invalid ×1');
-  assert.ok(!line.includes('model_unavailable'));
-
-  const md = reviewRender.renderReview(report);
-  assert.ok(md.includes(reviewRender.SHORTFALL_SENTENCE.input_invalid), 'the reader is told the request was never sent');
-  assert.ok(!md.includes(reviewRender.SHORTFALL_SENTENCE.model_unavailable), 'never that the model could not be reached');
+  assert.ok(!line.includes('model_unavailable'), 'never that the model could not be reached');
 });
 
 test('F214 through the real judge and its retry wrapper: refused once, never retried, never sent', async () => {

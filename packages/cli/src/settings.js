@@ -111,7 +111,8 @@ export function codePassSettingLine(read, path, label = 'code-pass') {
   const set = read.state === 'ok' && typeof read.settings.codePass === 'boolean';
   const on = set ? read.settings.codePass : CODE_PASS_DEFAULT;
   return `${label}: ${on ? 'on' : 'off'} (${set ? `set in ${path}` : 'the default'}). ${on
-    ? 'A review also reads the files the session changed or read, as they are now, and sends them to the reviewer.'
+    ? 'A review also runs the code step: a review agent reads the repository with read-only tools and reviews the '
+      + 'session\'s change.'
     : 'A review reads and sends the session only.'} Change it with sonah config code-pass ${on ? 'off' : 'on'}, or for `
     + `one review with ${on ? '--no-code-pass' : '--code-pass'}.`;
 }

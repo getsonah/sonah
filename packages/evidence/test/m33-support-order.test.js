@@ -13,9 +13,8 @@ import { Session } from '../src/session.js';
 import { supportCheck } from '../src/claims.js';
 import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
 import { challengeSystem } from '../src/challenge.js';
-import { STORY_PROMISE_WORDS } from '../../render/session-story.js';
+import { REPORT_DID_WORDS } from '../../render/report-words.js';
 
 const SESSION_KEY = 'sess-support-order';
 const TEXT = {
@@ -116,8 +115,8 @@ test('G3 support order: a support the model cites from an earlier run is asked, 
     reviewScope: 'session-only', judge });
   assert.ok(seen.some((r) => r.challenge?.items.some((i) => i.key.endsWith(':support'))), 'asked as its own item');
   assert.deepEqual(report.promises.map((p) => p.status), ['verified']);
-  assert.equal(STORY_PROMISE_WORDS.verified, 'confirmed by a recorded result');
-  assert.equal(review.PROMISE_STATUS_WORDS.verified, 'confirmed by a recorded result');
+  // D97: the page and the report .md list such a claim as checked, with the result's own words beside it.
+  assert.equal(REPORT_DID_WORDS.claimStatus.checked, 'checked');
   // W3 F1(b) (owner decision 2026-10-13): the same answer after an in-repository edit between the run and the claim is
   // asked on the session route with that edit listed under "changed since:", and verified only when every counted vote
   // upholds it (w3-support-changed-since.test.js); before, it was refused `stale_run` and never asked. The combined

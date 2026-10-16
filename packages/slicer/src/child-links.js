@@ -1,5 +1,5 @@
-// Pure child-recording linkage. The IO layer must redact/scrub identities before calling this
-// function. A link proves only which recording belongs to a handoff; it says nothing about the
+// Pure child-recording linkage. The IO layer reads identities by their shape before calling this
+// function (D90: nothing scans them; a ledger an earlier redactor scrubbed names the fields it scrubbed). A link proves only which recording belongs to a handoff; it says nothing about the
 // completeness, correctness or authority of the child's work.
 
 export const CHILD_LINK_REASONS = Object.freeze({
@@ -74,7 +74,7 @@ export function delegationIdentityUnverified(delegation) {
 }
 
 // A redacted field matters only if this candidate could still satisfy one of the recorded
-// linkage proofs. The redactor leaves clean fields intact and names the scrubbed fields; legacy
+// linkage proofs. An earlier redactor left clean fields intact and named the scrubbed fields; legacy
 // coarse flags without that detail stay unknown. An unrelated safely excluded source cannot
 // suppress an otherwise unique child.
 function redactedCandidateCouldMatch(source, adapter, childId, task, parent) {

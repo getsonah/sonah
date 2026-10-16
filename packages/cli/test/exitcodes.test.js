@@ -83,23 +83,15 @@ test('a command that did its job exits 0, not the module-level fail-safe', async
   assert.match(r.stdout, /"_hash"/, 'and it really did produce a ledger');
 });
 
-// ---------------------------------------------------- M57: redaction runs BEFORE the slice hash
+// ---------------------------------------------------- D90: `sonah slice` prints the recording as recorded
 // (Moved from capture.test.js when `capture` retired, D76: it tests `analyze`, which `sonah slice` runs.)
 //
-// The slice hash is the identity of a session everywhere downstream: it names the verdict cache,
-// it is written into commit trailers, and it is what a second machine compares against. If it
-// were computed from the raw slice, the identity of every session would be a function of its
-// plaintext credentials — and two sessions differing only in a secret would be distinguishable by
-// a value that is meant to be safe to publish. Worse, a re-slice after a redaction-rule change
-// would keep the old identity and quietly reuse a verdict computed over unredacted text.
-//
-// This was an invariant of the product (a project rule, before D84: "Redaction fails closed and runs BEFORE
-// slice_hash is computed"), and nothing asserted it. AKIAIOSFODNN7EXAMPLE is AWS's own published
-// example key, not a credential. D84 (owner decision 2026-10-12): it still holds for `analyze` — what
-// `sonah slice` prints and the pull-request route reads, masked — while a session review reads and
-// hashes its bounded, unmasked ledger (cli/test/d84-output-masking.test.js).
+// M57 made `analyze` hash its ledger after redaction (masking on), and D84 kept that for `sonah slice` while a session
+// review read and hashed its bounded, unmasked ledger. D90 (owner decision 2026-10-15, privacy is not a design
+// constraint): `sonah slice` masks nothing either. It prints the ledger a review reads — bounded and validated — and
+// its hash names that ledger. AKIAIOSFODNN7EXAMPLE is AWS's own published example key, not a credential.
 
-test('M57: the slice hash is taken after redaction, never before', async () => {
+test('D90: sonah slice prints the recorded text, and its hash names the bounded ledger it prints', async () => {
   const [{ analyze }, { sliceLineage }, { redact, sliceHash }] = await Promise.all([
     import('../index.js'), import('../../slicer/index.js'), import('../../redact/index.js')]);
 
@@ -117,14 +109,20 @@ test('M57: the slice hash is taken after redaction, never before', async () => {
   ].map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
 
   const raw = await sliceLineage([file]);
-  assert.ok(JSON.stringify(raw).includes(KEY), 'the fixture must really carry the key before redaction');
+  assert.ok(JSON.stringify(raw).includes(KEY), 'the fixture really carries the key');
 
   const result = await analyze([file]);
   assert.equal(result.hash, sliceHash(result.ledger), 'the hash names the ledger the caller receives');
-  assert.notEqual(result.hash, sliceHash(raw), 'and it is NOT the identity of the unredacted slice');
   assert.equal(result.hash, sliceHash(redact(raw).ledger),
-    'the whole difference between the two is redaction, applied first');
-  assert.ok(!JSON.stringify(result.ledger).includes(KEY), 'and the key is not in what we hand back');
+    'the bounded, unmasked ledger a session review reads and hashes');
+  assert.ok(JSON.stringify(result.ledger).includes(`AWS_ACCESS_KEY_ID=${KEY} aws s3 ls`), 'the command as recorded');
+  assert.ok(!/‹(?:redacted|dropped)/.test(JSON.stringify(result.ledger)), 'nothing is masked');
+  // The command prints it.
+  const printed = await run('slice', file);
+  assert.equal(printed.code, 0, printed.stderr);
+  const ledger = JSON.parse(printed.stdout);
+  assert.equal(ledger._hash, result.hash);
+  assert.ok(ledger.ledger.some((event) => event.cmd === `AWS_ACCESS_KEY_ID=${KEY} aws s3 ls`), 'printed as recorded');
 });
 
 // Owner decision 2026-10-06: the legacy gate's product surface is retired. Each retired command is

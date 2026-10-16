@@ -21,16 +21,14 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { posix } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { readExecCalls, execResults, duplicateJsonKeys, scriptStrings, CODEX_CAPTURE_REASONS as REASON }
+import { readExecCalls, execResults, duplicateJsonKeys, CODEX_CAPTURE_REASONS as REASON }
   from './codex-exec.js';
 import { strictJson } from './strict-json.js';
 import { isDelegationTool } from './delegation.js';
 import { readAgentMessage, agentMessageArrival, INTER_AGENT_COUNTS, AGENT_REPORT_RECORD } from './inter-agent.js';
 import { AGENT_ARRIVAL_RECORD } from './helper-deliveries.js';
 import { recordingIdentity } from './recording-identity.js';
-import { credentialPath } from './before.js';
 import { recordedParsedCmd, parseUnifiedHunks } from './recorded.js';
-import { redact } from '../../redact/index.js';
 import { MARK_SOURCES, ACTION_PROVENANCE } from './events.js';
 import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, labelOf, applyLabel } from './labels.js';
 import { PRIVATE_LABEL, textOf } from './records.js';
@@ -335,12 +333,13 @@ function turnAbortedBoundary(payload, raw) {
     || !!keysWithin(payload.error, TURN_ABORTED.errorFields) && typeof payload.error.message === 'string';
 }
 
-// A FileChange path is usable as a join key only after it is reduced to one
-// repository-relative path and survives the same redaction pass as exported actions.
+// A FileChange path is usable as a join key only after it is reduced to one repository-relative path. D90 (owner
+// decision 2026-10-15): whatever file it names (a credential-shaped one was never a key before), and nothing scans it
+// or reads what its characters say (a redaction mark in it is part of the path as recorded).
 function safeChangePath(raw, cwd) {
   if (typeof raw !== 'string' || !raw || raw.length > 4096 || !posix.isAbsolute(cwd)
     || raw.includes('\0') || raw.includes('\\')
-    || raw.includes('‹redacted') || raw.startsWith('~') || raw.includes('://')) return null;
+    || raw.startsWith('~') || raw.includes('://')) return null;
   let path = raw;
   if (posix.isAbsolute(path)) {
     if (!posix.isAbsolute(cwd)) return null;
@@ -349,10 +348,7 @@ function safeChangePath(raw, cwd) {
   }
   if (!path || path === '.' || path.startsWith('/') || path.split('/').includes('..')) return null;
   path = posix.normalize(path);
-  if (!path || path === '.' || path.startsWith('../') || credentialPath(path)) return null;
-  const source = { ask: [], ledger: [{ turn: 0, kind: 'edit', path, argsExcerpt: path }] };
-  const clean = redact(source);
-  return clean.dropped.length === 0 && clean.ledger.ledger[0]?.argsExcerpt === path ? path : null;
+  return !path || path === '.' || path.startsWith('../') ? null : path;
 }
 
 /** D68 (C 1; C-02 "M36 recorded facts"): what a FileChange update's `unified_diff` gives its change: the recorder's
@@ -390,21 +386,11 @@ function commandExecutionCwd(raw) {
   } catch { return null; }
 }
 
-// Both halves must survive export redaction unchanged before they can check
-// consistency AFTER an exact recorded call-ID join. They never establish ownership.
+// Both halves are checked for consistency only AFTER an exact recorded call-ID join. They never establish ownership.
+// D90 (owner decision 2026-10-15): nothing scans them (a redaction pass once had to leave both unchanged).
 function safeCommandExecutionKey(cmd, cwd) {
   if (typeof cmd !== 'string' || !cmd || cmd.length > 1_000_000
     || typeof cwd !== 'string' || !posix.isAbsolute(cwd) || cwd.length > 8192) return null;
-  const source = { ask: [], commentary: [], dropped: [], ledger: [
-    { turn: 0, kind: 'bash', cmd, argsExcerpt: cmd },
-    { turn: 0, kind: 'bash', cmd: cwd, argsExcerpt: cwd },
-  ] };
-  let clean;
-  try { clean = redact(source); } catch { return null; }
-  const rows = clean.ledger.ledger;
-  if (clean.dropped.length || rows?.length !== 2
-    || rows[0].cmd !== cmd || rows[0].argsExcerpt !== cmd
-    || rows[1].cmd !== cwd || rows[1].argsExcerpt !== cwd) return null;
   return JSON.stringify([cmd, cwd]);
 }
 
@@ -1079,7 +1065,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       const agentLabel = agentMessageLabel(p.author);
       // M33 F: the recorded header, read exactly (inter-agent.js). A helper's plaintext final report is kept WHOLE,
       // on this row (where the parent received it), for the join to the one hand-off it belongs to
-      // (delegation-records.js); redaction scrubs it whole before anything bounds it. A payload the recorder
+      // (delegation-records.js); nothing bounds or masks it (D68 E, D90). A payload the recorder
       // encrypted is counted as that and never kept; anything else stays unparsed.
       const message = readAgentMessage(p);
       if (message.type === 'final_answer') {
@@ -1222,11 +1208,8 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
         if (parsed.unsupported) reason(REASON.unsupported);
         // C-02 M33 native-first: the wrapper call is itself one generic code-cell action whose
         // input is its recorded script (part 0 of its row); its parsed inner calls follow it.
-        // D69 review (F3): with the strings its script spells, by the JavaScript grammar (codex-exec.js `scriptStrings`),
-        // which decide, as a structured input's values do, whether its output is withheld (events.js
-        // `genericOutputSensitive`). A transient of the call: never in the ledger.
         const record = toolRecord(id, paginated ? [{ name: p.name, input: p.input ?? p.arguments,
-          provenance: ACTION_PROVENANCE.codexCodeCell, cellStrings: scriptStrings(p.input ?? p.arguments) }] : [],
+          provenance: ACTION_PROVENANCE.codexCodeCell }] : [],
           line, id, p.call_id);
         records.push(record);
         if (!duplicate) {
@@ -1910,8 +1893,7 @@ function normalCalls(name, input) {
 /**
  * apply_patch carries the whole patch as text. Extract the file it touches and keep the body as the
  * args excerpt so before/after deltas still work downstream. M33 R: a patch naming no file keeps its
- * WHOLE body as the command — redaction scrubs a command whole; a cut here (it was 200 characters)
- * would hand it half a token.
+ * WHOLE body as the command; a cut here (it was 200 characters) would lose the rest of it.
  */
 export function patchInput(input) {
   const body = typeof input === 'string' ? input : JSON.stringify(input ?? '');
@@ -1948,7 +1930,7 @@ const FILE_HEADER = /^(?:---|\+\+\+)(?:[ \t]|$)/;
  * dropped from both texts, silently: a YAML key or a PEM BEGIN line written without its marker left the block's body
  * lines in a text without the line that makes them secret, and redaction showed them verbatim. Now it is kept, whole,
  * as a context line of both texts, so a body never travels without its key. (Withholding the section instead would
- * fail closed too; this keeps the change visible, masked.) Before a unified diff's first hunk, an unmarked line is
+ * fail closed too; this keeps the change visible. D90: nothing in it is masked.) Before a unified diff's first hunk, an unmarked line is
  * one of its headers (`diff --git …`, `index …`) and is not file text, as before.
  */
 function splitPatch(body, { unified = false } = {}) {

@@ -144,8 +144,6 @@ test('M33 written: the labels, the withheld causes and the contradiction rejecti
   for (const cause of ledger.WRITTEN_WITHHELD_CAUSES) {
     assert.ok(!ledger.WITHHELD_REJECTION_CAUSES.includes(cause), `${cause} is its own class's cause`);
     assert.ok(!ledger.JUDGMENT_REASONS.includes(cause), `${cause} is a cause, never a new reason`);
-    assert.ok(reviewRender.WITHHELD_CAUSES.includes(cause), `${cause} has a rendered sentence`);
-    assert.equal(typeof reviewRender.WITHHELD_SENTENCE[cause], 'function');
   }
 });
 
@@ -377,38 +375,22 @@ test('M33 written: the combined route publishes written statements and never cou
   assert.deepEqual(verdictOf(report), verdictOf(baseline));
 });
 
-// ---- the renderer ---------------------------------------------------------------------------------------
+// ---- what the readers read ----------------------------------------------------------------------------
 
-test('M33 written: the renderer lists written statements in their own section, with side labels, never as findings', async () => {
+test('M33 written: written statements stay apart from claims and findings, each with its side label', async () => {
   const report = await review(narrativeOf({ writtenClaims: [written(STATUS, TESTS),
     written(EDITED, null, 'The notes say the parser handles empty input.')] }));
   assert.deepEqual(labelled(report), [['A1', 'contradicted'], ['A3', 'unverified']]);
-  const md = reviewRender.renderReview(report);
-  const heading = '### Statements the agent wrote into files';
-  assert.ok(md.includes(heading));
-  const section = md.slice(md.indexOf(heading)).split('\n### ')[0];
-  assert.ok(section.includes(`- **contradicted** — ${TEXT_OF}`));
-  // D88: the statement not checked is listed under What Sonah could not check, with its side label; the section says so.
-  assert.ok(section.includes(`_${reviewRender.FOLDED_SECTION_WORDS.here(1, 'statement')}_`));
-  const folded = md.slice(md.indexOf(reviewRender.CHECKLIST_HEADINGS.folded), md.indexOf('</details>', md.indexOf(reviewRender.CHECKLIST_HEADINGS.folded)));
-  assert.ok(folded.includes(`#### ${reviewRender.FOLDED_SECTION_WORDS.groups.writtenOpen} (1)`));
-  assert.ok(folded.includes('- **unverified** — The notes say the parser handles empty input.'));
-  assert.ok(/never a finding/i.test(folded));
-  assert.ok(section.includes(reviewRender.escapeSource('SYNTHETIC_W_STATUS: all parser tests pass.')), 'the written quote');
-  assert.ok(section.includes(reviewRender.escapeSource(TEXT.tests)), 'the contradicting result');
-  assert.ok(/never a finding/i.test(section));
-  assert.equal(md.split(TEXT_OF).length - 1, 1, 'the statement appears only in its section');
-  assert.ok(!reviewRender.renderReview(await review(narrativeOf())).includes(heading), 'no statements, no section');
+  // D88: the contradicted statement counts; the one not checked is folded (`writtenRowKind`).
+  assert.deepEqual(report.writtenClaims.map((w) => reviewRender.writtenRowKind(w)), ['writtenContradicted', 'writtenOpen']);
+  assert.ok(!JSON.stringify([report.findings, report.promises ?? []]).includes(TEXT_OF), 'never a finding or a claim');
 });
 
-test('M33 written: withheld written statements are said in the withheld section by cause', async () => {
+test('M33 written: withheld written statements are counted by cause', async () => {
   // D80: and a statement quoted only from the body of a here-document whose command was refused.
   const report = await review(narrativeOf({ writtenClaims: ['SYNTHETIC not an object', written(LEGACY), written(OLD),
     written(DRAFT), written(PLAN)] }), upholdAll, { base: session({ refusedHeredoc: true }) });
-  const md = reviewRender.renderReview(report);
-  for (const cause of ledger.WRITTEN_WITHHELD_CAUSES)
-    assert.ok(md.includes(`- ${reviewRender.WITHHELD_SENTENCE[cause]({ n: 1 })}.`), cause);
-  assert.ok(!md.includes('proposal(s) withheld: their quotes did not match the record'), 'each is said by its own cause');
+  for (const cause of ledger.WRITTEN_WITHHELD_CAUSES) assert.equal(report.withheld.causes[cause], 1, cause);
 });
 
 // ---- the prompts, the schema and the challenger --------------------------------------------------------
@@ -438,8 +420,9 @@ test('M33 written: the narrative asks for writtenClaims apart from claims, and t
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   const schema = prompt.NARRATIVE_SCHEMA;
   // Asked for, never required: an answer without it proposes no written statement and stays storable (D60).
   assert.deepEqual(schema.required, ['decisions', 'pivots', 'claims', 'requirements']);
@@ -472,8 +455,9 @@ test('M33 written: the narrative asks for writtenClaims apart from claims, and t
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
   // The combined route closes the same schema.
   // M33 brittleness M4 moved it (`sonah.code-review/14`): a session finding's disclosure is its own proposition.
   // M33 integration moved it once more (`sonah.code-review/15`): one version above M33 forbidden-edit repair's /14.
@@ -540,7 +524,11 @@ test('M33 written: the challenger is told how to judge a written statement', asy
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   const seen = [];
   await review(narrativeOf({ writtenClaims: [written(STATUS, TESTS)] }), upholdAll, { seen });
   const flat = challengeRequests(seen)[0].system.replace(/\s+/g, ' ');

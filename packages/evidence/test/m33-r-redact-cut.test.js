@@ -10,12 +10,12 @@ import assert from 'node:assert/strict';
 import { sessionFromLedger, INSTRUCTION_GAP_NOTES, BODY_CAPPED_NOTE } from '../adapters/sonah-ledger.js';
 import { verifyReceipt } from '../src/session.js';
 import { buildLedger, sessionCoverageFacts } from '../src/ledger.js';
-import { coverageCauses, renderReview, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { planWindowRequests } from '../src/run-review.js';
 import { redact, ASK_OMISSION } from '../../redact/index.js';
 /** The body cap an earlier Sonah cut at (M33 R to D68 E): its stub stands only in a persisted ledger. */
 const BODY_CAP = 20_000;
-import { GHP, SK, leaks, prose, across, userTurn, said, toolUse, toolResult, sliced, CUTS }
+import { GHP, SK, prose, across, userTurn, said, toolUse, toolResult, sliced, CUTS }
   from '../../slicer/test/m33-r-redact-cut-fixture.js';
 
 const repo = { host: 'local', id: 'synthetic' };
@@ -30,7 +30,9 @@ const capped = (lines) => redact(led({ ask: [{ turn: 1, text: [...lines.slice(0,
   ledger: [{ turn: 1, seq: 0, kind: 'bash', cmd: 'npm test', outcome: 'passed', exitCode: 0 }] })).ledger;
 const reviewOf = (session) => buildLedger({ repo, session, pr: null, sessionCoverage: 'complete' });
 const causesOf = (built, names) => coverageCauses(built).filter(([cause]) => names.includes(cause));
-const notCheckedLine = (text, code) => text.split('\n').find((row) => row.startsWith(`- \`${code}\``));
+/** Whether the report declares a gap of `code` with `note` (on its own list or the session's). */
+const declaredNote = (built, code, note) => [...(built.gaps ?? []), ...(built.session?.adapterGaps ?? [])]
+  .some((gap) => gap?.code === code && gap.note === note);
 
 test('M33 R an ask capped before review: its marker is never quotable, and the cut is declared as Sonah\'s', () => {
   const lines = askLines(600);
@@ -65,14 +67,12 @@ test('M33 R an ask capped before review: its marker is never quotable, and the c
     [['instructions_capped', { n: 1 }]]);
   assert.equal(COVERAGE_CAUSES.indexOf('instructions_capped'), COVERAGE_CAUSES.indexOf('instructions_withheld') + 1);
   assert.equal(COVERAGE_SENTENCE.instructions_capped({ n: 1 }),
-    '1 instruction was capped before review, so its elided middle cannot be quoted');
+    'Sonah cut the middle out of 1 message of yours before its review, so it cannot quote that part');
   assert.equal(COVERAGE_SENTENCE.instructions_capped({ n: 2 }),
-    '2 instructions were capped before review, so their elided middle cannot be quoted');
-  const text = renderReview(built);
-  assert.match(text, /1 instruction was capped before review, so its elided middle cannot be quoted/);
-  const line = notCheckedLine(text, 'incomplete_inventory');
-  assert.ok(line && line.includes(INSTRUCTION_GAP_NOTES.capped_before_review), text);
-  assert.doesNotMatch(line, /recorder/);
+    'Sonah cut the middle out of 2 messages of yours before its review, so it cannot quote that part');
+  assert.ok(declaredNote(built, 'incomplete_inventory', INSTRUCTION_GAP_NOTES.capped_before_review),
+    'the cut is declared with its own note');
+  assert.doesNotMatch(INSTRUCTION_GAP_NOTES.capped_before_review, /recorder/);
 });
 
 test('M33 R an ask both stripped by the slicer and capped before review is declared by both causes', () => {
@@ -127,13 +127,11 @@ test('M33 R, D68 (E) a persisted file body capped before review is declared as S
   assert.deepEqual(causesOf(built, ['source_clipped', 'bodies_capped']), [['bodies_capped', { n: 1 }]]);
   assert.equal(COVERAGE_CAUSES.indexOf('bodies_capped'), COVERAGE_CAUSES.indexOf('statements_capped') + 1);
   assert.equal(COVERAGE_SENTENCE.bodies_capped({ n: 1 }),
-    '1 file body was capped before review, so what was cut cannot be quoted');
+    'Sonah shortened 1 file body before its review, so it cannot quote what it left out');
   assert.equal(COVERAGE_SENTENCE.bodies_capped({ n: 3 }),
-    '3 file bodies were capped before review, so what was cut cannot be quoted');
-  const text = renderReview(built);
-  const line = notCheckedLine(text, 'source_clipped');
-  assert.ok(line && line.includes(BODY_CAPPED_NOTE), text);
-  assert.doesNotMatch(line, /recorder/);
+    'Sonah shortened 3 file bodies before its review, so it cannot quote what it left out');
+  assert.ok(declaredNote(built, 'source_clipped', BODY_CAPPED_NOTE), 'the cut is declared with its own note');
+  assert.doesNotMatch(BODY_CAPPED_NOTE, /recorder/);
   // The review request declares the cut beside the body, and the stub is never inside a quotable span. M33 R repair:
   // its extent line names the cut as Sonah's, never the recorder's (write-bodies.test.js pins the same words).
   const prompt = promptsOf(session);
@@ -159,7 +157,7 @@ test('M33 R the recorder\'s own cuts keep their words: output the recorder clipp
     'instructions_stripped']), [['instructions_stripped', { n: 1 }], ['source_clipped', { n: 1 }]]);
 });
 
-test('M33 R end to end: a token straddling an ask or body cut reaches no ledger, session or review request', async () => {
+test('M33 R, D90 end to end: a token where an old ask or body cut fell reaches the ledger, the session and the review request whole', async () => {
   for (const [cut, build] of Object.entries({ askHead: CUTS.askHead, askTail: CUTS.askTail, readBefore: CUTS.readBefore,
     writeAfter: CUTS.writeAfter, editSegment: CUTS.editSegment })) {
     for (const [name, token] of Object.entries({ ghp: GHP, sk: SK })) {
@@ -167,9 +165,11 @@ test('M33 R end to end: a token straddling an ask or body cut reaches no ledger,
         const where = `${cut}: ${name} ${offset} characters across the cut`;
         const { clean } = await sliced(build(token, offset));
         const session = sessionFromLedger(clean, { sessionKey: `m33-r-${cut}-${name}-${offset}` });
-        assert.deepEqual(leaks(JSON.stringify(clean), token), [], `${where}: ledger`);
-        assert.deepEqual(leaks(JSON.stringify(session.blobs), token), [], `${where}: session`);
-        assert.deepEqual(leaks(promptsOf(session), token), [], `${where}: review requests`);
+        assert.ok(JSON.stringify(clean).includes(token), `${where}: ledger`);
+        assert.ok(JSON.stringify(session.blobs).includes(token), `${where}: session`);
+        // A Read's long output is shown in a request by the window's own observation bound (its head and tail), and
+        // the file before an edit only on request: neither is a cut of what is recorded.
+        if (cut !== 'readBefore') assert.ok(promptsOf(session).includes(token), `${where}: review requests`);
       }
     }
   }

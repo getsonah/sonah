@@ -14,7 +14,6 @@ import { buildCodeReviewPrompt, windowDiff } from '../src/code-review-prompt.js'
 import { buildNarrativePrompt } from '../src/prompt.js';
 import { planWindows } from '../src/windows.js';
 import { Session } from '../src/session.js';
-import { renderReview } from '../src/review.js';
 import { createAnswerCache, memoizeJudge } from '../../cli/src/answer-cache.js';
 
 const ASK = 'SYNTHETIC_SWE_ASK: add a cache to the lookup path.';
@@ -116,8 +115,9 @@ test('D60 a corrupt stored answer is a miss: the window is asked live, and the r
   assert.equal(again.windowResults[0].failure, null);
   assert.equal(again.windowResults[0].shortfall.narrative, 'ok');
   assert.equal(again.coverage, 'complete');
-  assert.equal(renderReview(again), renderReview(first), 'the reader sees the same report');
-  assert.doesNotMatch(renderReview(again), /cached answer|cache_revalidation_failed/);
+  for (const key of ['decisions', 'requirements', 'promises', 'findings', 'withheld', 'coverage', 'sessionReview'])
+    assert.deepEqual(again[key], first[key], `the reader reads the same ${key}`);
+  assert.doesNotMatch(JSON.stringify(again), /cached answer|cache_revalidation_failed/);
 });
 
 test('D60 a session-only window is answered from the cache only for its byte-identical request', async (t) => {

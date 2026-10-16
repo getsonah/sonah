@@ -2,7 +2,8 @@
 // side, never a recorded result. The reviewer's probe, through the real slicer and adapter: a Claude Code tree whose
 // parent launches a background helper, polls it with TaskOutput and receives its report as that call's result. The
 // result's call is no command, read, write, edit or delete, so its text is the agent's (code-context.js `actorOf`): the
-// dossier labels it so, a trace step quoting it does not ground, and no checker is ever shown it.
+// dossier labels it so, a trace step quoting it does not ground, and no checker is ever shown it. Kept for the agentic
+// code step (code-pass/7): the review agent's finding, its checking agent.
 //
 // Synthetic recordings in temporary folders, a deterministic fake reviewer: no recording of a person, no model, no
 // network.
@@ -14,10 +15,17 @@ import { loadSessionEvidence } from '../src/session-evidence.js';
 import { redact } from '../../redact/index.js';
 import { sessionFromLedger } from '../../evidence/adapters/sonah-ledger.js';
 import { actorOf } from '../../evidence/src/code-context.js';
-import { codeCheckRows, codeSnapshotPlan, freezeCodeSnapshot, runCodePass } from '../../evidence/src/code-pass.js';
+import { codeSnapshotPlan, freezeCodeSnapshot, runCodePass } from '../../evidence/src/code-pass.js';
 import { claudeTree, claudeRow, agentCallRow, agentStubRow, claudeAgentTestRows, AGENT, CLAUDE_TEXT }
   from './m33-p-placement-fixture.js';
-import { CODE_FILES, PARSE_QUOTE, codeJudge, dossierItems, parseFinding } from './code-pass-fixture.js';
+import { CODE_FILES, codeJudge, dossierItems, memoryRepo, reviewFinding } from './code-pass-fixture.js';
+
+/** A trace step quoting the session (the person's words or a recorded result; never the agent's). */
+const sessionStep = (quote, step = 'The session shows it.') => ({ step, path: null, side: 'session', startLine: null,
+  endLine: null, quote });
+/** The review agent's answer: one finding. */
+const finds = (finding) => () => ({ findings: [finding], questions: [] });
+const checkers = (seen) => seen.filter((r) => /^code-verify:/.test(r.label ?? ''));
 
 /** The helper's report, as the parent's TaskOutput poll received it. */
 const REPORT = 'the regression is fixed and every parser test passes now.';
@@ -74,7 +82,7 @@ test('second review of the code step (medium): a helper\'s report fetched by Tas
   const ask = session.events.find((e) => e.kind === 'instruction' && e.authority === 'human');
   assert.equal(actorOf(session, ask.id), 'person');
 
-  // The code step over a report whose ask cites the report as delivered, and a lens finding whose trace quotes it.
+  // The code step over a report whose ask cites the report as delivered, and a finding whose trace quotes it.
   const report = { repo: { host: 'local', id: '0' }, promises: [], writtenClaims: [], findings: [], decisions: [],
     pivots: [], failures: [], requirements: [{ text: 'Fix the parser.', status: 'partly-done',
       instruction: { eventId: ask.id, role: 'instruction', quote: 'fix the parser and have a helper write the regression test.' },
@@ -84,33 +92,28 @@ test('second review of the code step (medium): a helper\'s report fetched by Tas
   const files = freezeCodeSnapshot(plan, [{ path: 'src/parse.js', bytes: new TextEncoder().encode(CODE_FILES['src/parse.js']) }],
     { base: { kind: 'recorded_edits' } });
   const seen = [];
-  const finding = parseFinding({ trace: [
-    { step: 'The helper reported the parser fixed.', source: 'session', path: null, side: null, startLine: null,
-      endLine: null, quote: REPORT },
-    ...parseFinding().trace] });
-  const judge = codeJudge({ seen, pass: (prompt, shown, lens) => (lens === 'behaviour' ? [finding] : []) });
-  const { codePass } = await runCodePass({ report, session, snapshot: files, bound: 1_620_000, judge, root: '/repo',
-    base: { kind: 'recorded_edits' } });
+  const finding = reviewFinding({ trace: [sessionStep(REPORT, 'The helper reported the parser fixed.'),
+    ...reviewFinding().trace] });
+  const step = (judge) => runCodePass({ report, session, snapshot: files, repo: memoryRepo(), bound: 1_620_000, judge,
+    root: '/repo', base: { kind: 'recorded_edits' } });
+  const { codePass } = await step(codeJudge({ seen, review: finds(finding) }));
   // The dossier labels the delivery as the agent's words.
-  const lens = seen.find((r) => r.label === 'code-pass:behaviour');
-  const item = dossierItems(lens.prompt).find((i) => i.kind === 'ask');
+  const review = seen.find((r) => r.label === 'code-review:agent');
+  const item = dossierItems(review.prompt).find((i) => i.kind === 'ask');
   assert.deepEqual(item.delivered, { actor: 'agent', quote: REPORT });
-  // The finding's step quoting it does not ground: it is never published, and no checker is shown it.
+  // The finding's step quoting it does not ground, after its one repair: never published, and no checker is shown it.
   assert.deepEqual(codePass.findings, []);
-  assert.ok(codePass.rejected.some((r) => r.reason === 'evidence_grounding_failed' && r.cause === 'quote_ungrounded'));
-  assert.equal(seen.filter((r) => r.label?.startsWith('challenge:code-finding')).length, 0);
-  for (const request of seen.filter((r) => r.label?.startsWith('challenge:')))
-    assert.ok(!request.prompt.includes(REPORT), request.label);
-  // The same finding without that step stands, and its checkers never see the report.
+  assert.deepEqual(codePass.withheld.map((w) => [w.reason, w.cause]), [['evidence_grounding_failed', 'quote_ungrounded']]);
+  assert.deepEqual(checkers(seen), []);
+  // The same finding without that step stands, and its checker never sees the report.
   seen.length = 0;
-  const plain = codeJudge({ seen, pass: (prompt, shown, lens_) => (lens_ === 'behaviour' ? [parseFinding()] : []) });
-  const again = await runCodePass({ report, session, snapshot: files, bound: 1_620_000, judge: plain, root: '/repo',
-    base: { kind: 'recorded_edits' } });
+  const again = await step(codeJudge({ seen, review: finds(reviewFinding()) }));
   assert.equal(again.codePass.findings.length, 1);
-  const checkers = seen.filter((r) => r.label?.startsWith('challenge:code-finding'));
-  assert.equal(checkers.length, 3);
-  for (const request of checkers) assert.ok(!request.prompt.includes(REPORT), request.label);
-  assert.ok(lens.prompt.includes(PARSE_QUOTE));
+  assert.equal(checkers(seen).length, 1);
+  for (const request of checkers(seen)) assert.ok(!request.prompt.includes(REPORT), request.label);
+  // The change the review agent starts from: the file the session wrote whole (it reads its text itself).
+  assert.match(review.prompt, /^- src\/parse\.js → lines \d+-\d+ · modified · no git base: its hunks are the recorded edits/m);
+  assert.match(review.prompt, /wrote the whole file, lines 1-\d+ \(read the file for its text\)/);
 });
 
 // ---- the third review of the code step (medium): a CLAUDE.md the agent wrote in the session is the agent's ----------
@@ -161,7 +164,7 @@ test('third review of the code step (medium): a CLAUDE.md the agent wrote is the
   assert.equal(actorOf(session, person.id), 'person');
   assert.equal(actorOf(session, own.id), 'agent');
 
-  // The code step over a report whose two asks cite the two files, and a lens finding whose trace quotes the agent's.
+  // The code step over a report whose two asks cite the two files, and a finding whose trace quotes the agent's.
   const ask = (eventId, quote, text) => ({ text, status: 'not-done',
     instruction: { eventId, role: 'project-instructions', quote } });
   const report = { repo: { host: 'local', id: '0' }, promises: [], writtenClaims: [], findings: [], decisions: [],
@@ -170,33 +173,31 @@ test('third review of the code step (medium): a CLAUDE.md the agent wrote is the
   const shown = freezeCodeSnapshot(plan, plan.map((entry) => (entry.path === 'src/parse.js'
     ? { path: entry.path, bytes: new TextEncoder().encode(CODE_FILES['src/parse.js']) }
     : { path: entry.path, state: 'deleted' })), { base: { kind: 'recorded_edits' } });
-  // Step 1's row of the ask from the agent's file carries the agent as the quote's actor.
-  const rows = codeCheckRows(report, session, '/repo').filter((row) => row.kind === 'ask');
-  assert.deepEqual(rows.map((row) => row.shown.asked), [{ actor: 'agent', quote: AGENT_RULE }, PERSON_RULE]);
   const run = async (finding) => {
     const seen = [];
-    const judge = codeJudge({ seen, pass: (prompt, files_, lens) => (lens === 'behaviour' ? [finding] : []) });
-    const { codePass } = await runCodePass({ report, session, snapshot: shown, bound: 1_620_000, judge, root: '/repo',
-      base: { kind: 'recorded_edits' } });
+    const { codePass } = await runCodePass({ report, session, snapshot: shown, repo: memoryRepo(), bound: 1_620_000,
+      judge: codeJudge({ seen, review: finds(finding) }), root: '/repo', base: { kind: 'recorded_edits' } });
     return { codePass, seen };
   };
-  const quoting = (quote) => parseFinding({ trace: [{ step: 'The project rule says so.', source: 'session', path: null,
-    side: null, startLine: null, endLine: null, quote }, ...parseFinding().trace] });
+  const quoting = (quote) => reviewFinding({ trace: [sessionStep(quote, 'The project rule says so.'),
+    ...reviewFinding().trace] });
   // A step quoting the agent's file does not ground: never published, and no checker is shown it.
   const agents = await run(quoting(AGENT_RULE));
-  const lens = agents.seen.find((r) => r.label === 'code-pass:behaviour');
-  assert.deepEqual(dossierItems(lens.prompt).filter((i) => i.kind === 'ask').map((i) => i.asked),
+  const review = agents.seen.find((r) => r.label === 'code-review:agent');
+  // The review agent is shown both: the dossier and the project files block say whose words each is.
+  assert.deepEqual(dossierItems(review.prompt).filter((i) => i.kind === 'ask').map((i) => i.asked),
     [{ actor: 'agent', quote: AGENT_RULE }, PERSON_RULE]);
+  assert.match(review.prompt, /^FILE \{"path":"CLAUDE\.md","kind":"project","actor":"person"\}$/m);
+  assert.match(review.prompt, /^FILE \{"path":"sub\/CLAUDE\.md","kind":"project","actor":"agent"\}$/m);
   assert.deepEqual(agents.codePass.findings, []);
-  assert.ok(agents.codePass.rejected.some((r) => r.reason === 'evidence_grounding_failed' && r.cause === 'quote_ungrounded'));
-  for (const request of agents.seen.filter((r) => r.label?.startsWith('challenge:')))
-    assert.ok(!request.prompt.includes(AGENT_RULE), request.label);
-  // The same step quoting the person's file grounds; its three checkers see the person's rule and never the agent's.
+  assert.deepEqual(agents.codePass.withheld.map((w) => [w.reason, w.cause]),
+    [['evidence_grounding_failed', 'quote_ungrounded']]);
+  assert.deepEqual(checkers(agents.seen), []);
+  // The same step quoting the person's file grounds; its checker sees the person's rule and never the agent's.
   const persons = await run(quoting(PERSON_RULE));
   assert.equal(persons.codePass.findings.length, 1);
-  const checkers = persons.seen.filter((r) => r.label?.startsWith('challenge:code-finding'));
-  assert.equal(checkers.length, 3);
-  for (const request of checkers) {
+  assert.equal(checkers(persons.seen).length, 1);
+  for (const request of checkers(persons.seen)) {
     assert.ok(request.prompt.includes(PERSON_RULE), request.label);
     assert.ok(!request.prompt.includes(AGENT_RULE), request.label);
   }

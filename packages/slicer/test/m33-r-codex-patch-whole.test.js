@@ -1,18 +1,13 @@
-// M33 R repair 2. A Codex patch was cut before redaction had seen it whole.
+// M33 R repair 2. A Codex patch becomes the two texts it changes.
 //
-// Codex records an edit as a patch — an `apply_patch` Update section, or a native FileChange's `unified_diff` — and the
-// slicer turned it into an Edit by keeping only its changed lines (codex.js `splitPatch`): every context line went, and
-// so did every changed line whose own text starts with `--` or `++` (it read them as file headers), a removed PEM BEGIN
-// line among them. Redaction then saw a secret block's body without the line that makes it secret — a YAML block's
-// `signing_key: |` kept as context, a PEM BEGIN line removed or kept as context, the first line of a continued value —
-// and left those lines verbatim in the ledger, the session and the review requests. The same edit made by Claude Code,
-// whose old and new strings hold that line, was clean.
-//
-// Now a patch becomes the two texts it changes: the old one (every context line and every `-` line, in order) and the
-// new one (every context line and every `+` line), a hunk's anchor or section heading as context in both; so the line
-// that makes a block secret travels with its block, and redaction judges each side whole. A `---`/`+++` line is a file
-// header only in a unified diff, before its first hunk; in a hunk, and anywhere in an apply_patch body (which has no
-// file headers), it is a changed line. An Add File keeps every `+` line.
+// Codex records an edit as a patch — an `apply_patch` Update section, or a native FileChange's `unified_diff`. The
+// slicer used to keep only its changed lines (codex.js `splitPatch`): every context line went, and so did every changed
+// line whose own text starts with `--` or `++` (it read them as file headers). Now a patch becomes the two texts it
+// changes: the old one (every context line and every `-` line, in order) and the new one (every context line and every
+// `+` line), a hunk's anchor or section heading as context in both, so every line of a block travels with the block. A
+// `---`/`+++` line is a file header only in a unified diff, before its first hunk; in a hunk, and anywhere in an
+// apply_patch body (which has no file headers), it is a changed line. An Add File keeps every `+` line. D90 (owner
+// decision 2026-10-15, privacy is not a design constraint): nothing in either text is masked.
 //
 // Synthetic recordings only: every byte is invented. No recording, no model, no network.
 import { test } from 'node:test';
@@ -20,21 +15,21 @@ import assert from 'node:assert/strict';
 import { redact, sliceHash } from '../../redact/index.js';
 import { patchInput } from '../src/codex.js';
 import { ARG_SEP } from '../src/events.js';
-import { codexSliced, direct, native, patchOf, shapes, edits, leaks, WORDS, ROTATED, BEGIN, END, PEM_BODY, unpadded, CASES }
+import { codexSliced, direct, native, patchOf, shapes, edits, BEGIN, END, PEM_BODY, CASES }
   from './m33-r-codex-patch-fixture.js';
 
-// ---- the leak is closed in both shapes -------------------------------------------------------------------------------
+// ---- every line of a block travels with it, in both shapes -------------------------------------------------------
 
 for (const [name, { path, secrets, hunk }] of Object.entries(CASES)) {
-  test(`M33 R repair 2: ${name} leaks no line of it, from an apply_patch or a native FileChange`, async () => {
+  test(`M33 R repair 2, D90: ${name} keeps every line of it, as recorded, from an apply_patch or a native FileChange`, async () => {
     for (const [shape, rows] of shapes(path, hunk)) {
       const { raw, clean } = await codexSliced(rows);
       const [edit] = edits(clean);
       assert.equal(edit?.kind, 'edit', `${shape}: the Update is an edit`);
       assert.equal(edit.path, path);
       if (shape === 'FileChange') assert.ok(Number.isInteger(edit.sourceLocator.fileChangeRecord), 'the native item\'s own edit');
-      assert.deepEqual(leaks(JSON.stringify(clean), secrets), [], `${shape}: no fragment anywhere in the ledger`);
-      // The slicer handed redaction the line that makes the block secret, with the block, in each side it holds.
+      for (const secret of secrets) assert.ok(JSON.stringify(clean).includes(secret), `${shape}: ${secret} as recorded`);
+      // The line that opens the block travels with the block, in each side it holds.
       const [oldText, newText] = edits(raw)[0].argsExcerpt.split(ARG_SEP);
       const key = hunk.find((line) => /signing_key|BEGIN|DB_PASSWORD/.test(line));
       const keyText = key.startsWith('@@ ') ? key.slice(3) : key.slice(1);
@@ -43,19 +38,6 @@ for (const [name, { path, secrets, hunk }] of Object.entries(CASES)) {
     }
   });
 }
-
-test('M33 R repair 2: the change stays visible, each line masked where it stands', async () => {
-  const { path, hunk } = CASES['a YAML secret block whose key is a context line'];
-  for (const [shape, rows] of shapes(path, hunk)) {
-    const { clean } = await codexSliced(rows);
-    const [edit] = edits(clean);
-    assert.equal(edit.diff.split('\n').filter((line) => line === '-  ‹redacted:secret-value›').length, WORDS.length, shape);
-    assert.equal(edit.diff.split('\n').filter((line) => line === '+  ‹redacted:secret-value›').length, ROTATED.length, shape);
-    assert.ok(clean.dropped.some((d) => d.where === 'diff' && d.reason === 'redacted:secret-key-value'), shape);
-    assert.ok(clean.dropped.some((d) => d.where === 'argsExcerpt'), `${shape}: the arguments declare it too`);
-    assert.ok(clean.dropped.some((d) => d.where === 'after'), `${shape}: and the edit's own text`);
-  }
-});
 
 // ---- a patch is the two texts it changes -----------------------------------------------------------------------------
 
@@ -87,7 +69,7 @@ test('M33 R repair 2: a changed line whose text starts with `--` or `++` is a ch
   const [natOld, natNew] = edits(nat)[0].argsExcerpt.split(ARG_SEP);
   assert.equal(natOld, ['first: 1', BEGIN, PEM_BODY[2], END, '-- not a header', 'second: 2'].join('\n'));
   assert.equal(natNew, 'first: 1\nsecond: 2');
-  assert.deepEqual(leaks(JSON.stringify(clean), unpadded([PEM_BODY[2]])), []);
+  assert.ok(JSON.stringify(clean).includes(PEM_BODY[2]), 'D90: as recorded');
   // An Add File keeps every added line, `+++…` among them.
   const add = '*** Begin Patch\n*** Add File: src/inc.c\n+int i;\n+++i;\n*** End Patch';
   const { raw: added } = await codexSliced(direct(add));
@@ -103,7 +85,7 @@ test('M33 R repair 2: a clean patch with context renders the change with its con
     const [edit] = edits(clean);
     assert.equal(edit.diff, ' first = 1\n-second = 2\n+second = 3\n third = 4', shape);
     assert.equal(edit.argsExcerpt, `first = 1\nsecond = 2\nthird = 4${ARG_SEP}first = 1\nsecond = 3\nthird = 4`, shape);
-    assert.equal(edits(raw)[0].diff, edit.diff, `${shape}: nothing to redact, nothing changed by redaction`);
+    assert.equal(edits(raw)[0].diff, edit.diff, `${shape}: nothing changed by redaction`);
     ledgers.push(edit);
   }
   assert.equal(ledgers[0].diff, ledgers[1].diff);

@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { confirmPrSharing, sharePrReview, validatePrSharing } from '../src/pr-sharing.js';
-import { PAGE_SENTENCES } from '../../render/session-page.js';
+import { REPORT_FOOTER_WORDS } from '../../render/report-words.js';
 
 const BASE = 'b'.repeat(40), HEAD = 'a'.repeat(40);
 const env = { SONAH_GITHUB_ACTOR_ID: '7', SONAH_GITHUB_APP_ID: '9' };
@@ -95,6 +95,24 @@ test('default confirmation requires a TTY and exactly names the target; EOF canc
   }
 });
 
+// The answer to this question is the consent the publication policy records (`ownerAuthorized`, `limitsAcknowledged`),
+// so its words are pinned: a rewrite may change their form, never drop the person's confirmation of their right to post.
+test('the confirmation asks the person to read the page, to confirm their right to post on that pull request, and to accept its limits', async () => {
+  const target = { owner: 'example', repo: 'demo', number: 7 };
+  const input = new PassThrough(), output = new PassThrough();
+  input.isTTY = true; output.isTTY = true;
+  let asked = '';
+  output.on('data', (chunk) => { asked += chunk.toString('utf8'); });
+  const pending = confirmPrSharing({ target, input, output });
+  input.write('share example/demo#7\n');
+  assert.equal(await pending, true);
+  // The terminal's cursor controls taken out, the person reads these two lines.
+  asked = asked.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+  assert.ok(asked.startsWith('Read the saved page before you answer.\n'), asked);
+  assert.ok(asked.includes("Type 'share example/demo#7' to confirm your right to post this comment on that pull request "
+    + 'and accept its limits: '), asked);
+});
+
 test('confirmed preview posts only counts and neutral COMMENT/check, persists before writes, then deduplicates', async (t) => {
   const { args, server, stdout, stateDir } = await setup(t);
   const rawRequest = server.client.request;
@@ -120,8 +138,8 @@ test('confirmed preview posts only counts and neutral COMMENT/check, persists be
   assert.doesNotMatch(disclosed, /Synthetic hidden/);
   assert.match(disclosed, /Read it before you share it/);
   // D82 step 10: the comment is the session review's checklist, as counts and fixed words.
-  assert.match(sent[0].body.body, /Where your attention is needed:\n- 1 ask of yours shown not done or partly done/);
-  assert.match(sent[0].body.body, /\n- 1 claim .*contradicted/);
+  assert.match(sent[0].body.body, /What needs your attention:\n- 1 ask that the session review marks not done or partly done/);
+  assert.match(sent[0].body.body, /\n- 1 claim .*contradicts/);
   assert.equal((await sharePrReview(args)).state, 'complete');
   assert.equal(posts(server).length, 3);
 });
@@ -131,7 +149,7 @@ test('lost response resumes through existing journal without recreating the pend
   server.loseCreate = true;
   assert.equal((await sharePrReview(args)).state, 'uncertain');
   assert.match(stderr.text, /operation_uncertain/);
-  assert.match(stderr.text, /same review arguments and state directory, choosing a new --output filename/);
+  assert.match(stderr.text, /run the same review again with the same arguments and state directory, and a new --output file name\./);
   assert.equal((await sharePrReview(args)).state, 'complete');
   assert.equal(server.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/reviews')).length, 1);
   assert.equal(server.checks[0].conclusion, 'neutral');
@@ -171,7 +189,8 @@ test('a throwing confirmation prints only a closed diagnostic and preserves loca
 });
 
 test('the local page the comment follows carries the same read-before-share reminder', () => {
-  assert.match(PAGE_SENTENCES.generated, /Read it before you share it\./);
+  // D97: the page's footer says it in the report's words.
+  assert.match(REPORT_FOOTER_WORDS.share, /^Read this report before you share it\.$/);
 });
 
 test('a metadata read GitHub refuses or answers malformed fails closed, before confirmation or write', async (t) => {

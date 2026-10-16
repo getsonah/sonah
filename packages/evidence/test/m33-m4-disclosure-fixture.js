@@ -150,8 +150,8 @@ export function beforeDisclosureNarrow(text) {
 // instruction; the proposers still asked for a statement that told the human about the change. Now both proposers ask for
 // the narrowed statement: the session-only route's item 6 sentence and its output-contract rule (`reportedBy`,
 // `sonah.narrative/19` -> `/20`), and the joint task's sentence (`disclosedBy`, `sonah.code-review/16` -> `/17`). No
-// evidence, schema, system, challenge or other task byte moved. The reader sentences moved too (review.js
-// DISCLOSURE_SENTENCE.disclosed, session-story STORY_SENTENCES.editDisclosed and STORY_FORBIDDEN_EDIT_LABELS.reported,
+// evidence, schema, system, challenge or other task byte moved. The reader sentences moved too (the review's
+// disclosure sentence, session-story STORY_SENTENCES.editDisclosed and STORY_FORBIDDEN_EDIT_LABELS.reported,
 // which the page shows), so the story is `sonah.session-story/8` (the page's one version for the phase is /5).
 
 /** Item 6's sentence (prompt.js FORBIDDEN_TASK), to the end of the item, `[as /19 wrote it, as /20 writes it]`. */

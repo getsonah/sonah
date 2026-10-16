@@ -22,7 +22,6 @@ import * as reviewRun from '../src/run-review.js';
 import * as prompt from '../src/prompt.js';
 import * as challenge from '../src/challenge.js';
 import * as codeReviewPrompt from '../src/code-review-prompt.js';
-import * as review from '../src/review.js';
 import * as adapter from '../adapters/sonah-ledger.js';
 import { runCodeReview } from '../src/code-review.js';
 
@@ -132,8 +131,6 @@ test('M33 H1 the disclosure reason and the resolution rejections are frozen clos
   for (const reason of ['malformed', 'role_mismatch', 'unsupplied', 'ungrounded', 'out_of_order', 'cross_actor',
     'turn_unrecorded', 'cross_turn']) assert.ok(ledger.RESOLUTION_REJECTIONS.includes(reason), reason);
   assert.equal(new Set(ledger.RESOLUTION_REJECTIONS).size, ledger.RESOLUTION_REJECTIONS.length);
-  // One rendered sentence per disclosure reason, and no other.
-  assert.deepEqual(Object.keys(review.DISCLOSURE_SENTENCE).sort(), [...ledger.DISCLOSURE_REASONS].sort());
 });
 
 // ---- the positive case ----------------------------------------------------------------------------
@@ -344,7 +341,11 @@ test('M33 H1 the challenger is told to weigh later results and to judge a suppli
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   assert.equal(challenge.CHALLENGE_PROFILE.requiredSurvivals, 2, 'vote semantics unchanged');
   const seen = [];
   await review1([claim(RESOLVED)], { seen });
@@ -414,8 +415,9 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   const claims = prompt.NARRATIVE_SCHEMA.properties.claims.items;
   const resolvedBy = claims.properties.resolvedBy;
   assert.deepEqual(resolvedBy.type, ['object', 'null']);
@@ -447,8 +449,9 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
 });
 
 test('M33 H1 the combined route asks for the same resolvedBy, and its version moved', () => {
@@ -488,10 +491,7 @@ test('M33 H1 a self-corrected FYI beside an unresolved DECIDE: the session is DE
   assert.deepEqual(contradictions(report).map((f) => f.status).sort(), ['DECIDE', 'FYI']);
   assert.equal(report.sessionStatus, 'DECIDE');
   assert.equal(report.reviewStatus, 'DECIDE');
-  const md = review.renderReview(report);
-  // D71 (a): no headline status; both rows are listed under Findings, the corrected one with its fact.
-  assert.ok(!md.includes('Needs your decision'));
-  assert.ok(md.includes('#### Contradicted') && md.includes('· self-corrected'), 'the FYI item is still shown');
+  assert.ok(contradictions(report).some((f) => f.disclosureReason === 'self_corrected'), 'the FYI item is kept');
 });
 
 test('M33 H1 the reducers: DECIDE outranks a self-corrected FYI; an incomplete review is UNCHECKED, never CLEAN', () => {
@@ -518,10 +518,7 @@ test('M33 H1 false-clean invariant: a self-corrected FYI in a review that did no
   assert.equal(report.sessionReview, 'incomplete');
   assert.equal(report.sessionStatus, 'UNCHECKED');
   assert.equal(report.reviewStatus, 'UNCHECKED');
-  const md = review.renderReview(report);
-  assert.ok(!md.includes('Nothing found, and the evidence was complete enough to say so.'));
-  assert.ok(md.includes("Sonah's review did not complete"));
-  assert.ok(md.includes('#### Contradicted') && md.includes('· self-corrected'), 'the FYI item is retained');
+  assert.equal(ledger.reviewRunState(report), 'incomplete');
 });
 
 // ---- merging never softens a DECIDE ------------------------------------------------------------------
@@ -544,40 +541,6 @@ test('M33 H1 a merge that keeps DECIDE keeps no self-corrected disclosure', () =
   const both = ledger.mergeDuplicateFindings([fyi, { ...fyi, title: 'u' }]);
   assert.equal(both.findings[0].status, 'FYI');
   assert.equal(both.findings[0].disclosureReason, 'self_corrected');
-});
-
-// ---- the renderer ------------------------------------------------------------------------------------
-
-test('M33 H1 the renderer shows a self-corrected contradiction with its fact and its correction receipts, no status', async () => {
-  const report = await review1([claim(RESOLVED)]);
-  const md = review.renderReview(report);
-  const lines = md.split('\n');
-  // D71 (a): no headline status, no "For information" heading; the row says it was corrected, as a fact.
-  assert.ok(!md.includes('worth a look') && !md.includes('Session review: **FYI**'));
-  assert.ok(md.includes('Session review: **complete**'));
-  assert.ok(!md.includes('### Needs your attention') && !md.includes('### For information'));
-  const fyiAt = lines.indexOf('#### Contradicted');
-  assert.ok(fyiAt >= 0);
-  const block = lines.slice(fyiAt);
-  assert.ok(block.some((line) => line.includes('`claim\\_contradicted` · self-corrected')));
-  assert.ok(block.includes('Claimed “this change clears the gap.”; a recorded result contradicted it; corrected later in the same turn.'));
-  const correctedAt = block.indexOf('Corrected later in the same turn:');
-  assert.ok(correctedAt >= 0);
-  assert.match(block[correctedAt + 1], /^- \*\*result\*\* `A2-r` — “SYNTHETIC\\_H1\\_REPLAY: gaps=0”/);
-  assert.match(block[correctedAt + 2], /^- \*\*agent said\*\* `C3` — “the replay now reports gaps=0 after the fix\.”/);
-});
-
-test('M33 H1 the renderer never shows a correction on a DECIDE contradiction', async () => {
-  const report = await review1([claim({ observation: receipt('A4-r', 'observation', TEXT.later),
-    statement: receipt('C4', 'commentary', 'the replay still reports gaps=0.') })]);
-  const md = review.renderReview(report);
-  assert.ok(md.split('\n').some((line) => line.endsWith('`claim\\_contradicted`')), 'D71 (a): its kind, no status');
-  assert.ok(!md.includes('self-corrected'));
-  assert.ok(!md.includes('Corrected later in the same turn'));
-  // A hand-edited DECIDE row carrying a disclosure is still rendered as the DECIDE it is.
-  const forged = { ...report, findings: report.findings.map((f) => ({ ...f, disclosureReason: 'self_corrected',
-    resolvedBy: { observation: FIXED, statement: ACCURATE } })) };
-  assert.ok(!review.renderReview(forged).includes('corrected later in the same turn'));
 });
 
 // ---- toCandidates carries the resolution; code, not the model, sets everything else --------------

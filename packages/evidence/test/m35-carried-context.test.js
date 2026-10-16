@@ -13,7 +13,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session } from '../src/session.js';
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
 import { bytesOfTokens } from '../src/windows.js';
 
 const KEY = 'sess-m35-carried';
@@ -213,7 +212,6 @@ for (const speedProfile of PROFILES) {
     assert.equal(report.counts.eventRepairedReceipts, 1, 'counted');
     const asked = seen.find((request) => request.challenge);
     assert.equal(asked.challenge.items[0].candidate.contradictedBy.eventId, 'A1-r', 'the challengers are asked about the result');
-    assert.ok(review.renderReview(report).includes('1 claim receipt(s) citing an action were moved to its one recorded result by code'));
   });
 }
 

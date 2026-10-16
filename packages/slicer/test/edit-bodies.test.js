@@ -195,13 +195,14 @@ test('F69 a delete with nothing recorded before it carries nothing, and never in
   assert.equal(events[0].before, undefined);
 });
 
-test('F69 a credential-shaped path is withheld from a delete too', () => {
+test('D90: a delete of a credential-shaped path gets the state it removed, as any delete does', () => {
   const events = [
     { turn: 1, seq: 0, kind: 'read', path: '.env', _readText: 'KEY=1' },
     { turn: 2, seq: 0, kind: 'delete', path: '.env' },
   ];
   attachBefore(events);
-  assert.deepEqual(events[1].before, { withheld: 'credential-shaped path' });
+  assert.equal(events[1].before.withheld, undefined);
+  assert.deepEqual([events[1].before.source, events[1].before.text], ['read', 'KEY=1']);
 });
 
 test('F69 the first-write rule is unchanged: a later edit of a path still gets no file state', () => {
@@ -342,7 +343,7 @@ test('F108 a failed empty Write carries no after, exactly as a failed non-empty 
 
 // Kept from the legacy compiler's s1-precision.test.js (removed with the compiler): the after view is redacted, and it is
 // not counted in the size `sonah slice` prints.
-test('after-state is redacted like the pre-edit view and never moves size routing', async () => {
+test('D90: the after-state is kept as recorded, like the pre-edit view, and never moves size routing', async () => {
   const dir = await scratchDir('sonah-s1b-sec-');
   const file = join(dir, 's.jsonl');
   await writeFile(file, `${toJsonl(session({ cwd: '/repo' })
@@ -352,7 +353,7 @@ test('after-state is redacted like the pre-edit view and never moves size routin
   const raw = await sliceLineage([file]);
   const { ledger } = redact(raw);
   const w = (ledger.ledger ?? []).find((e) => e.kind === 'create');
-  assert.ok(w.after && !w.after.text.includes('AKIAIOSFODNN7EXAMPLE9Zx1'), 'the secret never survives into the after view');
+  assert.equal(w.after?.text, 'AWS_SECRET_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE9Zx1"\n', 'the after view, as written');
   const stripped = { ...ledger, ledger: ledger.ledger.map((e) => { const { after, ...rest } = e; return rest; }) };
   assert.equal(tokensOf(ledger), tokensOf(stripped), 'the after view is opt-in content, not judged size');
 });

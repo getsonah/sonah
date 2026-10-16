@@ -149,22 +149,24 @@ test('W3d-6 F169 a whole-file write cut after a backslash keeps its stub and its
 // The other path (W3d-6): redaction drops a kept line in front of a stub — an unclassifiable
 // high-entropy head, such as one long single-line data blob. Redaction places its omission note at
 // the cut, before the stub. M33 R: redaction now scrubs the WHOLE body before Sonah caps it, so a blob
-// it drops no longer uses the budget: the body is capped only when what is left is still over it.
+// it drops no longer uses the budget: the body is capped only when what is left is still over it. D68 (E): no Sonah
+// caps a body. D90 (owner decision 2026-10-15): the production path drops nothing either; a ledger an earlier Sonah
+// persisted with the note before the stub is still read as written (below).
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const blob = (n) => Array.from({ length: n }, (_, i) => ALPHABET[(i * 37 + Math.floor(i / 64) * 11) % ALPHABET.length]).join('');
 
-test('W3d-6 / M33 R a blob redaction drops leaves the rest of a body within the cap: nothing is cut', async () => {
+test('W3d-6, D90: a blob past the retired cap is kept whole with the rest of the body: nothing is cut or dropped', async () => {
   const OLD = 'const inline = null;   // W3D6_OLD_BLOB';
   const { ledger, session } = await throughProductionPath([
     userTurn('inline the asset'),
     ...editOf('e1', '/repo/src/asset.js', OLD, `${blob(BEFORE_CAP + 500)}\nW3D6_TAIL_KEPT`),
   ]);
   const recorded = ledger.ledger.find((e) => e.kind === 'edit');
-  assert.equal(recorded.after.text.includes('truncated at'), false, 'scrubbed whole, the side fits: no cut');
-  assert.ok(recorded.after.text.includes('dropped:'), 'the blob is declared dropped');
+  assert.equal(recorded.after.text.includes('truncated at'), false, 'no cut');
+  assert.equal(recorded.after.text.includes('dropped:'), false, 'and no drop');
   const [change] = onlyWrite(session).changes;
   assert.equal(change.extent.truncated, false);
-  assert.equal(session.textOf(change, 'after').trim(), 'W3D6_TAIL_KEPT', 'what the old cut lost before redaction is kept');
+  assert.equal(session.textOf(change, 'after'), `${blob(BEFORE_CAP + 500)}\nW3D6_TAIL_KEPT`, 'the side as written');
   assert.equal(session.textOf(change, 'before'), OLD);
 });
 
@@ -177,7 +179,7 @@ test('W3d-6 a stub after the redaction note is still the recorder\'s', async () 
   ]);
   const kept = whole.ledger.find((e) => e.kind === 'edit');
   assert.ok(kept.after.text.includes('W3D6_TAIL_SHOWN') && !kept.after.text.includes('truncated at'),
-    'D68 (E): the whole side is kept, the blob dropped and declared');
+    'D68 (E): the whole side is kept (D90: the blob too)');
   const ledger = redact({ ...persistedCut(whole, 'edit'), dropped: [] }).ledger;
   const session = sessionFromLedger(ledger, { sessionKey: 'w3d6' });
   const recorded = ledger.ledger.find((e) => e.kind === 'edit');

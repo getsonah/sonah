@@ -15,6 +15,7 @@ import * as ledger from '../src/ledger.js';
 import * as challenge from '../src/challenge.js';
 import * as review from '../src/review.js';
 import * as story from '../../render/session-story.js';
+import { REPORT_WHAT_WORDS, REPORT_DISCLOSURE_WORDS, REPORT_ITEM_WORDS } from '../../render/report-words.js';
 import { CODE_REVIEW_VERSION, CODE_REVIEW_SCHEMA } from '../src/code-review-prompt.js';
 import { disclosureSession, PR, DIFF, GREET, RULE, EDIT, BREACH, WORDS } from './m33-m4-disclosure-rows.js';
 import { MOVED_BY_M4, MOVED_BY_M4_SESSION, DISCLOSURE_NARROW, DISCLOSURE_WORDS, beforeM4, beforeDisclosureWords,
@@ -22,7 +23,7 @@ import { MOVED_BY_M4, MOVED_BY_M4_SESSION, DISCLOSURE_NARROW, DISCLOSURE_WORDS, 
   from './m33-m4-disclosure-fixture.js';
 import { INTEGRATION_VERSIONS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS,
   beforeM36Labels, S7_VERSIONS, FIX_COLUMN_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS,
-  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS }
+  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS }
   from './m33-integration-fixture.js';
 
 const TYPE = ledger.DISCLOSURE_ITEM_TYPE;
@@ -68,7 +69,6 @@ test('M4: the closed vocabularies, the proposition and the versions', () => {
   assert.deepEqual(DISCLOSURE_NARROW.texts.proposition, ['the agent\'s quoted statement, recorded after the quoted action, '
     + 'told the human about this change', challenge.DISCLOSURE_PROPOSITION]);
   assert.equal(DISCLOSURE_NARROW.texts.note[1], challenge.DISCLOSURE_NOTE);
-  assert.equal(typeof review.DISCLOSURE_SENTENCE.disclosed, 'function');
   // M4 moved the code-review version from the base's (/13 -> /14 on its branch); M33 integration once more (/15).
   assert.equal(MOVED_BY_M4.versions.codeReview[0], INTEGRATION_VERSIONS.codeReview.before);
   assert.equal(MOVED_BY_M4.versions.codeReview[1], INTEGRATION_VERSIONS.codeReview.branches.forbidden);
@@ -140,7 +140,13 @@ test('M4: the closed vocabularies, the proposition and the versions', () => {
   // check's checker sees what its row states again.
   assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before, CODE_STEP_REREVIEW_VERSIONS.challenge.after);
 
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
   // Only a session finding may carry a disclosure; a code finding never.
   assert.ok(Object.hasOwn(CODE_REVIEW_SCHEMA.properties.sessionFindings.items.properties, 'disclosedBy'));
   assert.equal(Object.hasOwn(CODE_REVIEW_SCHEMA.properties.codeFindings.items.properties, 'disclosedBy'), false);
@@ -181,16 +187,12 @@ test('M4: a disclosure recorded after the edit, upheld by its own challenge, pub
     for (const item of request.challenge.items) assert.equal(Object.hasOwn(item.candidate, 'disclosedBy'), false);
   }
   assert.equal(report.disclosureChallenges.length, 1);
-  // The review says so, in plain words, with the statement's own words.
-  const md = review.renderReview(report);
-  assert.ok(md.includes(review.DISCLOSURE_SENTENCE.disclosed(`“${AFTER.quote}” \`C1\``)));
-  const told = story.renderSessionStory(disclosureSession(Session), report);
-  // D71 (a): under one heading, said as what it is — the agent told you — never under a status (D88: the edits against
-  // what you said, as the page lists them).
-  const at = told.indexOf('## Edits against what you said');
-  assert.ok(at >= 0 && !told.includes('## Needs your decision') && !told.includes('## Worth a look'));
-  assert.ok(told.slice(at).includes(`_${story.STORY_SENTENCES.editDisclosed}_`));
-  assert.ok(told.slice(at).includes(`**${story.STORY_FORBIDDEN_EDIT_LABELS.reported}:** ${AFTER.quote}`));
+  // The report .md says so, in plain words, with the statement's own words.
+  const told = story.renderReportMarkdown(disclosureSession(Session), report);
+  // D71 (a), D97: said as what it is — the agent told you — an item of its own kind, never under a status.
+  assert.ok(!told.includes('Needs your decision') && !told.includes('Worth a look'));
+  assert.ok(told.includes(`${REPORT_WHAT_WORDS.editAgainst} ${REPORT_DISCLOSURE_WORDS.edit.disclosed}`), told);
+  assert.ok(told.includes(`${REPORT_ITEM_WORDS.agentTold} “${review.escapeSource(AFTER.quote)}”`), told);
 });
 
 test('M4: a refuted or unbound disclosure leaves the breach DECIDE, counted by its outcome', async () => {

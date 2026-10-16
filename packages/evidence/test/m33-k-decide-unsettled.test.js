@@ -42,7 +42,6 @@ test('M33 K decide_unsettled is a closed part reason, neither a review nor a cov
   assert.ok(!ledger.PART_REVIEW_REASONS.includes('decide_unsettled'), 'the review of the part did complete');
   assert.ok(!ledger.PART_COVERAGE_REASONS.includes('decide_unsettled'), 'no recorder limit names it');
   assert.ok(ledger.PART_CAUSES.includes('parts_decide_unsettled'));
-  assert.equal(typeof review.PART_REASON_SENTENCE.decide_unsettled, 'string');
 });
 
 test('M33 K a part whose contradicted claim ended unsettled reads NO_FINDINGS / decide_unsettled, not CLEAN', async () => {
@@ -84,20 +83,16 @@ test('M33 K an unexecuted contradiction check names its part too; the part stays
   assert.equal(report.partCounts.parts_decide_unsettled, 0, 'counted once, as unchecked');
 });
 
-test('M33 K the reason survives a saved report and is rendered with the other reasons', async () => {
+test('M33 K the reason survives a saved report, and the part counts name the check that did not settle', async () => {
   const report = await run(onClaim('uncertain'));
   const { session: omitted, ...saved } = report;
   const again = ledger.honestStatuses(saved);
   assert.equal(again.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(again.parts.find((p) => p.part === 'T1').reasons, ['decide_unsettled']);
-  const text = review.renderReview(report);
-  assert.ok(text.includes(review.PART_REASON_SENTENCE.decide_unsettled));
-  // D71 (a): no headline status; the review ran to completion over complete coverage, so nothing says a partial
-  // coverage it is not, and the part counts name the check that did not settle.
-  assert.ok(text.includes(review.RUN_STATE_SENTENCE.complete), 'never worded as a partial coverage it is not');
-  assert.ok(!text.includes('Not covered:') && !/NO_FINDINGS|could need your decision/.test(text));
-  // M33 N: worded for every DECIDE-bound check (a contradicted claim's, a change against your instruction's).
-  assert.ok(text.includes('1 with a check that did not settle'));
+  // D71 (a): the review ran to completion over complete coverage, so no cause says a partial coverage it is not.
+  assert.equal(ledger.reviewRunState(report), 'complete', 'never read as a partial coverage it is not');
+  assert.deepEqual(review.coverageCauses(report), []);
+  assert.equal(report.partCounts.parts_decide_unsettled, 1);
 });
 
 test('M33 K a session reduced as a whole (no recorded turn) cannot read CLEAN because of it', async () => {

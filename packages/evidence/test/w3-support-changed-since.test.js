@@ -15,7 +15,7 @@ import { supportCheck, changedSinceLine, CHANGED_SINCE_LABEL } from '../src/clai
 import { runReview } from '../src/run-review.js';
 import { CLAIM_NOTE, CHALLENGE_PROFILE, SESSION_CHALLENGE_CORE } from '../src/challenge.js';
 import { SUPPORT_ASKED, RESOLUTION_CHALLENGE_OUTCOMES } from '../src/ledger.js';
-import { W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, textBeforeW3 } from './m33-integration-fixture.js';
+import { W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, textBeforeW3 } from './m33-integration-fixture.js';
 
 const TEXT = {
   ask: 'SYNTHETIC_W3B_ASK: make the suite pass.',
@@ -105,7 +105,13 @@ test('W3 F1(b): CLAIM_NOTE says how to judge it; one version bump, rendered back
   // check's checker sees what its row states again.
   assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before, CODE_STEP_REREVIEW_VERSIONS.challenge.after);
 
-  assert.equal(CHALLENGE_PROFILE.version, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
   assert.equal(W3_VERSIONS.challenge.before, W2_VERSIONS.challenge.after);
   assert.ok(!textBeforeW3(CLAIM_NOTE).includes('changed since:'));
   assert.deepEqual(SUPPORT_ASKED.slice(0, 1), ['staleAsked']);

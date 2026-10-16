@@ -16,16 +16,15 @@ node --test packages/cli/test/install.test.js     # one file
 ```
 
 The full suite must pass before a pull request is opened, and continuous integration runs it on Linux and macOS. It
-has about 5,000 tests and about 1,000 CPU-seconds of work, run in parallel: several minutes on a recent laptop, more on
-a busy machine.
+has about 3,900 tests, run in parallel: several minutes on a recent laptop, more on a busy machine.
 
 - No test calls a model or needs a login: the review tests use stand-in reviewers and synthetic sessions. Keep it that
   way.
 - A passing run still lists about ten tests under `✖ failing tests:`, with their stack traces. They are `todo` tests:
   each records a known, accepted limit, given after `#` on its line, and the summary counts them under `todo`. What
   counts is `fail 0` in the summary.
-- The timing tests under `packages/redact` check that masking stays linear on very large input. On a heavily loaded
-  machine one can fail; run that file again on its own.
+- The timing tests under `packages/slicer` check that reading a recording stays linear on very large input. On a
+  heavily loaded machine one can fail; run that file again on its own.
 
 ## Rules a change must keep
 
@@ -45,8 +44,9 @@ a busy machine.
   in code (most in `packages/evidence/src/ledger.js`). Never build one in a prompt or inline.
 - **Doubt shows as not checked.** When the evidence does not settle a row, it is kept and shown as not checked, never
   as a stronger status.
-- **Masking fails closed.** Nothing Sonah writes for a person may skip masking; if masking cannot run, nothing is
-  written.
+- **Nothing is hidden for privacy's sake.** The reviewer and the person see the session and the code as recorded:
+  Sonah masks no secret and withholds no file for privacy, and a change must not add such a rule. Keep the
+  repository itself free of real recordings and live secrets (below).
 - **Never attach real session recordings.** Not to an issue, a pull request or a test: recordings can hold credentials.
   Tests use synthetic sessions only: the recordings in `corpus/golden/`, or one you build with
   `packages/golden/src/build.js`.

@@ -12,7 +12,7 @@
 //     grounded support votes uphold it even with one slot never answered. A resolution slot left
 //     unanswered makes the window incomplete even then; a written slot never does.
 // Cost, with k items of one class: 3 x ceil(k/16) planned calls (when the byte bound does not split a
-// batch) plus at most 3 re-asks, against 3k planned calls for one item per call.
+// batch) plus at most 3 re-asks of skipped slots, against 3k planned calls for one item per call.
 // The key-swap risk (C-05 "M33 vote binding"): a well-formed reply that files batch-mates' verdicts under each
 // other's keys is never re-asked — code cannot tell it apart. A not-refuted vote on a publication-bound item (a
 // contradicted claim, a resolution, a written statement's contradiction) counts as support only when it cites one
@@ -626,6 +626,12 @@ const MOVED_BY_CODE_STEP_REREVIEW = Object.freeze({ ...MOVED_BY_CODE_STEP_REVIEW
 /** The third review of the code step (`sonah.challenge/42`): a code check's checker sees what its row states again, so
  *  no session or combined batch's system moved. The version moved once. */
 const MOVED_BY_CODE_STEP_THIRD_REVIEW = Object.freeze({ ...MOVED_BY_CODE_STEP_REREVIEW, version: 'sonah.challenge/42' });
+/** The re-ask of a void vote (`sonah.challenge/43`): a vote a reply cast that could not be counted is asked again once in
+ *  batches of its own, so no first-round batch's system moved. The version moved once. */
+const MOVED_BY_VOID_VOTE_REASK = Object.freeze({ ...MOVED_BY_CODE_STEP_THIRD_REVIEW, version: 'sonah.challenge/43' });
+/** Its withdrawal (`sonah.challenge/44`): a vote a reply cast that could not be counted stands again, so no first-round
+ *  batch's system moved. The version moved once. */
+const MOVED_BY_CLEANUP = Object.freeze({ ...MOVED_BY_VOID_VOTE_REASK, version: 'sonah.challenge/44' });
 
 test('M33 I3: the challenge/10 system prompt is frozen bytes; stored answers stay keyed to them (D60)', async () => {
   const seen = [];
@@ -706,8 +712,10 @@ test('M33 I3: the challenge/10 system prompt is frozen bytes; stored answers sta
     // (MOVED_BY_CODE_STEP). The review of the code step moved the version once more; no batch's system here moved
     // (MOVED_BY_CODE_STEP_REVIEW). The second review of the code step moved the version once more; no batch's system
     // here moved (MOVED_BY_CODE_STEP_REREVIEW). The third review of the code step moved the version once more; no
-    // batch's system here moved (MOVED_BY_CODE_STEP_THIRD_REVIEW).
-    MOVED_BY_CODE_STEP_THIRD_REVIEW,
+    // batch's system here moved (MOVED_BY_CODE_STEP_THIRD_REVIEW). The re-ask of a void vote moved the version once
+    // more; no first-round batch's system here moved (MOVED_BY_VOID_VOTE_REASK). Its withdrawal moved the version once
+    // more; no first-round batch's system here moved (MOVED_BY_CLEANUP).
+    MOVED_BY_CLEANUP,
     'a change to the challenge system prompt moves the version and misses every stored challenge answer');
 });
 

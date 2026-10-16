@@ -51,16 +51,17 @@ test('M33 P the closed vocabulary: reasons, receipt statuses, send names and arr
     assert.ok(Object.isFrozen(list));
 });
 
-test('M33 P the side channel rides apart: asking for it moves no ledger byte, and no token ever reaches the ledger', async (t) => {
+test('M33 P the side channel rides apart: asking for it moves no ledger byte, and no hand-off\'s encrypted brief reaches the ledger', async (t) => {
   for (const rows of [codexConcurrentRows(), followupRows(), followupRows({ via: 'send' })]) {
     const path = await file(t, rows);
     const plain = await sliceLineage([path]);
     const { helperDeliveries, ...asked } = await sliceLineage([path], { helperDeliveries: true, claudeLocators: true });
     assert.deepEqual(asked, plain);
     assert.ok(helperDeliveries.sends.length > 0);
-    // A send_message's recorded input is the action's own (redaction judges it, as before); a hand-off keeps only
-    // that its brief was encrypted. What reaches a review is redacted: no token survives it.
-    for (const secret of Object.values(TOKENS)) assert.equal(JSON.stringify(redact(plain).ledger).includes(secret), false);
+    // A send_message's recorded input is the action's own, kept as recorded (D90); a hand-off keeps only that its brief
+    // was encrypted: the encrypted token itself never reaches the ledger.
+    const kept = JSON.stringify(redact(plain).ledger);
+    for (const name of ['spawn', 'follow', 'stranger', 'notes']) assert.equal(kept.includes(TOKENS[name]), false, name);
   }
   // A Claude recording: asked, each action carries its row under its own key only (the loader records it or drops it).
   const claude = await file(t, claudeParentRows(), 'session.jsonl');

@@ -37,15 +37,19 @@ const WHITESPACE = /\s/;
 const EDGE_PUNCTUATION = new Set(['.', '"', "'", '(', ')', ',', ';', ':']);
 
 /**
- * Text the RECORDER wrote into a source: elision stubs, the ask-compression stubs, redaction
- * markers and the redaction trailer. A quote may never span one, because that would present the
- * recorder's words — or two sides of a hole — as one continuous thing the speaker said.
+ * Text the RECORDER wrote into a source: elision stubs, the ask-compression stubs and the
+ * redaction trailer. A quote may never span one, because that would present the recorder's words
+ * — or two sides of a hole — as one continuous thing the speaker said.
  *
  * The opening/closing fragments are matched on their own, not only as complete markers: a quote
  * that stops halfway through `[\u2026]` still carries text nobody uttered.
+ *
+ * D90 (owner decision 2026-10-15): an earlier redactor's inline marks (`\u2039redacted:\u2026\u203a`,
+ * `\u2039dropped:\u2026\u203a`) are not matched here. No Sonah writes one now; the adapter keeps one out
+ * of every quotable span where its field declares it (sonah-ledger.js `declaresRedaction`), so a
+ * quote cannot span it, and anywhere else those characters are the recording's own text.
  */
 const SYNTHETIC_MARKER = new RegExp([
-  '[\u2039\u203a]',                                                    // \u2039redacted:\u2026\u203a, \u2039dropped:\u2026\u203a
   '\\[\u2026',                                                          // [\u2026], [\u2026 N chars elided \u2026], [\u2026 N line(s) dropped: \u2026]
   '\u2026\\]',
   '\\[(?:attachment|code block|traceback|indented block), \\d+ lines, \\d+ chars\\]',

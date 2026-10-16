@@ -166,15 +166,16 @@ test('malformed direct arguments retain an action but declare lost input', async
   assert.ok(adapted(ledger).adapterGaps.some((gap) => gap.channel === 'actions'));
 });
 
-test('raw JSON custom input naming a credential path withholds its result', async (t) => {
+test('D90: raw JSON custom input naming a credential path keeps its result', async (t) => {
   const ledger = await sliceLineage([await fixture(t, [
     item({ type: 'custom_tool_call', name: 'FutureRead', call_id: 'private',
       input: '{"file_path":"/repo/.env"}' }),
     item({ type: 'custom_tool_call_output', call_id: 'private', output: 'SYNTHETIC_SECRET_RESULT' }),
   ])]);
-  assert.equal(ledger.ledger[0].observationWithheld, true);
-  assert.equal(ledger.ledger[0].outputSpans, undefined);
-  assert.ok(adapted(ledger).adapterGaps.some((gap) => gap.channel === 'observations'));
+  // D90 (owner decision 2026-10-15): no output is withheld for what its input names.
+  assert.equal(ledger.ledger[0].observationWithheld, undefined);
+  assert.ok(ledger.ledger[0].tailLines.includes('SYNTHETIC_SECRET_RESULT'));
+  assert.ok(!adapted(ledger).adapterGaps.some((gap) => gap.channel === 'observations' && /withheld/.test(gap.note)));
 });
 
 test('new parallel event or UI tool item beside normal rows declares source drift', async (t) => {

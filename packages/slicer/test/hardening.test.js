@@ -45,10 +45,9 @@ test('FUZZ: adversarial input never crashes and never hangs', async () => {
   assert.ok(l.dropped.some((d) => String(d.reason).includes('unparseable')), 'corruption is counted, not hidden');
 });
 
-test('LEAK: a planted secret never reaches the stored ledger', async () => {
-  // End to end, not per-unit. The unit tests prove redact() works; this proves the ledger every review is built from
-  // (and `sonah slice` prints) actually goes THROUGH it. A secret can enter via the ask, a tool result, or the final
-  // message. (The m33-r-* tests check the session and the review requests built from a ledger for leaks.)
+test('D90: a key-shaped value reaches the ledger as recorded, through the ask, a command, its result and a statement', async () => {
+  // End to end, not per-unit: the ledger every review is built from (and `sonah slice` prints) goes through redact(),
+  // which bounds and validates it and masks nothing (D90, owner decision 2026-10-15). AWS's own published example key.
   const KEY = 'AKIAIOSFODNN7EXAMPLE';
   const f = await file([
     JSON.stringify({ type: 'user', sessionId: 's', cwd: '/repo', message: { role: 'user', content: `deploy with ${KEY} to staging` } }),
@@ -58,7 +57,10 @@ test('LEAK: a planted secret never reaches the stored ledger', async () => {
   ].join('\n'));
 
   const { ledger } = redact(await sliceLineage([f]));
-  assert.ok(!JSON.stringify(ledger).includes(KEY), 'secret leaked into the stored ledger json');
+  assert.ok(ledger.ask[0].text.includes(KEY));
+  assert.ok(ledger.ledger.some((e) => e.cmd === `AWS_KEY=${KEY} pytest tests/`));
+  assert.ok(ledger.ledger.some((e) => (e.tailLines ?? []).includes(`auth ok for ${KEY}`)));
+  assert.doesNotMatch(JSON.stringify(ledger), /‹(?:redacted|dropped)/);
 });
 
 test('SELF-REVIEW-FOUND: curl -o and wget -O are shell writes', async () => {

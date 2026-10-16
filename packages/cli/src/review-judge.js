@@ -1,9 +1,10 @@
-// Explicit, tool-free transports for session/PR review. Never infer billing from a key.
+// Explicit, tool-free transports for session/PR review, and one claude-cli agent transport with read-only tools for the
+// requests that carry `agent` (`isAgentRequest`). Never infer billing from a key.
 import { spawn } from 'node:child_process';
-import { mkdtemp, chmod, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { RETRYABLE_JUDGE_CODES } from '../../evidence/src/ledger.js';
+import { isAbsolute, join } from 'node:path';
+import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES } from '../../evidence/src/ledger.js';
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { codexExecutable, codexJudgeArgs } from './codex-model.js';
 import { IMAGE_BACKENDS, REQUEST_IMAGE_LIMITS } from '../../evidence/src/images.js';
@@ -383,6 +384,10 @@ export function reviewJudgeConfig(env = process.env, options = {}) {
   return { backend, model, version: REVIEW_TRANSPORT_VERSION };
 }
 
+/** The claude CLI's environment setting that loads no CLAUDE.md file of any kind (2.1.296, byte search of its bundle:
+ *  it gates the project, user and managed files alike, beside `--setting-sources`). */
+const CLI_DISABLE_CLAUDE_MDS_VARIABLE = 'CLAUDE_CODE_DISABLE_CLAUDE_MDS';
+
 // Only account/runtime environment reaches the subscription CLI. In particular API credentials,
 // provider overrides, inherited Claude options and repository configuration cannot change billing.
 // D77 (H): `request` decides one setting of Sonah's own, the checker's output-token limit (below); the
@@ -399,7 +404,10 @@ function localEnvironment(env, request = null) {
   return { ...clean, CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1', CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1',
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
     // D77 (H): the checker's output-token limit, on a challenge call only (CHALLENGE_MAX_OUTPUT_TOKENS).
-    ...(isChallengeRequest(request) ? { [CLI_MAX_OUTPUT_TOKENS_VARIABLE]: String(CHALLENGE_MAX_OUTPUT_TOKENS) } : {}) };
+    ...(isChallengeRequest(request) ? { [CLI_MAX_OUTPUT_TOKENS_VARIABLE]: String(CHALLENGE_MAX_OUTPUT_TOKENS) } : {}),
+    // The agent transport: an agent request runs in a repository, whose CLAUDE.md files the CLI would otherwise load as
+    // the agent's own instructions. The agent reads them with its tools, as evidence, never as instructions.
+    ...(isAgentRequest(request) ? { [CLI_DISABLE_CLAUDE_MDS_VARIABLE]: '1' } : {}) };
 }
 
 // Keep the desktop CLI's account location, but no API credentials, provider endpoint overrides,
@@ -479,6 +487,105 @@ export function reviewCliArgs({ system, model, images = false }) {
     '--no-session-persistence', '--system-prompt', system];
 }
 
+// ------------------------------------------------------------------------------------ the agent transport
+//
+// A request that carries `agent` is an agent request: Claude Code runs it as an agent with three read-only tools over a
+// repository, for as many turns as `agent.maxTurns` allows, and answers through the CLI's structured output tool
+// (`--json-schema`, the request's own `schema`). Only claude-cli has it; every other request, on every backend, is sent
+// exactly as before (reviewCliArgs, REVIEW_TRANSPORT_VERSION).
+
+/** Its version, bound in the answer key of agent requests only (answer-cache.js); REVIEW_TRANSPORT_VERSION stays the
+ *  version of every other request. A change to the agent argv, its environment or how its answer is read is a new
+ *  version. */
+export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/1';
+/** The tools an agent request is given (`--tools`, `--allowedTools`): it can read and search, never write or run. */
+export const AGENT_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
+/** The tool through which the CLI returns a `--json-schema` answer (2.1.296: a `tool_use` of this name in the stream,
+ *  and the answer as the result event's `structured_output`). */
+export const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
+/** The tool names an agent request may use, each counted by name (`agentRunOf`); a tool use of any other name, and any
+ *  tool use on a request that is not an agent request, fails the call `model_tool_use`. */
+export const AGENT_TOOL_NAMES = Object.freeze([...AGENT_TOOLS, STRUCTURED_OUTPUT_TOOL]);
+/** The most stdout one agent call may print, in place of the judge's bound (createReviewJudge's `maxOutputBytes`, 16 MiB
+ *  by default). The CLI prints every tool result twice in its stream (the message and its `tool_use_result`), so a run
+ *  of many Reads prints far more than a one-reply call; four times that default. */
+export const AGENT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+/** The result subtypes the CLI ends an agent run with when it stops it, each to its closed failure code (ledger.js
+ *  JUDGE_FAILURE_CODES) and its transport class (run-review.js TRANSPORT_SHORTFALL). Read from the one result event's
+ *  typed `subtype`, never from its text, and on an agent call only. Neither is retried: an identical request runs into
+ *  the same limit. */
+export const AGENT_RESULT_FAILURES = Object.freeze(Object.assign(Object.create(null), {
+  error_max_turns: Object.freeze({ code: 'model_turn_limit', transportClass: 'turn_limit' }),
+  error_max_structured_output_retries: Object.freeze({ code: 'model_structured_output_failed',
+    transportClass: 'structured_output_failed' }) }));
+/** The options the agent argv adds that an older Claude Code may not have (doctor.js checks them once, with no call). */
+export const AGENT_CLI_OPTIONS = Object.freeze(['--restricted', '--max-turns', '--json-schema']);
+/** The members `request.agent` may have. `root`: the absolute path of an existing directory, the agent's working
+ *  directory; `addDirs`: absolute paths of existing directories the agent may also read (default none); `maxTurns`: a
+ *  positive whole number, the CLI's `--max-turns`; `timeoutMs`: a positive whole number of milliseconds, the call's own
+ *  timeout in place of the judge's. */
+const AGENT_FIELDS = Object.freeze(['root', 'addDirs', 'maxTurns', 'timeoutMs']);
+/** Node's timer range: a longer timeout would fire at once. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/** Whether a request is an agent request: it carries `agent` at all. A malformed one is still an agent request, and is
+ *  refused (`invalid_model_input`), never sent without its tools or sent as a session request. */
+export const isAgentRequest = (request) => isRecord(request) && request.agent !== undefined;
+
+const absolutePath = (value) => typeof value === 'string' && value.length > 0 && !value.includes('\0') && isAbsolute(value);
+const positiveWhole = (value, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value > 0 && value <= max;
+
+/** An agent request's `agent` and `schema`, checked by shape (`{ root, addDirs, maxTurns, timeoutMs, schema }`, addDirs
+ *  defaulting to none and timeoutMs to null), or null when the request is no agent request the transport can send:
+ *  `agent` is not a record of AGENT_FIELDS members with valid values, or `schema` is not a JSON object. Whether the
+ *  directories exist is checked when the call is made (createReviewJudge). */
+export function agentRequestOf(request) {
+  if (!isAgentRequest(request)) return null;
+  const { agent, schema } = request;
+  if (!isRecord(agent) || Object.keys(agent).some((key) => !AGENT_FIELDS.includes(key))) return null;
+  const addDirs = agent.addDirs === undefined ? [] : agent.addDirs;
+  if (!absolutePath(agent.root) || !Array.isArray(addDirs) || !addDirs.every(absolutePath)
+      || !positiveWhole(agent.maxTurns)
+      || !(agent.timeoutMs === undefined || positiveWhole(agent.timeoutMs, MAX_TIMEOUT_MS))) return null;
+  let schemaText;
+  try { schemaText = JSON.stringify(schema); } catch { return null; }
+  if (!isRecord(schema) || typeof schemaText !== 'string' || schemaText.includes('\0')) return null;
+  return { root: agent.root, addDirs: [...addDirs], maxTurns: agent.maxTurns, timeoutMs: agent.timeoutMs ?? null, schema };
+}
+
+/**
+ * The agent argv: the tool-free argv's settings isolation (no slash commands, no setting sources, no MCP server, no
+ * persisted session, Sonah's system prompt in argv and the prompt on stdin), with three read-only tools allowed without
+ * a prompt (`dontAsk`, `--permission-prompts none`), confined to the working directory and each `--add-dir` (`--restricted`:
+ * a Read outside them, through a link included, is refused), at most `agent.maxTurns` turns, and the answer through the
+ * CLI's structured output tool (`--json-schema`). No `--include-partial-messages`: nothing reads a partial message. The
+ * system prompt comes last, as in reviewCliArgs.
+ */
+export function reviewAgentCliArgs({ system, model, agent, schema }) {
+  return ['--print', '--model', model, '--effort', REVIEW_EFFORT, '--output-format', 'stream-json', '--verbose',
+    '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,
+    '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--restricted',
+    ...(agent.addDirs ?? []).flatMap((dir) => ['--add-dir', dir]), '--max-turns', String(agent.maxTurns),
+    '--json-schema', JSON.stringify(schema),
+    '--disable-slash-commands', '--setting-sources', '', '--mcp-config', '{"mcpServers":{}}', '--strict-mcp-config',
+    '--no-session-persistence', '--system-prompt', system];
+}
+
+/** The options of the agent argv whose value is left out of the answer key: an absolute path (`--add-dir`), so a moved
+ *  checkout still replays, and the system prompt, which the key binds already. */
+const AGENT_UNKEYED_VALUES = Object.freeze(['--add-dir', '--system-prompt']);
+
+/** The agent argv as the answer key binds it (answer-cache.js): every argument in order, each AGENT_UNKEYED_VALUES
+ *  option kept and its one value left out. Read left to right, so a value is never taken for an option. */
+export function reviewAgentKeyArgs(argv) {
+  const kept = [];
+  for (let at = 0; at < argv.length; at++) {
+    kept.push(argv[at]);
+    if (AGENT_UNKEYED_VALUES.includes(argv[at])) at++;
+  }
+  return kept;
+}
+
 /** Gain I: a request's text and images as the content of one user message, the shape both the Messages API and the
  *  CLI's stream-json input read: the prompt, then each image after a line naming it ("Image 1:", as the prompt numbers
  *  them, prompt.js `IMAGES_ATTACHED`). */
@@ -513,8 +620,12 @@ export function reviewApiBody({ system, prompt, model, images = [] }) {
  * so an argument changed without a REVIEW_TRANSPORT_VERSION bump can never replay an answer given
  * under another. Never the credential or the environment: neither changes what the model is asked.
  * `null` for a backend this module has no transport for.
+ * The agent transport: with `agent` and `schema` (an agent request's, `agentRequestOf`), the agent argv the call is
+ * spawned with (`reviewAgentCliArgs`), on claude-cli only; null on any other backend, which has no agent transport.
  */
-export function reviewTransportArguments({ backend, model, system, images = [] }) {
+export function reviewTransportArguments({ backend, model, system, images = [], agent = undefined, schema = undefined }) {
+  if (agent !== undefined)
+    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, agent, schema }) } : null;
   if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, images: images.length > 0 }) };
   if (backend === 'codex-cli') return { argv: reviewCodexArgs({ model, images }), instructions: system };
   if (backend === 'anthropic-api') {
@@ -686,11 +797,15 @@ async function callCodexLocal(request, config, { env, spawnProcess, timeoutMs, m
  * events only. No text field (content, result, errors, error details, cwd) is kept: the counts,
  * the enum values, the status values and the model values below are all that leave this function
  * (D70 review: and the init's CLI version, kept by its caller only as a SemVer normal version).
+ * The agent transport: and the paths an agent asked its Read tool for (`reads`), what it read.
  */
 function readClaudeStream(output) {
+  // The agent transport: `toolNames` counts tool uses by name, for AGENT_TOOL_NAMES members only (an unnamed tool use,
+  // or one of another name, is counted in `toolUse` alone, so it is never allowed); `reads` holds the distinct paths the
+  // Read tool was asked for, in the order first asked.
   const stream = { inits: 0, initModels: [], initVersions: [], topLevelModels: [], nestedModels: [], toolUse: 0, syntheticMessages: 0,
     apiErrorMarkers: 0, errorValues: [], errorStatuses: [], fallbacks: 0, apiRetries: 0, results: [],
-    reportedModels: new Set(), rateLimit: null };
+    reportedModels: new Set(), rateLimit: null, toolNames: new Map(), reads: new Set() };
   const present = (event, field) => Object.hasOwn(event, field) && event[field] !== null;
   for (const line of output.split('\n')) {
     let event;
@@ -706,8 +821,14 @@ function readClaudeStream(output) {
     } else if (event.type === 'assistant') {
       const message = isRecord(event.message) ? event.message : {};
       if (typeof message.model === 'string') stream.reportedModels.add(message.model);
-      stream.toolUse += (Array.isArray(message.content) ? message.content : [])
-        .filter((block) => isRecord(block) && block.type === 'tool_use').length;
+      for (const block of Array.isArray(message.content) ? message.content : []) {
+        if (!isRecord(block) || block.type !== 'tool_use') continue;
+        stream.toolUse++;
+        if (!AGENT_TOOL_NAMES.includes(block.name)) continue;
+        stream.toolNames.set(block.name, (stream.toolNames.get(block.name) ?? 0) + 1);
+        if (block.name === 'Read' && isRecord(block.input) && typeof block.input.file_path === 'string')
+          stream.reads.add(block.input.file_path);
+      }
       if (message.model === SYNTHETIC_MODEL) stream.syntheticMessages++;
       // M33 refreeze: a marker is any marker field neither null nor false, or any non-null status.
       const status = present(event, API_ERROR_STATUS_FIELD);
@@ -717,6 +838,7 @@ function readClaudeStream(output) {
       if (Object.hasOwn(event, 'error')) stream.errorValues.push(event.error);
       // M33 refreeze: the transport has no tools, so every assistant must be top-level — a
       // `parent_tool_use_id` present and null. A missing or any other value (false, an id) is nested.
+      // The agent transport's tools start no agent of their own (no Task tool), so the same holds there.
       if (event.parent_tool_use_id === null) stream.topLevelModels.push(message.model);
       else stream.nestedModels.push(message.model);
     } else if (event.type === 'result') {
@@ -994,10 +1116,29 @@ function providerClassOf(stream, failedIdentity) {
   return deciding.size === 1 ? [...deciding][0] : UNKNOWN_PROVIDER;
 }
 
-async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOutputBytes, cancellation }) {
-  const directory = await mkdtemp(join(tmpdir(), 'sonah-review-judge-'));
+/** The agent transport: what one agent call did, as counts and the paths it read (never any other text of the stream):
+ *  the turns the result states (`num_turns`), the tool uses by AGENT_TOOL_NAMES name, the distinct paths the Read tool
+ *  was asked for, in the order first asked, how many tool uses the CLI refused (`permission_denials`; `--restricted`
+ *  refuses a path outside the working directory and its `--add-dir`s), and the result's duration, cost and usage. */
+function agentRunOf(stream, result) {
+  return { numTurns: countOf(result?.num_turns),
+    toolCalls: Object.fromEntries(AGENT_TOOL_NAMES.map((name) => [name, stream.toolNames.get(name) ?? 0])),
+    reads: [...stream.reads],
+    permissionDenials: Array.isArray(result?.permission_denials) ? result.permission_denials.length : null,
+    durationMs: durationOf(result?.duration_ms),
+    costUsd: Number.isFinite(result?.total_cost_usd) ? result.total_cost_usd : null,
+    usage: isRecord(result?.usage) ? result.usage : null };
+}
+
+/** `agent` (the agent transport): an agent request's checked `agent` and `schema` (agentRequestOf), or null. An agent
+ *  call runs in `agent.root` with the agent argv, its own timeout when it states one and AGENT_MAX_OUTPUT_BYTES; any
+ *  other call in a fresh private folder that holds nothing, as before. */
+async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOutputBytes, cancellation, agent = null }) {
+  const directory = agent ? null : await mkdtemp(join(tmpdir(), 'sonah-review-judge-'));
+  const callTimeoutMs = agent?.timeoutMs ?? timeoutMs;
+  const outputBound = agent ? AGENT_MAX_OUTPUT_BYTES : maxOutputBytes;
   try {
-    await chmod(directory, 0o700);
+    if (directory) await chmod(directory, 0o700);
     // M33: an abort that arrived while the private directory was made starts nothing.
     if (cancellation.aborted) throw failure(REVIEW_CANCELLED);
     return await new Promise((resolve) => {
@@ -1017,11 +1158,12 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
       };
       // Gain I: a request with images is one stream-json user message (`claudeStreamInput`); any other, its prompt.
       const images = requestImagesOf(request);
-      try { child = spawnProcess('claude', reviewCliArgs({ system: request.system, model: config.model,
-        images: images.length > 0 }), {
-        cwd: directory, env: localEnvironment(env, request), stdio: ['pipe', 'pipe', 'pipe'],
+      const argv = agent ? reviewAgentCliArgs({ system: request.system, model: config.model, agent, schema: agent.schema })
+        : reviewCliArgs({ system: request.system, model: config.model, images: images.length > 0 });
+      try { child = spawnProcess('claude', argv, {
+        cwd: agent ? agent.root : directory, env: localEnvironment(env, request), stdio: ['pipe', 'pipe', 'pipe'],
       }); } catch { finish({ ok: false, code: 'model_unavailable', transportClass: 'spawn_failed' }); return; }
-      timer = setTimeout(() => halt('model_timeout'), timeoutMs);
+      timer = setTimeout(() => halt('model_timeout'), callTimeoutMs);
       unregister = cancellation.register(() => halt(REVIEW_CANCELLED));
       child.stdin.on('error', () => {});
       child.stdin.end(images.length ? claudeStreamInput(request.prompt, images) : request.prompt);
@@ -1029,7 +1171,7 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
       child.stdout.on('data', (chunk) => {
         if (stop) return;
         size += Buffer.byteLength(chunk);
-        if (size > maxOutputBytes) { halt('model_output_limit'); return; }
+        if (size > outputBound) { halt('model_output_limit'); return; }
         output += chunk;
       });
       child.stderr.on('data', () => {}); // Never expose provider output that may contain input text.
@@ -1065,7 +1207,9 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           // D70 (a): the context window the CLI states it ran this call under, a count.
           contextWindow: reportedContextWindow(result?.modelUsage, config.model),
           // D70 review (S0): the CLI version its one init states, a SemVer normal version, or null.
-          cliVersion: stream.inits === 1 ? cliVersionOf(stream.initVersions[0]) : null };
+          cliVersion: stream.inits === 1 ? cliVersionOf(stream.initVersions[0]) : null,
+          // The agent transport: what the agent did (agentRunOf), on an agent call only.
+          ...(agent ? { agentRun: agentRunOf(stream, result) } : {}) };
         if (stop) {
           // A cancellation is the review stopping, not the transport failing: no transport class.
           // A stop does not hide identity evidence already on the stream (`identity_mismatch`), nor
@@ -1076,14 +1220,25 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           return finish({ ok: false, code: stop, ...(transportClass ? { transportClass } : {}), ...metadata,
             providerClass: NON_RETRYABLE_PROVIDER_CLASSES.includes(observed) ? observed : identityClass });
         }
-        // A tool call is the model breaking its contract, not the transport failing: no class.
-        if (stream.toolUse) return finish({ ok: false, code: 'model_tool_use', ...metadata });
+        // A tool call is the model breaking its contract, not the transport failing: no class. The agent transport: a
+        // tool use of an AGENT_TOOL_NAMES name is the agent working; any other (an unnamed one included) still breaks it.
+        const allowedUses = agent ? AGENT_TOOL_NAMES.reduce((sum, name) => sum + (stream.toolNames.get(name) ?? 0), 0) : 0;
+        if (stream.toolUse > allowedUses) return finish({ ok: false, code: 'model_tool_use', ...metadata });
         if (!verdict.accepted) {
+          // The agent transport: the CLI stopped an agent run at a limit of its request and said which in the one
+          // result's typed subtype (AGENT_RESULT_FAILURES), its own code and class. Identity evidence wins. A session
+          // call has no such limit, so it never reads one.
+          const limit = agent && stream.results.length === 1 && !verdict.identityFailed
+            ? AGENT_RESULT_FAILURES[result.subtype] : undefined;
+          if (isRecord(limit)) return finish({ ok: false, code: limit.code, transportClass: limit.transportClass, ...metadata });
           const providerClass = providerClassOf(stream, verdict.identityFailed);
           return finish({ ok: false, code: providerClass === OUTPUT_TOKENS ? 'model_response_incomplete' : 'model_unavailable',
             transportClass: localTransportClass({ stop, exitCode, result }), ...metadata, providerClass });
         }
-        const raw = typeof result.result === 'string' ? extractJson(result.result) : null;
+        // The agent transport: the CLI's structured output (`--json-schema`) is the answer when it is an object; else the
+        // result's text, read as any reply is.
+        const raw = agent && isRecord(result.structured_output) ? result.structured_output
+          : typeof result.result === 'string' ? extractJson(result.result) : null;
         // D78: an object, or on a challenge request a bare list of votes (`answerOf`).
         const answer = answerOf(raw, request);
         const ok = answer !== null, json = ok ? answer : raw;
@@ -1095,7 +1250,7 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           attestation: ok && verdict.attested ? ATTESTED : UNATTESTED });
       }
     });
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
 }
 
 async function callApi(request, config, { env, fetchImpl, timeoutMs, maxOutputBytes, cancellation }) {
@@ -1158,22 +1313,53 @@ function withAttempts(result, attempts) {
   return result;
 }
 
+/** The timeout failure code (ledger.js JUDGE_FAILURE_CODES). */
+const MODEL_TIMEOUT = 'model_timeout';
+/** The agent transport: the failures of an agent request the transport does not ask again, each for its own reason. A
+ *  timeout: one stuck agent must not cost two. A reply that came back and could not be read (ledger.js
+ *  REASKABLE_JUDGE_CODES): the caller's one re-ask or repair asks again, naming what was wrong (evidence/src/code-pass.js
+ *  `rereadable`), so a transport retry of the identical request would be a second, unexplained one. */
+const AGENT_NOT_RETRIED = Object.freeze([MODEL_TIMEOUT, ...REASKABLE_JUDGE_CODES]);
+
 /** One retry, with the identical request, on a transport failure only. Then the failure stands:
  *  a transport that fails twice is not a blip, and a third call is a guess paid for in tokens.
  *  M33: never after a cancellation, and never after a provider class an identical request cannot
  *  change (NON_RETRYABLE_PROVIDER_CLASSES: identity mismatch, auth, billing, rate limit, model not
  *  found, invalid request) — those would only spend the account's quota on the same refusal. The
  *  class is the call's one class (providerClassOf), so a stop class observed beside a retryable one
- *  is never retried either. */
+ *  is never retried either. The agent transport: nor an agent request (`isAgentRequest`) that timed out or whose reply
+ *  could not be read (AGENT_NOT_RETRIED). */
 export function withTransportRetry(judge) {
   return async (request) => {
     try { return withAttempts(await judge(request), 1); }
     catch (error) {
       if (error?.code === REVIEW_CANCELLED || NON_RETRYABLE_PROVIDER_CLASSES.includes(error?.providerClass)) throw error;
       if (!RETRYABLE_JUDGE_CODES.includes(error?.code)) throw error;
+      // The agent transport: an agent call that ran out its time, or whose reply could not be read, is not asked again
+      // here (AGENT_NOT_RETRIED).
+      if (AGENT_NOT_RETRIED.includes(error.code) && isAgentRequest(request)) throw error;
       return withAttempts(await judge(request), 2);
     }
   };
+}
+
+/** The agent transport: what one agent call did (agentRunOf) rides on its answer, or on its thrown failure, not
+ *  enumerable, like `attempts`: Object.keys, JSON.stringify and structuredClone never see it, so a stored answer never
+ *  holds it. An answer that has a member of that name of its own keeps it. */
+function withAgentRun(value, agentRun) {
+  if (!isRecord(agentRun) || value === null || typeof value !== 'object' || Object.hasOwn(value, 'agentRun')) return value;
+  try {
+    Object.defineProperty(value, 'agentRun', { value: agentRun, enumerable: false, configurable: true, writable: true });
+  } catch { /* a sealed answer keeps its shape */ }
+  return value;
+}
+
+/** The agent transport: whether every path is a directory that exists now (links followed). */
+async function directoriesExist(paths) {
+  for (const path of paths) {
+    try { if (!(await stat(path)).isDirectory()) return false; } catch { return false; }
+  }
+  return true;
 }
 
 /** M33: every recorded result carries the attestation fields, whichever path produced it. A path that
@@ -1203,6 +1389,10 @@ function withProviderClass(error, providerClass) {
  * A claude-cli call that is not accepted throws `model_unavailable` (or `model_response_incomplete`
  * for `output_tokens`) with its closed `providerClass`; nothing from it is returned, so D60 never
  * stores it. An accepted call under an alias answers, `unattested`; only a full id is `attested`.
+ * The agent transport: an agent request (`isAgentRequest`) runs with the agent argv in its `agent.root`, may use the
+ * AGENT_TOOL_NAMES tools, answers with its structured output, and fails `model_turn_limit` or
+ * `model_structured_output_failed` when the CLI stops it (AGENT_RESULT_FAILURES); what it did rides on its answer and
+ * its failure (`agentRun`, not enumerable) and reaches `onResult` as `metadata.agentRun`.
  */
 export function createReviewJudge({ config, env = process.env, spawnProcess = spawn, fetchImpl = fetch,
   timeoutMs = 20 * 60_000, maxOutputBytes = 16 * 1024 * 1024, onResult = () => {}, signal = null } = {}) {
@@ -1215,14 +1405,25 @@ export function createReviewJudge({ config, env = process.env, spawnProcess = sp
     // Gain I: a request's images are sent whole by a backend that sends images, or the request is refused — never sent
     // without them (its scope was built as though they were shown).
     if (sendableImages(request, config.backend) === null) throw failure('invalid_model_input');
+    // The agent transport: an agent request is sent only by claude-cli, only well formed (agentRequestOf), without
+    // images (its argv reads one prompt on stdin), and only into directories that exist; else it is refused before
+    // anything starts, never sent without its tools.
+    let agent = null;
+    if (isAgentRequest(request)) {
+      agent = agentRequestOf(request);
+      if (config.backend !== 'claude-cli' || agent === null || requestImagesOf(request).length > 0
+          || !(await directoriesExist([agent.root, ...agent.addDirs]))) throw failure('invalid_model_input');
+      if (cancellation.aborted) throw failure(REVIEW_CANCELLED);
+    }
     const started = Date.now();
     const result = await (config.backend === 'claude-cli' ? callLocal : config.backend === 'codex-cli' ? callCodexLocal : callApi)(request, config,
-      { env, spawnProcess, fetchImpl, timeoutMs, maxOutputBytes, cancellation });
+      { env, spawnProcess, fetchImpl, timeoutMs, maxOutputBytes, cancellation, agent });
     const { json, ...metadata } = { ...attestationDefaults(), ...result };
     if (metadata.ok) delete metadata.code;
     await onResult({ ...metadata, backend: config.backend, requestedModel: config.model,
       elapsedMs: Date.now() - started, inputBytes: Buffer.byteLength(request.system) + Buffer.byteLength(request.prompt) });
-    if (!result.ok) throw withProviderClass(failure(result.code, result.transportClass), metadata.providerClass);
-    return json;
+    if (!result.ok) throw withAgentRun(withProviderClass(failure(result.code, result.transportClass), metadata.providerClass),
+      metadata.agentRun);
+    return withAgentRun(json, metadata.agentRun);
   };
 }

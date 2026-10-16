@@ -48,10 +48,12 @@ const ROLE_FOR_KIND = Object.freeze({
   'project-instructions': 'project-instructions',
 });
 
-// Defense for persisted or hand-built sessions whose adapter left a redactor artifact inside
-// one ref. These exact forms are redactor-owned; even their interior words are not source text.
-// The ordinary adapter splits them first, but grounding and prompt rendering must fail closed
-// if an older route did not. The leading newline on a dropped-lines note is part of the note.
+// An earlier Sonah's redactor's marks in a hunk it scrubbed (`hunkRunsOf`, a hunk declared `hunkScrub`): those exact
+// forms are that redactor's, and even their interior words are not source text. The leading newline on a dropped-lines
+// note is part of the note. D90 (owner decision 2026-10-15): no Sonah writes a mark now, and a field's refs are the
+// adapter's to cut: it places a mark outside every ref only where the field declares an earlier redactor's work
+// (evidence/adapters/sonah-ledger.js `declaresRedaction`), and the same characters anywhere else are the recording's
+// own text, inside a ref and quotable. So a ref is never split again here by what its text says.
 const REDACTION_ARTIFACT = /‹(?:redacted|dropped)(?::[^›\n]+)?›|(?:^|\n)\[… \d+ line\(s\) dropped: [A-Za-z][A-Za-z -]*[A-Za-z] …\](?=\n|$)/g;
 
 // A one-or-two letter quote would ground anywhere.
@@ -229,8 +231,8 @@ export class Session {
 
   /**
    * M36 phase 2 (C-07 "M36 window format"): the same spans as `textSpanInfoOf`, as character ranges of one text: the
-   * field's stored text, its uninterrupted runs in order, every redactor artifact kept where it stands (outside every
-   * range). M36 phase 2 review: two runs of ONE blob, the later after the earlier, are separated in this text by exactly
+   * field's stored text, its uninterrupted runs in order, every redactor artifact the adapter cut out of the refs kept
+   * where it stands (outside every range). M36 phase 2 review: two runs of ONE blob, the later after the earlier, are separated in this text by exactly
    * what the blob stores between them (outside every range: an inline mask the adapter cut out of the refs stays in its
    * line, a dropped-lines note keeps its own line), so a field's lines are the stored text's own; only two runs with no
    * stored text between them (another blob, an unreadable ref, a ref before the one it follows) are joined by one line
@@ -254,16 +256,7 @@ export class Session {
     const flush = () => {
       if (current) {
         if (text) text += storedBetween(placed, first) ?? '\n';
-        const base = text.length;
-        let cursor = 0;
-        let cut = false;
-        for (const match of current.matchAll(REDACTION_ARTIFACT)) {
-          if (match.index > cursor) ranges.push({ from: base + cursor, until: base + match.index });
-          cursor = match.index + match[0].length;
-          cut = true;
-        }
-        if (cut) complete = false;
-        if (cursor < current.length) ranges.push({ from: base + cursor, until: base + current.length });
+        ranges.push({ from: text.length, until: text.length + current.length });
         text += current;
         placed = previous;
       }
@@ -357,9 +350,8 @@ export class Session {
 export const HUNK_SIDES = Object.freeze({ ' ': 'context', '-': 'removed', '+': 'added' });
 const NO_NEWLINE_MARK = '\\';
 
-/** The ranges of `text` between its redactor artifacts, as `textRegionsOf` ranges a field: each an uninterrupted span.
- *  D84: the renderers' view of a session for people (render/session-story.js `sessionForPeople`) splits a span it
- *  masked by the same rule. */
+/** The ranges of `text` between an earlier redactor's artifacts, as `textRegionsOf` ranges a field: each an
+ *  uninterrupted span. Read only for hunks that redactor declared it scrubbed (`hunkRunsOf`). */
 export function artifactRanges(text) {
   const ranges = [];
   let cursor = 0;
@@ -406,9 +398,12 @@ export function hunkRunsOf(event) {
       if (side !== 'removed') { run.new[1] = newLine; newLine++; }
     }
   }
+  // D90: an earlier redactor's marks are read only in hunks it declared it scrubbed (`hunkScrub`, never produced now); in
+  // any other the same characters are the file's own text.
+  const scrubbed = event.recorded?.hunkScrub !== undefined;
   for (const run of runs) {
     run.text = run.lines.join('\n');
-    run.ranges = artifactRanges(run.text);
+    run.ranges = scrubbed ? artifactRanges(run.text) : run.text.length ? [{ from: 0, until: run.text.length }] : [];
     run.spans = run.ranges.map(({ from, until }) => run.text.slice(from, until));
   }
   return runs;

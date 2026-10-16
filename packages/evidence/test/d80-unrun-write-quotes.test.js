@@ -16,8 +16,7 @@ import { VOTE_REJECTION_CAUSES } from '../src/challenge.js';
 import { checkedRequirement, failuresCheck } from '../src/checklist.js';
 import { readWrittenStatement } from '../src/written.js';
 import { runReview } from '../src/run-review.js';
-import { CHECKLIST_REQUIREMENT_REASON_WORDS, CHECKLIST_FAILURE_REASON_WORDS, VALUE_UNCHECKED_SENTENCE,
-  WITHHELD_SENTENCE } from '../src/review.js';
+import { CHECKLIST_REQUIREMENT_REASON_WORDS, CHECKLIST_FAILURE_REASON_WORDS } from '../src/review.js';
 
 const KEY = 'sess-d80';
 const ASK = 'SYNTHETIC_D80_ASK: write the parser notes.';
@@ -100,9 +99,6 @@ test('D80 the closed reason: one token, in every list a refused quote is counted
   assert.ok(!JUDGMENT_REASONS.includes(UNRUN_WRITE_REASON), 'a cause and a row reason, never a new judgment reason');
   assert.equal(typeof CHECKLIST_REQUIREMENT_REASON_WORDS[UNRUN_WRITE_REASON], 'string');
   assert.equal(typeof CHECKLIST_FAILURE_REASON_WORDS[UNRUN_WRITE_REASON], 'string');
-  assert.match(VALUE_UNCHECKED_SENTENCE[UNRUN_WRITE_REASON](['S1']),
-    /a write \(`S1`\) whose command did not run, failed or stopped before it finished/);
-  assert.match(WITHHELD_SENTENCE[UNRUN_WRITE_REASON]({ n: 2 }), /^2 written statement\(s\) withheld: /);
 });
 
 test('D80 a parsed write is unrun by its command\'s typed end: did not run or failed, and no other end', () => {

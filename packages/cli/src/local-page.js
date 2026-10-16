@@ -6,8 +6,10 @@ import { pathToFileURL } from 'node:url';
 
 const execute = promisify(execFile);
 export const LOCAL_PAGE_OPEN_TIMEOUT_MS = 10_000;
-export const LOCAL_PAGE_OPEN_FIX = 'The page is saved, but could not be opened automatically. '
-  + 'Open the printed HTML path in your browser; use --no-open for automation or a headless terminal.';
+export const LOCAL_PAGE_OPEN_FIX = 'Sonah saved the page, but could not open it. Open the HTML path that Sonah printed '
+  + 'in your browser. Use --no-open for automation or a terminal with no display.';
+/** The line that names the saved page. */
+export const LOCAL_PAGE_WORDS = Object.freeze({ line: (path) => `Local page: ${path}` });
 
 /** Pass one file URL through argv, never through a shell. execFile captures opener output.
  * Windows' native URL handler is documented by Microsoft Support:
@@ -25,8 +27,12 @@ export async function openLocalPage(file, { platform = process.platform, exec = 
 export async function presentLocalPage(file, { stdout = process.stdout, stderr = process.stderr,
   noOpen = false, openPage = openLocalPage } = {}) {
   const absolute = resolve(file);
-  stdout.write(`Local page: ${absolute}\n`);
+  stdout.write(`${LOCAL_PAGE_WORDS.line(absolute)}\n`);
   if (noOpen) return;
   try { await openPage(absolute); }
   catch { stderr.write(`${LOCAL_PAGE_OPEN_FIX}\n`); }
 }
+
+/** The kind of each of this file's word tables, for the style linter (packages/render/test/style-lint.js). */
+export const STYLE_KINDS = Object.freeze({ LOCAL_PAGE_OPEN_FIX: 'notice', LOCAL_PAGE_WORDS: 'label' });
+export const STYLE_FIXTURES = Object.freeze({ 'LOCAL_PAGE_WORDS.line': [['/tmp/review.html']] });

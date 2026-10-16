@@ -1,14 +1,15 @@
-// The code step's context, assembled by code with zero calls:
+// The code step's context, assembled by code with zero calls (agentic since code-pass/7):
 // git's hunks read by their formal grammar and checked row by row, widened as PR-Agent widens them, the change as
-// Pullfrog's table of contents and `| OLD | NEW | TYPE | code` rows, the recorded edits when there is no git base, the
-// placement of hunks and whole files under the request bound, and the session dossier built from the saved report.
+// Pullfrog's table of contents and `| OLD | NEW | TYPE | code` rows, the recorded edits when there is no git base, and
+// the session dossier built from the saved report.
 //
 // Synthetic texts and sessions only: no recording, no model, no network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { displayPath, parseHunks, linesOf, hunksMatch, extendHunks, addedHunk, recordedHunks, changedSpans, hunkRanges,
-  renderChange, sectionBytes, codeDossier, renderDossier, commandsAfterLastEdit, placeGroups, passOrder, HUNK_CONTEXT,
-  rebuilds, diffLines, recordedNewRows, mapRecordedRows, namedUnderRoot } from '../src/code-context.js';
+  renderChange, sectionBytes, codeDossier, renderDossier, dossierWords, commandsAfterLastEdit, HUNK_CONTEXT,
+  rebuilds, diffLines, recordedNewRows, mapRecordedRows, underRoot } from '../src/code-context.js';
+import * as codeContext from '../src/code-context.js';
 import { codeSnapshotPlan, freezeCodeSnapshot } from '../src/code-pass.js';
 import { CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES } from '../src/ledger.js';
 import { readFile } from 'node:fs/promises';
@@ -81,7 +82,7 @@ test('code step: the change is Pullfrog\'s table of contents and | OLD | NEW | T
   const entries = [
     { path: 'a.js', type: 'modified', hunks, shown: true, notes: ['S1 S3'] },
     { path: 'gen.js', type: 'modified', hunks, shown: true, notes: ['not written by a recorded edit'] },
-    { path: '.env', type: 'modified', hunks: [], shown: false, why: 'withheld' },
+    { path: 'logo.png', type: 'modified', hunks: [], shown: false, why: 'binary' },
     { path: 'new.js', type: 'added', hunks: [addedHunk(['x'])], shown: true },
   ];
   const text = renderChange(entries);
@@ -89,7 +90,7 @@ test('code step: the change is Pullfrog\'s table of contents and | OLD | NEW | T
   assert.equal(lines[0], '## Files (4)');
   assert.equal(lines[1], '- a.js → lines 8-15 · modified · S1 S3');
   assert.equal(lines[2], '- gen.js → lines 16-23 · modified · not written by a recorded edit');
-  assert.equal(lines[3], '- .env · modified · withheld: no hunk shown');
+  assert.equal(lines[3], '- logo.png · modified · binary: no hunk shown');
   assert.equal(lines[4], '- new.js → lines 24-29 · added');
   assert.deepEqual(lines.slice(5, 7), ['', '---']);
   // The ranges count the block's own lines from its `## Files` line.
@@ -97,11 +98,6 @@ test('code step: the change is Pullfrog\'s table of contents and | OLD | NEW | T
     '|    1 |      | - | a', '|      |    1 | + | A', '|    2 |    2 |   | b']);
   assert.deepEqual(lines.slice(23, 29), ['diff --git a/new.js b/new.js', '--- /dev/null', '+++ b/new.js', '@@ -0,0 +1,1 @@',
     '|      |    1 | + | x', '']);
-  // A checking pass's own order moves the sections, never the table of contents.
-  const turned = renderChange(entries, { order: ['new.js', 'gen.js', 'a.js'] }).split('\n');
-  assert.deepEqual(turned.slice(0, 5).map((l) => l.split(' →')[0].split(' ·')[0]), ['## Files (4)', '- a.js', '- gen.js',
-    '- .env', '- new.js']);
-  assert.equal(turned[7], 'diff --git a/new.js b/new.js');
   assert.equal(sectionBytes(entries[0]), Buffer.byteLength(lines.slice(7, 15).join('\n')) + 1);
 });
 
@@ -119,7 +115,7 @@ test('code step: with no git base, the hunks are the recorded edits, placed in t
   assert.deepEqual([hunks[2].whole, hunks[2].newStart, hunks[2].newCount, hunks[2].rows], [true, 1, 4, []]);
   assert.deepEqual(changedSpans(hunks), { new: [[1, 4]], old: [] });
   assert.match(renderChange([{ path: 'x.js', type: 'modified', hunks, shown: true }]),
-    /@@ recorded edit 3: wrote the whole file, lines 1-4 \(shown whole below\) @@/);
+    /@@ recorded edit 3: wrote the whole file, lines 1-4 \(read the file for its text\) @@/);
 });
 
 test('code step: the lines a change touched, by side, are what scope is checked against', () => {
@@ -140,24 +136,9 @@ test('code step: a path the session named absolutely, relatively, or git named i
   assert.equal(displayPath('/work/repo/a.js', null), '/work/repo/a.js');
 });
 
-test('code step: placement never drops a hunk; whole files fill what is left; over the bound the change splits', () => {
-  const sizes = { a: 100, b: 100, c: 100, r: 50 };
-  const whole = { a: 300, b: 300, c: 5000, r: 200 };
-  const place = (room, wholes = whole) => placeGroups({ changed: ['a', 'b', 'c'], fill: ['a', 'b', 'c', 'r'],
-    hunkCost: (p) => sizes[p], costOf: (p) => wholes[p], room });
-  // Room for every hunk and the whole files in fill order: one group; a file over a request alone is clipped.
-  assert.deepEqual(place(1100), { groups: [{ hunks: ['a', 'b', 'c'], files: ['a', 'b', 'r'] }], listed: [],
-    clipped: ['c'] });
-  // Less room: what does not fit is listed by name.
-  assert.deepEqual(place(900), { groups: [{ hunks: ['a', 'b', 'c'], files: ['a', 'b'] }], listed: ['r'], clipped: ['c'] });
-  // Too little room for every hunk at once: groups, each a file's hunks with its whole file when it fits; the files
-  // read fill what is left, first group with room.
-  assert.deepEqual(place(260, { a: 150, b: 150, c: 5000, r: 50 }), { groups: [{ hunks: ['a'], files: ['a'] },
-    { hunks: ['b'], files: ['b'] }, { hunks: ['c'], files: ['r'] }], listed: [], clipped: ['c'] });
-  // A file whose hunks alone are over a request is clipped, and named.
-  assert.deepEqual(placeGroups({ changed: ['huge'], fill: [], hunkCost: () => 900, costOf: () => null, room: 800 }),
-    { groups: [], listed: [], clipped: ['huge'] });
-  assert.deepEqual([1, 2, 3].map((pass) => passOrder(4, pass)), [[0, 1, 2, 3], [3, 2, 1, 0], [0, 2, 1, 3]]);
+test('agentic code step: no placement of whole files and no checking-pass order are left: the agent reads the files itself', () => {
+  for (const gone of ['placeGroups', 'passOrder', 'namedUnderRoot', 'UNNAMED_ROW_WORDS'])
+    assert.equal(codeContext[gone], undefined, gone);
 });
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
@@ -187,19 +168,19 @@ test('code step: the dossier is built by code from the saved report — keyed, q
         'parse now returns') }],
     pivots: [{ abandoned: 'regex', adopted: 'split', receipts: [R('C1', 'commentary', 'parse now returns an empty')] }],
     failures: [{ eventId: 'X1-r', handling: 'passed-over', outcome: 'ran-failed' }],
-    findings: [{ id: 'f1', kind: 'edit_under_negative_requirement', breach: 'wrote', receipts: [R('I1', 'instruction',
+    findings: [{ id: 'f1', kind: 'edit_under_negative_requirement', status: 'DECIDE', breach: 'wrote',
+      receipts: [R('I1', 'instruction',
       'do not touch the README'), R('W1', 'action', 'src/parse.js')] }],
   };
-  const checks = new Map([['promises:0', { outcome: 'contradicted-by-code' }]]);
-  const items = codeDossier({ report, session, checks });
+  const items = codeDossier({ report, session });
   assert.deepEqual(items.map((i) => [i.key, i.kind, i.actor, i.move]), [
-    ['S1', 'ask', 'person', 'ask_short'], ['S2', 'ask', 'person', null],
+    ['S1', 'ask', 'person', 'ask_short'], ['S2', 'ask', 'person', 'ask_done'],
     ['S3', 'claim', 'agent', 'claim_unconfirmed'], ['S4', 'claim', 'agent', 'claim_confirmed'],
     ['S5', 'decision', 'agent', 'design_point'], ['S6', 'decision', 'agent', null], ['S7', 'decision', 'agent', 'not_acting'],
     ['S8', 'pivot', 'agent', 'design_point'], ['S9', 'failure', 'recorded', 'failure_passed_over'],
     ['S10', 'edit_against_instruction', 'person', 'edit_against_instruction']]);
   assert.ok(items.every((i) => CODE_DOSSIER_KINDS.includes(i.kind) && (i.move === null || CODE_DOSSIER_MOVES.includes(i.move))));
-  assert.deepEqual(items[2].codeCheck, { outcome: 'contradicted-by-code' }, 'step 1\'s check rides with its row');
+  assert.ok(items.every((i) => !Object.hasOwn(i, 'codeCheck')), 'step 1 is gone: no code check rides with a row');
   assert.deepEqual(items[4].paths, ['src/parse.js']);
   // A quote of another actor's words than the item's is shown with its actor (the review of the code step): the failure
   // is a recorded result, the command the agent ran is the agent's; the ask's shortfall is in the agent's words.
@@ -218,15 +199,37 @@ test('code step: the dossier is built by code from the saved report — keyed, q
   assert.deepEqual(commands, [{ path: 'src/parse.js', after: [{ ran: 'npm test', exit: 0 }] },
     { path: 'src/b.js', after: [] }, { path: 'never.js', after: null }]);
   const text = renderDossier(items, commands);
-  // A path the request may not name is left out of every item and of the commands (the review of the code step).
-  const unnamed = renderDossier(items, commands, { named: (path) => path !== 'src/parse.js' });
-  assert.ok(unnamed.split('\n').filter((line) => line.startsWith('{')).map((line) => JSON.parse(line))
-    .every((entry) => !JSON.stringify(entry.paths ?? []).includes('src/parse.js') && entry.path !== 'src/parse.js'));
-  assert.match(unnamed, /^\{"path":"src\/b\.js","commandsAfterLastEdit":"none","move":"never_ran"\}$/m);
-  assert.match(text, /^\{"key":"S1","kind":"ask","actor":"person","move":"ask_short","status":"partly-done"/m);
+  // D90: every path is named; nothing of an item or of the commands is left out.
+  assert.deepEqual(renderDossier(items, commands, { named: () => false }), text);
+  assert.match(text,
+    /^\{"key":"S1","kind":"ask","actor":"person","move":"ask_short","item":"ask_partly_done","status":"partly-done"/m);
+  // code-pass/10 (D96): an item the code review may triage names its report item kind, by its row's closed tokens
+  // (triage.js `itemKindOf`), never a tier; a done ask and a confirmed claim name none. (These decisions carry no derived
+  // column, so each reads as one where Sonah could not check whether you asked.)
+  assert.deepEqual(items.map((i) => i.itemKind), ['ask_partly_done', null, 'claim_not_checked', null,
+    'decision_whether_asked', 'decision_whether_asked', 'decision_not_acting', 'pivot', 'failure_passed_over',
+    'edit_against_instruction']);
+  assert.doesNotMatch(text, /"tier"|must_act|must_know|good_to_know/);
+  assert.match(text, /^\{"key":"S2","kind":"ask","actor":"person","move":"ask_done","status":"done"/m);
   assert.match(text, /^\{"path":"src\/b\.js","commandsAfterLastEdit":"none","move":"never_ran"\}$/m);
   assert.match(text, /^\{"path":"src\/parse\.js","commandsAfterLastEdit":\[\{"ran":"npm test","exit":0\}\]\}$/m);
-  assert.equal(renderDossier(codeDossier({ report, session, checks }), commands), text, 'the same report, the same bytes');
+  assert.equal(renderDossier(codeDossier({ report, session }), commands), text, 'the same report, the same bytes');
+  // The words each line shows, as values (what a question's quote may be copied from): the item's own word fields, every
+  // { actor, quote }'s quote and a list's members too; a flag, a null and Sonah's closed labels (a status, a column, an
+  // outcome) are no words. A decision with no
+  // stated quote shows only the review's words, which no session text holds.
+  assert.deepEqual(items[4].sources, []);
+  assert.deepEqual(dossierWords(items[4]), ['How to split', 'Commas']);
+  assert.deepEqual(dossierWords(items[6]), ['Tests', 'none', 'parse now returns']);
+  assert.deepEqual(dossierWords(items[7]), ['regex', 'split', 'parse now returns an empty']);
+  assert.deepEqual(dossierWords(items[8]), ['npm test', 'ok 1']);
+  assert.deepEqual(dossierWords(items[0]), [CODE_TEXT.ask, 'parse now returns an empty list for empty input.']);
+  const lines = text.split('\n');
+  for (const item of items) {
+    const line = lines.find((l) => l.startsWith(`{"key":"${item.key}",`));
+    for (const words of dossierWords(item)) assert.ok(line.includes(JSON.stringify(words)), `${item.key} shows ${words}`);
+  }
+  assert.deepEqual(dossierWords(null), []);
 });
 
 test('code step: every adaptation carries its upstream notice, and the notices file lists each source and licence', async () => {
@@ -244,6 +247,13 @@ test('code step: every adaptation carries its upstream notice, and the notices f
   for (const line of ['Copyright (c) 2026 Pullfrog, Inc.', 'Copyright (c) 2026 The PR Agent', 'Copyright (c) 2026 review-bench',
     '`packages/evidence/src/code-context.js`', '`packages/evidence/src/code-pass.js`', '330f0813b5fe0d1f54b794077c2d02aa85a1fb63'])
     assert.ok(notices.includes(line), line);
+  // The review agent's method (code-pass/7) is listed among the parts adapted from Pullfrog's Review mode.
+  const flat = notices.replace(/\s+/g, ' ');
+  for (const part of ['its review agent since `sonah.code-pass/7`', 'the review agent\'s method, from the Review mode',
+    'triage (the domain, the seams, the external contracts and the surfaces a change touches)',
+    'reading the callers and tests of what changed', 'the hunt for concerns with no line to anchor',
+    'stale references and docs checked against the code', 'who breaks on upgrade',
+    'tracing every finding yourself before writing it']) assert.ok(flat.includes(part), part);
 });
 
 // ---- the review of the code step (2026-10-14) -----------------------------------------------------------------------
@@ -378,15 +388,14 @@ test('review of the code step: the snapshot plan carries each edit\'s recorded p
   assert.deepEqual(codeSnapshotPlan(later(null))[0].edits.map((e) => e.placed), [null, null]);
 });
 
-test('review of the code step: the change names only paths under the working directory; the rest are counted', () => {
-  for (const path of ['src/a.js', '.env', 'a/b/c.js']) assert.equal(namedUnderRoot(path), true, path);
+test('review of the code step: the diff is the change under the working directory; the paths differing elsewhere are counted', () => {
+  for (const path of ['src/a.js', '.env', 'a/b/c.js', '.claude/settings.json']) assert.equal(underRoot(path), true, path);
   for (const path of ['/abs/a.js', '../up.js', 'a/../../b.js', '~/x', '$HOME/x', 'C:\\x.js', '', null])
-    assert.equal(namedUnderRoot(path), false, String(path));
+    assert.equal(underRoot(path), false, String(path));
   const { hunks } = parseHunks('@@ -1 +1 @@\n-a\n+A\n');
-  const text = renderChange([{ path: 'a.js', type: 'modified', hunks, shown: true }], { unnamed: 2, outside: 1 });
+  const text = renderChange([{ path: 'a.js', type: 'modified', hunks, shown: true }], { outside: 1 });
   const lines = text.split('\n');
-  assert.deepEqual(lines.slice(0, 4), ['## Files (1)', '- a.js → lines 7-13 · modified',
-    '- and 2 more differing paths outside the working directory or in a harness home: not named, no hunk shown',
-    '- and 1 more path differs from the start commit outside the working directory: not reviewed, not named']);
-  assert.equal(lines[6], 'diff --git a/a.js b/a.js', 'the ranges count the count lines too');
+  assert.deepEqual(lines.slice(0, 3), ['## Files (1)', '- a.js → lines 6-12 · modified',
+    '- and 1 more path differs from the start commit outside the working directory: not part of the change reviewed']);
+  assert.equal(lines[5], 'diff --git a/a.js b/a.js', 'the ranges count the count line too');
 });

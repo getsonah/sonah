@@ -143,24 +143,24 @@ test('touching UTF-8 TextRefs form one source; malformed refs fail closed even w
   assert.equal(verifyReceipt(broken, { eventId: 'C1', role: 'commentary', quote: ' safely.' }).ok, true);
 });
 
-test('synthetic redaction marks remain uncitable even in one ref; ordinary Unicode remains exact', () => {
+test('a mark-shaped string inside one ref is that ref\'s text; ordinary Unicode remains exact', () => {
+  // D90 (owner decision 2026-10-15): a Session reads a ref as the adapter cut it and never splits one again by what its
+  // text says. The adapter keeps an earlier redactor's mark out of every ref where the record declares that redactor's
+  // work (below); anywhere else the same characters are what the recording holds, and they are quotable. Only the
+  // recorder's own stub shape (`[…`) stays unquotable in any quote.
   const blob = 'Use “résumé 🙂” and ‹redacted:api-key› today.\n[… 1 line(s) dropped: key block …]';
   const event = { id: 'C1', kind: 'commentary', phase: 'working', sequence: 0,
     text: [ref('body', 0, blob.length, blob)] };
   const session = new Session({ sessionKey: 'inline-mask', blobs: { body: blob }, events: [event] });
   const receipt = (quote) => ({ eventId: 'C1', role: 'commentary', quote });
-  assert.deepEqual(session.textSpansOf(event), ['Use “résumé 🙂” and ', ' today.']);
+  assert.deepEqual(session.textSpanInfoOf(event), { spans: [blob], complete: true });
   assert.equal(verifyReceipt(session, receipt('“résumé 🙂”')).ok, true);
-  assert.equal(verifyReceipt(session, receipt('‹redacted:api-key›')).ok, false);
-  assert.equal(verifyReceipt(session, receipt('redacted:api-key')).ok, false);
-  assert.equal(verifyReceipt(session, receipt('and ‹redacted:api-key› today')).ok, false);
+  assert.equal(verifyReceipt(session, receipt('‹redacted:api-key›')).ok, true);
+  assert.equal(verifyReceipt(session, receipt('and ‹redacted:api-key› today')).ok, true);
   assert.equal(verifyReceipt(session, receipt('[… 1 line(s) dropped: key block …]')).ok, false);
-  assert.equal(verifyReceipt(session, receipt('line(s) dropped: key block')).ok, false);
-  assert.equal(repairReceipt(session, receipt('and ‹redacted:api-key› today')).ok, false);
   const { evidencePrompt, sourceMap } = buildNarrativePrompt({ session, window: planWindows(session)[0] });
-  assert.ok(!fenced(evidencePrompt).some((span) => span.includes('redacted:api-key')
-    || span.includes('line(s) dropped')));
-  assert.deepEqual(sourceMap.C1.map((source) => source.text), ['Use “résumé 🙂” and ', ' today.']);
+  assert.ok(fenced(evidencePrompt).some((span) => span.includes('and ‹redacted:api-key› today')));
+  assert.deepEqual(sourceMap.C1.map((source) => source.text), [blob]);
 });
 
 test('an adapted elided ask cannot ground a false finding from its joined head and tail', () => {
@@ -188,13 +188,17 @@ test('an adapted elided ask cannot ground a false finding from its joined head a
 });
 
 test('adapter splits inline redaction masks in visible commentary and written code', () => {
+  // A ledger an earlier Sonah's redactor wrote: its marks, and its own list of what it dropped (D90: the declaration
+  // that makes them its marks; d90-recorded-marks.test.js reads the same text with none).
   const session = sessionFromLedger({
     ask: [{ turn: 1, text: 'Keep the two surviving spans visible.' }],
     commentary: [{ turn: 1, beforeEvent: 0, text: 'Before ‹redacted:api-key› after.', redactedLines: 0 }],
     ledger: [{ turn: 1, seq: 0, kind: 'create', path: 'src/masked.js',
       after: { text: 'const before = 1; ‹redacted:api-key› const after = 2;', redactedLines: 0 },
       result: { seen: true, outcome: 'succeeded', provenance: 'native' } }],
-    sayings: [], marks: [], dropped: [], claim: { finalMessage: '' },
+    sayings: [], marks: [], claim: { finalMessage: '' },
+    dropped: [{ turn: 1, reason: 'redacted:secret-key-value', where: 'commentary' },
+      { turn: 1, reason: 'redacted:secret-key-value', where: 'after' }],
   }, { sessionKey: 'adapted-inline-mask' });
   const commentary = session.events.find((event) => event.kind === 'commentary');
   const invocation = session.events.find((event) => event.kind === 'invocation');

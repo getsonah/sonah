@@ -15,9 +15,8 @@ import { CHALLENGE_PROFILE, FORBIDDEN_EDIT_PROPOSITION, FORBIDDEN_EDIT_PROPOSITI
   forbiddenEditProposition } from '../src/challenge.js';
 import { SONAH_SESSION_REVIEW_AGENT, SESSION_REVIEW_AGENT_VERSION } from '../src/review-agent.js';
 import { SESSION_NARRATIVE_SCHEMA } from '../src/prompt.js';
-import { renderReview, FORBIDDEN_EDIT_WORDS } from '../src/review.js';
 import { renderSessionPage, PAGE_VERSION } from '../../render/session-page.js';
-import { renderSessionStory, STORY_VERSION, STORY_RECEIPT_LABELS } from '../../render/session-story.js';
+import { renderReportMarkdown, STORY_VERSION } from '../../render/session-story.js';
 
 const ASK = 'Add left-pad support to the formatter.';
 const RULE = 'Never add a runtime dependency.';
@@ -72,7 +71,11 @@ test('W1 B: the versions, the contract and the brief', () => {
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   // W2 moved both once more (story /21, page /26): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
   // D87 moved it once more (sonah.session-story/23, its /22 renumbered at the merge): a review with a code pass lists
@@ -85,7 +88,13 @@ test('W1 B: the versions, the contract and the brief', () => {
   // The judgment-first review moved it once more (sonah.session-story/28): one counting, the claims every reader lists.
   // The release review moved it once more (sonah.session-story/29): with the home folder as the repository, the footer
   // says only the session's files were read and counts the rest.
-  assert.equal(STORY_VERSION, 'sonah.session-story/29');
+  // The agentic code step's release item moved it once more (sonah.session-story/30): an ask's status beside what the
+  // code step tied to it, the session shown as loaded (the footer saying the story is generated from the recorded
+  // session), and the code step's new report.
+  // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // D97 moved it once more (sonah.session-story/32): the story is the report .md.
+  assert.equal(STORY_VERSION, 'sonah.session-story/32');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -97,7 +106,13 @@ test('W1 B: the versions, the contract and the brief', () => {
   // The judgment-first review moved it once more (sonah.session-page/33): one counting, folded groups by their count.
   // The release review moved it once more (sonah.session-page/34): with the home folder as the repository, the footer
   // says only the session's files were read and counts the rest.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/34');
+  // The agentic code step's release item moved it once more (sonah.session-page/35): an ask's status beside what the
+  // code step tied to it, the session shown as loaded (the footer saying the page is generated from the recorded
+  // session), and the code step's new report.
+  // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
+  // claim found false and no all-clear footer.
+  // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/37');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes
@@ -160,14 +175,14 @@ test('W1 B: an edit against the project file is checked on the file form, publis
     assert.deepEqual([...new Set(items.map((i) => i.key))], ['forbiddenEdits:0'], 'one item, asked in each pass');
     assert.ok(items.every((i) => i.candidate.proposition === FORBIDDEN_EDIT_PROPOSITION_FILE), 'on the file form');
     assert.equal(items[0].candidate.instruction.role, 'project-instructions');
-    // The PR comment, the page and the story show the file's words as the file's.
-    const markdown = renderReview(report);
-    assert.ok(markdown.includes(`| ${FORBIDDEN_EDIT_WORDS.file} | ${FORBIDDEN_EDIT_WORDS.wrote} |`));
+    // The page and the report .md show the file's words as the file's.
     const html = renderSessionPage(n.session, report, { sessionHash: 'a'.repeat(64) });
-    assert.ok(html.includes(STORY_RECEIPT_LABELS['project-instructions'].replace(/'/g, '&#39;')));
+    // D97: the page labels the file's words with the file's name.
+    assert.match(html, /The project instruction file [^<]+ says:<\/span> <q class="said">/);
     assert.ok(html.includes('Never add a runtime dependency.'));
-    const story = renderSessionStory(n.session, report);
-    assert.ok(story.includes(`**${STORY_RECEIPT_LABELS['project-instructions']}:** ${RULE}`));
+    // D97: and the report .md, under the file's name.
+    const story = renderReportMarkdown(n.session, report);
+    assert.match(story, new RegExp(`The project instruction file [^\\n]+ says: “${RULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}”`));
   });
 
 test('W1 B: the ledger publishes a file\'s rule only when the main agent was given it before the change', async (t) => {

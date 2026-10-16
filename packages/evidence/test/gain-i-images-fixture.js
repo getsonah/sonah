@@ -76,15 +76,15 @@ export function pastedRows(blocks = [imageBlock(png(64, 48))], { words = true } 
   ].map((r, i) => ({ ...r, uuid: `u-gain-i-${i + 1}` }));
 }
 
-/** Write `rows` as one recording, slice it, redact it as a session review loads it (`mask: false`, D84) unless `mask`,
- *  and adapt it. */
-export async function loadPasted(t, rows, { mask = false, sessionKey = 'gain-i' } = {}) {
+/** Write `rows` as one recording, slice it, bound and validate it as a session review loads it (redact; D90: nothing is
+ *  masked), and adapt it. `persisted` gives the ledger as an earlier Sonah may have written it (itself by default). */
+export async function loadPasted(t, rows, { sessionKey = 'gain-i', persisted = (ledger) => ledger } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'sonah-gain-i-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = join(dir, `${SESSION}.jsonl`);
   await writeFile(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   const raw = await sliceLineage([file], { cwd: '/repo' });
-  const ledger = redact(raw, { mask }).ledger;
+  const ledger = redact(persisted(raw)).ledger;
   return { raw, ledger, session: adapt(ledger, sessionKey) };
 }
 export { row, SESSION };

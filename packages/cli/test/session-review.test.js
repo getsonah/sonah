@@ -15,7 +15,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Session } from '../../evidence/src/session.js';
-import { renderReview } from '../../evidence/src/review.js';
 import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, runReview } from '../../evidence/src/run-review.js';
 import { RETRYABLE_JUDGE_CODES } from '../../evidence/src/ledger.js';
 import { ATTESTATION_STATES, NON_RETRYABLE_PROVIDER_CLASSES, PROVIDER_CLASSES, REVIEW_CANCELLED, attestableModel,
@@ -254,7 +253,6 @@ test('M33 a continuation replays finished windows with 0 live calls and reports 
   const other = await directory(t, 'uninterrupted');
   const whole = await review(other);
   assert.equal(projection(continued.report), projection(whole.report));
-  assert.equal(renderReview(continued.report), renderReview(whole.report));
   const third = [];
   const again = await review(dir, { judge: honestJudge({ calls: third }) });
   assert.equal(third.length, 0);
@@ -959,7 +957,6 @@ test('M33 F1 runReview takes a precomputed plan only when it is the plan it woul
   const planned = await runReview({ ...args, pr: null, judge: honestJudge(), plan });
   const built = await runReview({ ...args, pr: null, judge: honestJudge() });
   assert.equal(JSON.stringify(planned), JSON.stringify(built));
-  assert.equal(renderReview(planned), renderReview(built));
   // A plan built for other inputs — another session object, another scope — or not built by
   // planWindowRequests at all is refused before any call.
   const calls = [];

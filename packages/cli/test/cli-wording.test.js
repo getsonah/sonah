@@ -69,6 +69,16 @@ test('review --help lists every option it documents, within 80 columns, and no e
     '--stop-at-utilization', '--github', '--pr', '--post-comment'])
     assert.ok(help.split(/[\s,]+/).includes(option), `${option} is listed`);
   for (const line of help.split('\n')) assert.ok(line.length <= 80, `wider than 80 columns: ${line}`);
+  // D97: --format says what each writes (the Markdown report for your pull request, and with html the page beside it),
+  // and one line says how gh picks the pull request when you give no number (`gh pr comment --help`).
+  assert.match(help, /^ {2}--format md\|html {9}md \(the default\): the report for your pull request$/m);
+  assert.match(help, /^ {27}in Markdown\. html: the HTML page, and the Markdown$/m);
+  assert.match(help, /^ {27}report beside it \(needs --output\)$/m);
+  assert.match(help, /^With no PR number, gh pr comment --body-file FILE posts to your branch's PR\.$/m);
+  // --output: only --format html opens a page (the Markdown report alone opens nothing).
+  assert.match(help, new RegExp('^ {2}--output FILE {12}write new files, in a folder that exists, instead\\n {27}of '
+    + 'printing\\. With --format html, the page opens in\\n {27}your browser$', 'm'));
+  assert.doesNotMatch(help, /--edit-last|Markdown story/);
   // Every name is accepted, the unlisted experiments' too: a profile's name may key stored answers.
   for (const profile of REVIEW_SPEED_PROFILE_NAMES)
     assert.equal(parseSessionReviewArgs(['--profile', profile]).profile, profile);
@@ -150,24 +160,24 @@ test('a dry run says in plain words what it did and what a review would do', asy
   assert.equal(await runSessionReviewCommand([input.file, '--dry-run'], { ...input.options, ...out }), 0);
   const lines = out.chunks.stdout.trimEnd().split('\n');
   assert.equal(lines[0], `Recording: ${input.file} (claude).`);
-  assert.equal(lines[1], 'Dry run: nothing was sent to a model, written or posted.');
-  assert.match(lines[2], /^The session has \d+ events, to be reviewed in 1 window\.$/);
+  assert.equal(lines[1], 'Dry run: Sonah sent nothing to a model, and wrote or posted nothing.');
+  assert.match(lines[2], /^The session has \d+ events, and Sonah would review them in 1 window\.$/);
   assert.match(lines[3], /^A review should take roughly \d+-\d+ minutes \(less if answers are already stored\)\.$/);
   // Owner decision 2026-10-14: beside the estimate, whether the code step runs (on by default) and what it adds; the
-  // session read a.js, which is not in the repository now, so it has nothing to read and adds no call.
-  assert.equal(lines[4], 'Code step: on (the default). It reads the files the session changed or read, as they are now, '
-    + 'and sends them to the reviewer; it found no file it can read here, so it adds no call. Turn it off with '
-    + '--no-code-pass, or for every review with sonah config code-pass off.');
-  assert.match(lines[5], /^In the recording: 1 action; 1 human instruction; \d+ known gaps?\.$/);
+  // session only read a.js and changed nothing, so the agentic code step has no change to review and adds no call.
+  assert.equal(lines[4], 'Code review: on (the default). It reviews the change with read-only access to the whole '
+    + 'repository. It found no change to review here, so it adds no call. Turn it off with --no-code-pass, or for every '
+    + 'review with sonah config code-pass off.');
+  assert.match(lines[5], /^In the recording: 1 action · 1 message of yours · \d+ known gaps?\.$/);
   assert.doesNotMatch(out.chunks.stdout, /windows;|first requests|runs to the end|No findings were evaluated/);
   assert.doesNotMatch(out.chunks.stdout, INTERNAL);
   assert.equal(out.chunks.stderr, '');
   await assert.rejects(stat(input.env.SONAH_HOME), { code: 'ENOENT' });
-  assert.deepEqual(dryRunLines({ events: 1, windows: 1, over: 0 }), ['Dry run: nothing was sent to a model, written or '
-    + 'posted.', 'The session has 1 event, to be reviewed in 1 window.']);
-  assert.deepEqual(dryRunLines({ events: 30, windows: 3, over: 2 }).slice(1), ['The session has 30 events, to be '
-    + 'reviewed in 3 windows.', '2 windows are too large for one request: a review would not send them and would list '
-    + 'them as not covered.']);
+  assert.deepEqual(dryRunLines({ events: 1, windows: 1, over: 0 }), ['Dry run: Sonah sent nothing to a model, and wrote '
+    + 'or posted nothing.', 'The session has 1 event, and Sonah would review it in 1 window.']);
+  assert.deepEqual(dryRunLines({ events: 30, windows: 3, over: 2 }).slice(1), ['The session has 30 events, and Sonah '
+    + 'would review them in 3 windows.', '2 windows are too large for one call. A review would not send them and would '
+    + 'list them as not covered.']);
 });
 
 test('the top-level help, sonah help, sonah slice and the debug switch use the product\'s own name', async () => {

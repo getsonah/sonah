@@ -14,9 +14,9 @@ import { codeModelOf, parseSessionReviewArgs, replayLines, runSessionReviewComma
 import { CODE_STEP_PART, createReviewBudget } from '../src/review-budget.js';
 import { writeCodePass } from '../src/settings.js';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
-import { codeSession, codeJudge, contradictClaim, findEmptyInput, repoWith, sha256 } from './code-pass-fixture.js';
+import { codeSession, codeJudge, gitRepoWith, repoWith, sha256 } from './code-pass-fixture.js';
 
-const CODE_LABEL = /^(?:code-check|code-pass|challenge:code-check|challenge:code-finding)(?::|$)/;
+const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
 const SESSION_MODEL = SESSION_REVIEW_CLAUDE_CLI_MODEL;
 const OPUS = 'claude-opus-5-5[1m]';
 const OTHER = 'claude-opus-5-1[1m]';
@@ -24,8 +24,10 @@ const strip = (report) => {
   const { codePass: _pass, ...rest } = report;
   return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
 };
+/** The session's requests, as their bytes, sorted: one lane does not fix the order of a challenge's passes, which start
+ *  together and each read the answer store first, so under load p3 can be sent before p2 (lean-default.test.js). */
 const sessionRequests = (calls) => calls.filter(({ request }) => !CODE_LABEL.test(request.label))
-  .map(({ request }) => JSON.stringify([request.label, request.system, request.prompt]));
+  .map(({ request }) => JSON.stringify([request.label, request.system, request.prompt])).sort();
 const codeRequests = (calls) => calls.filter(({ request }) => CODE_LABEL.test(request.label));
 
 /** The context window the fake transport reports for a requested model: its selector's, else the CLI's default. */
@@ -42,7 +44,7 @@ async function review(t, { root, state, argv = [], env = {}, served = () => ({})
   const home = join(dir, 'home'), file = join(dir, 'recording.jsonl');
   await mkdir(home); await writeFile(file, '{}\n');
   const output = join(dir, 'story.md');
-  const judge = codeJudge({ check: contradictClaim, pass: findEmptyInput });
+  const judge = codeJudge();
   let out = '', err = '';
   const judges = [], calls = [];
   const code = await runSessionReviewCommand([file, '--concurrency', '1', '--state-dir', state, '--format', 'md',
@@ -102,7 +104,7 @@ test('--code-model: parsed once, whenever the code step may run, listed, and eve
     { code: 'usage', problem: '--code-model is given twice' });
   assert.throws(() => parseSessionReviewArgs(['--code-pass', '--code-model']), { code: 'usage', problem: '--code-model needs a value' });
   assert.throws(() => parseSessionReviewArgs(['--code-pass', '--code-model', '--dry-run']), { code: 'usage' });
-  assert.match(sessionReviewUsage, /^ {2}--code-model ID {10}the reviewer's model for the code step only, when$/m);
+  assert.match(sessionReviewUsage, /^ {2}--code-model ID {10}the reviewer's model for the code review only, when$/m);
   assert.ok(sessionReviewUsage.split('\n').every((line) => line.length <= 80));
   // The flag, else SONAH_CODE_MODEL, whenever the code step runs, whatever turned it on; neither when it does not run.
   for (const source of ['flag', 'config', 'default']) {
@@ -124,10 +126,8 @@ test('--code-model: every code-step request reaches the code model\'s judge, eve
   assert.ok(session.length > 0 && code.length > 0);
   assert.deepEqual([...new Set(session.map(({ model }) => model))], [SESSION_MODEL]);
   assert.deepEqual([...new Set(code.map(({ model }) => model))], [OPUS]);
-  // Step 1, the four lenses and the checking passes all went to it.
-  const labels = new Set(code.map(({ request }) => request.label.split(':').slice(0, 2).join(':')));
-  for (const label of ['code-check', 'code-pass:behaviour', 'code-pass:tests', 'code-pass:contracts', 'code-pass:ask',
-    'challenge:code-check', 'challenge:code-finding']) assert.ok(labels.has(label), label);
+  // The review agent and the checking agent of its finding both went to it.
+  assert.deepEqual(code.map(({ request }) => request.label), ['code-review:agent', 'code-verify:F1']);
   // The report records the code step's model; the usage line names it, with its share of the calls.
   assert.equal(run.report.codePass.model, OPUS);
   const usage = new RegExp(`^Review usage: ${run.calls.length} calls; .* Code step on ${OPUS.replace(/[[\]]/g, '\\$&')} `
@@ -170,7 +170,7 @@ test('--code-model: the session\'s requests are byte-identical, and an existing 
   const on = await review(t, { root, state: await stateDir(t), argv: ['--code-pass', '--code-model', OPUS] });
   assert.equal(off.code, 0); assert.equal(on.code, 0);
   assert.ok(sessionRequests(off.calls).length > 0);
-  assert.deepEqual(sessionRequests(on.calls), sessionRequests(off.calls), 'the session requests, byte for byte, in order');
+  assert.deepEqual(sessionRequests(on.calls), sessionRequests(off.calls), 'the session requests, byte for byte');
   // The code step asks the same bytes too; only the model it asks differs.
   const bytes = (calls) => codeRequests(calls).map(({ request }) => JSON.stringify([request.label, request.system,
     request.prompt]));
@@ -201,20 +201,21 @@ test('--code-model: the session\'s requests are byte-identical, and an existing 
   assert.equal(dry.code, 0);
   assert.deepEqual(dry.calls, []);
   assert.deepEqual(dry.judges, [], 'a dry run makes no judge');
-  assert.match(dry.out, /^Stored session answers: (\d+) of \1 requests answered from the store \(no call\)\.$/m);
-  assert.match(dry.out, /^Code step: it would first send 5 requests \(code-check \d+ KB, code-pass:behaviour \d+ KB, code-pass:tests \d+ KB, code-pass:contracts \d+ KB, code-pass:ask \d+ KB\) to claude-opus-5-5\[1m\], then three checking passes for each answer and finding they give\.$/m);
+  assert.match(dry.out, /^Stored session answers: the store answers (\d+) of \1 session calls, with no new call\.$/m);
+  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\) to claude-opus-5-5\[1m\]\. Then it would send one check for each finding and one for its questions\.$/m);
   assert.deepEqual(await listing(dryState), before2, 'the dry run wrote nothing');
   // A code model that could not be attested: the dry run says the settings could not be read, and sends nothing.
   const refused = await review(t, { root, state: dryState, argv: ['--dry-run', '--code-pass', '--code-model', 'opus'] });
-  assert.match(refused.out, /^Stored session answers: not counted; the reviewer's settings could not be read\./m);
+  assert.match(refused.out, /^Stored session answers: not counted, because Sonah could not read the settings of the reviewer\./m);
   assert.deepEqual(refused.calls, []);
 });
 
-test('--code-model default: no flag and no SONAH_CODE_MODEL is the session\'s model and judge, as before; the variable sets it', async (t) => {
+test('--code-model default: no flag and no SONAH_CODE_MODEL is the session\'s model, on a judge of its own; the variable sets it', async (t) => {
   const root = await repoWith(t);
   const plain = await review(t, { root, state: await stateDir(t), argv: ['--code-pass'] });
   assert.equal(plain.code, 0);
-  assert.deepEqual(plain.judges, [SESSION_MODEL], 'one judge, the session\'s');
+  // The agentic code step always gets its own agent-capable judge, here on the session's model.
+  assert.deepEqual(plain.judges, [SESSION_MODEL, SESSION_MODEL], 'the session\'s judge, then the code step\'s');
   assert.ok(codeRequests(plain.calls).length > 0 && plain.calls.every(({ model }) => model === SESSION_MODEL));
   assert.equal(Object.hasOwn(plain.report.codePass, 'model'), false, 'the report as before');
   assert.doesNotMatch(plain.out, /Code step on/);
@@ -234,15 +235,17 @@ test('--code-model default: no flag and no SONAH_CODE_MODEL is the session\'s mo
   assert.equal(noPass.code, 0);
   assert.deepEqual(noPass.judges, [SESSION_MODEL]);
   assert.deepEqual(codeRequests(noPass.calls), []);
-  assert.doesNotMatch(noPass.out, /Code step on/);
+  assert.doesNotMatch(noPass.out, /Code review: on/);
   // The dry run's code-step line names no model without one.
-  const lines = replayLines({ answers: { calls: 0, reused: 3 }, codeRequests: [{ label: 'code-check', bytes: 2048 }] });
-  assert.equal(lines[1], 'Code step: it would first send 1 request (code-check 2 KB), then three checking passes for '
-    + 'each answer and finding they give.');
+  const lines = replayLines({ answers: { calls: 0, reused: 3 }, codeRequests: [{ label: 'code-review:agent', bytes: 2048 }] });
+  assert.equal(lines[1], 'Code review: it would first send 1 call (code-review:agent 2 KB). Then it would send one check '
+    + 'for each finding and one for its questions.');
 });
 
 test('--code-model: a stored code-step answer is never replayed for another model, and is for the same one', async (t) => {
-  const root = await repoWith(t);
+  // A git repository: its state keys the code step's stored answers, so the replay below holds once the transport
+  // stores an agent's answer only with a known state.
+  const root = await gitRepoWith(t);
   const state = await stateDir(t);
   const first = await review(t, { root, state, argv: ['--code-pass', '--code-model', OPUS] });
   assert.equal(first.code, 0);
@@ -254,13 +257,13 @@ test('--code-model: a stored code-step answer is never replayed for another mode
     assert.equal(other.code, 0);
     assert.deepEqual(sessionRequests(other.calls), [], 'the session part makes no call');
     assert.equal(codeRequests(other.calls).length, asked, argv.join(' '));
-    assert.match(other.out, new RegExp(`^Code pass answers: 0 of ${asked} reused \\(no call\\)\\.$`, 'm'));
+    assert.match(other.out, new RegExp(`^Code review answers: 0 of ${asked} reused \\(no call\\)\\.$`, 'm'));
   }
   // The first model again: every answer it gave is reused, and nothing at all is asked.
   const again = await review(t, { root, state, argv: ['--code-pass', '--code-model', OPUS] });
   assert.equal(again.code, 0);
   assert.deepEqual(again.calls, []);
-  assert.match(again.out, new RegExp(`^Code pass answers: ${asked} of ${asked} reused \\(no call\\)\\.$`, 'm'));
+  assert.match(again.out, new RegExp(`^Code review answers: ${asked} of ${asked} reused \\(no call\\)\\.$`, 'm'));
   assert.equal(again.report.codePass.model, OPUS);
 });
 
@@ -300,7 +303,7 @@ test('--code-model applies whenever the code step runs: by default, by the setti
   for (const [argv, env] of [[['--code-model', OPUS], {}], [[], { SONAH_CODE_MODEL: OPUS }]]) {
     const run = await review(t, { root, state: await stateDir(t), argv, env });
     assert.equal(run.code, 0, run.err);
-    assert.match(run.out, /^Code step: on \(the default\)\./m);
+    assert.match(run.out, /^Code review: on \(the default\)\./m);
     assert.deepEqual(run.judges, [SESSION_MODEL, OPUS]);
     assert.ok(codeRequests(run.calls).length > 0);
     assert.deepEqual([...new Set(codeRequests(run.calls).map(({ model }) => model))], [OPUS]);
@@ -325,7 +328,7 @@ test('--code-model applies whenever the code step runs: by default, by the setti
   for (const [argv, env] of [[['--code-model', OPUS], {}], [[], { SONAH_CODE_MODEL: 'opus' }]]) {
     const run = await review(t, { root, state: await stateDir(t), argv, env: { SONAH_HOME: off, ...env } });
     assert.equal(run.code, 0, run.err);
-    assert.match(run.out, /^Code step: off \(your setting, sonah config\)\./m);
+    assert.match(run.out, /^Code review: off \(your setting, sonah config\)\./m);
     assert.deepEqual(run.judges, [SESSION_MODEL]);
     assert.deepEqual(codeRequests(run.calls), []);
     assert.doesNotMatch(run.out, /Code step on/);

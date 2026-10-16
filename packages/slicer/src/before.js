@@ -8,8 +8,8 @@ import { posix } from 'node:path';
 import { READ_LINE_NUMBER, isNumberedRead, readText } from '../../redact/index.js';
 
 // D68 (E) (owner decision 2026-10-07; C-02 "M36 what the agent produced is kept whole"): the slicer keeps every body
-// WHOLE — a written body, each side of an Edit, an Edit's `originalFile`, a Read's text — and redaction scrubs it whole
-// and cuts nothing. The 40,000-character transient memory bound (`RETAIN_CAP`, `retainHead`, `retainEdit`) and the
+// WHOLE — a written body, each side of an Edit, an Edit's `originalFile`, a Read's text — and nothing cuts it (D90: nor
+// masks it). The 40,000-character transient memory bound (`RETAIN_CAP`, `retainHead`, `retainEdit`) and the
 // review's 20,000 cap it served (`BEFORE_CAP`, redaction's `BODY_CAP`) are deleted: the window budget is the only bound.
 
 /** Claude Code Read results carry "     12\t" prefixes; other adapters emit plain cat output.
@@ -27,69 +27,13 @@ export function unwrapReadResult(text) {
   return text;
 }
 
-/*  M33 R repair 3: the rule — what a line's number is, and when a text is numbered — is redaction's
- *  (redact/index.js `READ_LINE_NUMBER`, `isNumberedRead`), so the two read a numbered text alike: redaction scrubs a
- *  numbered output de-numbered by exactly this rule. */
+/*  M33 R repair 3: the rule — what a line's number is, and when a text is numbered — lives in redact/index.js
+ *  (`READ_LINE_NUMBER`, `isNumberedRead`), where redaction once read a numbered output de-numbered by exactly this rule
+ *  (D90: it masks nothing now; the rule is the slicer's alone). */
 export function stripLineNumbers(text) {
   const t = readText(text);
   if (!isNumberedRead(t)) return t;
   return t.split('\n').map((l) => l.replace(READ_LINE_NUMBER, '')).join('\n');
-}
-
-/**
- * M33 R repair 2. Redaction judges a continued line as ONE logical line: it joins physical lines across a line
- * continuation — a `\`, the line break right after it and all the whitespace after that (redact/index.js
- * `CONTINUATION`) — so a token split by one is whole to it. A cut must not fall inside that join. These say where the
- * logical line that holds a character starts and ends.
- *
- * `continuationBefore(text, i)`: the index of the `\` of the continuation whose line break and whitespace run reach
- * up to position `i` (the whitespace just before `i`, or at it), or -1 when there is none.
- *
- * M33 R repair 3: the line break is LF or CRLF, as redaction's `CONTINUATION` (`\\\r?\n\s*`) reads it: a `\` at the
- * end of a line of a CRLF text continues it too. A carriage return alone is not a line break.
- * M33 R repair 5: an LF after any run of CR (`CONTINUATION` is `\\\r*\n\s*`): a CRLF text captured through a
- * pseudo-terminal ends its lines `\r\r\n`. A run of CR with no LF after it is still not a line break.
- */
-export function continuationBefore(text, i) {
-  let q = Math.min(Math.max(0, i), text.length);
-  while (q > 0 && /\s/.test(text[q - 1])) q--;
-  if (q > 0 && text[q - 1] === '\\' && lineBreakAt(text, q) && q <= i) return q - 1;
-  return -1;
-}
-
-/** The length of the line break at `q` — 1 for LF, 2 for CRLF, one more for each further CR before the LF — or 0 when
- *  none starts there. */
-function lineBreakAt(text, q) {
-  let k = q;
-  while (k < text.length && text[k] === '\r') k++;
-  return text[k] === '\n' ? k - q + 1 : 0;
-}
-
-/** Where the logical line holding position `i` starts: the start of its first physical line. */
-export function logicalLineStart(text, i) {
-  let start = text.lastIndexOf('\n', Math.min(i, text.length) - 1) + 1;
-  for (let at = continuationBefore(text, start); at >= 0; at = continuationBefore(text, start))
-    start = text.lastIndexOf('\n', at - 1) + 1;
-  return start;
-}
-
-/** Where the logical line whose physical line ends at the line break `end` ends: `end`, or the line break that ends
- *  its last continued physical line, or -1 when it runs to the end of `text`. A physical line is continued when it
- *  ends in a `\`, before its LF or its CRLF (M33 R repair 3), or any run of CR and its LF (M33 R repair 5). */
-export function logicalLineEnd(text, end) {
-  const continued = (at) => {
-    let k = at;
-    while (k > 0 && text[k - 1] === '\r') k--;
-    return k > 0 && text[k - 1] === '\\';
-  };
-  while (end > 0 && continued(end)) {
-    let j = end;
-    while (j < text.length && /\s/.test(text[j])) j++;
-    if (j >= text.length) return -1;
-    end = text.indexOf('\n', j);
-    if (end < 0) return -1;
-  }
-  return end;
 }
 
 /** The recorder's separator between an Edit's segments — `ARG_SEP`, which events.js joins them
@@ -102,7 +46,9 @@ export const EDIT_SEPARATOR = '\n⟪→⟫\n';
  *  wrote (F83). */
 export const editText = (written, replaced) => [...written, ...replaced].join(EDIT_SEPARATOR);
 
-/** Paths whose content is a credential by construction: never shown, declared as withheld. */
+/** Credential-shaped paths (D68 R). D90 (owner decision 2026-10-15): the slicer withholds nothing for them, and the
+ *  Codex change join no longer reads them (codex.js `safeChangePath`); the rule is kept for the code step's reader
+ *  (cli/src/code-snapshot.js `withheldFileReason`) until it leaves it too. */
 export const CREDENTIAL_PATH = /(^|\/)(\.env(\..*)?|secrets?\.(ya?ml|json|toml)|credentials(\.json)?|kubeconfig|\.npmrc|\.pypirc|\.netrc|\.htpasswd|id_(rsa|ed25519|ecdsa)(\.pub)?)$|\.(pem|key|p12|pfx|jks|kdbx)$/i;
 /**
  * `CREDENTIAL_PATH` on a recorded path, in time linear in its length (M36 review). The pattern's `.*` stops at a line
@@ -148,7 +94,7 @@ const HOME_FOLDERS = Object.freeze(['.claude', '.codex']);
  * and the backups it writes beside it, `~/.claude.json.backup` and `~/.claude.json.backup.<time>` (`HOME_FILE_BACKUP`
  * after the name). Codex keeps all its state in its home folder (`CODEX_HOME`, by default `~/.codex`), so it adds none.
  * Each is a harness home path wherever the home folders are one: every rule below that reads the home folders reads
- * these too (`inHomeFolder`, the fail-closed `anyHomeName`, `namesHomeFolder`), and so does the code step's reader
+ * these too (`inHomeFolder`, the fail-closed `anyHomeName`), and so does the code step's reader
  * (cli/src/code-snapshot.js), through `harnessHomePath`.
  */
 const HOME_FILES = Object.freeze(['.claude.json']);
@@ -232,18 +178,10 @@ function placed(path, place) {
   return { p, home, cwd, absolute };
 }
 
-/** `path` as a command run in `dir` names it: an absolute or home-relative path as it is, a relative one joined to `dir`
- *  (when `dir` is absolute). */
-export function resolvedFrom(path, dir) {
-  if (typeof path !== 'string' || !path) return path;
-  const p = slashed(path);
-  if (isAbsolute(p) || HOME_RELATIVE.test(p) || typeof dir !== 'string' || !isAbsolute(slashed(dir))) return path;
-  return posix.join(slashed(dir), p);
-}
-
 /**
- * Is `path` in a harness home folder of the recording's user, for WITHHOLDING (an output, a prior state, recorded hunks)?
- * A home-relative path is read from the home on. Otherwise only a path with a `.claude` or `.codex` directory outside a
+ * Is `path` in a harness home folder of the recording's user? D90 (owner decision 2026-10-15): the slicer withholds
+ * nothing by it any more (D69 b withheld an output, a prior state and recorded hunks); the code step's reader
+ * (cli/src/code-snapshot.js) reads it. A home-relative path is read from the home on. Otherwise only a path with a `.claude` or `.codex` directory outside a
  * worktree, or (the release review of the code step) a harness home file (`isHomeFile`: `.claude.json` and its
  * backups), can be: held when it lies outside the recorder's working directory (`place.cwd`) or no absolute cwd places
  * it (D69 review F5: never the project's own); inside the cwd, held when it lies in the known home's folders or is one of
@@ -257,52 +195,6 @@ export function harnessHomePath(path, place = {}) {
   if (!anyHomeName(absolute ?? p)) return false;
   if (absolute === null || cwd === null || !within(absolute, cwd)) return true;
   return home === null || (absolute.startsWith(`${home}/`) && inHomeFolder(absolute.slice(home.length + 1)));
-}
-
-/** POSIX's portable filename character set (POSIX.1-2017, 3.282): a path name continues only with one of these. */
-const PORTABLE = new Set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-');
-/** A harness home folder's worktrees folder as a text names it after the folder: `/worktrees`. */
-const WORKTREES_NAMED = `/${HARNESS_WORKTREES}`;
-/**
- * D69 review (finding F3): does a recorded free text NAME a harness home folder literally — the known home's own spelling
- * (`<home>/.claude`, `<home>/.codex`) or the shell's home-relative one (`~/`, `$HOME/`, `${HOME}/` before `.claude` or
- * `.codex`), as a whole path name: no portable filename character (nor a `/`, for the home's spelling) continues a name
- * before it, none continues the folder's name after it (`~/.claude-backup` is no harness folder), and no `/worktrees`
- * follows it. With the home unknown, any `/.claude` or `/.codex` path name (fails closed, as `harnessHomePath`). The
- * release review of the code step: and a harness home file (`HOME_FILES`, or a backup of one) named the same way. A string
- * search for structural names only — the home read from where the recording lies and the harnesses' documented folders —
- * never a word list: what decides is whether the folder's path is literally there, however the text around it is cut.
- */
-export function namesHomeFolder(text, place = {}) {
-  if (typeof text !== 'string' || !text) return false;
-  const home = typeof place?.home === 'string' && isAbsolute(place.home) ? slashed(place.home).replace(/\/+$/, '') : null;
-  const t = slashed(text);
-  const prefixes = home !== null ? [home, '~', '$HOME', '${HOME}'] : ['~', '$HOME', '${HOME}', ''];
-  for (const prefix of prefixes) for (const folder of HOME_FOLDERS) {
-    const form = `${prefix}/${folder}`;
-    for (let at = t.indexOf(form); at >= 0; at = t.indexOf(form, at + 1)) {
-      const before = at === 0 ? '' : t[at - 1];
-      if (prefix !== '' && (PORTABLE.has(before) || before === '/')) continue;
-      const next = t[at + form.length];
-      if (next !== undefined && next !== '/' && PORTABLE.has(next)) continue;
-      const rest = t.slice(at + form.length, at + form.length + WORKTREES_NAMED.length + 1);
-      const after = rest[WORKTREES_NAMED.length];
-      if (rest.startsWith(WORKTREES_NAMED) && (after === undefined || after === '/' || !PORTABLE.has(after))) continue;
-      return true;
-    }
-  }
-  // The release review of the code step: a harness home file (`HOME_FILES`) named the same way, as a whole name — no
-  // portable filename character continues it, unless what continues it is a backup's (`HOME_FILE_BACKUP`).
-  for (const prefix of prefixes) for (const file of HOME_FILES) {
-    const form = `${prefix}/${file}`;
-    for (let at = t.indexOf(form); at >= 0; at = t.indexOf(form, at + 1)) {
-      const before = at === 0 ? '' : t[at - 1];
-      if (prefix !== '' && (PORTABLE.has(before) || before === '/')) continue;
-      const next = t[at + form.length];
-      if (next === undefined || !PORTABLE.has(next) || t.startsWith(HOME_FILE_BACKUP, at + form.length)) return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -320,23 +212,15 @@ export function homeFolderPath(path, place = {}) {
     && inHomeFolder(absolute.slice(home.length + 1));
 }
 /**
- * D68 (R), D69 (b): why the content of the file at `path` is withheld wherever it would reach the ledger — an observation
- * of it, its prior state, a change's recorded hunks of it — or null: a closed member (redact
- * `RECORDED_FACTS.hunksWithheld`), `credential_path` (`CREDENTIAL_PATH`) or `harness_home` (`harnessHomePath`). Structure
- * only: the path, never the file.
+ * D68 (R), D69 (b): why the content of the file at `path` was withheld — a closed member (redact
+ * `RECORDED_FACTS.hunksWithheld`), `credential_path` (`CREDENTIAL_PATH`) or `harness_home` (`harnessHomePath`) — or null.
+ * Structure only: the path, never the file. D90 (owner decision 2026-10-15): the slicer withholds nothing by it any
+ * more (an observation, a prior state, a change's recorded hunks are all carried); the code step's reader
+ * (cli/src/code-snapshot.js) still reads it.
  */
 export const withheldFileReason = (path, place = {}) => (typeof path !== 'string' || !path ? null
   : credentialPath(path) || credentialPath(path.replaceAll('\\', '/')) ? 'credential_path'
     : harnessHomePath(path, place) ? 'harness_home' : null);
-
-/**
- * The reasons a prior state is withheld (`before.withheld`), a closed list (evidence/adapters/sonah-ledger.js
- * `PRIOR_WITHHELD_REASONS` re-declares it with M36's `harness files`): a credential-shaped path, a harness home folder.
- * D69 review (finding F6): `looksUnreadable` is deleted — it guessed from a text's first characters (`{"type"`) or one
- * line over 2,000 characters that a prior state was a sidecar or unusable, a rule no recorder documents. A ledger an earlier slicer wrote may still
- * say `unreadable edit record` or `unreadable read result`: no prior state, and no `withheld` refusal for it.
- */
-export const PRIOR_WITHHELD = Object.freeze({ credential: 'credential-shaped path', harnessHome: 'harness home' });
 
 /** A whole-file body the record kept: a `Write`'s content, never an Edit's own fragment
  *  (`_editParts` marks the joined edit text, which is a patch, not a file state).
@@ -363,14 +247,16 @@ const wholeFileBody = (e) => {
  *              to that path, when that is the most recent observation of it.
  * A path with an update-typed write and neither an original nor a read gets nothing.
  *   before = { text, source, turn, seq, partial, window?, truncated, lines, unknownPrior? }
- *          | { withheld: reason }
+ * D90 (owner decision 2026-10-15): no prior state is withheld for its path (D68 R and D69 b withheld a credential-shaped
+ * path's and a harness home folder's: `{ withheld: reason }`, which a ledger an earlier slicer wrote may still carry and
+ * the adapter reads, sonah-ledger.js `PRIOR_WITHHELD_REASONS`).
  * M36 phase 2 review (owner decision D68 H, critique c1): `turn` and `seq` name the event whose record holds the state —
  * the write itself for an `original` (the recorder kept it with that call), the Read for a `read`, the write for a
  * `write` — so a window labels the state by the event that recorded it. `window` is the Read's typed line window
  * (`file.startLine`, `numLines`, `totalLines`) when it is less than the file; `partial` says the read was part of the
  * file: by its typed window where the recorder typed one, else by an offset or a limit it asked for.
  * D68 (E): `text` is the source WHOLE (`truncated` is always false: only a persisted ledger an earlier Sonah cut says
- * true). Redaction scrubs it whole and cuts nothing.
+ * true). Nothing cuts it (D90: nor masks it).
  *
  * The FIRST-WRITE rule is deliberate and stays: a later write of a path has no observed prior
  * state, and re-attaching the file's first version there would assert a state the record never
@@ -379,7 +265,7 @@ const wholeFileBody = (e) => {
  * reconstructed anywhere: with no source, there is no `before`. The adapter declares which rule
  * produced a change's before side (`priorState`).
  */
-export function attachBefore(events, place = {}) {
+export function attachBefore(events) {
   const targets = [];             // [path, eventIndex] — a path's first write, and every delete
   const firstWrite = new Set();
   events.forEach((e, i) => {
@@ -392,10 +278,6 @@ export function attachBefore(events, place = {}) {
   });
   for (const [path, wi] of targets) {
     const w = events[wi];
-    if (credentialPath(path)) { w.before = { withheld: PRIOR_WITHHELD.credential }; continue; }
-    // D69 (b): a harness home folder's content is withheld as its observations are (`place`: the recording's home and the
-    // recorder's cwd, which every path here is spelled by; an external path never gets here).
-    if (harnessHomePath(path, place)) { w.before = { withheld: PRIOR_WITHHELD.harnessHome }; continue; }
     // The most recent observation of this path before the target, scanning backwards: for a
     // write that is its latest read; for a delete, its latest read OR whole-file write,
     // whichever the record saw last.

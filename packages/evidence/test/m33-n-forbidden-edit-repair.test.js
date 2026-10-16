@@ -29,7 +29,6 @@ import { Session } from '../src/session.js';
 import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
 import * as challenge from '../src/challenge.js';
-import * as review from '../src/review.js';
 import * as context from '../../slicer/src/harness-context.js';
 import { ownReceipt } from '../../cli/test/m33-fast-profile-fixture.js';
 import * as R from './m33-n-forbidden-edit-rows.js';
@@ -348,7 +347,6 @@ test('M33 N repair 3: a later action of the turn whose effect on files cannot be
       assert.deepEqual(statuses(report), [['DECIDE', null]], `${shape}, ${profile}`);
       assert.equal(Object.hasOwn(findings(report)[0], 'revertedBy'), false, `${shape}, ${profile}`);
       assert.equal(report.counts.forbiddenEdits.reverted, 0, `${shape}, ${profile}`);
-      assert.ok(!review.renderReview(report).includes(review.FORBIDDEN_EDIT_WORDS.reverted), `${shape}, ${profile}`);
       const unsettled = await reviewOf(session, [edit(session)], { profile,
         verdict: (item) => (item.type === TYPE ? 'uncertain' : 'not-refuted') });
       assert.equal(unsettled.sessionStatus, 'NO_FINDINGS', `${shape}, ${profile}: never CLEAN`);

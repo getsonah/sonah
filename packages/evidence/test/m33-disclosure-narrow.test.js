@@ -33,9 +33,10 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   D84_OUTPUT_READER_VERSIONS, FIX_COLUMN_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, W1_READER_VERSIONS,
   W2_READER_VERSIONS, W4_READER_VERSIONS, CODE_PASS_VERSIONS, CODE_PASS_READER_VERSIONS, W4_REVERT_READER_VERSIONS,
   JUDGMENT_FIRST_READER_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS,
-  CODE_STEP_THIRD_REVIEW_VERSIONS, CODE_STEP_READER_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
-  JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS }
+  CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CODE_STEP_READER_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
+  JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
+  CLEANUP_READER_VERSIONS, REPORT_MD_READER_VERSIONS,
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -107,7 +108,13 @@ test('Disclosure narrowed: the proposition and the note ask whether the agent sa
   // check's checker sees what its row states again.
   assert.equal(CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.before, CODE_STEP_REREVIEW_VERSIONS.challenge.after);
 
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // The re-ask of a void vote moved it once more (VOID_VOTE_REASK_VERSIONS: challenge): a vote a reply cast that could
+  // not be counted is asked again once, naming its cause.
+  assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
+  // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
+  // stands again, as before /43.
+  assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
   assert.equal(challenge.DISCLOSURE_PROPOSITION, DISCLOSURE_NARROW.texts.proposition[1]);
   assert.equal(challenge.DISCLOSURE_NOTE, DISCLOSURE_NARROW.texts.note[1]);
   assert.ok(challenge.DISCLOSURE_NOTE.includes('did that statement tell the human that the agent went against the '
@@ -234,7 +241,6 @@ test('Disclosure narrowed, session route: the breach reported as a strength, ref
 test('D64 wording: both proposers ask for the statement that the agent went against the instruction; readers say so', async () => {
   const prompt = await import('../src/prompt.js');
   const codeReviewPrompt = await import('../src/code-review-prompt.js');
-  const review = await import('../src/review.js');
   const story = await import('../../render/session-story.js');
   // Proposers: the session-only route's item 6 sentence and its contract rule (`reportedBy`), and the joint task's
   // sentence (`disclosedBy`), each the D64 wording's text and never the one it replaced.
@@ -279,7 +285,10 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   // The second release review moved it once more (SECOND_RELEASE_REVIEW_VERSIONS: prompt): that file's path is
   // compared under the working directory.
   assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.before, RELEASE_REVIEW_VERSIONS.prompt.after);
-  assert.equal(prompt.PROMPT_VERSION, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+  // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt): the re-ask of a choice not to act whose existence check
+  // refuted its words.
+  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
+  assert.equal(prompt.PROMPT_VERSION, CHOICE_REANCHOR_VERSIONS.prompt.after);
   // M35 windowing moved it once more (WINDOWING_VERSIONS: codeReview).
   assert.equal(WINDOWING_VERSIONS.codeReview.before, DISCLOSURE_WORDS_VERSIONS.codeReview.after);
   // M36 phase 1 moved it once more (RECORDED_FACTS_VERSIONS: codeReview): the evidence it carries (D68).
@@ -343,11 +352,20 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   // The release review moved it once more (RELEASE_REVIEW_READER_VERSIONS: story): with the home folder as the
   // repository, the footer says only the session's files were read and counts the rest.
   assert.equal(RELEASE_REVIEW_READER_VERSIONS.story.before, JUDGMENT_FIRST_REVIEW_READER_VERSIONS.story.after);
-  assert.equal(story.STORY_VERSION, RELEASE_REVIEW_READER_VERSIONS.story.after);
-  // Readers: the report, the story and the page say what the challengers upheld, with the agent's own words.
-  assert.equal(review.DISCLOSURE_SENTENCE.disclosed('“SYNTHETIC words” `E9`'),
-    'The agent told you it went against your instruction: “SYNTHETIC words” `E9`.');
+  // The agentic code step's release item moved it once more (AGENTIC_READER_VERSIONS: story): an ask's status shown
+  // beside what the code step tied to it, the session shown as loaded, and the code step's new report. It renders back
+  // to the release review's.
+  assert.equal(RELEASE_REVIEW_READER_VERSIONS.story.after, 'sonah.session-story/29');
+  // The cleanup moved it once more (CLEANUP_READER_VERSIONS: story): no statement found to hold, no row shown in the
+  // code, no claim found false and no all-clear footer.
+  assert.equal(CLEANUP_READER_VERSIONS.story.before, AGENTIC_READER_VERSIONS.story);
+  // D97 moved it once more (REPORT_MD_READER_VERSIONS: story): the story is the report .md.
+  assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, REPORT_MD_READER_VERSIONS.story.after);
+  // Readers: the report .md and the page say what the challengers upheld, with the agent's own words.
   // D71 (a): said as what it is, never "shown for information".
-  assert.equal(story.STORY_SENTENCES.editDisclosed, 'The agent told you afterwards that it went against your instruction.');
-  assert.equal(story.STORY_FORBIDDEN_EDIT_LABELS.reported, 'The agent told you it went against your instruction');
+  // D97: the page and the report .md: an edit against what you said that the agent told you about, and its words.
+  const words = await import('../../render/report-words.js');
+  assert.equal(words.REPORT_DISCLOSURE_WORDS.edit.disclosed, 'The agent told you about it.');
+  assert.equal(words.REPORT_ITEM_WORDS.agentTold, 'The agent told you:');
 });

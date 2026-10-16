@@ -247,7 +247,10 @@ test('a code receipt quoting a line of the body grounds; a paraphrase does not',
   assert.equal(verifyReceipt(session, { role: 'instruction', eventId: write.id, quote: exact }).ok, false);
 });
 
-// ---- redaction fails closed -------------------------------------------------------
+// ---- D90: what the agent wrote reaches the review as recorded -------------------------
+// D90 (owner decision 2026-10-15, privacy is not a design constraint): nothing is masked on the way — a key-shaped value
+// and a key block the agent wrote are evidence like every other line (before, `analyze` masked them: this part was
+// "redaction fails closed"). AKIAIOSFODNN7EXAMPLE is AWS's own published example key; the key block is a synthetic one.
 
 const AWS_KEY = 'AKIAIOSFODNN7EXAMPLE';
 const PEM = ['-----BEGIN RSA PRIVATE KEY-----',
@@ -255,7 +258,7 @@ const PEM = ['-----BEGIN RSA PRIVATE KEY-----',
   'LmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuVw',
   '-----END RSA PRIVATE KEY-----'].join('\n');
 
-test('a planted AWS key and PEM block never reach textOf or the narrative prompt', async () => {
+test('D90: a planted AWS key and PEM block reach textOf and the narrative prompt as recorded', async () => {
   const BODY = ['export const config = {', `  awsAccessKeyId: '${AWS_KEY}',`, '};', '', PEM, '',
     'export function ok() { return "MARKER_SURVIVES"; }'].join('\n');
 
@@ -265,29 +268,26 @@ test('a planted AWS key and PEM block never reach textOf or the narrative prompt
   const [write] = writes(session);
   const after = session.textOf(write.changes[0], 'after');
 
-  assert.ok(!after.includes(AWS_KEY), 'the AWS key never reaches the canonical model');
-  assert.ok(!after.includes('MIIEowIBAAKCAQEA'), 'the PEM body never reaches the canonical model');
-  assert.ok(!after.includes('-----BEGIN RSA PRIVATE KEY-----'), 'the PEM header goes with its block');
-  assert.ok(after.includes('MARKER_SURVIVES'), 'the rest of the body is still evidence');
-  assert.equal(write.changes[0].redacted, true, 'the change declares that the redactor cut it');
-  assert.ok(write.changes[0].extent.redactedLines >= 1, 'the count of dropped lines is declared');
+  assert.equal(after, BODY, 'the whole body, the key and the key block included, as written');
+  assert.notEqual(write.changes[0].redacted, true, 'nothing is declared cut');
+  assert.ok(!(write.changes[0].extent.redactedLines > 0), 'no line is dropped');
 
   const [window] = planWindows(session);
   const { prompt } = buildNarrativePrompt({ session, window });
-  assert.ok(!prompt.includes(AWS_KEY), 'the key never reaches the prompt');
-  assert.ok(!prompt.includes('MIIEowIBAAKCAQEA'), 'the PEM body never reaches the prompt');
+  assert.ok(prompt.includes(AWS_KEY), 'the key reaches the prompt');
+  assert.ok(prompt.includes('MIIEowIBAAKCAQEA'), 'and the key block');
 });
 
-test('a body that is nothing but a PEM block arrives empty, declared, and quotes nothing', async () => {
+test('D90: a body that is nothing but a PEM block arrives whole and grounds a quote', async () => {
   const { session } = await throughProductionPath([
     userTurn('add the key'), ...writeOf('t1', '/repo/keys/service.js', PEM),
   ]);
   const [write] = writes(session);
   const after = session.textOf(write.changes[0], 'after');
-  assert.ok(!after.includes('MIIEowIBAAKCAQEA'));
-  assert.equal(write.changes[0].redacted, true);
+  assert.equal(after, PEM);
+  assert.notEqual(write.changes[0].redacted, true);
   assert.equal(verifyReceipt(session, { role: 'code', eventId: write.id,
-    quote: 'MIIEowIBAAKCAQEAx7Vn9tQfPq3mKcWJbL0sZvD4hRtGyYuNpXeAiOkQcSdFgHjK' }).ok, false);
+    quote: 'MIIEowIBAAKCAQEAx7Vn9tQfPq3mKcWJbL0sZvD4hRtGyYuNpXeAiOkQcSdFgHjK' }).ok, true);
 });
 
 // ---- budget -----------------------------------------------------------------------
@@ -468,7 +468,7 @@ test('F67 a code receipt quoting a line of new_string grounds; a paraphrase does
     'the edit body is inside a quotable fence, verbatim');
 });
 
-test('F67 REDACTION: an AWS key planted in new_string never reaches textOf or the prompt', async () => {
+test('F67, D90: an AWS key planted in new_string reaches textOf and the prompt as recorded', async () => {
   const NEW = ['export const config = {', `  awsAccessKeyId: '${AWS_KEY}',`, '};', '', PEM, '',
     'export function ok() { return "EDIT_SURVIVES_MARKER"; }'].join('\n');
   const { session } = await throughProductionPath([
@@ -476,29 +476,25 @@ test('F67 REDACTION: an AWS key planted in new_string never reaches textOf or th
   ]);
   const [edit] = writes(session);
   const after = session.textOf(edit.changes[0], 'after');
-  assert.ok(!after.includes(AWS_KEY), 'the AWS key never reaches the canonical model');
-  assert.ok(!after.includes('MIIEowIBAAKCAQEA'), 'the PEM body never reaches the canonical model');
-  assert.ok(!after.includes('-----BEGIN RSA PRIVATE KEY-----'), 'the PEM header goes with its block');
-  assert.ok(after.includes('EDIT_SURVIVES_MARKER'), 'the rest of the edit is still evidence');
-  assert.equal(edit.changes[0].redacted, true, 'the change declares that the redactor cut it');
+  assert.equal(after, NEW, 'the whole edit, the key and the key block included, as written');
+  assert.notEqual(edit.changes[0].redacted, true, 'nothing is declared cut');
 
   const [window] = planWindows(session);
   const { prompt } = buildNarrativePrompt({ session, window });
-  assert.ok(!prompt.includes(AWS_KEY), 'the key never reaches the prompt');
-  assert.ok(!prompt.includes('MIIEowIBAAKCAQEA'), 'the PEM body never reaches the prompt');
+  assert.ok(prompt.includes(AWS_KEY), 'the key reaches the prompt');
+  assert.ok(prompt.includes('MIIEowIBAAKCAQEA'), 'and the key block');
 });
 
-test('F67 REDACTION: a secret planted in old_string never reaches the before side either', async () => {
+test('F67, D90: a key in old_string reaches the before side as recorded too', async () => {
   const OLD = ['export const config = {', `  awsAccessKeyId: '${AWS_KEY}',`, '};'].join('\n');
   const { session } = await throughProductionPath([
     userTurn('take the key out'),
     ...editOf('e1', '/repo/src/config.js', OLD, 'export const config = { awsAccessKeyId: process.env.AWS_KEY };'),
   ]);
   const [edit] = writes(session);
-  assert.ok(!session.textOf(edit.changes[0], 'before').includes(AWS_KEY),
-    'the replaced side passed through scrubLines like every other body');
+  assert.equal(session.textOf(edit.changes[0], 'before'), OLD, 'the replaced side, as written');
   const [window] = planWindows(session);
-  assert.ok(!buildNarrativePrompt({ session, window }).prompt.includes(AWS_KEY));
+  assert.ok(buildNarrativePrompt({ session, window }).prompt.includes(AWS_KEY));
 });
 
 // ---- F107: an empty edit is a recorded empty write ------------------------------------------

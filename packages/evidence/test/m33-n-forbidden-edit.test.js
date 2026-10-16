@@ -29,9 +29,10 @@ import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
 import * as prompt from '../src/prompt.js';
 import * as challenge from '../src/challenge.js';
-import * as review from '../src/review.js';
 import * as codeReviewPrompt from '../src/code-review-prompt.js';
+import * as review from '../src/review.js';
 import * as story from '../../render/session-story.js';
+import { REPORT_WHAT_WORDS, REPORT_DISCLOSURE_WORDS, REPORT_ITEM_WORDS } from '../../render/report-words.js';
 import { ownReceipt } from '../../cli/test/m33-fast-profile-fixture.js';
 import { answerStorable } from '../../cli/src/answer-cache.js';
 import * as R from './m33-n-forbidden-edit-rows.js';
@@ -211,8 +212,9 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
   // The disclosure narrowing moved the challenge once more (DISCLOSURE_NARROW_VERSIONS: /15 -> /16).
   assert.equal(DISCLOSURE_NARROW_VERSIONS.challenge.before, INTEGRATION_VERSIONS.challenge.after);
   // Stable event ids moved it once more (/16 -> /17): a recorded session's event ids alone (C-01 event identity).
@@ -245,29 +247,21 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   assert.equal(challenge.FORBIDDEN_EDIT_PROPOSITION, 'the human\'s quoted instruction forbade what the quoted action did, '
     + 'and no later human instruction recorded before the action lifted it');
-  // M33 brittleness M4 session route: no "The agent told you" line from a statement code only verified.
-  // W1 B: and a rule the project's instruction file holds (`file`).
-  assert.deepEqual(Object.keys(review.FORBIDDEN_EDIT_WORDS).sort(), ['file', 'instruction', 'ran', 'removed', 'reverted',
-    'wrote']);
-  assert.equal(review.FORBIDDEN_EDIT_WORDS.instruction, 'You said');
-  assert.equal(review.FORBIDDEN_EDIT_WORDS.wrote, 'The agent wrote');
-  assert.equal(review.FORBIDDEN_EDIT_WORDS.removed, 'The agent removed');
   // D64 wording (owner decision 2026-10-07): an upheld disclosure's statement says what the challengers upheld.
   // W1 B: and a project instruction file's words, labelled as the file's.
-  assert.deepEqual(story.STORY_FORBIDDEN_EDIT_LABELS, { instruction: 'You said', wrote: 'The agent wrote', ran: 'The agent ran',
-    removed: 'The agent removed', reported: 'The agent told you it went against your instruction',
-    file: "The project's instruction file" });
+  // D97: the page's and the report .md's labels (report-words.js), one a breach, and what you said and told.
+  assert.deepEqual(REPORT_ITEM_WORDS.breach, { wrote: 'The agent wrote:', ran: 'The agent ran:', removed: 'The agent removed:' });
+  assert.deepEqual([REPORT_ITEM_WORDS.youSaid, REPORT_ITEM_WORDS.agentTold], ['You said:', 'The agent told you:']);
   // One reader word per breach, in both readers.
-  for (const breach of ledger.FORBIDDEN_EDIT_BREACHES) {
-    assert.equal(typeof review.FORBIDDEN_EDIT_WORDS[breach], 'string', breach);
-    assert.equal(typeof story.STORY_FORBIDDEN_EDIT_LABELS[breach], 'string', breach);
-  }
-  // Every withheld cause has its one rendered sentence.
-  assert.deepEqual(Object.keys(review.WITHHELD_SENTENCE).sort(), [...review.WITHHELD_CAUSES].sort());
-  assert.ok(review.WITHHELD_CAUSES.includes(ledger.FORBIDDEN_WITHHELD_CAUSE));
+  for (const breach of ledger.FORBIDDEN_EDIT_BREACHES)
+    assert.equal(typeof REPORT_ITEM_WORDS.breach[breach], 'string', breach);
 });
 
 // ---- the motivating shape --------------------------------------------------------------------------------------------
@@ -609,12 +603,9 @@ test('M33 N: a change undone later in the same turn publishes FYI self_corrected
     assert.equal(report.sessionStatus, 'FYI', String(profile));
     assert.deepEqual(part(report).reasons, ['finding_fyi'], String(profile));
     assert.equal(report.counts.forbiddenEdits.reverted, 1, String(profile));
-    const md = review.renderReview(report);
-    assert.ok(md.includes(`\` · ${review.FORBIDDEN_EDIT_REVERTED_TAG}`) && !md.includes('· FYI'), String(profile));
-    assert.ok(md.includes(review.FORBIDDEN_EDIT_WORDS.reverted), String(profile));
-    const told = story.renderSessionStory(same, report);
-    assert.ok(told.includes('## Edits against what you said') && !/## (Worth a look|Needs your decision)/.test(told), String(profile));
-    assert.ok(told.includes(story.STORY_SENTENCES.forbiddenEditReverted), String(profile));
+    const told = story.renderReportMarkdown(same, report);
+    assert.ok(!/Worth a look|Needs your decision/.test(told), String(profile));
+    assert.ok(told.includes(`${REPORT_WHAT_WORDS.editAgainst} ${REPORT_DISCLOSURE_WORDS.edit.self_corrected}`), String(profile));
   }
   // Undone only after a human prompt queued in between: the correction was asked for — DECIDE.
   const asked = await claude(t, { revert: 'afterQueued' });
@@ -658,11 +649,7 @@ test('M33 N: an unsettled check is withheld and decide_unsettled, never CLEAN; o
     assert.equal(ledger.decideUnsettledCount(report), 1, label);
     assert.equal(report.withheld.unsettled, 1, label);
     assert.deepEqual(report.counts.forbiddenEdits.challenged, { upheld: 0, refuted: 0, unsettled: 1, unexecuted: 0 }, label);
-    // Said in words that name this kind of check, never "a check on an agent claim".
-    const md = review.renderReview(report);
-    assert.ok(md.includes(review.PART_REASON_SENTENCE.decide_unsettled) && md.includes(review.RUN_STATE_SENTENCE.complete), label);
-    assert.match(review.PART_REASON_SENTENCE.decide_unsettled, /a change against your instruction/);
-    assert.ok(md.includes('1 with a check that did not settle') && !md.includes('could need your decision'), label);
+    assert.equal(report.partCounts.parts_decide_unsettled, 1, label);
     // Read from code's record alone: a report saved without its recording reads the same.
     const { session: _dropped, ...saved } = report;
     assert.equal(ledger.honestStatuses(saved).sessionStatus, 'NO_FINDINGS', label);
@@ -749,37 +736,24 @@ test('M33 N m33-lean: the forbidden run\'s dossier shows both events whole and e
 
 // ---- publication ---------------------------------------------------------------------------------------------------------
 
-test('M33 N: the review and the story show "You said" beside "The agent wrote", in plain words, under Findings (D71)', async (t) => {
+test('M33 N: the story shows "You said" beside "The agent wrote", in plain words (D71)', async (t) => {
   const session = await claude(t);
   const report = await reviewOf(session, [motivating(session)]);
-  const md = review.renderReview(report);
-  const at = md.indexOf('#### Edits against what you said');
-  assert.ok(at >= 0 && !md.includes('### Needs your attention'));
-  const block = md.slice(at);
-  assert.ok(block.includes('| You said | The agent wrote |'));
-  assert.ok(block.includes(`| “${R.WORDS.constraint}” \`${askOf(session, R.WORDS.constraint)}\` | “${R.WORDS.origin}” \`${writeOf(session)}\` |`));
-  // M33 brittleness M4 session route: a statement whose disclosure was not upheld is never shown as one.
-  assert.ok(!block.includes('The agent told you'));
-  assert.ok(block.indexOf('| You said |') < block.indexOf('Receipts:'), 'the plain words come before the receipts');
-  const told = story.renderSessionStory(session, report);
-  const decide = told.indexOf('## Edits against what you said');
-  assert.ok(decide >= 0 && !/## (Worth a look|Needs your decision)/.test(told));
-  const section = told.slice(decide, told.indexOf('\n## ', decide + 1));
-  assert.ok(section.includes(story.STORY_SENTENCES.forbiddenEdit));
-  assert.ok(section.indexOf(`**You said:** ${R.WORDS.constraint}`) < section.indexOf(`**The agent wrote:** ${R.WORDS.origin}`));
-  assert.ok(!section.includes('**The agent told you:**'));
+  // D97: the report .md says it as an item of its own kind: what you said, then what the agent wrote. M33 brittleness
+  // M4 session route: a statement whose disclosure was not upheld is never shown as one.
+  const told = story.renderReportMarkdown(session, report);
+  assert.ok(!/Worth a look|Needs your decision/.test(told));
+  const esc = review.escapeSource;
+  assert.ok(told.includes(REPORT_WHAT_WORDS.editAgainst));
+  const said = told.indexOf(`${REPORT_ITEM_WORDS.youSaid} “${esc(R.WORDS.constraint)}”`);
+  assert.ok(said >= 0 && said < told.indexOf(`${REPORT_ITEM_WORDS.breach.wrote} “${esc(R.WORDS.origin)}”`), told);
+  assert.ok(!told.includes(REPORT_ITEM_WORDS.agentTold));
   // A command reads "The agent ran".
   const cx = await codex(t);
   const pub = { text: 't', instruction: receipt(askOf(cx, 'do not run npm'), 'instruction', R.CODEX_WORDS.publishConstraint),
     violation: receipt(idOf(cx, (e) => e.operation === 'command'), 'action', R.CODEX_WORDS.publish) };
   const ran = await reviewOf(cx, [pub]);
-  assert.ok(review.renderReview(ran).includes('| You said | The agent ran |'));
-  assert.ok(story.renderSessionStory(cx, ran).includes(`**The agent ran:** ${R.CODEX_WORDS.publish}`));
-  // A combined route's row (no breach) renders as it always did.
-  const legacy = { origin: 'session-review', kind: 'edit_under_negative_requirement', title: 'T', explanation: 'E', status: 'DECIDE',
-    scope: 'session-effect', anchor: null, receipts: [receipt(askOf(session, R.WORDS.constraint), 'instruction', R.WORDS.constraint),
-      receipt(writeOf(session), 'action', R.PATH)] };
-  assert.ok(!review.renderReview({ ...report, findings: [legacy] }).includes('| You said |'));
+  assert.ok(story.renderReportMarkdown(cx, ran).includes(`${REPORT_ITEM_WORDS.breach.ran} “${review.escapeSource(R.CODEX_WORDS.publish)}”`));
 });
 
 // ---- byte stability ------------------------------------------------------------------------------------------------------
@@ -997,8 +971,9 @@ test('M33 N bytes: a review whose answers propose nothing sends no new request, 
     // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
     // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
     // is left out of the window's project files. The second release review moved it once more
-    // (sonah.narrative/36): that file's path is compared under the working directory.
-    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/36');
+    // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+    // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/37');
   }
   // A combined review's answer carrying the member it was never asked for is outside its contract, exactly as before.
   const combined = await reviewRun.runReview({ session, pr: null, judge: async (request) => (request.challenge ? { votes: [] }

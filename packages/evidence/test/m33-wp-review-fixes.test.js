@@ -27,7 +27,6 @@ import { Session } from '../src/session.js';
 // Namespace imports, so each test fails on its own against code that predates it.
 import * as ledger from '../src/ledger.js';
 import * as reviewRun from '../src/run-review.js';
-import * as review from '../src/review.js';
 import * as written from '../src/written.js';
 import { runCodeReview } from '../src/code-review.js';
 import { planWindows } from '../src/windows.js';
@@ -559,9 +558,6 @@ test('M33 WP parts: a transferred child\'s eventless gap is placed on the part w
     assert.deepEqual(report.partCounts,
       { parts_fully_checked: 1, parts_partial: 1, parts_decide_unsettled: 0, parts_unchecked: 0, session_wide_unchecked: 0 }, key);
     assert.equal(report.sessionStatus, 'NO_FINDINGS', key);
-    const md = review.renderReview(report);
-    assert.ok(md.includes('Parts: 1 part fully checked, 1 partial, 0 not checked.'), key);
-    assert.ok(!md.includes('session-wide:'), `${key}: no session-wide entry to name`);
   }
 });
 
@@ -584,8 +580,6 @@ test('M33 WP parts: only a gap with no event, no sequence and no placeable sessi
     assert.equal(report.sessionWideLimits.limited, true, name);
     assert.deepEqual(report.partCounts,
       { parts_fully_checked: 2, parts_partial: 0, parts_decide_unsettled: 0, parts_unchecked: 0, session_wide_unchecked: 0 }, name);
-    assert.ok(review.renderReview(report).includes('Parts: 2 parts fully checked, 0 partial, 0 not checked; '
-      + 'session-wide: limited.'), name);
   }
   // A child no verified spawn link places is in no part, and neither is its eventless loss.
   const without = await partReview(partSession({ link: 'ambiguous' }));
@@ -613,11 +607,8 @@ test('M33 WP parts: an incomplete window holding session-wide events leaves the 
   assert.equal(report.sessionStatus, 'NO_FINDINGS', 'the parts that were checked completed');
   // Recomputing from the report never changes it.
   assert.deepEqual(ledger.honestStatuses(report).partCounts, report.partCounts);
-  const md = review.renderReview(report);
-  // D71 (a): never "a completed session review" — the review says it did not complete — and no status.
-  assert.ok(md.includes(review.RUN_STATE_SENTENCE.incomplete) && md.includes('Session review: **did not complete**'));
-  assert.doesNotMatch(md, /\b(CLEAN|UNCHECKED|NO_FINDINGS)\b/);
-  assert.ok(md.includes('Parts: 2 parts fully checked, 0 partial, 0 not checked; session-wide: not checked.'));
+  // D71 (a): never "a completed session review": the review did not complete.
+  assert.equal(ledger.reviewRunState(report), 'incomplete');
   // Saved without its recording, the declared entries reduce the same way.
   const { session: _omitted, ...saved } = report;
   const reloaded = ledger.honestStatuses(JSON.parse(JSON.stringify(saved)));
@@ -628,5 +619,4 @@ test('M33 WP parts: an incomplete window holding session-wide events leaves the 
   assert.deepEqual(clean.partCounts,
     { parts_fully_checked: 2, parts_partial: 0, parts_decide_unsettled: 0, parts_unchecked: 0, session_wide_unchecked: 0 });
   assert.equal(clean.sessionStatus, 'CLEAN');
-  assert.ok(review.renderReview(clean).includes('Parts: 2 parts fully checked, 0 partial, 0 not checked.'));
 });

@@ -48,6 +48,9 @@ const attachedFile = (content, parentUuid, extra = {}) => attachment({ type: 'fi
   filename: '/repo/docs/spec.md', content: { type: 'text', file: { filePath: '/repo/docs/spec.md', content,
     numLines: 1, startLine: 1, totalLines: 1 } } }, { parentUuid, ...extra });
 const PROJECT_RULES = '# Project rules\nNever add a runtime dependency.';
+/** A file under the harness home folders that the recorder typed `Project`, spelled as the slicer spells a path outside
+ *  the working directory. */
+const HARNESS_PROJECT_FILE = '/synthetic/machine/.claude/CLAUDE.md';
 /** The harness giving the agent its instruction files (rendered `user`, as recorded). */
 const instructionFiles = (extra = {}) => attachment({ type: 'instructions', files: [
   { path: '/repo/CLAUDE.md', type: 'Project', content: PROJECT_RULES },
@@ -161,18 +164,20 @@ test('D72: a 2.1.286 @-mentioned file is human + attached; one the recorder rest
   assert.deepEqual(kindsAndText(ledger), [[INTERJECTION_KINDS.attached, 'The spec says X.']]);
 });
 
-test('D72: a 2.1.286 instruction attachment shows the project file only (D71 g), withholds the harness home (D69 b), never human', async (t) => {
+test('D72: a 2.1.286 instruction attachment shows the files the recorder typed Project (D71 g), never human', async (t) => {
+  // D90 (owner decision 2026-10-15): one under the harness home folders is shown too (D69 b withheld it); the recorder's
+  // type alone decides (a memory file, typed AutoMem, is no project instruction file).
   const rows = [ask('Run the tests.'), instructionFiles(), call('b1', { command: 'npm test' }), result('b1', 'ok')];
   const labelled = labelClaudeRows(rows);
   assert.equal(labelled[1].label, 'harness', 'rendered `user`, still the harness');
   const ledger = await slice(t, rows);
   assert.deepEqual((ledger.projectInstructions ?? []).map((entry) => [entry.path, entry.text]),
-    [['CLAUDE.md', PROJECT_RULES]]);
+    [['CLAUDE.md', PROJECT_RULES], [HARNESS_PROJECT_FILE, 'A harness home file.']]);
   assert.equal(ledger.capture.labels.human, 1);
   assert.equal(ledger.capture?.unclassifiedRows ?? 0, 0);
 });
 
-test('D72: a 2.1.286 nested_memory shows only the project instruction file and keeps its harness label', async (t) => {
+test('D72: a 2.1.286 nested_memory shows only the files typed Project and keeps its harness label', async (t) => {
   const nested = (path, type, content) => attachment({ type: 'nested_memory', path, displayPath: path,
     content: { path, type, content } }, { renderedRole: 'user' });
   const rows = [ask('Check the parser.'), nested('/repo/CLAUDE.md', 'Project', PROJECT_RULES),
@@ -184,7 +189,7 @@ test('D72: a 2.1.286 nested_memory shows only the project instruction file and k
   }
   const ledger = await slice(t, rows);
   assert.deepEqual((ledger.projectInstructions ?? []).map((entry) => [entry.path, entry.text]),
-    [['CLAUDE.md', PROJECT_RULES]]);
+    [['CLAUDE.md', PROJECT_RULES], [HARNESS_PROJECT_FILE, 'A harness home file.']]);
   assert.deepEqual(kindsAndText(ledger), []);
   assert.equal(ledger.capture.labels.human, 1);
   assert.equal(ledger.capture?.unclassifiedRows ?? 0, 0);
@@ -205,7 +210,8 @@ test('D72: renderedRole never decides a label or what is read: system, user and 
   const read = ({ interjections, projectInstructions }) => ({ interjections, projectInstructions });
   const baseline = read(await slice(t, rows('user')));
   assert.deepEqual(kindsAndText(baseline), [[INTERJECTION_KINDS.queued, 'And this.'], [INTERJECTION_KINDS.attached, 'X.']]);
-  assert.deepEqual(baseline.projectInstructions.map((entry) => [entry.path, entry.text]), [['CLAUDE.md', PROJECT_RULES]]);
+  assert.deepEqual(baseline.projectInstructions.map((entry) => [entry.path, entry.text]),
+    [['CLAUDE.md', PROJECT_RULES], [HARNESS_PROJECT_FILE, 'A harness home file.']]);
   assert.deepEqual(read(await slice(t, rows('system'))), baseline);
   assert.deepEqual(read(await slice(t, rows(null))), baseline);
 });

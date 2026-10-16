@@ -26,7 +26,6 @@ test('records append with private permissions, reject invalid reasons, and load 
   assert.equal(await recordDecisionReview({ hash: HASH, decisionId: key, verb: 'later', reason: 'Wait.' }), false);
   assert.equal(await recordDecisionReview({ hash: '../not-a-hash', decisionId: key, verb: 'accept', reason: 'Reviewed.' }), false);
   assert.equal(await recordDecisionReview({ hash: HASH, decisionId: key, verb: 'accept', reason: 'x'.repeat(2001) }), false);
-  assert.equal(await recordDecisionReview({ hash: HASH, decisionId: key, verb: 'accept', reason: 'sk-ant-' + 'z'.repeat(24) }), false);
   assert.equal(await recordDecisionReview({ hash: HASH, decisionId: key, verb: 'change', reason: '  Please use the existing parser.  ' }), true);
   const file = join(home, 'decision-reviews.ndjsonl');
   const original = await readFile(file, 'utf8');

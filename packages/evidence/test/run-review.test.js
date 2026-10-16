@@ -7,7 +7,6 @@ import { sessionFromLedger } from '../adapters/sonah-ledger.js';
 import { runReview, toCandidates } from '../src/run-review.js';
 import { Session } from '../src/session.js';
 import { redisPivotSession, redisPivotPr } from '../fixtures/redis-pivot.js';
-import { renderReview } from '../src/review.js';
 
 // A small synthetic ledger in the inherited slicer's shape.
 const LEDGER = {
@@ -148,13 +147,6 @@ test('explicit session-only review checks the session without requiring a PR or 
   // W1 B moved it once more (sonah.session-review-agent/10): an edit may go against a project instruction file.
   // W2 moved it once more (sonah.session-review-agent/11): a claim is compared with the evidence; the agent's own text.
   assert.equal(report.instrument.reviewAgent, 'sonah.session-review-agent/11');
-  const rendered = renderReview(report);
-  assert.match(rendered, /Sonah review — session only/);
-  assert.match(rendered, /PR code and diff relevance were outside this review/);
-  assert.match(rendered, /Code review: \*\*outside this review\*\*/);
-  assert.match(rendered, /\| Decision \| Relationship to your instructions \| Weight \|/);
-  assert.doesNotMatch(rendered, /\| Survives \|/);
-  assert.doesNotMatch(rendered, /PR #\?/);
 });
 
 test('session-only review rejects supplied PR or diff before invoking the judge', async () => {
@@ -190,9 +182,8 @@ test('a model that fabricates a quote gets it rejected, not published', async ()
   // fabricated quote is never published; it does not cap coverage.
   assert.equal(report.decisions[0].constrainedBy, null);
   assert.equal(report.coverage, 'complete');
-  const md = renderReview(report);
-  assert.match(md, /\*\*not checked\*\* — the cited instruction did not check out/);
-  assert.ok(!md.includes('use Redis for caching'));
+  assert.ok(report.decisions[0].reasons.includes('receipt_rejected'), 'the row says why it is not checked');
+  assert.ok(!JSON.stringify(report.decisions).includes('use Redis for caching'));
 });
 
 test('a failed window is counted, never silently skipped', async () => {
@@ -253,11 +244,9 @@ test('a pivot whose receipts do not check out is withheld, not printed as a stor
   assert.equal(report.pivots.length, 1);
   assert.equal(report.pivots[0].abandoned, 'approach A');
   assert.equal(report.pivotsRejected, 1);
-  const md = renderReview(report);
-  assert.match(md, /#### Changes of approach/);
-  assert.ok(!md.includes('also invented'));
-  // D58: counted in the withheld section, among the checks that ran and were inconclusive.
-  assert.match(md, /1 proposal\(s\) withheld: their quotes did not match the record/);
+  assert.ok(!JSON.stringify(report.pivots).includes('also invented'));
+  // D58: counted among the checks that ran and were inconclusive.
+  assert.equal(report.withheld.proposals, 1);
 });
 
 test('a requirement whose instruction quote is fabricated is withheld', async () => {
@@ -270,17 +259,6 @@ test('a requirement whose instruction quote is fabricated is withheld', async ()
   const report = await runReview({ session, pr, judge: reviewer(narrative) });
   assert.equal(report.requirements.length, 1);
   assert.equal(report.requirementsRejected, 1);
-  assert.ok(!renderReview(report).includes('never asked'));
+  assert.ok(!JSON.stringify(report.requirements).includes('never asked'));
 });
 
-test('requirements render as a neutral ledger, open items first', async () => {
-  const narrative = { decisions: [], claims: [], pivots: [], requirements: [
-    { text: 'done thing', status: 'addressed', instruction: { eventId: 'E1', role: 'instruction', quote: 'Add response caching' } },
-    { text: 'open thing', status: 'open', instruction: { eventId: 'E1', role: 'instruction', quote: 'Do not add any new infrastructure' } },
-  ] };
-  const md = renderReview(await runReview({ session, pr, judge: reviewer(narrative) }));
-  assert.match(md, /This is a ledger, not a list of faults/);
-  assert.match(md, /an open item is simply still open/);
-  // Open before done, so attention lands where work remains.
-  assert.ok(md.indexOf('open thing') < md.indexOf('done thing'));
-});

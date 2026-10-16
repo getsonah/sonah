@@ -221,7 +221,8 @@ const sha256 = (text) => createHash('sha256').update(text).digest('hex');
  *                launched call's own session holds a complete run: the parent links nothing, as for Agent/Task.
  * `m` carries the modules of the tree under test, so the same function runs against an export of fd5d129 and this
  * tree: { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase, windowNarrative,
- * fixtureJudge, renderSessionStory }. Every value is a digest; nothing prints.
+ * fixtureJudge, renderStory } (`renderStory`: the story's renderer, the report .md's since
+ * `sonah.session-story/32`). Every value is a digest; nothing prints.
  */
 export async function captureStableCases(m) {
   const root = await scratch('sonah-m33-w-bytes-');
@@ -254,7 +255,7 @@ export async function captureStableCases(m) {
       const report = await m.runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
         judge: m.fixtureJudge({ narrativeOf: (request) => narrativeOf(session, request) }) });
       cases.push({ name, ledger: sha256(JSON.stringify(ledger)), gaps: sha256(JSON.stringify(session.adapterGaps)),
-        ...requests, story: sha256(m.renderSessionStory(session, report)) });
+        ...requests, story: sha256(m.renderStory(session, report)) });
     }
     return cases;
   } finally {

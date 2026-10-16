@@ -30,15 +30,15 @@ test('long commentary is not clipped and private/unsupported blocks are distingu
   assert.equal(l.commentaryCapture.unsupported,1);assert.ok(!JSON.stringify(l).includes('PRIVATE'));
   assert.equal(l.commentaryCapture.nonTextExcluded,1);
 });
-test('redacted commentary participates in cache identity including recursive child units',()=>{
+test('commentary participates in cache identity including recursive child units (D90: as recorded)',()=>{
   const token='ghp_'+'a'.repeat(36);
   const raw=capture([msg('assistant',token),msg('assistant','Same ending')]);
   const clean=redact(raw).ledger;
-  assert.ok(!JSON.stringify(clean).includes(token));
+  assert.equal(clean.commentary[0].text,token);
   const changed=structuredClone(clean);changed.commentary[0].text='A different assumption';
   assert.notEqual(sliceHash(clean),sliceHash(changed));
   const parent={ask:[],ledger:[],claim:{},children:[{source:1,ledger:raw}]};
-  assert.ok(!JSON.stringify(redact(parent).ledger).includes(token));
+  assert.equal(redact(parent).ledger.children[0].ledger.commentary[0].text,token);
   const a=redact(parent).ledger,b=structuredClone(a);b.children[0].ledger.commentary[0].text='Different child assumption';
   assert.notEqual(sliceHash(a),sliceHash(b));
 });

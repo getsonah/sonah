@@ -105,32 +105,24 @@ test('a new tool with missing or unparsed input retains its action and declares 
   }
 });
 
-test('redaction scans a new tool name and its recorded input before either reaches review', () => {
+test('D90: a new tool\'s name and its recorded input reach review as recorded, a key-shaped one or a key block too', () => {
   const key = 'AKIAIOSFODNN7EXAMPLE';
-  const input = { note: 'API_KEY=abcdefghijklmnopqrstuv', harmless: 'synthetic note' };
-  const built = buildEvents([call(`mcp__${key}__inspect`, input), result()]);
-  assert.equal(built.events.length, 1);
-  const cleaned = redact({ ask: [], ledger: built.events, claim: { finalMessage: '' }, dropped: [] }).ledger;
-  assert.doesNotMatch(JSON.stringify(cleaned), /AKIAIOSFODNN7EXAMPLE|abcdefghijklmnopqrstuv/);
-  const session = sessionFromLedger(cleaned);
-  assert.doesNotMatch(JSON.stringify({ events: session.events, blobs: session.blobs }),
-    /AKIAIOSFODNN7EXAMPLE|abcdefghijklmnopqrstuv/);
-  assert.ok(session.adapterGaps.some((gap) => gap.channel === 'actions'
-    && gap.code === 'incomplete_inventory'));
-});
-
-test('JSON escaped PEM content withholds the whole new-tool input', () => {
   const body = 'VGhpcyBpcyBhIHN5bnRoZXRpYyB0ZXN0IGJvZHkgZm9yIHJlZGFjdGlvbiBvbmx5';
-  const input = { certificate: ['-----BEGIN PRIVATE KEY-----', body,
-    '-----END PRIVATE KEY-----'].join('\n'), note: 'safe' };
-  const built = buildEvents([call('mcp__future__inspect', input), result()]);
-  const cleaned = redact({ ask: [], ledger: built.events,
-    claim: { finalMessage: '' }, dropped: [] }).ledger;
-  assert.equal(cleaned.ledger[0].argsExcerpt, undefined);
-  assert.equal(cleaned.ledger[0].inputRedacted, true);
-  assert.doesNotMatch(JSON.stringify(cleaned), new RegExp(body));
-  assert.ok(sessionFromLedger(cleaned).adapterGaps.some((gap) =>
-    gap.channel === 'actions' && gap.code === 'incomplete_inventory'));
+  for (const [name, input, shown] of [
+    [`mcp__${key}__inspect`, { note: 'API_KEY=abcdefghijklmnopqrstuv', harmless: 'synthetic note' }, [key, 'abcdefghijklmnopqrstuv']],
+    ['mcp__future__inspect', { certificate: ['-----BEGIN PRIVATE KEY-----', body, '-----END PRIVATE KEY-----'].join('\n'),
+      note: 'safe' }, [body]],
+  ]) {
+    const built = buildEvents([call(name, input), result()]);
+    assert.equal(built.events.length, 1);
+    const cleaned = redact({ ask: [], ledger: built.events, claim: { finalMessage: '' }, dropped: [] }).ledger;
+    assert.equal(cleaned.ledger[0].argsExcerpt, JSON.stringify(input), 'the recorded input, whole');
+    assert.equal(cleaned.ledger[0].inputRedacted, undefined);
+    const session = sessionFromLedger(cleaned);
+    const seen = JSON.stringify({ events: session.events, blobs: session.blobs });
+    for (const text of shown) assert.ok(seen.includes(text), text);
+    assert.ok(!session.adapterGaps.some((gap) => gap.channel === 'actions' && /redaction/.test(gap.note ?? '')));
+  }
 });
 
 test('generic results use only visible blocks, not contradictory native sidecars', () => {
@@ -148,18 +140,18 @@ test('generic results use only visible blocks, not contradictory native sidecars
   assert.deepEqual(repeated.events[0].tailLines, ['VISIBLE']);
 });
 
-test('new-tool path-bearing results cannot expose credential or harness files (D68 R: an outside file is shown)', () => {
+test('D90: a new tool\'s path-bearing result is shown whatever file it read (D68 R withheld a credential or harness file\'s)', () => {
   const outside = buildEvents([call('mcp__new__read_file', { path: '/outside/private.txt' }),
     result('future-call', 'SYNTHETIC_FILE_BODY')], { cwd: '/repo' });
   assert.deepEqual(outside.events[0].tailLines, ['SYNTHETIC_FILE_BODY']);
   for (const path of ['/repo/.env', '/srv/u/.claude/settings.json', '~/.claude/projects/x.jsonl']) {
     const built = buildEvents([call('mcp__new__read_file', { path }),
       result('future-call', 'SYNTHETIC_FILE_BODY')], { cwd: '/repo' });
-    assert.equal(built.events[0].tailLines, undefined);
-    assert.equal(built.events[0].outputSpans, undefined);
+    assert.deepEqual(built.events[0].tailLines, ['SYNTHETIC_FILE_BODY'], path);
+    assert.equal(built.events[0].observationWithheld, undefined, path);
     const session = adapted(built.events);
-    assert.ok(session.adapterGaps.some((gap) => gap.channel === 'observations'
-      && gap.code === 'incomplete_inventory'));
+    assert.ok(!session.adapterGaps.some((gap) => gap.channel === 'observations'
+      && gap.code === 'incomplete_inventory'), path);
   }
   const internal = buildEvents([call('mcp__new__read_file', { path: '/repo/src/a.js' }),
     result('future-call', 'VISIBLE_SOURCE')], { cwd: '/repo' });

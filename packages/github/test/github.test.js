@@ -120,10 +120,10 @@ test('publication defaults disclose counts and the run state, never a status, pr
   assert.ok(!serialized.includes('SYNTHETIC_PRIVATE_'));
   assert.equal(plan.review.comments.length, 0);
   // D71 (a): the body says whether Sonah's own review ran, never a status.
-  assert.ok(plan.review.body.includes("Sonah's review did not complete"));
+  assert.ok(plan.review.body.includes('Sonah did not finish its review'));
   assert.doesNotMatch(plan.review.body, /DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED/);
   assert.equal(plan.check.conclusion, 'neutral');
-  assert.equal(plan.check.output.title, 'Advisory review did not complete');
+  assert.equal(plan.check.output.title, 'Sonah did not finish its advisory review');
   assert.ok(Object.isFrozen(plan.review));
   assert.equal(plan.id, planFor({ report: result }).id);
 });
@@ -144,16 +144,22 @@ test('the plan has no disclosure, inline comment or diff: finding text, receipts
     'schema', 'target']);
 });
 
-test('the comment\'s one masking call site masks a planted key before escaping, hashing or posting', () => {
-  // publication.js `maskPublicText` (fix 5 swaps in the shared output masking there): every sentence of the comment
-  // that is not a fixed literal passes through it. Fake keys, assembled at run time.
+test('D90: the comment\'s one text call site escapes every sentence and masks nothing', () => {
+  // publication.js `escapePublicText`: every sentence of the comment that is not a fixed literal passes through it. D90
+  // (owner decision 2026-10-15): no text is masked, a key-shaped one included (fake keys, assembled at run time); it is
+  // escaped for the public surface and kept whole, and a value that is not text is still refused.
   for (const key of [['gh', 'p_', 'FAKE'.repeat(9)].join(''), ['AK', 'IA', 'FAKEFAKEFAKEFAKE'].join('')]) {
     const out = escapePublicText(`token ${key} here`);
-    assert.ok(!out.includes(key) && !out.includes('FAKEFAKE'), out);
-    assert.match(out, /^token ‹redacted:[^›]+› here$/);
+    assert.equal(out, `token ${key.replace(/_/g, '\\_')} here`, out);
+    assert.doesNotMatch(out, /‹redacted/);
   }
   assert.equal(escapePublicText('1 ask of yours not shown done.'), '1 ask of yours not shown done\\.',
-    'a clean sentence is only escaped');
+    'a sentence is only escaped');
+  // The escaping itself: no mention, no markup, no control character reaches the public surface.
+  const escaped = escapePublicText('@team <b>&</b>\u0007 #1 [x](y)');
+  assert.doesNotMatch(escaped, /[@<>\u0007]/);
+  assert.match(escaped, /^&\\?#64;team &lt;b&gt;&amp;&lt;\/b&gt; \\#1 \\\[x\\\]\\\(y\\\)$/);
+  assert.throws(() => escapePublicText(null), { code: 'disclosure_rejected' });
 });
 
 test('default and automatic publication gates fail before networking or journal writes', async () => {

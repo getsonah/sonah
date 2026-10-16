@@ -69,8 +69,9 @@ test('M36 phase 3: one next version of each instrument whose bytes moved; the ru
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
-  // (sonah.narrative/36): that file's path is compared under the working directory.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/36');
+  // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
   // D71 (S2) moved it once more (sonah.challenge/24), and D71 (S3) once more (sonah.challenge/25): the new channels (D71_CHANNELS_VERSIONS).
   // The column fix moved it once more (sonah.challenge/30): who decided a decision (FIX_COLUMN_VERSIONS).
   // W1 B moved it once more (sonah.challenge/31): the file form of the forbidden-edit proposition and its note.
@@ -88,7 +89,11 @@ test('M36 phase 3: one next version of each instrument whose bytes moved; the ru
   // of the agent's in any row; no other request byte moved.
   // The third review of the code step moved it once more (sonah.challenge/42): a code check's checker sees
   // what its row states again; no other request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/42');
+  // The re-ask of a void vote moved it once more (sonah.challenge/43): a vote a reply cast that could not be
+  // counted is asked again once, naming its cause; no first-round request byte moved.
+  // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
+  // again, as before /43; no first-round request byte moved.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
   // D71 (S2) moved it once more (sonah.challenge-dossier/9), and D71 (S3) once more (sonah.challenge-dossier/10): the new channels (D71_CHANNELS_VERSIONS).
   // The D80 integration moved it once more (sonah.challenge-dossier/13): the same outcome line (D80_VERSIONS).
   assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/13');

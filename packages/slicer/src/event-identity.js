@@ -15,8 +15,8 @@
 // `sub` names a sub-event derived from one recorded block (closed, `IDENTITY_SUBS`): a command's k-th shell write, the
 // k-th answer one result carries, the k-th agent a Workflow call's run started, a turn's closing statement, a compaction
 // or interruption the recorder marked, the join of a lineage's next file. The evidence adapter composes the id
-// (sonah-ledger.js `ledgerEventIds`); redaction may withhold `native` (fail closed: `withheld: true`), and the adapter
-// then names the event by its row position, counted.
+// (sonah-ledger.js `ledgerEventIds`); an earlier redaction may have withheld `native` (fail closed: `withheld: true`;
+// D90: none does now), and the adapter then names the event by its row position, counted.
 //
 // Pure: no I/O, no clock, no model.
 
@@ -38,8 +38,8 @@ export const IDENTITY_SUBS = Object.freeze({
 });
 export const IDENTITY_SUB = /^(?:[wag](?:0|[1-9]\d{0,5})|final|compaction|join|interrupt)$/;
 
-/** The keys an identity may carry. `unidentified`: a Claude Code row that records no uuid. `withheld`: redaction's —
- *  the recorder's id was scrubbed (fails closed). */
+/** The keys an identity may carry. `unidentified`: a Claude Code row that records no uuid. `withheld`: an earlier
+ *  redaction's — the recorder's id was scrubbed (fails closed); a ledger it wrote is still read. */
 export const IDENTITY_KEYS = Object.freeze(['stream', 'record', 'block', 'native', 'sub', 'unidentified', 'withheld']);
 
 const count = (value, least) => Number.isSafeInteger(value) && value >= least;

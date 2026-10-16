@@ -252,33 +252,6 @@ function tokensOf(source) {
   return tokens;
 }
 
-/**
- * D69 review (finding F3): every string a code cell's script spells literally, by the JavaScript grammar (`tokensOf`): each
- * string literal's value, each template literal's text between its substitutions (as written), and the strings of each
- * substitution's own code, recursively. Null when the script does not tokenize (the reader's screen is conservative): what
- * it names is then unknown. Words of a string are the caller's to read (events.js reads them by the shell grammar).
- */
-export function scriptStrings(source) {
-  let tokens;
-  try { tokens = tokensOf(String(source)); } catch { return null; }
-  const out = [];
-  const templateStrings = (template, depth) => {
-    out.push(...template.segments);
-    for (const expression of template.expressions) {
-      if (depth > 32) continue;
-      let inner;
-      try { inner = tokensOf(expression); } catch { inner = []; }
-      for (const t of inner) collect(t, depth + 1);
-    }
-  };
-  const collect = (t, depth = 0) => {
-    if (t.type === 'literal' && typeof t.value === 'string') out.push(t.value);
-    else if (t.type === 'template' && t.value && Array.isArray(t.value.segments)) templateStrings(t.value, depth);
-  };
-  for (const t of tokens) collect(t);
-  return out;
-}
-
 // Only references created by this reader have authority. Recorded object literals can contain
 // arbitrary marker/value properties; their shape must never impersonate a tool result reference.
 const references = new WeakSet();

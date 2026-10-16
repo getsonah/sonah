@@ -18,7 +18,10 @@ import { withoutIdentity } from './stable-ids-fixture.js';
 import { sliceLineage } from '../../slicer/index.js';
 import { redact } from '../../redact/index.js';
 import { runReview } from '../src/run-review.js';
-import { renderReview, coverageCauses } from '../src/review.js';
+import { coverageCauses, COVERAGE_SENTENCE } from '../src/review.js';
+
+/** The coverage causes as every reader names them (the CLI's and the page's "Not covered" line). */
+const causeLine = (report) => coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
 
 const INVENTORY_REASON = 'codex_native_inventory_incomplete';
 const ask = [{ turn: 1, text: 'Run the synthetic build and lint.' }];
@@ -101,9 +104,9 @@ test('C-02 native-first: a completed review names each shortfall with its count'
   assert.equal(causes.write_outcome_unknown.n, 2);
   // The inventory shortfall (5) alone: the generic declaration is not made beside it (M33 refreeze).
   assert.equal(causes.incomplete_inventory.n, 5, JSON.stringify(causes.incomplete_inventory));
-  const header = renderReview(report).split('\n').find((line) => line.startsWith('Not covered:'));
-  assert.match(header, /3 shell or test command\(s\) have no provable exit status/);
-  assert.match(header, /2 attempted write\(s\) have no provable outcome/);
+  const header = causeLine(report);
+  assert.match(header, /the recording does not show the exit status of 3 commands/);
+  assert.match(header, /the recording does not show whether 2 writes succeeded/);
 });
 
 // ---- M33 refreeze: the generic gap beside a sole native shortfall ------------------------------
@@ -162,17 +165,21 @@ test('M33 refreeze: a linked child whose only loss is its native shortfall decla
     && g.count === null && g.eventIds?.[0] === 'D1-0'));
 });
 
-test('C-01 event identity: a recorder id redaction withholds is no redaction loss, so a native shortfall stays the sole cause', () => {
-  // A synthetic call id redaction's backstop scans as a possible credential (mixed case and digits, high entropy).
+test('C-01 event identity: a recorder id an earlier redaction withheld is no redaction loss, so a native shortfall stays the sole cause', () => {
+  // A synthetic call id an earlier Sonah's entropy backstop withheld as a possible credential (mixed case and digits,
+  // high entropy). D90 (owner decision 2026-10-15): today's redaction keeps it as recorded; the ledger an earlier one
+  // wrote carries the identity withheld (`withheld: true`, no native id), and is read below.
   const secretShaped = 'call_7CrfqsOSIDBHB0nXutiLsYj4';
   const identity = (record) => ({ stream: 0, record, block: 0, native: secretShaped });
+  const withheld = (record) => ({ stream: 0, record, block: 0, withheld: true });
+  assert.deepEqual(redact({ ...shortfallLedger(counted), ledger: [{ ...act, identity: identity(4) }] }).ledger.ledger[0]
+    .identity, identity(4), 'today, as recorded');
   // A Codex parent whose hand-off linked (so its capture's reasons were left with the native shortfall alone, the
   // generic flag still set): the adapter's own sole-cause rule (`nativeShortfallOnly`) decides the generic gap.
-  const identified = { ...shortfallLedger(counted), ledger: [{ ...act, identity: identity(4) }],
+  const identified = { ...shortfallLedger(counted), ledger: [{ ...act, identity: withheld(4) }],
     dropped: [{ turn: null, reason: INVENTORY_REASON }] };
   const now = redact(identified).ledger;
-  assert.deepEqual(now.ledger[0].identity, { stream: 0, record: 4, block: 0, withheld: true },
-    'premise: the scan withholds the recorder\'s id whole');
+  assert.deepEqual(now.ledger[0].identity, withheld(4), 'premise: the recorder\'s id was withheld whole');
   // As before stable ids (the same ledger with no identity, which nothing scanned): the same declarations, the same gaps.
   const before = redact(withoutIdentity(identified)).ledger;
   assert.deepEqual(now.dropped, before.dropped, 'the withheld id is declared on its identity, never in `dropped`');
@@ -182,9 +189,11 @@ test('C-01 event identity: a recorder id redaction withholds is no redaction los
   assert.deepEqual(generic(session), [], 'no generic uncounted gap beside the counted shortfall');
   assert.equal(eventIdCounts(session).gaps[EVENT_ID_GAPS.withheld], 2, 'the withheld id is counted (action, result)');
   // A hand-off whose call id is also its recorder id is declared once (as the hand-off identity it always was).
-  const handOff = { adapter: 'codex', kind: 'spawn', callId: secretShaped, turn: 1, status: 'unresolved',
-    reason: 'delegation_result_malformed', source: 0, record: 9, identity: identity(9) };
-  const delegated = redact({ ...identified, delegations: [handOff] }).ledger;
+  const handOff = { adapter: 'codex', kind: 'spawn', callId: null, turn: 1, status: 'unresolved',
+    reason: 'delegation_result_malformed', source: 0, record: 9, identity: withheld(9), identityUncheckedFields: ['callId'],
+    identityUnchecked: true };
+  const delegated = redact({ ...identified, delegations: [handOff],
+    dropped: [...identified.dropped, { turn: 1, reason: 'dropped:unclassified-high-entropy', where: 'delegation' }] }).ledger;
   assert.equal(delegated.delegations[0].callId, null);
   assert.equal(delegated.delegations[0].identity.withheld, true);
   assert.deepEqual(delegated.dropped.filter((d) => d.reason !== INVENTORY_REASON).map((d) => d.where), ['delegation']);

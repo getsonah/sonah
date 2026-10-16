@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sessionFromLedger, DELEGATION_BRIEF_GAP_NOTES } from '../adapters/sonah-ledger.js';
 import { buildLedger } from '../src/ledger.js';
-import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE, renderReview } from '../src/review.js';
+import { coverageCauses, COVERAGE_CAUSES, COVERAGE_SENTENCE } from '../src/review.js';
 import { runReview, planWindowRequests } from '../src/run-review.js';
 import { sliceLineage } from '../../slicer/index.js';
 import { redact } from '../../redact/index.js';
@@ -79,9 +79,9 @@ test('M33 T the review names an encrypted brief in plain words, and never as a r
   const { report } = handOff(ENCRYPTED);
   assert.deepEqual(coverageCauses(report), [['briefs_encrypted', { n: 1 }]]);
   assert.equal(COVERAGE_SENTENCE.briefs_encrypted({ n: 1 }),
-    '1 delegation brief was encrypted by the recorder, so it cannot be shown or checked');
+    'the recorder encrypted 1 brief that the agent gave a helper, so Sonah cannot show or check it');
   assert.equal(COVERAGE_SENTENCE.briefs_encrypted({ n: 3 }),
-    '3 delegation briefs were encrypted by the recorder, so they cannot be shown or checked');
+    'the recorder encrypted 3 briefs that the agent gave a helper, so Sonah cannot show or check them');
   // A redacted brief keeps the cause it always had.
   assert.deepEqual(coverageCauses(handOff(REDACTED).report), [['incomplete_inventory', { n: 1 }]]);
 });
@@ -155,8 +155,9 @@ test('M33 T the review report states the encrypted briefs in plain words', async
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1,
     judge: async (request) => (request.challenge ? { votes: [] } : windowNarrative(session, request.window)) });
   assert.ok(coverageCauses(report).some(([cause, counts]) => cause === 'briefs_encrypted' && counts.n === 2));
-  const text = renderReview(report);
-  assert.match(text, /2 delegation briefs were encrypted by the recorder, so they cannot be shown or checked/);
-  assert.match(text, new RegExp(DELEGATION_BRIEF_GAP_NOTES.recorder_encrypted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(text, /withheld by redaction/);
+  const said = coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)).join('; ');
+  assert.match(said, /the recorder encrypted 2 briefs that the agent gave a helper, so Sonah cannot show or check them/);
+  assert.ok([...(report.gaps ?? []), ...(report.session?.adapterGaps ?? [])].some((gap) =>
+    gap?.note === DELEGATION_BRIEF_GAP_NOTES.recorder_encrypted), 'the brief\'s gap carries its own note');
+  assert.doesNotMatch(said, /withheld by redaction/);
 });

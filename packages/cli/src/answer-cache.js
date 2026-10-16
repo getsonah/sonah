@@ -14,7 +14,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, rename, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { REVIEW_TRANSPORT_VERSION, reviewTransportArguments, requestImagesOf } from './review-judge.js';
+import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_TRANSPORT_VERSION, agentRequestOf, isAgentRequest,
+  reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf } from './review-judge.js';
 
 /** The record format and the key's own shape. A change to either is a new version, never read as this one.
  *  /2: the key binds the transport's own arguments (F227). */
@@ -41,16 +42,43 @@ const jsonType = (value) => (value === null ? 'null' : Array.isArray(value) ? 'a
 const typed = (value, type) => (Array.isArray(type) ? type : [type]).some((t) =>
   t === 'integer' ? Number.isSafeInteger(value) : t === 'object' ? plain(value) : t === jsonType(value));
 
+/** The agent transport: a repository's state as the answer key binds it, a SHA-256 in hex. */
+export const REPO_STATE = /^[0-9a-f]{64}$/;
+
+/**
+ * The agent transport (review-judge.js `isAgentRequest`). An agent request's answer depends on the files its agent read,
+ * which no request byte holds, so its key also binds `repoState`: a digest of the repository as it was when the review
+ * began (the caller's; a SHA-256 in hex, REPO_STATE). An agent request keyed without one has no key: it is never looked
+ * up and never stored. Its key binds REVIEW_AGENT_TRANSPORT_VERSION in place of REVIEW_TRANSPORT_VERSION, and the agent
+ * argv the transport spawns it with (`transportArguments`, its agent branch) as `agent` in place of `args`, less the
+ * values the key must not hold (`reviewAgentKeyArgs`: each `--add-dir` path, so a moved checkout still replays, and the
+ * system prompt, which `system` binds); `repo` is the repository's state. A request that is not an agent request is
+ * keyed byte for byte as before. An agent request no transport can send (not claude-cli, malformed, or with images:
+ * review-judge.js refuses all three) has no key either.
+ */
+function agentAnswerKey(request, { backend, model, transportArguments, repoState }) {
+  const agent = agentRequestOf(request);
+  if (agent === null || backend !== 'claude-cli' || typeof repoState !== 'string' || !REPO_STATE.test(repoState)
+      || requestImagesOf(request)?.length !== 0) return null;
+  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema });
+  if (!Array.isArray(args?.argv)) return null;
+  return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_AGENT_TRANSPORT_VERSION,
+    backend, model, agent: reviewAgentKeyArgs(args.argv), system: request.system, prompt: request.prompt,
+    repo: repoState })).digest('hex');
+}
+
 /**
  * The key of one request: SHA-256 over a canonical JSON of what the model receives and who
  * answers it — fixed field order, strings as JSON strings. `args` is every argument the transport
  * sends beside the prompt (`reviewTransportArguments`, review-judge.js; `null` for a backend it has
  * no transport for, whose name alone is then bound); a test may pass `transportArguments` to stand
  * for another transport. `null` for a request the transport could not send at all (no string
- * `system` or `prompt`): it is never looked up and never stored.
+ * `system` or `prompt`): it is never looked up and never stored. An agent request is keyed by `agentAnswerKey`, with
+ * `repoState`.
  */
-export function answerKey(request, { backend, model, transportArguments = reviewTransportArguments }) {
+export function answerKey(request, { backend, model, transportArguments = reviewTransportArguments, repoState = null }) {
   if (typeof request?.system !== 'string' || typeof request?.prompt !== 'string') return null;
+  if (isAgentRequest(request)) return agentAnswerKey(request, { backend, model, transportArguments, repoState });
   const images = requestImagesOf(request);
   if (images === null) return null;
   const args = (images.length ? transportArguments({ backend, model, system: request.system, images })
@@ -143,14 +171,20 @@ async function readOwnerOnly(path) {
  *
  * `readOnly` (the code step's reuse dry run): a hit is read and nothing else — no time is
  * touched — and `put`, `remove` and `prune` change nothing. The keys and the record format are the same.
+ *
+ * `repoState` (the agent transport): the state of the repository the review's agent requests read (REPO_STATE), bound in
+ * each agent request's key (`answerKey`); with none, an agent request is never looked up or stored. Every other
+ * request's key ignores it.
  */
 export function createAnswerCache(directory, { backend, model, transportArguments = reviewTransportArguments,
-  maxBytes = ANSWER_STORE_MAX_BYTES, readOnly = false } = {}) {
+  maxBytes = ANSWER_STORE_MAX_BYTES, readOnly = false, repoState = null } = {}) {
   if (typeof directory !== 'string' || !directory) throw new TypeError('An answer cache needs a directory');
   if (typeof backend !== 'string' || !backend || typeof model !== 'string' || !model)
     throw new TypeError('An answer cache is keyed by the backend and model that answer');
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new TypeError('An answer cache bound is a byte count');
-  const keyOf = (request) => answerKey(request, { backend, model, transportArguments });
+  if (repoState !== null && (typeof repoState !== 'string' || !REPO_STATE.test(repoState)))
+    throw new TypeError('A repository state is a SHA-256 in hex');
+  const keyOf = (request) => answerKey(request, { backend, model, transportArguments, repoState });
   const pathOf = (key, occurrence) => join(directory, `${key}.${occurrence}.json`);
   return {
     directory,
