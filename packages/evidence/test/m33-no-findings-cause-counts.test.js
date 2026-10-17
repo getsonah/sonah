@@ -38,7 +38,7 @@ test('M33 a cause whose one declaration states no count is counted by its declar
   assert.equal(report.sessionReview, 'complete');
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 1, atLeast: true }]]);
-  assert.equal(header(report), 'Not covered: at least 1 part of the session evidence is incomplete.');
+  assert.equal(header(report), 'Not covered: at least 1 part of the evidence that Sonah read is incomplete.');
   assert.doesNotMatch(header(report), /\bsome\b/, 'a count, never "some", beside NO_FINDINGS');
 });
 
@@ -49,7 +49,7 @@ test('M33 several countless declarations of one cause are counted one each', asy
   ]);
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 2, atLeast: true }]]);
-  assert.match(header(report), /at least 2 parts of the session evidence are incomplete/);
+  assert.match(header(report), /at least 2 parts of the evidence that Sonah read are incomplete/);
 });
 
 test('M33 a counted and a countless declaration of one cause sum to a lower bound', async () => {
@@ -59,12 +59,12 @@ test('M33 a counted and a countless declaration of one cause sum to a lower boun
   ]);
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   assert.deepEqual(coverageCauses(report), [['source_clipped', { n: 4, atLeast: true }]]);
-  assert.match(header(report), /the recorder shortened at least 4 recorded texts/);
+  assert.match(header(report), /Sonah holds only part of at least 4 recorded texts/);
   // Every declaration stating its count keeps the exact count, with no "at least".
   const exact = await review([{ code: 'source_clipped', channel: 'code', count: 3, eventIds: ['A1'] },
     { code: 'source_clipped', channel: 'commentary', count: 1 }]);
   assert.deepEqual(coverageCauses(exact), [['source_clipped', { n: 4 }]]);
-  assert.match(header(exact), /Not covered: the recorder shortened 4 recorded texts,/);
+  assert.match(header(exact), /Not covered: Sonah holds only part of 4 recorded texts,/);
 });
 
 test('M33 a gap code outside the vocabulary still shows the count it declared', async () => {
@@ -114,6 +114,6 @@ test('M33 the PR file list cause carries a count of its declared shortfalls', ()
     instructions: 1, instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 0, pairGaps: 0 };
   const causes = Object.fromEntries(coverageCauses({ pr, coverageFacts: facts, gaps: [] }));
   assert.deepEqual(causes.pr_files_incomplete, { n: 2 });
-  assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /the file list of the pull request is incomplete/);
+  assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /Sonah could not read the whole file list of the pull request/);
   assert.match(COVERAGE_SENTENCE.pr_files_incomplete(causes.pr_files_incomplete), /\b2\b/);
 });

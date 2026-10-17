@@ -43,8 +43,9 @@ test('M5; M34 labels: the loss is named by its own cause, never by the recorder\
   for (const retired of ['instructions_unattributed', 'instructions_unattributed_structure', 'instructions_wordless'])
     assert.equal(COVERAGE_CAUSES.includes(retired), false, retired);
   // M34 labels review (F6): every row the fallback labelled is counted, whichever way it read it.
-  assert.equal(COVERAGE_SENTENCE.labels_legacy_recorder({ n: 1 }), '1 record comes from an old recorder that does not '
-    + 'mark your messages, so Sonah could not check whether it holds a message of yours');
+  // D100: the fallback also labels a row of no plain version, so "an old recorder" is not proved: said as what Sonah reads.
+  assert.equal(COVERAGE_SENTENCE.labels_legacy_recorder({ n: 1 }), '1 record carries no mark of your messages that Sonah '
+    + 'can read, so Sonah could not check whether it holds a message of yours');
   const report = { repo: { host: 'github.com', id: 'm5' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 1, instructions: 1,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -54,6 +55,6 @@ test('M5; M34 labels: the loss is named by its own cause, never by the recorder\
     coverage: 'partial', codeCoverage: 'complete' };
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]), [['labels_legacy_recorder', 2]]);
   const header = causeLine(report);
-  assert.match(header, /2 records come from an old recorder that does not mark your messages/);
+  assert.match(header, /2 records carry no mark of your messages that Sonah can read/);
   assert.doesNotMatch(header, /opening words|elided by the recorder/);
 });

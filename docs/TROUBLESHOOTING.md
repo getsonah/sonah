@@ -56,6 +56,13 @@ fixed code and a fix.
   `npm uninstall --global --prefix "$HOME/.local" --ignore-scripts sonah` (or with the folder it is in), then install
   again.
 
+**`The system refused Sonah access to <folder>, the folder that Sonah runs in.`** (exit 2)
+: The system did not let Sonah read the folder that you ran it in. On macOS, a terminal without access cannot read
+  `~/Documents`, `~/Desktop`, `~/Downloads` and some other folders. Sonah stopped before it read or sent anything. If
+  your project is in such a folder, give your terminal access to it in System Settings, Privacy & Security, Files and
+  Folders (or Full Disk Access), then quit and open the terminal again. Otherwise run `sonah` from a folder that this
+  terminal can read. The line names the folder only when Sonah can tell that your shell's `PWD` is that folder.
+
 ## Finding the session
 
 **`Sonah found no Claude Code or Codex session for this repository.`**

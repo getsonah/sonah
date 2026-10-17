@@ -121,7 +121,7 @@ test('L3 review: a recorder with no known schema is named as that in the header,
     assert.deepEqual(causes.find(([cause]) => cause === 'human_interaction_unknown'), ['human_interaction_unknown',
       { n: actions }]);
     assert.equal(COVERAGE_SENTENCE.human_interaction_unknown({ n: actions }),
-      'the format of the recorder does not say which actions asked you a question or kept your answer');
+      'Sonah does not know how this recorder marks the actions that asked you a question or kept your answer');
     // Still a declared loss: the session is never certified complete on it (fail closed).
     assert.notEqual(report.coverage, 'complete');
   });

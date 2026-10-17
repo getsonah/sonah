@@ -165,8 +165,8 @@ test('M33 J attempts.json keeps each attempt\'s token counts, durations and rate
       createJudge: (args) => reviewJudge.createReviewJudge({ ...args, env: { PATH: '/bin' }, spawnProcess: fake.spawnProcess }) });
   assert.equal(run.exitCode, 0, JSON.stringify(run.summary));
   assert.equal(fake.capture.calls, 3, 'three empty windows, three narrative calls');
-  assert.equal(run.summary.schema, 'sonah.session-review-harness/17');
-  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/17');
+  assert.equal(run.summary.schema, 'sonah.session-review-harness/19');
+  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/19');
   assert.equal(run.summary.speedProfile, 'm33-fast');
   assert.deepEqual(run.summary.tokens, { input_tokens: 33, output_tokens: 21, cache_creation_input_tokens: 15,
     cache_read_input_tokens: 9 });

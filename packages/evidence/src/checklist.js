@@ -13,21 +13,19 @@ import { verifyReceipt } from './session.js';
 import { oneSession, actorKeyOf, actionOutcome, resultOutcome, REQUIREMENT_STATUSES, RESTS_ON_REJECTIONS,
   RESTS_ON_OUTCOMES, NOT_COMPLETED_OUTCOMES, NOT_CLAIM_REJECTIONS, FAILURE_OUTCOMES,
   FAILURE_HANDLINGS, FAILURE_REJECTIONS, REQUIREMENT_UNCHECKED_REASONS, FAILURE_UNCHECKED_REASONS,
-  EVIDENCE_QUOTE_MAX, UNRUN_WRITE_REASON, quotesOnlyUnrunWrite, RESTS_ON_REPAIRED } from './ledger.js';
+  UNRUN_WRITE_REASON, quotesOnlyUnrunWrite, RESTS_ON_REPAIRED, END_UNREAD_CLASS, END_UNCHECKED_FORM,
+  GROUNDING_ANCHOR_CAUSES, groundingCheck, groundingRefusalFields, shownInRole } from './ledger.js';
 import { closingMessages, messageLines } from './windows.js';
 
 const [DONE, PARTLY, NOT_DONE, NOT_CHECKED] = REQUIREMENT_STATUSES;
 const [MALFORMED, NOT_ACTION, OUT_OF_ORDER, CROSS_ACTOR, COMPLETED] = RESTS_ON_REJECTIONS;
 const [NOT_CLAIM_MALFORMED, NOT_CLOSING, LINE_OUT_OF_RANGE] = NOT_CLAIM_REJECTIONS;
 // S6 (S5 review L3): the reasons code lowers a row for, by name from their closed lists (ledger.js), never inline.
-const [DELIVERABLE_UNGROUNDED, DELIVERABLE_NOT_AFTER, CHECK_NOT_COMPLETED, SHORTFALL_UNGROUNDED]
-  = REQUIREMENT_UNCHECKED_REASONS;
+const [DELIVERABLE_UNGROUNDED, DELIVERABLE_NOT_AFTER, CHECK_NOT_COMPLETED, SHORTFALL_UNGROUNDED, , , , , ,
+  CHECK_END_UNREAD, CHECK_END_UNCHECKED] = REQUIREMENT_UNCHECKED_REASONS;
 const [RESPONSE_UNGROUNDED, RESPONSE_NOT_AFTER, RESPONSE_OTHER_AGENT, RESPONSE_NOT_SHOWN, TURN_END_NOT_CITED]
   = FAILURE_UNCHECKED_REASONS;
 
-/** A project rule: an evidence quote is at most 120 characters (ledger.js EVIDENCE_QUOTE_MAX, the one frozen literal). A
- *  deliverable, shortfall or failure response over it is not grounded. */
-export const CHECKLIST_QUOTE_MAX = EVIDENCE_QUOTE_MAX;
 /** The regions a deliverable or a shortfall may quote. */
 export const DELIVERABLE_ROLES = Object.freeze(['code', 'action', 'observation', 'commentary']);
 
@@ -35,24 +33,14 @@ const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const zeros = (list) => Object.fromEntries(list.map((reason) => [reason, 0]));
 const sequenceOf = (event) => (Number.isSafeInteger(event?.sequence) ? event.sequence : null);
 
-/** A receipt of exactly the contract's shape ({eventId, role, quote}, the role one of `roles`), copied; or null. */
-export function receiptShape(value, roles) {
-  if (!plain(value) || !Object.keys(value).every((key) => ['eventId', 'role', 'quote'].includes(key))
-      || typeof value.eventId !== 'string' || !value.eventId || !roles.includes(value.role)
-      || typeof value.quote !== 'string') return null;
-  return { eventId: value.eventId, role: value.role, quote: value.quote };
-}
-
-/** Was the window shown this event, in this role (its source map)? A source map lists exactly what it showed. */
-const shownAs = (sourceMap, eventId, role) => sourceMap != null && Object.hasOwn(sourceMap, eventId)
-  && Array.isArray(sourceMap[eventId]) && sourceMap[eventId].some((source) => source?.role === role);
-
-/** A receipt that grounds strictly (no repair) in what the window showed, at most CHECKLIST_QUOTE_MAX characters. */
-function groundedIn(session, sourceMap, receipt) {
-  if (!receipt || receipt.quote.length > CHECKLIST_QUOTE_MAX || !shownAs(sourceMap, receipt.eventId, receipt.role)) return null;
-  const check = verifyReceipt(session, receipt);
-  return check.ok ? receipt : null;
-}
+/** D101: a receipt through the one quote gate (ledger.js `groundingCheck`): strict (no repair), in what the window
+ *  showed, within its field's bounds (QUOTE_LIMITS), and, given an `anchor` (`{ event, sameSession }`), recorded after
+ *  it (and in its session, when `sameSession`). `{ ok, receipt }` or the refusal with its cause. */
+const groundedIn = (session, sourceMap, value, field, roles, anchor = null) =>
+  groundingCheck(session, value, { field, roles, sourceMap, anchor });
+/** D101: the reason a field's anchor tests lower its row for (GROUNDING_ANCHOR_CAUSES), else the field's other one. */
+const reasonOf = (refusal, notAfter, ungrounded) => (GROUNDING_ANCHOR_CAUSES.includes(refusal.cause) ? notAfter
+  : ungrounded);
 
 /**
  * The actions a row rests on (`restsOn`): each must be an ACTION its window showed, recorded after the
@@ -113,36 +101,44 @@ export function restsOnCheck(session, ids, { sourceMap, anchor, before = false, 
  * reason, restsOnRejected, restsOnRepaired }`: `candidate` the row in the answer contract's shape with the status code
  * publishes and only the receipts that held (a not-checked row carries no deliverable or shortfall: its status needs
  * none), `reason` the REQUIREMENT_UNCHECKED_REASONS token when code lowered it (null otherwise), and (W2) the RESULT ids
- * `restsOnCheck` checked as their ACTIONs.
+ * `restsOnCheck` checked as their ACTIONs. D101 (owner decision 2026-10-17): a row lowered at the quote gate (one shared
+ * gate for the deliverable and the shortfall, ledger.js `groundingCheck`: the grounding tests in GROUNDING_CAUSES order,
+ * the instruction's session and then the order after it last) also returns the refusal's fields
+ * (`groundingRefusalFields`): `cause`, `quotePlace` and, for a length cause, `quoteLength`. A cause of the anchor
+ * (`not_anchor_session`, `not_after`) is `deliverable_not_after` for the deliverable; any other cause is
+ * `deliverable_ungrounded`; every cause is `shortfall_ungrounded` for the shortfall.
  */
 export function checkedRequirement(session, row, { sourceMap, windowEnd = null }) {
   const instruction = typeof session?.event === 'function' ? session.event(row?.instruction?.eventId) : null;
   const rests = restsOnCheck(session, row?.restsOn, { sourceMap, anchor: instruction, windowEnd });
   const base = { text: row.text, instruction: { eventId: row.instruction.eventId, role: row.instruction.role,
     quote: row.instruction.quote } };
-  const out = (status, reason, receipts = {}) => ({ reason, restsOnRejected: rests.rejected, [RESTS_ON_REPAIRED]: rests.repaired,
+  const out = (status, reason, receipts = {}, refusal = null) => ({ reason, ...groundingRefusalFields(refusal),
+    restsOnRejected: rests.rejected, [RESTS_ON_REPAIRED]: rests.repaired,
     candidate: { ...base, status, ...receipts, ...(rests.accepted.length ? { restsOn: rests.accepted } : {}) } });
-  const lower = (reason) => out(NOT_CHECKED, reason);
-  const after = (receipt) => {
-    const event = session.event(receipt.eventId);
-    return instruction !== null && sequenceOf(event) !== null && sequenceOf(instruction) !== null
-      && sequenceOf(event) > sequenceOf(instruction) && oneSession(session, [instruction, event]);
-  };
+  const lower = (reason, refusal = null) => out(NOT_CHECKED, reason, {}, refusal);
+  // Recorded after the instruction, in the instruction's session.
+  const anchor = { event: instruction, sameSession: true };
   const status = row.status;
   if (!REQUIREMENT_STATUSES.includes(status) || status === NOT_CHECKED) return out(NOT_CHECKED, null);
   const receipts = {};
   if (status === DONE || status === PARTLY) {
-    const deliverable = groundedIn(session, sourceMap, receiptShape(row.deliverable, DELIVERABLE_ROLES));
-    if (!deliverable) return lower(DELIVERABLE_UNGROUNDED);
-    if (!after(deliverable)) return lower(DELIVERABLE_NOT_AFTER);
-    if (!completedDeliverable(session, deliverable, windowEnd)) return lower(CHECK_NOT_COMPLETED);
+    const check = groundedIn(session, sourceMap, row.deliverable, 'deliverable', DELIVERABLE_ROLES, anchor);
+    if (!check.ok) return lower(reasonOf(check, DELIVERABLE_NOT_AFTER, DELIVERABLE_UNGROUNDED), check);
+    const deliverable = check.receipt;
+    // D99 (F1 guard): a check whose end Sonah could not read is lowered by its own reason, which says no absence; review
+    // of A1b: by a reason of its own where no later mention of the run is established either.
+    const end = deliverableEnd(session, deliverable, windowEnd);
+    if (end?.class === END_UNREAD_CLASS)
+      return lower(end.form === END_UNCHECKED_FORM ? CHECK_END_UNCHECKED : CHECK_END_UNREAD);
+    if (end !== null) return lower(CHECK_NOT_COMPLETED);
     if (quotesOnlyUnrunWrite(session, deliverable, { sourceMap, until: windowEnd })) return lower(UNRUN_WRITE_REASON);
     receipts.deliverable = deliverable;
   }
   if (status === PARTLY || status === NOT_DONE) {
-    const shortfall = groundedIn(session, sourceMap, receiptShape(row.shortfall, DELIVERABLE_ROLES));
-    if (!shortfall || !after(shortfall)) return lower(SHORTFALL_UNGROUNDED);
-    receipts.shortfall = shortfall;
+    const check = groundedIn(session, sourceMap, row.shortfall, 'shortfall', DELIVERABLE_ROLES, anchor);
+    if (!check.ok) return lower(SHORTFALL_UNGROUNDED, check);
+    receipts.shortfall = check.receipt;
   }
   return out(status, null, receipts);
 }
@@ -155,14 +151,15 @@ export function checkedRequirement(session, row, { sourceMap, windowEnd = null }
  * denied or interrupted edit's written text is never shown, so it cannot ground; refusing a shell write with no typed
  * status would refuse an untyped success, so that stays the challenge's). D80 refuses the body of a shell write whose command's typed end says it did not run,
  * failed or stopped before it finished (ledger.js `unrunEnd`), after this check (`checkedRequirement`). The agent's
- * words (role commentary) are not a check: the challenge judges them.
+ * words (role commentary) are not a check: the challenge judges them. D99 (F1 guard): null when it ran to an end (or is
+ * no check), else its outcome (`{class, form}`, the class one of NOT_COMPLETED_OUTCOMES), so a check whose end Sonah
+ * could not read is lowered by its own reason, by its form.
  */
-function completedDeliverable(session, deliverable, windowEnd) {
+function deliverableEnd(session, deliverable, windowEnd) {
   const event = session.event(deliverable.eventId);
-  if (deliverable.role === 'observation') return !NOT_COMPLETED_OUTCOMES.includes(resultOutcome(session, event).class);
-  if (deliverable.role === 'action')
-    return !NOT_COMPLETED_OUTCOMES.includes(actionOutcome(session, event, { until: windowEnd }).class);
-  return true;
+  const outcome = deliverable.role === 'observation' ? resultOutcome(session, event)
+    : deliverable.role === 'action' ? actionOutcome(session, event, { until: windowEnd }) : null;
+  return outcome !== null && NOT_COMPLETED_OUTCOMES.includes(outcome.class) ? outcome : null;
 }
 
 /**
@@ -184,7 +181,7 @@ export function windowAsks(window, sourceMap) {
   return (Array.isArray(window?.events) ? window.events : []).filter((event) => event?.kind === 'instruction'
     && event.authority === 'human' && (event.childId ?? null) === null
     && !(Array.isArray(event.markers) && event.markers.includes('attached'))
-    && shownAs(sourceMap, event.id, 'instruction'));
+    && shownInRole(sourceMap, event.id, 'instruction'));
 }
 
 /**
@@ -285,16 +282,23 @@ const humanBetween = (session, from, until) => (Array.isArray(session?.events) ?
  * from a command that did not run, failed or stopped before it finished (ledger.js `unrunEnd`, `quotesOnlyUnrunWrite`,
  * against what the window showed, by the results recorded at or before `windowEnd`) is lowered with
  * `write_command_not_run_or_failed` (UNRUN_WRITE_REASON): a write that may not have happened shows no action taken.
+ * D101 (owner decision 2026-10-17): the response goes through the one quote gate (ledger.js `groundingCheck`, the order
+ * after the RESULT last; its session is checked by handling, below); a row it lowers carries the refusal's fields
+ * (`groundingRefusalFields`) beside its reason — `response_not_after` for the cause `not_after`, `response_ungrounded`
+ * for any other.
  */
 export function checkedFailure(session, row, failure, { sourceMap, windowEnd = null }) {
   const eventId = failure.event.id;
-  const lower = (reason) => ({ candidate: { eventId, handling: FAILURE_NOT_CHECKED }, reason });
+  const lower = (reason, refusal = null) => ({ candidate: { eventId, handling: FAILURE_NOT_CHECKED }, reason,
+    ...groundingRefusalFields(refusal) });
   if (row.handling === FAILURE_NOT_CHECKED) return { candidate: { eventId, handling: FAILURE_NOT_CHECKED }, reason: null };
-  const response = groundedIn(session, sourceMap, receiptShape(row.response, FAILURE_RESPONSE_ROLES[row.handling]));
-  if (!response) return lower(RESPONSE_UNGROUNDED);
+  const at = sequenceOf(failure.event);
+  const check = groundedIn(session, sourceMap, row.response, 'response', FAILURE_RESPONSE_ROLES[row.handling],
+    { event: failure.event, sameSession: false });
+  if (!check.ok) return lower(reasonOf(check, RESPONSE_NOT_AFTER, RESPONSE_UNGROUNDED), check);
+  const response = check.receipt;
   const said = session.event(response.eventId);
-  const at = sequenceOf(failure.event), then = sequenceOf(said);
-  if (at === null || then === null || !(then > at)) return lower(RESPONSE_NOT_AFTER);
+  const then = sequenceOf(said);
   const action = session.event(failure.event.invocation);
   if (row.handling === TOLD_HUMAN) {
     if (said.kind !== 'commentary' || (said.childId ?? null) !== null) return lower(RESPONSE_NOT_SHOWN);
@@ -307,6 +311,21 @@ export function checkedFailure(session, row, failure, { sourceMap, windowEnd = n
   }
   if (quotesOnlyUnrunWrite(session, response, { sourceMap, until: windowEnd })) return lower(UNRUN_WRITE_REASON);
   return { candidate: { eventId, handling: row.handling, response }, reason: null };
+}
+
+/**
+ * D71 (S3): a checked failure row's response (`candidate`, from `checkedFailure`), grounded again on the same view for
+ * its published shape (`verifyReceipt`'s: the recording's session key, and a helper's child id, set from the event).
+ * `{ response }`. The row's gate held the response on this view, so this holds too; should it not, `{ reason, cause?,
+ * quotePlace?, quoteLength? }`, the reason `response_ungrounded` — D101: with the cause the same gate names for it
+ * (`groundingRefusalFields`), so no row lowered at a quote gate goes without one. Pure.
+ */
+export function publishedResponse(session, candidate, { sourceMap }) {
+  const check = verifyReceipt(session, candidate?.response);
+  if (check.ok) return { response: check.receipt };
+  const failed = typeof session?.event === 'function' ? session.event(candidate?.eventId) : null;
+  return { reason: RESPONSE_UNGROUNDED, ...groundingRefusalFields(groundedIn(session, sourceMap, candidate?.response,
+    'response', FAILURE_RESPONSE_ROLES[candidate?.handling] ?? [], { event: failed, sameSession: false })) };
 }
 
 /**

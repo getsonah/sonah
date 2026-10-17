@@ -11,7 +11,7 @@
 // in the review harness, which has no such option. Set, it can resolve other children than the review
 // saw, so a caller sets it only to match a review that loaded them from there.
 import { join, resolve } from 'node:path';
-import { loadSessionEvidence } from './session-evidence.js';
+import { loadSessionEvidence, recorderCensusOf } from './session-evidence.js';
 import { outcomesFor } from './outcomes.js';
 import { redact, sliceHash } from '../../redact/index.js';
 import { sessionFromLedger } from '../../evidence/adapters/sonah-ledger.js';
@@ -27,9 +27,10 @@ export async function loadRecordedSessionWithHash({ parent, codexHome, claudePro
     recordingRoots });
   const { ledger } = redact(raw);
   // D87: `cwd`, the working directory the recording names (the slicer's `cwd`), which `sonah review --code-pass` reads
-  // the session's files under; null when it names none. Nothing else reads it.
+  // the session's files under; null when it names none. Nothing else reads it. D99 (F1 guard): `census`, the recorder
+  // census of the load (session-evidence.js `recorderCensusOf`), for the run record only; null when nothing was counted.
   return { session: sessionFromLedger(ledger, { sessionKey }), hash: sliceHash(ledger),
-    cwd: typeof ledger.cwd === 'string' && ledger.cwd ? ledger.cwd : null };
+    cwd: typeof ledger.cwd === 'string' && ledger.cwd ? ledger.cwd : null, census: recorderCensusOf(raw) };
 }
 
 /** The same load, the session alone. Nothing in this repository calls it since B5.2 step 11b; it stays exported by

@@ -61,7 +61,14 @@ export const HELPER_RECEIPT_STATUSES = WORKFLOW_RECEIPT_STATUSES;
  *               last request), counted on its hand-off;
  *   launchUnknown — (L2) a linked Claude Agent/Task whose one result recorded no typed
  *               launch status (events.js `handOffResult`): whether the parent waited for it or received it later is not
- *               recorded, so its work is placed by no receipt, counted on its hand-off.
+ *               recorded, so its work is placed by no receipt, counted on its hand-off;
+ *   endUnread — (D99, F1 guard) a linked Claude Agent run in the background with no receipt, whose end the slicer did
+ *               not read while a later record mentions it (background-ends.js: a notification linked to it, or its
+ *               agentId in a later row the agent did not write): its work is placed by no receipt, counted on its
+ *               hand-off, and never said to have had none;
+ *   endUnchecked — (D99, review of A1b) the same, where no later mention is established (its agentId in a row before
+ *               its launch, of no shape a search is sound for, or a file that could not be read again): Sonah could not
+ *               check whether the recording holds an end of it.
  */
 export const HELPER_DELIVERY_REASONS = Object.freeze({
   unmatched: 'helper_delivery_unmatched',
@@ -72,6 +79,8 @@ export const HELPER_DELIVERY_REASONS = Object.freeze({
   stray: 'helper_arrival_unmatched',
   continued: 'helper_continued_unproven',
   launchUnknown: 'helper_launch_mode_unknown',
+  endUnread: 'helper_end_unread',
+  endUnchecked: 'helper_end_unchecked',
 });
 
 /**

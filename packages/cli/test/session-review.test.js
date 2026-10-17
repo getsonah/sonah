@@ -174,6 +174,21 @@ test('M33 a finished session review writes owner-only, count-only window records
 });
 
 // F228, re-pointed from the removed PR route (D82 step 10): the session review prunes its recording's store too.
+test('D99 F1 guard: the recorder census rides in the run record only, as the loader counted it', async (t) => {
+  const census = { notices: { labelled: 3, typed: 1 }, launches: { background: 2, typed: 1, stopped: 0, unread: 1,
+    absent: 0, other: 0, linked: 2, linkedOther: 0 }, entries: [{ reason: 'end_unread_linked', kind: 'bash',
+    version: '2.1.296', count: 1 },
+    { reason: 'notification_no_call_id', version: '2.1.296', count: 2 }] };
+  const dir = await directory(t, 'd99-census');
+  const { report } = await review(dir, { census });
+  assert.deepEqual(report.instrument.recorderCensus, census);
+  assert.deepEqual((await readJson(join(dir, 'review', 'report.private.json'))).instrument.recorderCensus, census);
+  // With none counted, the run record holds no census at all.
+  const none = await directory(t, 'd99-no-census');
+  const { report: plain } = await review(none, {});
+  assert.equal(Object.hasOwn(plain.instrument, 'recorderCensus'), false);
+});
+
 test('F228 a session review leaves its recording\'s store within the bound', async (t) => {
   const sizesIn = async (dir) => Promise.all((await readdir(dir)).filter((f) => f.endsWith('.json'))
     .map(async (f) => (await stat(join(dir, f))).size));

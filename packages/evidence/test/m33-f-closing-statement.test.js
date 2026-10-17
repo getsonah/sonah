@@ -89,7 +89,7 @@ test('M33 F repair 3 a statement cut before review: its marker is never quotable
   assert.doesNotMatch(CLOSING_STATEMENT_CLIPPED_NOTE, /recorder/);
   // A clipped commentary gap declared without that note keeps the cause it always had.
   assert.equal(COVERAGE_SENTENCE.source_clipped({ n: 1 }),
-    'the recorder shortened 1 recorded text, so Sonah cannot quote what it left out');
+    'Sonah holds only part of 1 recorded text, so it cannot quote the rest');
 });
 
 test('M33 F repair 3 a side the bound left empty emits nothing, and the cut is still declared', () => {

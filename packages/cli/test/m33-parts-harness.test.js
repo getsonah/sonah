@@ -68,7 +68,7 @@ async function run(base, answer, calls, load = session) {
 }
 
 test('M33 P the harness summary schema is /11 (/5 for the parts histogram and the session-wide cause; /6 M33 J; /11 D71: no status)', () => {
-  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/17');
+  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/19');
 });
 
 test('M33 P the harness summary carries the parts\' reasons and causes, and a re-asked answer is a stored D60 occurrence', async (t) => {

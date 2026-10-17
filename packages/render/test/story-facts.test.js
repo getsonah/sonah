@@ -260,7 +260,7 @@ test('M33 S, D97 a real ledger report of the redis-pivot session reads its groun
     candidates: DECISION_CANDIDATES, findingCandidates: FINDING_CANDIDATES, sessionCoverage: 'complete' });
   const { session: omitted, ...saved } = report;
   assert.ok(omitted !== undefined);
-  saved.windowResults = planWindows(session, { workTokens: 111, carriedTokens: 0, trimTokens: 2_000 })
+  saved.windowResults = planWindows(session, { workTokens: 111, carriedTokens: 0, skimSideBytes: 3_600 })
     .map((w) => ({ windowIndex: w.index, eventIds: w.events.map((e) => e.id), failure: null }));
   const md = renderReportMarkdown(session, JSON.parse(JSON.stringify(saved)));
   // The contradicted claim, in the agent's words, and the recorded result against it.

@@ -137,7 +137,7 @@ test('M35 review R5 (M36 H): an Edit whose first part carries the file as found 
   const replaced = "export const retries = 3; // SYNTHETIC_M35_R5_REPLACED";
   const written = "export const retries = 5;";
   const original = `${filler('head')}\n${replaced}\n${filler('tail')}\n`;
-  assert.ok(Buffer.byteLength(original) > bytesOfTokens(WINDOW_SETTINGS.trimTokens), 'premise: over the trim');
+  assert.ok(Buffer.byteLength(original) > 2 * WINDOW_SETTINGS.skimSideBytes, 'premise: over the skim');
   const session = await sessionOfRows(t, [human('Raise the retries in src/config.js.'),
     toolCall('e1', 'Edit', { file_path: FILE, old_string: replaced, new_string: written }),
     toolResult('e1', `The file ${FILE} has been updated successfully.`, { filePath: FILE, oldString: replaced,

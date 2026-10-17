@@ -23,7 +23,7 @@ import { MOVED_BY_M4, MOVED_BY_M4_SESSION, DISCLOSURE_NARROW, DISCLOSURE_WORDS, 
   from './m33-m4-disclosure-fixture.js';
 import { INTEGRATION_VERSIONS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS,
   beforeM36Labels, S7_VERSIONS, FIX_COLUMN_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS,
-  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS }
+  CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CITED_WHOLE_VERSIONS }
   from './m33-integration-fixture.js';
 
 const TYPE = ledger.DISCLOSURE_ITEM_TYPE;
@@ -146,7 +146,9 @@ test('M4: the closed vocabularies, the proposition and the versions', () => {
   // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
   // stands again, as before /43.
   assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
+  // D103 moved it once more (CITED_WHOLE_VERSIONS: challenge): a session-only batch shows the results its items cite whole.
+  assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CITED_WHOLE_VERSIONS.challenge.after);
   // Only a session finding may carry a disclosure; a code finding never.
   assert.ok(Object.hasOwn(CODE_REVIEW_SCHEMA.properties.sessionFindings.items.properties, 'disclosedBy'));
   assert.equal(Object.hasOwn(CODE_REVIEW_SCHEMA.properties.codeFindings.items.properties, 'disclosedBy'), false);

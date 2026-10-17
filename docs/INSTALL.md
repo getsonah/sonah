@@ -201,6 +201,12 @@ keeps that proposal inside fixed bounds for the kind. For example, an unmet ask 
 on how to do something that you asked goes to Good to know, unless a finding or question of the code review concerns
 it. Without the code review, each item stays in the section of its kind, and it shows no impact or action.
 
+Sonah shows its reviewer only the start and the end of a long output (see PRIVACY.md). An item, an ask, a claim, a run
+or a decision that cites such an output carries a mark. The mark names the run or the place of the output, and the
+lines that Sonah left out. For a file read, it also names the lines of the file. The mark changes no status. It says
+what Sonah left out, and nothing more: it does not say what those lines would change. What Sonah could not check
+counts these outputs.
+
 When Must act and Must know are both empty, the report says so. This does not mean that the work is correct. Nothing in
 the report proves the absence of bugs, or that Sonah found every decision.
 
@@ -463,7 +469,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.2`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.3`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

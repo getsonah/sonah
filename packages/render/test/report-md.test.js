@@ -44,7 +44,9 @@ const windowOf = (session) => [{ windowIndex: 0, eventIds: session.events.map((e
 
 test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', () => {
   assert.equal(md(), readFileSync(SNAPSHOT, 'utf8'));
-  assert.equal(STORY_VERSION, 'sonah.session-story/32');
+  // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
+  assert.equal(STORY_VERSION, 'sonah.session-story/37');
 });
 
 test('D97 (1): the .md has the report model\'s sections in order, with the page\'s counts, for every report shape', () => {
@@ -348,7 +350,7 @@ test('D97 (2a): no pings — mentions, issues and bare commit hashes in recorded
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/1', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/3', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });
@@ -369,7 +371,7 @@ test('D97 (2a): a recorded path in Sonah\'s own sentences is a code span, so it 
   const text = renderReportMarkdown(session, report, {});
   assert.doesNotMatch(linkable(text), /@octocat|@hubot|#12/);
   for (const line of ['\nThe agent also changed 1 file outside the repository: `/tmp/#12/@octocat.md`.\n',
-    '\nNo command ran after the last edit of: `@octocat`, `docs/@hubot`.\n',
+    '\nSonah found no command that ran after the last edit of: `@octocat`, `docs/@hubot`.\n',
     ' · written into `docs/@hubot`\n']) assert.ok(text.includes(line), line);
 });
 
@@ -401,14 +403,14 @@ test('D97 (3): permalinks are bare URLs on their own lines, at most 8 lines; old
     const text = renderReportMarkdown(session, r, options);
     const notes = reportModel(session, r, options).header.noLinks;
     for (const note of notes) assert.equal(text.split(note).length - 1, 1, note);
-    assert.equal(text.split('was not on GitHub').length - 1, notes.length);
+    assert.equal(text.split('on GitHub').length - 1, notes.length);
     return { text, notes };
   };
   const startNote = REPORT_HEADER_WORDS.notOnGitHub.old(START.slice(0, 7));
   const headNote = REPORT_HEADER_WORDS.notOnGitHub.new(HEAD.slice(0, 7));
-  assert.equal(startNote, 'When Sonah wrote this report, commit 2222222 was not on GitHub. The report has no links to '
+  assert.equal(startNote, 'When Sonah wrote this report, git did not show commit 2222222 on GitHub. The report has no links to '
     + 'the code as it was before the session.');
-  assert.equal(headNote, 'When Sonah wrote this report, commit 1111111 was not on GitHub. The report has no links to '
+  assert.equal(headNote, 'When Sonah wrote this report, git did not show commit 1111111 on GitHub. The report has no links to '
     + 'the code as the agent left it.');
   // The start commit not on GitHub: no old-side link; the links to the code as the agent left it stay.
   const unpushed = said(repoFacts({ github: { startPushed: false } }));
@@ -434,7 +436,7 @@ test('D97 (3): permalinks are bare URLs on their own lines, at most 8 lines; old
   const one = said(repoFacts({ repo: { start: HEAD }, github: { pushed: false, startPushed: false } }));
   assert.equal(/https:\/\/github\.com/.test(one.text), false);
   assert.deepEqual(one.notes, [REPORT_HEADER_WORDS.notOnGitHub.both(HEAD.slice(0, 7))]);
-  assert.equal(one.notes[0], 'When Sonah wrote this report, commit 1111111 was not on GitHub, so the report has no code '
+  assert.equal(one.notes[0], 'When Sonah wrote this report, git did not show commit 1111111 on GitHub, so the report has no code '
     + 'links.');
   // No GitHub remote: said once, the same way.
   const noRemote = renderReportMarkdown(session, triagedReport(session), { ...repoFacts(), github: null });

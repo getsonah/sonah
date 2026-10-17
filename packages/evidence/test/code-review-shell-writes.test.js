@@ -27,7 +27,7 @@ const PR = { repo: REPO, number: 708, baseOid: 'b'.repeat(40), diffBaseOid: 'b'.
  * for none recorded. `link` overrides the sibling's `shellWriteOf`; null leaves it unlinked.
  */
 function vendorSession({ command, edit = 'succeeded', link = 'A1', eligible = true,
-  commandText = "sed -i 's/SYNTHETIC_ONE/SYNTHETIC_UNO/' vendor/one.js" }) {
+  commandText = "sed -i 's/SYNTHETIC_ONE/SYNTHETIC_UNO/' vendor/one.js", denial = null }) {
   const blobs = {
     rule: 'SYNTHETIC_W3D7_RULE: never edit anything under the vendor directory.',
     cmd: commandText,
@@ -44,7 +44,7 @@ function vendorSession({ command, edit = 'succeeded', link = 'A1', eligible = tr
       terminalStatusProven: true, output: whole(result), sourceOfResult: 'native' });
   };
   events.push({ id: 'A1', kind: 'invocation', callKey: 'A1', tool: 'Bash', operation: 'command', sequence: sequence++,
-    paths: [], command: whole('cmd'), input: [], changes: [] });
+    paths: [], command: whole('cmd'), input: [], changes: [], ...(denial === null ? {} : { recorded: { denial } }) });
   // The sibling as the adapter emits it: the path and an unrecorded body, never an outcome.
   events.push({ id: 'A2', kind: 'invocation', callKey: 'A2', tool: 'sed', operation: 'edit', sequence: sequence++,
     paths: [{ path: 'vendor/one.js' }], command: [], input: [],
@@ -64,6 +64,7 @@ const breach = (title, action) => ({ origin: 'session-review', kind: 'edit_under
   explanation: `${title}: an edit under the vendor rule.`, receipts: [rule, action], scope: 'session-effect', anchor: null });
 const SHELL = breach('SYNTHETIC_W3D7_SHELL_WRITE', { eventId: 'A2', role: 'action', quote: 'vendor/one.js' });
 const PLAIN = breach('SYNTHETIC_W3D7_PLAIN_EDIT', { eventId: 'E1', role: 'action', quote: 'vendor/two.js' });
+const COMMAND = breach('SYNTHETIC_W3D7_COMMAND', { eventId: 'A1', role: 'action', quote: 'vendor/one.js' });
 
 /** The window answers `sessionFindings`; a chunk call reviews the PR's one file; nothing else. */
 const answering = (sessionFindings) => async (request) => {
@@ -145,4 +146,26 @@ test('F173 a sibling without the link is judged by its own (absent) outcome — 
   const report = await review(vendorSession({ command: 'succeeded', link: null }), [SHELL]);
   assert.ok(!published(report, SHELL));
   assert.deepEqual(outcomeGaps(report).map((g) => g.eventIds), [['A2']]);
+});
+
+// D98 (one reading per recorder fact): the cited action is read by the one effect rule (session.js `effectOf`). A command
+// that failed or was cancelled may have changed the file before it ended (C-02, D80), so a finding citing the command
+// itself rests on an unknown outcome, as one citing its parsed write does; only a command the recorder typed as refused
+// before it ran changed nothing.
+for (const outcome of ['failed', 'cancelled']) {
+  test(`D98 a finding citing a command that ${outcome} is withheld and caps, never read as a failed write`, async () => {
+    const report = await review(vendorSession({ command: outcome }), [COMMAND]);
+    assert.ok(!published(report, COMMAND));
+    assert.deepEqual(outcomeGaps(report).map((g) => g.eventIds), [['A1']]);
+    assert.equal(report.withheld.causes?.action_failed ?? 0, 0);
+    assert.equal(report.coverage, 'partial');
+  });
+}
+
+test('D98 a finding citing a command refused before it ran is withheld as a write that did not happen', async () => {
+  const report = await review(vendorSession({ command: 'failed', denial: 'user-rejected' }), [COMMAND, SHELL]);
+  assert.ok(!published(report, COMMAND) && !published(report, SHELL));
+  assert.equal(report.withheld.causes?.action_failed, 2, 'the command and its parsed write changed nothing');
+  assert.deepEqual(outcomeGaps(report), []);
+  assert.equal(report.coverage, 'complete');
 });

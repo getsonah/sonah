@@ -64,7 +64,8 @@ import { CHECKPOINT_DISCARD_REASONS, SESSION_REVIEW_FAILURES, SESSION_REVIEW_STA
   reviewSession, servedModelState } from '../packages/cli/src/session-review.js';
 import { CLI_SAFE_ERROR_CODES, JUDGE_FAILURE_CODES, SESSION_REVIEW_COMPLETION,
   WITHHELD_REJECTION_CAUSES, WRITTEN_WITHHELD_CAUSES, WRITTEN_LABELS, PART_CAUSES, PART_REASONS,
-  PROMISE_STATUSES } from '../packages/evidence/src/ledger.js';
+  PROMISE_STATUSES, REQUIREMENT_STATUSES, FAILURE_HANDLINGS } from '../packages/evidence/src/ledger.js';
+import { seenInPartOf } from '../packages/evidence/src/seen-in-part.js';
 import { coverageCauses } from '../packages/evidence/src/review.js';
 import { REVIEW_SPEED_PROFILE_NAMES, REVIEW_SPEED_PROFILES } from '../packages/evidence/src/review-profiles.js';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../packages/evidence/src/run-review.js';
@@ -128,7 +129,14 @@ import { EVIDENCE_REQUEST_REFUSALS } from '../packages/evidence/src/evidence-req
 // checklist's requirement and failure reasons (`checklist.requirements.reasons`, `checklist.failures.reasons`) carry it
 // (0 unless a row or statement was refused so). Items N, M and W add no summary field (M's `counts.claimsMerged` is
 // the report's; the summary's promise counts read the merged claims). Counts and closed names only.
-export const HARNESS_SUMMARY_SCHEMA = 'sonah.session-review-harness/17';
+// /18 (D102, the evidence merge): `evidenceRequests` also counts the first answers' copies that stood in for a re-ask
+// copy code's own check lowered (`firstStood`) and the first answers' unsettled statements dropped beside a settled
+// re-ask statement of their place (`nestedDropped`). Counts only.
+// /19 (D104, F5 part 4, the mark): `seenInPart` counts the results the session review saw only in part (the coverage
+// fact `resultsSeenInPart`, the sum over the windows) and the published rows that carry the mark, by closed status:
+// asks by REQUIREMENT_STATUSES, claims by PROMISE_STATUSES, failure rows by FAILURE_HANDLINGS, written statements by
+// WRITTEN_LABELS, and the decisions, changes of approach and findings. Counts and closed names only.
+export const HARNESS_SUMMARY_SCHEMA = 'sonah.session-review-harness/19';
 export const HARNESS_BACKENDS = Object.freeze(['claude-cli', 'codex-cli']);
 const [CLAUDE_CLI] = HARNESS_BACKENDS;
 /** A call's served-model attestation as the transport reports it (review-judge.js's
@@ -215,14 +223,28 @@ function withheldCounts(report) {
 
 /** M33 C: the published promises by closed status (PROMISE_STATUSES), every status always present. Counts
  *  only: no claim text or quote leaves the harness. A status outside the vocabulary counts nowhere. */
-/** M36 phase 3 (D68 Q): the windows' evidence requests, counts only — zeros when no window asked. */
+/** M36 phase 3 (D68 Q): the windows' evidence requests, counts only — zeros when no window asked. D102 (/18): and what
+ *  the merge rule did (`firstStood`, `nestedDropped`). */
 const evidenceCounts = (report) => {
   const counted = report?.counts?.evidenceRequests ?? {};
   return { ...Object.fromEntries(['windows', 'requested', 'items', 'served', 'servedBytes', 'reasks', 'kept',
-    'fromFirst', 'reaskFailed']
+    'fromFirst', 'firstStood', 'nestedDropped', 'reaskFailed']
     .map((field) => [field, count(counted[field])])),
   refused: Object.fromEntries(EVIDENCE_REQUEST_REFUSALS.map((reason) => [reason, count(counted.refused?.[reason])])) };
 };
+
+/** D104 (/19): the results seen in part and the marked rows, by closed status, every member always present. A row is
+ *  marked when it carries a mark a reader reads (`seenInPartOf`). Counts only. */
+function seenInPartCounts(report) {
+  const marked = (key) => (Array.isArray(report?.[key]) ? report[key] : []).filter((row) => seenInPartOf(row).length);
+  const by = (key, field, vocabulary) => Object.fromEntries(vocabulary.map((token) => [token,
+    marked(key).filter((row) => row?.[field] === token).length]));
+  return { results: count(report?.coverageFacts?.resultsSeenInPart),
+    rows: { requirements: by('requirements', 'status', REQUIREMENT_STATUSES),
+      promises: by('promises', 'status', PROMISE_STATUSES), failures: by('failures', 'handling', FAILURE_HANDLINGS),
+      writtenClaims: by('writtenClaims', 'label', WRITTEN_LABELS), decisions: marked('decisions').length,
+      pivots: marked('pivots').length, findings: marked('findings').length } };
+}
 
 function promiseCounts(report) {
   const promises = Array.isArray(report?.promises) ? report.promises : [];
@@ -577,6 +599,8 @@ export async function runSessionReviewHarness(options, { loadSession = loadRecor
           .map((field) => [field, count(report.counts?.proposalReasks?.[field])])),
         // M36 phase 3 (D68 Q): the windows' evidence requests, every count always present.
         evidenceRequests: evidenceCounts(report),
+        // D104 (/19): the results seen in part and the marked rows, by closed status.
+        seenInPart: seenInPartCounts(report),
       } : {}),
     };
     // A command line refused as usage touches no file.

@@ -81,7 +81,8 @@ test('W1 A: the vocabularies, the version and the label', () => {
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   assert.equal(windowOfLabel('narrative:w2:recolumn:3'), 2, 'a re-ask belongs to its window (F226)');
 });
 

@@ -10,7 +10,7 @@ import * as words from '../report-words.js';
 test('D90: the page and the report .md name the recorded session, and a message with no words as the recording\'s', () => {
   // D97: the page's and the report .md's footer say it once, in the report's words.
   assert.equal(words.REPORT_FOOTER_WORDS.share, 'Read this report before you share it.');
-  assert.equal(words.REPORT_PROMPT_WORDS.withheldMessage, 'The recording holds no words of this message.');
+  assert.equal(words.REPORT_PROMPT_WORDS.withheldMessage, 'Sonah found no words of this message.');
   assert.equal(page.PAGE_GAP_WORDS.instruction_omitted, 'the recorder or Sonah cut short one of your messages here');
 });
 

@@ -17,7 +17,8 @@
 // disclosure, carried on its finding as `disclosedBy` and judged by the one disclosure step both routes share
 // (challenge.js `disclosureAsks`, ledger.js `editDisclosure`). Pure: no model, network, clock or random source.
 
-import { verifyReceipt, MIN_QUOTE_CHARS, atWordEdges, PROJECT_INSTRUCTIONS_ROLE } from './session.js';
+import { verifyReceipt, MIN_QUOTE_CHARS, atWordEdges, PROJECT_INSTRUCTIONS_ROLE, effectReader, ACTION_EFFECTS }
+  from './session.js';
 import { FORBIDDEN_EDIT_REJECTIONS, FORBIDDEN_EDIT_BREACHES, FORBIDDEN_EDIT_ITEM_TYPE,
   humanChoice, asksHuman, actorKeyOf, rootInstructionLossOf, locatedGapSequences, replacedSideComparable, wholeFileBody,
   projectFilesBefore, personsProjectFile } from './ledger.js';
@@ -44,8 +45,9 @@ const WRITE_OPERATIONS = Object.freeze(['write', 'edit']);
 const COMMAND_OPERATION = 'command';
 /** C-02 operations whose effect on a file is what their record holds (a delete writes no body). */
 const FILE_OPERATIONS = Object.freeze(['write', 'edit', 'delete']);
-/** M33 N repair: the one outcome (session.js `actionOutcomeOf`) under which an action is published as done. */
-const LANDED = 'succeeded';
+/** M33 N repair: the one outcome under which an action is published as done. D98 (F9): its effect (session.js
+ *  `effectOf`) is `landed`: its C-02 outcome (`actionOutcomeOf`) is `succeeded`, and it was not refused before it ran. */
+const [, , LANDED] = ACTION_EFFECTS;
 /** M33 N repair: the recorded tool of the slicer's `read` kind (Read, Glob, Grep, a notebook or MCP read), operation
  *  `other`: nothing it does can put text into a file. */
 const READ_TOOL = 'read';
@@ -382,6 +384,7 @@ export function forbiddenRevert(session, action, violation, breach) {
       .filter((event) => Number.isSafeInteger(event?.sequence) && event.sequence > action.sequence)
       .sort((a, b) => a.sequence - b.sequence);
     let undone = null;
+    const effect = effectReader(session);
     for (const event of later) {
       // A human instruction ends the turn (a queued prompt or an answer included): the change was not undone of the
       // agent's own accord before it.
@@ -393,7 +396,7 @@ export function forbiddenRevert(session, action, violation, breach) {
       if (unreadEffect(session, event, path)) return null;
       if (!touches(event, path)) continue;
       if (writesQuote(session, event, path, violation.quote)) return null;
-      if (undone === null && actorKeyOf(session, event) === actor && session.actionOutcomeOf(event) === 'succeeded'
+      if (undone === null && actorKeyOf(session, event) === actor && effect(event) === LANDED
           && removes(session, event, path, violation.quote)) undone = event;
     }
     if (undone === null) return null;
@@ -453,7 +456,7 @@ export function readForbiddenEdit(item, { session, sourceMap, carried = new Set(
     if (actor === undefined) return { withheld: ACTOR_UNLINKED };
     // M33 N repair: only an outcome proved `succeeded` is an action that happened; failed, cancelled, unknown or never
     // recorded is withheld — what is not proved to have landed is never published as done.
-    if (session.actionOutcomeOf(action) !== LANDED) return { withheld: NOT_LANDED };
+    if (effectReader(session)(action) !== LANDED) return { withheld: NOT_LANDED };
     // W1 B: a file's place is after the event recorded before it (`afterSequence`); it must be one the window showed the
     // main agent before the action.
     const from = file ? instructionEvent.afterSequence : instructionEvent.sequence;

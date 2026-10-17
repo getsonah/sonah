@@ -27,9 +27,10 @@ import { requestableTexts, servedLines } from './windows.js';
  *     window for Claude Code) except in long Codex windows (a few dozen), where a narrative
  *     checks a handful of claims; eight ranges serve a claim-heavy window without letting one answer page a window's
  *     whole middle back in.
- *   - `bytes` 72,000: the most bytes served to one window: ten observations' shown halves (2 x 3,600 bytes at the 2k trim)
- *     and 10% of the window's 720,000-byte work budget, so a served window stays inside the spec's worst-case call (200k
- *     work + 200k carried + the fixed text, 450k tokens) — and never more than the window's own remaining work budget.
+ *   - `bytes` 72,000: the most bytes served to one window: 10% of the window's 720,000-byte work budget, so a served
+ *     window stays inside the spec's worst-case call (200k work + 200k carried + the fixed text, 450k tokens) — and never
+ *     more than the window's own remaining work budget. (It was also ten observations' shown halves at the 3,600-byte
+ *     skim; D103 keys the skim by the recording's harness, and the literal is unchanged.)
  *   - `parsed` 256: the most request entries one answer's list is read for; the rest are counted (`over_items`) unread,
  *     so a hostile answer costs bounded work.
  * D69 review (2026-10-08): these are cost bounds the owner asked for as literals (D68 Q names items and bytes), not a
@@ -214,9 +215,12 @@ export function serveEvidence({ session, settings = null, aliases, sourceMap, re
 
 /** The empty counts of a window's evidence requests (its record when it requested nothing is absent). `kept`: `first`
  *  (no re-ask answer was kept) or `merged` (a re-ask's answer, merged with the first: run-review.js `servedAnswer`);
- *  `fromFirst`: the first answer's proposals the re-ask did not repeat, kept beside it (by exact identity). */
+ *  `fromFirst`: the first answer's proposals the re-ask did not repeat, kept beside it (by exact identity). D102:
+ *  `firstStood`, the first answer's copies kept in place of a re-ask copy of their row that code's own check lowered
+ *  while it passed theirs; `nestedDropped`, the first answer's unsettled statements dropped beside a re-ask statement of
+ *  their place that is published settled after its own challenge (run-review.js `reviewWindow`). */
 export const emptyEvidenceRecord = () => ({ requested: 0, items: 0, served: 0, servedBytes: 0, refused: zeros(), reasks: 0,
-  reaskFailed: false, kept: 'first', fromFirst: 0 });
+  reaskFailed: false, kept: 'first', fromFirst: 0, firstStood: 0, nestedDropped: 0 });
 
 /** Sum one round's counts into a window's record. */
 export function addRound(record, round) {

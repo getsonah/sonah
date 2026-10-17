@@ -10,7 +10,7 @@
 //
 // Pure: no model, network, clock or random source. Code, never the model, assigns every label.
 
-import { verifyReceipt, receiptProjection } from './session.js';
+import { verifyReceipt, receiptProjection, effectOf, ACTION_EFFECTS } from './session.js';
 import { identityDigest } from '../contracts/canonical.js';
 import { WRITTEN_LABELS, WRITTEN_WITHHELD_CAUSES, WRITTEN_CONTRADICTION_REJECTIONS,
   RESOLUTION_CHALLENGE_OUTCOMES, UNRUN_WRITE_REASON, quotesOnlyUnrunWrite, writeActionOf, ownWrittenCheck,
@@ -30,8 +30,9 @@ const OWN_WRITTEN = OWN_WRITTEN_SOURCE;
 export const WRITTEN_CHANNEL = 'writtenClaims';
 export const WRITTEN_ITEM_TYPE = 'written';
 
-/** Outcomes the record states as a write that did not happen (session.js `actionOutcomeOf`). */
-const NOT_DONE = Object.freeze(['failed', 'cancelled']);
+/** D98 (F9): the effects (session.js ACTION_EFFECTS) the record states as a write that did not happen: refused before
+ *  it ran, or failed or cancelled. */
+const [NO_EFFECT, UNDONE_EFFECT] = ACTION_EFFECTS;
 const ITEM_KEYS = Object.freeze(['text', 'stated', 'contradictedBy']);
 const RECEIPT_KEYS = Object.freeze(['eventId', 'role', 'quote']);
 
@@ -156,10 +157,13 @@ export function readWrittenStatement(item, { session, sourceMap, until = null, r
   const shown = supplied(sourceMap, item.stated).some((source) => source.text.includes(item.stated.quote));
   if (!checked.ok || !written || !shown) return { withheld: UNGROUNDED };
   // A write the record says failed or was cancelled never put this text into a file: not a statement the
-  // agent wrote into one. An unrecorded outcome is not a failure, and is declared as its own gap.
-  if (typeof session.actionOutcomeOf === 'function' && NOT_DONE.includes(session.actionOutcomeOf(write)))
-    return { withheld: NOT_LANDED };
+  // agent wrote into one. An unrecorded outcome is not a failure, and is declared as its own gap. D98 (F9): by the one
+  // effect rule; a write refused before it ran never put it there either — a parsed write's command named first by
+  // D80's reason, as before.
+  const effect = effectOf(session, write);
+  if (effect === UNDONE_EFFECT) return { withheld: NOT_LANDED };
   if (quotesOnlyUnrunWrite(session, checked.receipt, { sourceMap, until })) return { withheld: UNRUN_WRITE_REASON };
+  if (effect === NO_EFFECT) return { withheld: NOT_LANDED };
   const statement = { text: item.text, stated: checked.receipt };
   if (item.contradictedBy == null) return { statement };
   const against = item.contradictedBy;

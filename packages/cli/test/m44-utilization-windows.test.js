@@ -234,7 +234,7 @@ test('M44 the harness stops admitting on the five-hour window alone; below U on 
   assert.equal(stopped.exitCode, 3, JSON.stringify(stopped.summary));
   assert.deepEqual([stopped.summary.state, stopped.summary.breaker], ['interrupted', 'utilization']);
   assert.equal(calls.n, 2, 'no window was admitted after the attempt that crossed the bound');
-  assert.equal(stopped.summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(stopped.summary.schema, 'sonah.session-review-harness/19');
   assert.deepEqual(stopped.summary.rateLimit.windows, { five_hour: 0.93, seven_day: 0.2 });
   assert.equal(stopped.summary.rateLimit.utilization, null, 'the top-level field stays what the CLI reported');
   const attempts = JSON.parse(await readFile(join(base, 'out', 'attempts.json'), 'utf8'));

@@ -138,6 +138,42 @@ export const sessionDigest = (session) => sha({ events: session.events, blobs: s
 export const beforeHumanInteractionFlags = (session) => ({ blobs: session.blobs, adapterGaps: session.adapterGaps,
   children: session.children,
   events: session.events.map(({ asksHuman: _asks, humanChoice: _choice, ...event }) => event) });
+/**
+ * D98 (F9): the session's bytes as they were before the adapter read the one effect rule (session.js `effectOf`): its
+ * unrecorded-body gap then also named the writes the record types as having done nothing (refused before they ran,
+ * failed or cancelled) — rebuilt from the events by the rule it had (every write but a delete whose change says its
+ * body is not recorded), in its place among the gaps, so a session pin taken before it stays checkable. Nothing else
+ * moved.
+ */
+export const beforeEffectRule = (session) => {
+  let count = 0, shell = 0;
+  const eventIds = [], writes = [];
+  for (const event of session.events) {
+    if (event.kind !== 'invocation' || event.operation === 'delete') continue;
+    const missing = (event.changes ?? []).filter((c) => c?.extent?.recorded === false);
+    if (!missing.length) continue;
+    count += missing.length;
+    if (event.shellWriteOf) shell += missing.length;
+    eventIds.push(event.id);
+    for (const change of missing)
+      writes.push({ eventId: event.id, path: change.path ?? null, outsideRepository: change.outsideRepository === true });
+  }
+  const gaps = session.adapterGaps.filter((gap) => gap.code !== 'unrecorded_body');
+  if (count) {
+    const other = count - shell;
+    const parts = [shell ? `${shell} shell write(s)` : null, other ? `${other} other write(s) with no recorded text` : null]
+      .filter(Boolean);
+    const gap = { code: 'unrecorded_body', channel: 'code', scope: 'session', count, eventIds, writes,
+      note: `${count} write(s) whose body the recording does not contain: ${parts.join(', ')}`,
+      sessionKey: session.sessionKey };
+    const at = session.adapterGaps.findIndex((g) => g.code === 'unrecorded_body');
+    const before = ['write_outcome_unknown', 'command_outcome_unknown', 'source_clipped'];
+    const after = at >= 0 ? at : gaps.reduce((last, g, i) => (before.includes(g.code) || g.channel === 'children' ? i + 1
+      : last), 0);
+    gaps.splice(after, 0, gap);
+  }
+  return { ...session, events: session.events, blobs: session.blobs, children: session.children, adapterGaps: gaps };
+};
 /** Every window's narrative request bytes, in order. M33 N: `renderBack` maps each prompt first (a later change's texts
  *  taken out, m33-n-forbidden-edit-fixture.js `beforeForbiddenEdit`), so a pin of an earlier version stays checkable. */
 export const promptDigests = (session, renderBack = (prompt) => prompt) => sessionPrompts(session)

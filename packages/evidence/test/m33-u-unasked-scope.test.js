@@ -371,7 +371,8 @@ test('U an incomplete window states which decisions its scope is complete for; a
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   const session = sessionOf({ partial: true });
   const [window] = planWindows(session);
   const { evidencePrompt } = buildNarrativePrompt({ session, window });

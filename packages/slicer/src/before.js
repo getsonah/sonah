@@ -5,7 +5,7 @@
 // Read result is discarded here, before the ledger leaves the slicer.
 
 import { posix } from 'node:path';
-import { READ_LINE_NUMBER, isNumberedRead, readText } from '../../redact/index.js';
+import { READ_LINE_NUMBER, isNumberedRead, readText, RECORDED_FACTS } from '../../redact/index.js';
 
 // D68 (E) (owner decision 2026-10-07; C-02 "M36 what the agent produced is kept whole"): the slicer keeps every body
 // WHOLE — a written body, each side of an Edit, an Edit's `originalFile`, a Read's text — and nothing cuts it (D90: nor
@@ -235,6 +235,31 @@ const wholeFileBody = (e) => {
   return e.kind === 'create' || e._body.length > 0;
 };
 
+/** D79, D80: the recorder's denial kinds that mean a call started and was stopped (evidence ledger.js
+ *  `STOPPED_DENIALS`); every other kind of its closed vocabulary (redact `RECORDED_FACTS.denial`) means the call was
+ *  refused before it ran. Re-declared here because the slicer imports nothing from the evidence package;
+ *  test/d98-effect-rule.test.js holds the two equal. */
+export const STOPPED_DENIAL_KINDS = Object.freeze(['interrupted', 'cancelled']);
+/** The ledger kinds of a command, read as the evidence adapter reads them (what it attempted, `attempted ?? kind`): a
+ *  failed command keeps what it attempted beside its legacy `error` kind. */
+const COMMAND_KINDS = Object.freeze(['bash', 'test', 'error']);
+/**
+ * D98 (F9; D80 left it for the next re-freeze): is `events[index]` a write the slicer parsed from a command (`via`, a
+ * sibling it emits right after its command) whose command the recorder typed as refused before it ran (a denial kind
+ * of its closed vocabulary that is not a stopped one)? The parent is the command the run of `via` siblings hangs from,
+ * as the evidence adapter links it (`shellWriteOf`): the same rule as evidence session.js `effectOf`'s `none` for such
+ * a write, which test/d98-effect-rule.test.js checks event by event. Typed fields only.
+ */
+export function parsedFromRefusedCall(events, index) {
+  if (!Array.isArray(events) || !events[index]?.via) return false;
+  let at = index - 1;
+  while (at >= 0 && events[at]?.via) at--;
+  const command = at >= 0 ? events[at] : null;
+  const kind = command?.recorded?.denial;
+  return COMMAND_KINDS.includes(command?.attempted ?? command?.kind) && RECORDED_FACTS.denial.includes(kind)
+    && !STOPPED_DENIAL_KINDS.includes(kind);
+}
+
 /**
  * Post-pass over the built events. Attaches `before` to the FIRST edit/create event of each
  * edited path, and to EVERY delete (F69), and deletes every transient field. The source
@@ -264,12 +289,17 @@ const wholeFileBody = (e) => {
  * state it removed, and each delete is a distinct path-state the record did observe. Nothing is
  * reconstructed anywhere: with no source, there is no `before`. The adapter declares which rule
  * produced a change's before side (`priorState`).
+ * D98 (F9): a write parsed from a command the recorder typed as refused before it ran (`parsedFromRefusedCall`) changed
+ * nothing: it is never a path's first write, and its body is never a file's earlier state (`write`). Its own body stays
+ * its `after`: the attempt stays visible.
  */
 export function attachBefore(events) {
   const targets = [];             // [path, eventIndex] — a path's first write, and every delete
   const firstWrite = new Set();
+  const refused = new Set();
+  events.forEach((e, i) => { if (parsedFromRefusedCall(events, i)) refused.add(i); });
   events.forEach((e, i) => {
-    if (!e.path || e.external) return;
+    if (!e.path || e.external || refused.has(i)) return;
     if (e.kind === 'delete') { targets.push([e.path, i]); return; }
     if ((e.kind === 'edit' || e.kind === 'create') && !firstWrite.has(e.path)) {
       firstWrite.add(e.path);
@@ -285,7 +315,7 @@ export function attachBefore(events) {
     let wrote = null;
     for (let i = wi - 1; i >= 0; i--) {
       const e = events[i];
-      if (e.path !== path) continue;
+      if (e.path !== path || refused.has(i)) continue;
       if (e.kind === 'read' && !e.isError && typeof e._readText === 'string' && (e._readText.length || e._readPlain === true)) {
         read = e;
         break;

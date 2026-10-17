@@ -416,6 +416,21 @@ const MOVED_BY_MD_FIXES = Object.freeze({ story: 'bedeb96d8cbfcfb5277b6e40eaddd4
  *  renders a story back, so every capture below carries it. No event, gap, request, label, window or window failure
  *  moved. */
 const MOVED_BY_RELEASE_CHECK = Object.freeze({ story: 'ba8cadaed32ef4010cab0a325436ff53764ff189e1defc587c06c44b21cc795f' });
+/** D100 (the audit of absence sentences, story /35): the story, by the report's words alone — the header's results and
+ *  the runs say "Sonah read no exit code", your settled decisions what Sonah found, and what Sonah could not check what
+ *  Sonah holds or could not read. Nothing renders a story back, so every capture below carries it. No event, gap,
+ *  request, label, window or window failure moved. */
+const MOVED_BY_ABSENCE_AUDIT = Object.freeze({ story: '587382958014dde455f4216f024a99265d3254c344d37e615b916bd756e56b28' });
+/** D101 (owner decision 2026-10-17; story /36, report model /2): the story, by the report model's version in its footer
+ *  alone (no ask of this case is lowered at the quote gate, so no cause's words show; rendered with the model's /1, it is
+ *  MOVED_BY_ABSENCE_AUDIT's, byte for byte). Nothing renders a story back, so every capture below carries it. No event,
+ *  gap, request, label, window or window failure moved. */
+const MOVED_BY_GROUNDING_CAUSES = Object.freeze({ story: 'facea3446d08092752a1e2546b9340f88f2298e3967d21f5142e4993b0ba4549' });
+/** D104 (F5 part 4, the mark; story /37, report model /3): the story, by the report model's version in its footer alone —
+ *  the case holds no result a window showed in part (rendered with the model's /2, it is MOVED_BY_GROUNDING_CAUSES's, byte
+ *  for byte). Nothing renders a story back, so every capture below carries it. No event, gap, request, label, window or
+ *  window failure moved. */
+const MOVED_BY_SEEN_IN_PART = Object.freeze({ story: '6b9c1c22f0c7f7be14efe09fdd8291cd5269f3edf029973a703d41a51d746a22' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
@@ -429,12 +444,15 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   const asksFixes = stable.map((c) => ({ ...c, ...MOVED_BY_DISCLOSURE_WORDS, ...MOVED_BY_WINDOWING,
     ...MOVED_BY_M36_FORMAT, ...MOVED_BY_M36_CONVERSATION, ...MOVED_BY_D71, ...MOVED_BY_D71_BRIEF, ...MOVED_BY_D71_CHANNELS,
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
-    ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK }));
+    ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
+    ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART }));
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
   // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more
   // (MOVED_BY_REPORT_MD), the story now the report .md; and once more (MOVED_BY_MD_FIXES), by the report's fixes; and
-  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes.
+  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes; and once more (MOVED_BY_ABSENCE_AUDIT), by
+  // the audit of absence sentences; and D101 once more (MOVED_BY_GROUNDING_CAUSES), by the report model's version; and
+  // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer.
   // W2: moved once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): moved once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: moved once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

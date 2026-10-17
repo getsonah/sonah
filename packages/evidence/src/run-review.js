@@ -10,7 +10,7 @@ import { EVIDENCE_REQUEST_LIMITS, EVIDENCE_REQUEST_MEMBER, EVIDENCE_REQUEST_REFU
 import { verifyReceipts, verifyReceipt, repairReceipt, decisionIdentity, receiptProjection, shownSession } from './session.js';
 import { identityDigest } from '../contracts/canonical.js';
 import { requestImages, deliveredView, clearedView } from './images.js';
-import { buildChallengeDossier, buildNarrativePrompt, NARRATIVE_SCHEMA, SESSION_NARRATIVE_SCHEMA, PROMPT_VERSION,
+import { buildChallengeDossier, challengeEvidenceOf, buildNarrativePrompt, NARRATIVE_SCHEMA, SESSION_NARRATIVE_SCHEMA, PROMPT_VERSION,
   narrativeSchemaOf, restatusRequest, recolumnRequest, reanchorRequest } from './prompt.js';
 import { reviewAgentProfile } from './review-agent.js';
 import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withheldRejection,
@@ -26,9 +26,11 @@ import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withhe
   quotesOnlyUnrunWrite, constraintWithSourceRole, reviewWithSourceRoles, REQUIREMENT_RESTATUS_WITHHELD,
   DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, groundDecision, codeContradictionSource, SUPPORT_ASKED,
   OWN_WRITTEN_SOURCE, RESTS_ON_REPAIRED, DECISION_RECOLUMN_RECORD, NOT_ACTING_REANCHOR_WITHHELD,
-  NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD } from './ledger.js';
-import { checkedRequirement, claimRestsOn, windowAsks, notClaimsCheck, closingCoverage, windowFailures, failuresCheck }
-  from './checklist.js';
+  NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD, groundingFieldsOf, GROUNDING_CAUSES,
+  GROUNDING_LENGTH_CAUSES, GROUNDING_ANCHOR_CAUSES, QUOTE_PLACES, QUOTE_LIMITS, nestedReceipts, VALUE_UNCHECKED_CAUSES }
+  from './ledger.js';
+import { checkedRequirement, claimRestsOn, windowAsks, notClaimsCheck, closingCoverage, windowFailures, failuresCheck,
+  publishedResponse } from './checklist.js';
 import { supportCheck, supportShape } from './claims.js';
 import { statusUncovered } from './status-fact.js';
 import { challengeItems, mergeChallengeRuns, CHALLENGE_PROFILE, requestFits, reviewInputBytes, verbatimWords,
@@ -42,6 +44,7 @@ import { WRITTEN_CHANNEL, WRITTEN_ITEM_TYPE, writtenChatClaim, asWrittenStatemen
 import { CHALLENGE_TIER_BOUNDS, REVIEW_SPEED_PROFILES, challengeProfileOf, dossierChallenge, isStandardProfile, reviewSpeedProfile,
   requestBoundOf, tieredChallenge } from './review-profiles.js';
 import { CODE_PASS_PROFILE } from './code-pass.js';
+import { seenInPartOfWindows, markSeenInPart } from './seen-in-part.js';
 
 /**
  * H1b. How much of a proposal the response contract does not admit a window's record keeps: the value
@@ -153,7 +156,7 @@ const [UPHELD, REFUTED_OUTCOME, UNSETTLED_OUTCOME, UNEXECUTED] = RESOLUTION_CHAL
 // S6 (S5 review L3): every reason token a row carries is a name taken from its closed list (ledger.js), never an inline
 // literal, so a per-reason count (which iterates the list) can never miss one.
 const [, , , , ASK_UNREVIEWED, ASK_REFUTED, ASK_UNSETTLED, ASK_UNEXECUTED] = REQUIREMENT_UNCHECKED_REASONS;
-const [RESPONSE_UNGROUNDED, , , , , FAILURE_UNREVIEWED, FAILURE_REFUTED, FAILURE_UNSETTLED, FAILURE_UNEXECUTED]
+const [, , , , , FAILURE_UNREVIEWED, FAILURE_REFUTED, FAILURE_UNSETTLED, FAILURE_UNEXECUTED]
   = FAILURE_UNCHECKED_REASONS;
 const [, , , FAILURE_NOT_CHECKED] = FAILURE_HANDLINGS;
 const [NO_DELIVERABLE_BY_END] = REQUIREMENT_FACTS;
@@ -610,42 +613,412 @@ export function reaskedAnswer({ first, second, session, repo = { host: 'github.c
  * and grounded as usual. Unlike the proposal re-ask (`reaskedAnswer`, a resample of the same request: the first
  * answer's copy stands), the evidence re-ask's request holds more. `fromFirst` counts the first answer's proposals so
  * kept (the ones a replacing re-ask would have lost). Pure and deterministic; never throws on model output.
+ *
+ * D102 (owner decision 2026-10-17; the rule EVIDENCE_MERGE_RULE, bound in the session run profile): a second look never
+ * erases a first. Per row, the re-ask's copy wins, unless code's own check lowers every re-ask copy of the row while
+ * the first answer's copy passes the same check (`mergeChecks`) and every check that re-ask copy passed (the review of
+ * D102's third fix, `standsFor`: a decision is checked part by part, its choice, its value and who decided it); then the
+ * first answer's copy stands in its place (`firstStood` counts them). Only a failed code check lets the first copy
+ * stand, never a lower status the re-ask proposed. A requirement is that row when it has the identity (its
+ * instruction's event and its text) or the instruction receipt (`requirementRowKey`: the key the review publishes one
+ * row by) of a re-ask row, so a re-ask that words an ask again is that row, not a second one; every other proposal's
+ * row is its identity, as before. A failure row's is its RESULT (`servedFailureRows`). Every contradiction of either
+ * answer is kept. A first-answer statement (a chat claim or a written statement) with no contradiction that its own
+ * check does not settle, beside a re-ask statement that code's check settles, citing its event with one quote holding
+ * the other (ledger.js `nestedReceipts`), is kept here and paired with it (`nested`: `{ first, later }`, the
+ * identities): the window drops it only once one of those re-ask statements is published settled after its own
+ * challenge (`reviewWindow`, `nestedDropped`), so a challenge that refutes the re-ask's copy never erases the first.
+ * `window` and `windowEnd` are the window's (its failures, its end); without a window no failure row can be checked,
+ * and the re-ask's stands as before.
  */
-export function servedAnswer({ first, reask, session, repo = { host: 'github.com', id: '0' }, sourceMap = null }) {
-  const { identityOf, readable } = answerReader({ session, repo, sourceMap });
+export function servedAnswer({ first, reask, session, repo = { host: 'github.com', id: '0' }, sourceMap = null,
+  window = null, windowEnd: end = null, carried = null }) {
+  const { statementIn, identityOf, readable } = answerReader({ session, repo, sourceMap });
+  const { held, checked, classOf, failureHeld } = mergeChecks({ session, sourceMap, window, windowEnd: end, repo,
+    statementIn, carried });
+  // D102: the keys of a proposal's row — its identity, and a requirement's instruction receipt too.
+  const keysOf = (channel, candidate) => [identityOf(channel, candidate),
+    channel === 'requirements' ? requirementRowKey(candidate) : null].filter((key) => key !== null);
   const forbidden = Object.hasOwn(first, FORBIDDEN_CHANNEL) || Object.hasOwn(reask, FORBIDDEN_CHANNEL);
   const kept = Object.fromEntries(CHANNELS.map((channel) => [channel, [...reask[channel]]]));
   kept[WRITTEN_CHANNEL] = [...writtenListOf(reask)];
   if (forbidden) kept[FORBIDDEN_CHANNEL] = [...forbiddenListOf(reask)];
   const channels = [...CHANNELS, WRITTEN_CHANNEL, ...(forbidden ? [FORBIDDEN_CHANNEL] : [])];
   const present = new Set();
+  // D102: where each row's re-ask copies sit (by every key of the row), and the re-ask's statements its own check settles.
+  const later = new Map(), settledLater = [];
   for (const channel of channels)
-    for (const candidate of kept[channel]) {
-      if (!readable(channel, candidate)) continue;
-      const key = identityOf(channel, candidate);
-      if (key !== null) present.add(key);
-    }
-  let fromFirst = 0;
+    kept[channel].forEach((candidate, index) => {
+      if (!readable(channel, candidate)) return;
+      const at = { channel, index };
+      for (const key of keysOf(channel, candidate)) {
+        present.add(key);
+        later.set(key, [...(later.get(key) ?? []), at]);
+      }
+      const identity = identityOf(channel, candidate);
+      if (classOf(channel, candidate) !== null && identity !== null && held(channel, candidate) === COPY_HOLDS)
+        settledLater.push({ stated: candidate.stated, identity });
+    });
+  // D102: the settled re-ask statements a first-answer statement would be a second, unsettled copy beside, by their
+  // identities — none when it has a contradiction, or its own check settles it.
+  const settledBeside = (channel, candidate) => {
+    if (classOf(channel, candidate) === null || !plain(candidate) || candidate.contradictedBy != null
+        || held(channel, candidate) === COPY_HOLDS) return [];
+    return settledLater.filter((other) => nestedReceipts(other.stated, candidate.stated))
+      .map((other) => other.identity);
+  };
+  let fromFirst = 0, firstStood = 0;
+  const nested = [], stood = new Set();
   const earlier = [...CHANNELS.map((channel) => [channel, first[channel]]), [WRITTEN_CHANNEL, writtenListOf(first)],
     ...(forbidden ? [[FORBIDDEN_CHANNEL, forbiddenListOf(first)]] : [])];
   for (const [channel, list] of earlier)
     for (const candidate of list) {
       if (!readable(channel, candidate)) continue;
-      const key = identityOf(channel, candidate);
-      if (key !== null && present.has(key)) continue;
-      // D79 review: a decision's structure is checked against the re-ask's only (`acrossAnswersOnly`).
-      if (key !== null && !acrossAnswersOnly(channel)) present.add(key);
+      const keys = keysOf(channel, candidate);
+      const matched = keys.filter((key) => present.has(key));
+      if (matched.length) {
+        // D102: one row in both answers. The re-ask's copy stands unless code's own check lowers every re-ask copy of
+        // it while this copy passes the same check (the review of D102's third fix: and every check that re-ask copy
+        // passed, `standsFor`). (A key only this answer gave is its own exact repeat: kept once. A row a first copy
+        // already stood in for holds that copy: no second one stands in for it.)
+        const copies = [...new Set(matched.flatMap((key) => later.get(key) ?? []))];
+        const own = checked(channel, candidate);
+        if (copies.length && copies.every((at) => !stood.has(kept[at.channel][at.index])
+            && standsFor(own, checked(at.channel, kept[at.channel][at.index])))) {
+          for (const at of copies) kept[at.channel][at.index] = candidate;
+          stood.add(candidate);
+          firstStood++;
+        }
+        continue;
+      }
+      // D79 review: a decision's structure is checked against the re-ask's only (`acrossAnswersOnly`). D102: and a
+      // requirement's instruction receipt, so two asks of one answer that quote the same words stay as it gave them.
+      const identity = identityOf(channel, candidate);
+      if (identity !== null && !acrossAnswersOnly(channel)) present.add(identity);
+      // D102: kept, and paired with the settled re-ask statements of its place, for the window to drop after the
+      // challenge.
+      const beside = identity === null ? [] : settledBeside(channel, candidate);
+      if (beside.length) nested.push({ first: identity, later: beside });
       kept[channel].push(candidate);
       fromFirst++;
     }
+  // D102: a first-answer copy that stood in for several re-ask copies of one row is kept once, at the first.
+  for (const channel of channels)
+    kept[channel] = kept[channel].filter((candidate, index, list) => !stood.has(candidate)
+      || list.indexOf(candidate) === index);
   // D71 (S2): the closing message's lines that assert nothing — the re-ask's list (asked with more), else the first's.
   if (Object.hasOwn(reask, NOT_CLAIMS_MEMBER)) kept[NOT_CLAIMS_MEMBER] = reask[NOT_CLAIMS_MEMBER];
   else if (Object.hasOwn(first, NOT_CLAIMS_MEMBER)) kept[NOT_CLAIMS_MEMBER] = first[NOT_CLAIMS_MEMBER];
   // D71 (S3, c): the failure rows — the re-ask's (asked with more), and each of the first answer's for a RESULT the re-ask
-  // gave none, so a row the first answer grounded is never lost.
-  if (Object.hasOwn(first, FAILURES_MEMBER) || Object.hasOwn(reask, FAILURES_MEMBER))
-    kept[FAILURES_MEMBER] = mergedFailureRows(failureRowsOf(reask), failureRowsOf(first));
-  return { narrative: kept, fromFirst };
+  // gave none, so a row the first answer grounded is never lost. D102: the first answer's row for a RESULT stands in place
+  // of the re-ask's when code's own check lowers or refuses the re-ask's and passes the first's.
+  if (Object.hasOwn(first, FAILURES_MEMBER) || Object.hasOwn(reask, FAILURES_MEMBER)) {
+    const failures = servedFailureRows(failureRowsOf(reask), failureRowsOf(first), failureHeld);
+    kept[FAILURES_MEMBER] = failures.rows;
+    firstStood += failures.stood;
+  }
+  return { narrative: kept, fromFirst, firstStood, nested };
+}
+
+/**
+ * D102 (owner decision 2026-10-17): the evidence re-ask's merge rule by name (`servedAnswer`). The session run
+ * profile binds it (`runProfile`, `evidenceMerge`), so a window record kept under another rule is never read as this
+ * one's: it is computed again from its stored answers, with no call.
+ */
+export const EVIDENCE_MERGE_RULE = 'later-copy-unless-code-lowers';
+
+/**
+ * D102: is the statement of `identity` a first answer's copy the evidence re-ask's merge paired (`pairedWith`, from
+ * `servedAnswer`'s `nested`) with a re-ask statement of its place that is published settled after its own challenge
+ * (`settled`, identities)? Then the window drops it (`reviewWindow`, `writtenStatementsOf`). Identities only.
+ */
+const pairedBesideSettled = (pairedWith, identity, settled) => identity != null
+  && (pairedWith.get(identity) ?? []).some((later) => settled.has(later));
+
+/** D102: what code's own check made of one copy of a row (`mergeChecks`): it passed with a status or a basis, or code
+ *  lowered or refused what it proposed. Neither: it proposed no status or basis code checks. */
+const COPY_HOLDS = 'holds';
+const COPY_LOWERED = 'lowered';
+/**
+ * The review of D102's third fix (M): the checks the merge compares two copies of a row by (`mergeChecks` `checked`), by
+ * name. A row of every kind but a decision is read by one check (ROW_CHECK: its status or its basis, as `held` reads
+ * it). A decision by one check for each part of it that publication shows (DECISION_CHECKS): `choice`, the row itself
+ * (its places and its grounding: refused, nothing of it is published), then its `value` and who decided it (`column`),
+ * each a cell of the published row.
+ */
+const ROW_CHECK = 'row';
+const DECISION_CHECKS = Object.freeze(['choice', 'value', 'column']);
+const [CHOICE_CHECK, VALUE_CHECK, COLUMN_CHECK] = DECISION_CHECKS;
+/** A copy that passed no check code applies and that code lowered by none. */
+const NOTHING_CHECKED = Object.freeze({ passed: Object.freeze([]), lowered: Object.freeze([]) });
+/** ledger.js VALUE_UNCHECKED_CAUSES: a decision's value cell that holds nothing the copy proposed. */
+const [VALUE_NOT_PROPOSED] = VALUE_UNCHECKED_CAUSES;
+/**
+ * D102 (the review of D102's third fix, M): a first answer's copy of a row (`first`) stands in for a re-ask copy of it
+ * (`later`), each read by `checked` (`{ passed, lowered }`), only when code lowered the re-ask copy by a check the
+ * first copy passed, and the first copy passed every check the re-ask copy passed: so the copy kept holds all that code
+ * accepted of the one it replaces. With one check (every kind but a decision), that is: the first copy holds and the
+ * re-ask copy is lowered, as before. A decision whose re-ask copy code refused (`choice`) gives way to a first copy
+ * published at all; one whose value or column code lowered gives way only to a first copy whose same cell grounded and
+ * which grounds every cell the re-ask copy grounded. Names only.
+ */
+const standsFor = (first, later) => later.lowered.some((check) => first.passed.includes(check))
+  && later.passed.every((check) => first.passed.includes(check));
+/** D102: the statuses a requirement row settles with (REQUIREMENT_STATUSES but `not-checked`, its weakest). */
+const SETTLED_REQUIREMENT_STATUSES = REQUIREMENT_STATUSES.filter((status) => status !== REQUIREMENT_STATUSES[3]);
+
+/** D102: the row a session-only requirement proposal is for — its instruction receipt's event and quote, exactly (what
+ *  the review publishes one row by, `mergeWindowOutputs`, `requirementRowId`) — or null when it names none. */
+const requirementRowKey = (candidate) => (plain(candidate) && plain(candidate.instruction)
+  && typeof candidate.instruction.eventId === 'string' && typeof candidate.instruction.quote === 'string'
+  ? `requirement-row:${JSON.stringify([candidate.instruction.eventId, candidate.instruction.quote])}` : null);
+
+/**
+ * The review of D102 (M1): every check code applies to one session-only requirement before it can be published, in one
+ * function that the window and the evidence re-ask's merge both read a requirement by, so the merge can never pass a copy
+ * that publication refuses (`reviewWindow` checks each requirement by it before any call, `groundedExtras` withholds by
+ * it at publication, `mergeChecks` reads each copy by it). On the session as the window showed it (`shown`), bounded at
+ * `windowEnd`, and assuming the row is readable (the caller's check):
+ *   - its status against its receipts (checklist.js `checkedRequirement`, spread here: `candidate`, `reason`, ...);
+ *   - `supplied`: every place the checked row cites was shown to the window (`suppliedCandidate`: else the window
+ *     withholds it before any call, `receipt_rejected`);
+ *   - `instruction`: its instruction receipt as it grounds, literally, in what the window showed (`verifyReceipt`), or
+ *     null (publication withholds it);
+ *   - `withheld`: either of the last two failed, so the row is withheld whatever its status.
+ * Structure, provenance and verbatim quotes only.
+ */
+function requirementChecked(shown, row, { sourceMap, windowEnd = null }) {
+  const checked = checkedRequirement(shown, row, { sourceMap, windowEnd });
+  const grounded = verifyReceipt(shown, row.instruction);
+  const supplied = sourceMap == null || suppliedCandidate(checked.candidate, 'requirements', sourceMap);
+  return { ...checked, supplied, instruction: grounded.ok ? grounded.receipt : null, withheld: !supplied || !grounded.ok };
+}
+
+/** M33 (I2): a contradicted claim's own count is grounded by its finding's receipt check (ledger.js
+ *  `findingReceiptCheck`, which refuses a result of another session too), bounded at `until` (D59: the window's end).
+ *  The one call `groundedExtras` publishes a contradicted claim by and `mergeChecks` reads a copy by. */
+const contradictionCheck = (session, claim, until = null) => findingReceiptCheck(session, CLAIM_FINDING_KIND,
+  contradictionReceipts(claim), { contradiction: claim.contradictedBy.role !== 'observation', until });
+
+/**
+ * The review of D102 (M1): every check code applies to one chat claim before any call, in one function that the window
+ * (`reviewWindow`) and the evidence re-ask's merge (`mergeChecks`) both read a claim by, so the two can never apply
+ * different checks (its contradiction is checked at publication, by `contradictionCheck`). `session` is the recording, `shown` the session as the window showed it; bounded at `windowEnd`;
+ * `checklist` (a session-only review) as `supportCheck` reads it. The claim's contradiction or support cited under its
+ * command's id is first moved to that command's one shown result (`claimResultRepair`: `claim`, `moved`). Of that claim:
+ *   - `crossed`: a result of another session than its statement contradicts it (`contradictedFromAnotherSession`;
+ *     withheld before any call);
+ *   - `supplied`: every place it cites but its support and resolution was shown to the window (`suppliedCandidate` of
+ *     `claimBare`; else withheld before any call, `receipt_rejected`);
+ *   - `words`: its own words as the check its publication applies grounds them (`claimVerbatim`), or null (never asked;
+ *     withheld at publication);
+ *   - `support`: its support's check (`supportCheck`), or null when it cites none or its words do not ground;
+ *   - `rests`: its `restsOn` check (`claimRestsOn`: kept only when every id passed), or null when it cites none.
+ * Assumes the claim is readable (the caller's check). Structure, provenance and verbatim quotes only.
+ */
+function claimChecked(session, shown, proposed, { sourceMap, windowEnd = null, checklist = true }) {
+  const { claim, moved } = claimResultRepair(session, sourceMap, proposed);
+  const support = claim.supportedBy == null || (!claim.contradictedBy && !verifyReceipt(shown, claim.stated).ok) ? null
+    : supportCheck(shown, claim, sourceMap, { checklist });
+  return { claim, moved, crossed: contradictedFromAnotherSession(session, claim),
+    supplied: sourceMap == null || suppliedCandidate(claimBare(claim), 'claims', sourceMap),
+    words: claimVerbatim(shown, sourceMap, claim), support,
+    rests: claim.restsOn === undefined ? null : claimRestsOn(shown, claim, sourceMap, windowEnd) };
+}
+
+/** M33 (C-06 "M33 written statements"): one written statement as code reads it before any call (`readWrittenStatement`),
+ *  withheld `written_unreadable` when its record cannot be computed (its identity digest refuses model text). The one
+ *  read `writtenStatementsOf` publishes by and `mergeChecks` reads a copy by. Never throws. */
+function writtenRead(item, { session, sourceMap, until = null, roles = WRITTEN_CONTRADICTION_ROLES, repo }) {
+  try {
+    const read = readWrittenStatement(item, { session, sourceMap, until, roles });
+    return !read.withheld && publishedStatement(repo, read, undefined).withheld ? { withheld: WRITTEN_UNREADABLE } : read;
+  } catch { return { withheld: WRITTEN_UNREADABLE }; }
+}
+
+/**
+ * The review of D102's fix (M): a session-only decision as the window asks it — a covering receipt that cites a project
+ * instruction file, and each check of its instructionReview that cites one, take that file's role (ledger.js
+ * `constraintWithSourceRole`, `reviewWithSourceRoles`; owner decisions D83 (2), D84: which source it is comes from the
+ * recording, never from the role the model wrote). A field that does not change is kept as it came. The one reading
+ * `reviewWindow` asks a decision by and `mergeChecks` reads a copy by.
+ */
+function decisionWithSourceRoles(shown, decision) {
+  let read = decision;
+  const constrainedBy = constraintWithSourceRole(shown, read.constrainedBy);
+  if (constrainedBy !== read.constrainedBy) read = { ...read, constrainedBy };
+  const instructionReview = reviewWithSourceRoles(shown, read.instructionReview);
+  if (instructionReview !== read.instructionReview) read = { ...read, instructionReview };
+  return read;
+}
+
+/** The review of D102's fix (M): a decision's places, as `reviewWindow` withholds a decision by before any call
+ *  (`receipt_rejected`): none of its actions carried from an earlier window (M33 X: a decision is adopted by its own
+ *  window's actions), and every place it cites shown to the window in the role it names (`suppliedCandidate`). */
+const decisionPlaced = (decision, { sourceMap, carried = null }) =>
+  !(carried !== null && (decision.actions ?? []).some((id) => carried.has(id)))
+  && (sourceMap == null || suppliedCandidate(decision, 'decisions', sourceMap));
+
+/**
+ * The review of D102's fix (M): code's checks of one pivot before it can be published, read by the very functions the
+ * window applies, so the evidence re-ask's merge never passes a copy that publication refuses. `placed`: every place it
+ * cites shown to the window in the role it names (`suppliedCandidate`; else `reviewWindow` withholds it before any
+ * call). `published`: its grounding at publication passed (`pivotGrounding`, which `groundedExtras` publishes by; else
+ * it is refused there).
+ */
+function pivotChecked(shown, pivot, { sourceMap, until = null }) {
+  return { placed: sourceMap == null || suppliedCandidate(pivot, 'pivots', sourceMap),
+    published: pivotGrounding(shown, pivot, { sourceMap, until }).outcome === null };
+}
+
+/**
+ * The review of D102's fix (M) and of its third fix (M): code's checks of one session-only decision before it can be
+ * published, read by the very functions the window applies and off the very row it publishes, so the evidence re-ask's
+ * merge never passes a part of a copy that publication lowers. By DECISION_CHECKS, `{ passed, lowered }`:
+ *   - `choice`: its places as the window reads them (`decisionWithSourceRoles`, then `decisionPlaced`: else
+ *     `reviewWindow` withholds it before any call) and its grounding (`groundDecision`, as the window grounds it,
+ *     `groundedProposal`: else it is refused there). Lowered, nothing of the copy is published and no other check is
+ *     read;
+ *   - `value`: the value cell of the row that grounding publishes: grounded (passed), or unchecked for any cause but
+ *     `not_proposed` (lowered: a value receipt that does not ground literally, on another action, on the wrong side of
+ *     a write, a value not in its quote...);
+ *   - `column`: who decided it, on that row: grounded (passed), or unchecked when the copy named a covering receipt or
+ *     an instruction review (`filesColumn`; lowered: a covering or settled-value quote that does not ground literally,
+ *     an instruction review that does not hold...).
+ * A cell the copy proposed nothing in is neither. Structure, provenance and verbatim quotes only: the row's states and
+ * closed causes, never a word of it.
+ */
+function decisionChecked(shown, decision, { sourceMap, windowEnd = null, repo, carried = null }) {
+  const candidate = decisionWithSourceRoles(shown, decision);
+  const grounded = decisionPlaced(candidate, { sourceMap, carried })
+    ? groundedProposal(candidate, { session: shown, repo, pr: null, end: windowEnd }) : null;
+  if (grounded?.ok !== true) return { passed: [], lowered: [CHOICE_CHECK] };
+  const { valueState, valueUnchecked, columnState } = grounded.decision;
+  const passed = [CHOICE_CHECK], lowered = [];
+  if (valueState === 'grounded') passed.push(VALUE_CHECK);
+  else if (valueUnchecked?.cause !== VALUE_NOT_PROPOSED) lowered.push(VALUE_CHECK);
+  if (columnState === 'grounded') passed.push(COLUMN_CHECK);
+  else if (filesColumn(candidate)) lowered.push(COLUMN_CHECK);
+  return { passed, lowered };
+}
+
+/**
+ * D102: code's own checks of one copy of a row, before any call, read by the very functions the window publishes by (the
+ * review of D102, M1: `requirementChecked`, `claimChecked` and `contradictionCheck`, `writtenRead`, `failuresCheck`), so
+ * the merge never passes a copy that publication refuses: on the session as the merged answer's source map shows it
+ * (`shownSession`), bounded at the window's end. `held(channel, candidate)` is COPY_HOLDS, COPY_LOWERED or null, for:
+ *   - a requirement: withheld (its instruction does not ground literally, or a place it cites was not shown) or lowered
+ *     by its status's check (lowered), or it keeps done, partly-done or not-done (holds);
+ *   - a chat claim (`classOf` 'claim'): withheld (no claim code can read, `unreadClaim`; a place it cites was not
+ *     shown; or its own words do not ground: lowered); else its contradiction (refused when a result of another session
+ *     contradicts it), else its support, else its `restsOn` (every cited id accepted) holds or is lowered; a claim
+ *     citing none is null;
+ *   - a written statement (`classOf` 'written'): withheld (lowered); else its contradiction passed every code check
+ *     (holds), failed one (lowered), or none was proposed (null);
+ *   - a pivot (the review of D102's fix: its key leaves out places code checks): refused by a check of `pivotChecked`,
+ *     before any call or at publication (lowered), else it holds;
+ *   - a decision (the review of D102's fix: its key leaves out places code checks; its third fix: and parts publication
+ *     lowers): lowered when `decisionChecked` lowered any part of it, else it holds — a summary only: the merge
+ *     compares a decision part by part (`checked`).
+ * A forbidden edit's copy is null: its key holds every field it has. `checked(channel, candidate)` is what the merge
+ * compares two copies by (`standsFor`): `{ passed, lowered }`, the checks by name — a decision's by `decisionChecked`
+ * (`carried`, the events the window carries, `carriedIds`, refuses a decision on a carried action, as the window does),
+ * any other row's one check (ROW_CHECK) by `held`. `failureHeld(row)` reads a failure row the same way (`failuresCheck`
+ * with the window's listed RESULTs): refused or lowered, a handling that held, or none proposed. Structure, provenance
+ * and verbatim quotes only; never throws (a check that throws is null, or checks nothing).
+ */
+export function mergeChecks({ session, sourceMap, window = null, windowEnd: end = null, repo = { host: 'github.com', id: '0' },
+  statementIn = answerReader({ session, repo, sourceMap }).statementIn, carried = null }) {
+  const shown = shownSession(session, sourceMap);
+  const roles = writtenRolesOf(SESSION_NARRATIVE_SCHEMA);
+  const classOf = (channel, candidate) => (channel === WRITTEN_CHANNEL
+    || (channel === 'claims' && statementIn(candidate)) ? 'written' : channel === 'claims' ? 'claim' : null);
+  const cites = (ids) => (Array.isArray(ids) ? ids.length > 0 : ids != null);
+  const claimHeld = (proposed) => {
+    if (unreadClaim(proposed)) return COPY_LOWERED;
+    const read = claimChecked(session, shown, proposed, { sourceMap, windowEnd: end });
+    if (!read.supplied || read.words === null) return COPY_LOWERED;
+    if (read.claim.contradictedBy) return contradictionCheck(shown, read.claim, end).ok ? COPY_HOLDS : COPY_LOWERED;
+    if (read.support !== null) return read.support.ok ? COPY_HOLDS : COPY_LOWERED;
+    if (!cites(read.claim.restsOn)) return null;
+    return Object.values(read.rests.rejected).every((n) => n === 0) && read.rests.accepted.length
+      ? COPY_HOLDS : COPY_LOWERED;
+  };
+  const writtenHeld = (channel, proposed) => {
+    const item = channel === WRITTEN_CHANNEL ? proposed : asWrittenStatement(proposed);
+    const read = writtenRead(item, { session: shown, sourceMap, until: end, roles, repo });
+    if (read.withheld !== undefined) return COPY_LOWERED;
+    if (item.contradictedBy == null) return null;
+    return read.contradiction != null ? COPY_HOLDS : COPY_LOWERED;
+  };
+  // The review of D102's fix (M): a decision's key leaves out places code checks (a receipt's role, its value receipt
+  // and instruction review); its third fix (M): and parts of the row publication lowers (its value, who decided it). So
+  // each copy is read part by part, by the window's own checks and off the row it publishes (`decisionChecked`).
+  const decisionRead = (candidate) => {
+    try {
+      return plain(candidate) ? decisionChecked(shown, candidate, { sourceMap, windowEnd: end, repo, carried })
+        : NOTHING_CHECKED;
+    } catch { return NOTHING_CHECKED; }
+  };
+  const held = (channel, candidate) => {
+    try {
+      if (!plain(candidate)) return null;
+      if (channel === 'requirements') {
+        const read = requirementChecked(shown, candidate, { sourceMap, windowEnd: end });
+        if (read.withheld || read.reason !== null) return COPY_LOWERED;
+        return SETTLED_REQUIREMENT_STATUSES.includes(read.candidate.status) ? COPY_HOLDS : null;
+      }
+      // The review of D102's fix (M): a pivot's key leaves out places code checks (a receipt's role), so each copy is
+      // read by the window's own checks too.
+      if (channel === 'pivots') {
+        const read = pivotChecked(shown, candidate, { sourceMap, until: end });
+        return read.placed && read.published ? COPY_HOLDS : COPY_LOWERED;
+      }
+      if (channel === 'decisions') return decisionRead(candidate).lowered.length ? COPY_LOWERED : COPY_HOLDS;
+      const statement = classOf(channel, candidate);
+      return statement === 'claim' ? claimHeld(candidate)
+        : statement === 'written' ? writtenHeld(channel, candidate) : null;
+    } catch { return null; }
+  };
+  const checked = (channel, candidate) => {
+    if (channel === 'decisions') return decisionRead(candidate);
+    const verdict = held(channel, candidate);
+    return verdict === COPY_HOLDS ? { passed: [ROW_CHECK], lowered: [] }
+      : verdict === COPY_LOWERED ? { passed: [], lowered: [ROW_CHECK] } : NOTHING_CHECKED;
+  };
+  const failureHeld = (row) => {
+    try {
+      const read = failuresCheck(shown, window, [row], { sourceMap, windowEnd: end });
+      if (read.rows.length !== 1) return COPY_LOWERED;
+      const [{ candidate, reason }] = read.rows;
+      if (reason !== null) return COPY_LOWERED;
+      return candidate.handling === FAILURE_NOT_CHECKED ? null : COPY_HOLDS;
+    } catch { return null; }
+  };
+  return { held, checked, classOf, failureHeld };
+}
+
+/**
+ * D102: the evidence re-ask's failure rows — the re-ask's, where the first answer's row for a RESULT stands in place of the
+ * re-ask's first row for it (the one `failuresCheck` reads; a later one is `merged`) when `held` lowers or refuses the
+ * re-ask's and passes the first answer's; then each of the first answer's rows for a RESULT the re-ask names none for
+ * (`mergedFailureRows`). `{ rows, stood }`, `stood` the rows that stood in.
+ */
+function servedFailureRows(reaskRows, firstRows, held) {
+  const firstFor = new Map();
+  for (const row of firstRows)
+    if (plain(row) && typeof row.eventId === 'string' && !firstFor.has(row.eventId)) firstFor.set(row.eventId, row);
+  const seen = new Set();
+  let stood = 0;
+  const rows = reaskRows.map((row) => {
+    if (!plain(row) || typeof row.eventId !== 'string' || seen.has(row.eventId)) return row;
+    seen.add(row.eventId);
+    const own = firstFor.get(row.eventId);
+    if (own === undefined || held(row) !== COPY_LOWERED || held(own) !== COPY_HOLDS) return row;
+    stood++;
+    return own;
+  });
+  return { rows: mergedFailureRows(rows, firstRows), stood };
 }
 
 /**
@@ -801,17 +1174,14 @@ const [WRITTEN_UNREADABLE] = WRITTEN_WITHHELD_CAUSES;
  * window's own.
  */
 async function writtenStatementsOf({ written, session, sourceMap, repo, ask, until = null, bounds = undefined,
-  roles = WRITTEN_CONTRADICTION_ROLES }) {
+  roles = WRITTEN_CONTRADICTION_ROLES, identities = [], pairedWith = new Map() }) {
   const withheld = zeros(WRITTEN_WITHHELD_CAUSES);
   const reads = [];
   written.forEach((item, index) => {
-    let read;
-    try {
-      read = readWrittenStatement(item, { session, sourceMap, until, roles });
-      // Review-WP: a statement whose record cannot be computed (its identity digest refuses model text,
-      // such as a lone surrogate) is withheld as unreadable before anything is asked about it.
-      if (!read.withheld && publishedStatement(repo, read, undefined).withheld) read = { withheld: WRITTEN_UNREADABLE };
-    } catch { read = { withheld: WRITTEN_UNREADABLE }; }
+    // Review-WP: a statement whose record cannot be computed (its identity digest refuses model text,
+    // such as a lone surrogate) is withheld as unreadable before anything is asked about it (`writtenRead`, the one read
+    // the evidence re-ask's merge reads a copy by too).
+    const read = writtenRead(item, { session, sourceMap, until, roles, repo });
     if (read.withheld) withheld[read.withheld]++;
     else reads.push({ key: `${WRITTEN_CHANNEL}:${index}`, item, read });
   });
@@ -834,16 +1204,24 @@ async function writtenStatementsOf({ written, session, sourceMap, repo, ask, unt
     } catch { challenge = null; outcomes.clear(); }
   }
   const contradictionsRejected = zeros(WRITTEN_CONTRADICTION_REJECTIONS);
-  const statements = [];
+  const published = [];
   for (const { key, read } of reads) {
     // Never throws (`publishedStatement`): one statement that cannot be published is withheld and counted,
     // and costs no other statement its publication.
     const { record, rejected, withheld: unpublished } = publishedStatement(repo, read, outcomes.get(key));
     if (unpublished) { withheld[unpublished]++; continue; }
     if (rejected) contradictionsRejected[rejected]++;
-    statements.push(record);
+    published.push({ identity: identities[Number(key.split(':')[1])] ?? null, record });
   }
-  return { statements, withheld, contradictionsRejected, challenge };
+  // D102: a first answer's statement the evidence re-ask's merge paired with re-ask statements of its place
+  // (`identities`, `pairedWith`) is dropped, not kept as a second, unsettled copy, only once one of them is published
+  // contradicted (its contradiction passed every code check and its item was upheld); `nestedDropped` counts them.
+  const settled = new Set(published.filter(({ identity, record }) => identity !== null
+    && record.label === WRITTEN_CONTRADICTED).map(({ identity }) => identity));
+  const statements = published.filter(({ identity }) => !pairedBesideSettled(pairedWith, identity, settled))
+    .map(({ record }) => record);
+  return { statements, withheld, contradictionsRejected, challenge,
+    nestedDropped: published.length - statements.length };
 }
 
 // The CLI transport only promises parsed JSON. Enforce the pinned narrative shape locally;
@@ -1124,6 +1502,24 @@ function mergedCopy(kept, copy) {
 }
 
 /**
+ * One pivot as its publication grounds it (`groundedExtras`), on the session as the window showed it: `outcome` UNREAD
+ * when no check can read it (its two approaches not text, or no receipt), WITHHELD when a quote does not ground
+ * literally (`verifyReceipts`), or when one quotes only the body of a write the slicer parsed from a command that did
+ * not run, failed or stopped before it finished (D80, review of D80 Q: ledger.js `unrunEnd`, `quotesOnlyUnrunWrite`; a
+ * write that may not have happened cannot show a change of approach was adopted), else null with its grounded receipts
+ * and how many were snapped. The review of D102's fix (M): the one grounding `groundedExtras` publishes a pivot by and
+ * `mergeChecks` reads a copy by (`pivotChecked`). Throws only on a receipt list no check can read (the caller's).
+ */
+function pivotGrounding(session, pivot, { sourceMap = null, until = null } = {}) {
+  if (typeof pivot.abandoned !== 'string' || typeof pivot.adopted !== 'string'
+      || !Array.isArray(pivot.receipts) || !pivot.receipts.length) return { outcome: UNREAD };
+  const { verified, rejected, repaired } = verifyReceipts(session, pivot.receipts);
+  if (rejected.length || !verified.length) return { outcome: WITHHELD };
+  if (verified.some((receipt) => quotesOnlyUnrunWrite(session, receipt, { sourceMap, until }))) return { outcome: WITHHELD };
+  return { outcome: null, verified, repaired };
+}
+
+/**
  * `supports` (M33 C): for each surviving claim whose `supportedBy` passed every code check (`supportCheck`) and
  * whose own support item was then upheld by the challenge, that support's grounded receipt, keyed by the claim
  * object: its promise is `verified`. `{ sourceMap, until }` (D80): what the window showed and its end (D59), against
@@ -1138,15 +1534,9 @@ function groundedExtras(session, narrative, repo = null, supports = null, checkl
   const safely = (check) => { try { return check(); } catch { return UNREAD; } };
   for (const pivot of narrative?.pivots ?? []) {
     const outcome = safely(() => {
-      if (typeof pivot.abandoned !== 'string' || typeof pivot.adopted !== 'string'
-          || !Array.isArray(pivot.receipts) || !pivot.receipts.length) return UNREAD;
-      const { verified, rejected, repaired } = verifyReceipts(session, pivot.receipts);
-      if (rejected.length || !verified.length) return WITHHELD;
-      // D80 (review of D80 Q): a pivot one of whose receipts quotes only the body of a write the slicer parsed from a
-      // command that did not run, failed or stopped before it finished (ledger.js `unrunEnd`, `quotesOnlyUnrunWrite`)
-      // is withheld, as one whose quote did not match: a write that may not have happened cannot show a change of
-      // approach was adopted.
-      if (verified.some((receipt) => quotesOnlyUnrunWrite(session, receipt, { sourceMap, until }))) return WITHHELD;
+      // The review of D102's fix: by the one grounding the evidence re-ask's merge reads a pivot's copy by too.
+      const { outcome: refused, verified, repaired } = pivotGrounding(session, pivot, { sourceMap, until });
+      if (refused) return refused;
       pivots.push({ ...pivot, receipts: verified });
       // F44: `verifyReceipts` has always reported how many quotes it had to snap to their exact
       // source substring; this caller was throwing the number away, so a pivot repair the reader
@@ -1163,19 +1553,28 @@ function groundedExtras(session, narrative, repo = null, supports = null, checkl
       const statuses = checklist ? REQUIREMENT_STATUSES : LEGACY_REQUIREMENT_STATUSES;
       if (req.instruction?.role !== 'instruction' || typeof req.text !== 'string'
           || !statuses.includes(req.status)) return UNREAD;
-      const check = verifyReceipt(session, req.instruction);
-      if (!check.ok) return WITHHELD;
-      if (!checklist) { requirements.push({ ...req, instruction: check.receipt }); return null; }
+      if (!checklist) {
+        const check = verifyReceipt(session, req.instruction);
+        if (!check.ok) return WITHHELD;
+        requirements.push({ ...req, instruction: check.receipt });
+        return null;
+      }
+      // The review of D102 (M1): withheld by the one check of a requirement the evidence re-ask's merge reads a copy by
+      // too (`requirementChecked`): its instruction receipt grounds, literally, in a place the window showed.
+      const check = requirementChecked(session, req, { sourceMap: checklist.sourceMap, windowEnd: checklist.windowEnd });
+      if (check.withheld) return WITHHELD;
       // D71 (S2): the row as code checked it (run-review.js `reviewWindow`, checklist.js `checkedRequirement`):
       // its receipts are the ones that held, grounded again here for their published shape, and the closed reason code
       // lowered it for, when it did.
       const grounded = (receipt) => (plain(receipt) ? verifyReceipt(session, receipt) : { ok: false });
       const deliverable = grounded(req.deliverable), shortfall = grounded(req.shortfall);
       const reason = checklist.requirementReasons.get(req) ?? null;
-      requirements.push({ text: req.text, instruction: check.receipt, status: req.status,
+      // D101: a row the quote gate lowered keeps the cause of the test that refused it beside its reason.
+      const cause = reason ? checklist.requirementCauses?.get(req) ?? {} : {};
+      requirements.push({ text: req.text, instruction: check.instruction, status: req.status,
         ...(deliverable.ok ? { deliverable: deliverable.receipt } : {}), ...(shortfall.ok ? { shortfall: shortfall.receipt } : {}),
         ...(Array.isArray(req.restsOn) && req.restsOn.length ? { restsOn: [...req.restsOn] } : {}),
-        ...(reason ? { reason } : {}) });
+        ...(reason ? { reason, ...cause } : {}) });
       return null;
     });
     if (outcome) requirementsRejected++;
@@ -1192,10 +1591,7 @@ function groundedExtras(session, narrative, repo = null, supports = null, checkl
       // quote that grounds only after its snap is the published finding, in no withheld or rejected
       // count (its snap is counted in `receiptsRepaired`, as any finding's is); one that cannot is the
       // ledger's rejected finding row and this one withheld claim. Never both.
-      if (claim.contradictedBy)
-        return findingReceiptCheck(session, CLAIM_FINDING_KIND, contradictionReceipts(claim),
-          { contradiction: claim.contradictedBy.role !== 'observation', until: checklist?.windowEnd ?? null }).ok
-          ? null : WITHHELD;
+      if (claim.contradictedBy) return contradictionCheck(session, claim, checklist?.windowEnd ?? null).ok ? null : WITHHELD;
       const stated = verifyReceipt(session, claim.stated);
       if (!stated.ok) return WITHHELD;
       // C-06 (M33): a grounded claim that survived the challenge is published as a PromiseRecord, status
@@ -1413,6 +1809,17 @@ function narrativeReceipts(narrative, supportChecked = null) {
 }
 
 /**
+ * The review of D102's third fix (M): how a window grounds a decision (ledger.js `groundDecision`, by `buildLedger`):
+ * its column is checked against the instructions recorded up to the window's end (`instructionHistoryComplete`), and on
+ * a session-only window (`sessionOnly`) a choice not to act anchored on the agent's words is admitted (D71 d) and "made
+ * without asking you" also checks the project instruction files the window showed (D84). One set of options, read by
+ * `groundNarrative` and by `groundedProposal` (a decision grounded apart from its window: W1 A, G2 and the evidence
+ * re-ask's merge), so the two can never ground one decision by different options.
+ */
+const decisionGrounding = (sessionOnly) => ({ instructionHistoryComplete: true, notActing: sessionOnly,
+  projectFilesShown: sessionOnly });
+
+/**
  * Ground one window's surviving narrative against the CURRENT session and pull request, and
  * recompute relevance from the current `pr.files`. D60: an answer the judge's cache supplied for
  * the same request bytes is grounded here exactly like a live one — nothing about an answer is
@@ -1434,9 +1841,11 @@ function groundNarrative({ session, pr, repo, narrative, upTo = null, sourceMap 
   const effective = invalid ? null : narrative;
   // D71 (d): a session-only window (`checklist`) admits a choice not to act anchored on the agent's words.
   // D83 (3): and a decision whose cited actions are all the agent's housekeeping is not listed (`housekeeping`).
-  // D84: and "made without asking you" also checks the project instruction files its window showed.
+  // D84: and "made without asking you" also checks the project instruction files its window showed. The review of
+  // D102's third fix: by the one set of options a decision grounded apart from its window is grounded by
+  // (`decisionGrounding`).
   const grounded = buildLedger({ repo, session, pr, candidates: decisions, findingCandidates: findings, upTo,
-    notActing: checklist !== null, housekeeping: checklist !== null, projectFilesShown: checklist !== null });
+    ...decisionGrounding(checklist !== null), housekeeping: checklist !== null });
   const extras = groundedExtras(session, effective, repo, supports, checklist ? { ...checklist, sourceMap, windowEnd: upTo }
     : null, { sourceMap, until: upTo });
   const cited = verifyReceipts(session, narrativeReceipts(effective, supportChecked));
@@ -1775,7 +2184,9 @@ const [RESTATUS_BOUND, RESTATUS_NO_ANSWER, RESTATUS_NO_ROW, RESTATUS_UNGROUNDED,
  * own item (`ask`, the run the requirement was checked in: its tier, its dossier), and published only when that check
  * upholds it: `restated`, the item's key to the row it publishes. Everything else stays as before the re-ask:
  * not-checked with `challenge_refuted`. `record` counts what happened (REQUIREMENT_RESTATUS_WITHHELD,
- * RESOLUTION_CHALLENGE_OUTCOMES); `challenge` is the check's own record, kept apart from the window's (like a
+ * RESOLUTION_CHALLENGE_OUTCOMES; D101: and, when any, `ungroundedCauses`, the rows withheld `ungrounded` at the quote gate
+ * by the cause of the test that refused their quote, GROUNDING_CAUSES); `challenge` is the check's own record, kept
+ * apart from the window's (like a
  * support's: it never makes a window incomplete), or null when nothing was asked. A failed call or check withholds only
  * its own row. Model output is read structurally only; nothing here reads a word of it.
  */
@@ -1784,6 +2195,7 @@ async function restatedRequirements({ refuted, byKey, request, aliases, judge, s
   const withheld = zeros(REQUIREMENT_RESTATUS_WITHHELD);
   const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
   const record = { refuted: refuted.length, asked: 0, withheld, challenged };
+  const causes = zeros(GROUNDING_CAUSES);
   const sent = refuted.map((item) => {
     const refutations = (byKey.get(item.key)?.votes ?? []).filter((vote) => vote?.valid === true
       && vote.verdict === 'refuted');
@@ -1809,12 +2221,18 @@ async function restatedRequirements({ refuted, byKey, request, aliases, judge, s
     if (rows.length !== 1) { withheld[RESTATUS_NO_ROW]++; continue; }
     const checked = checkedRequirement(session, { ...rows[0], text: item.candidate.text,
       instruction: item.candidate.instruction }, { sourceMap, windowEnd: end });
-    if (checked.reason) { withheld[RESTATUS_UNGROUNDED]++; continue; }
+    if (checked.reason) {
+      withheld[RESTATUS_UNGROUNDED]++;
+      if (Object.hasOwn(causes, checked.cause)) causes[checked.cause]++;
+      continue;
+    }
     if (checked.candidate.status === REQUIREMENT_STATUSES[3]) { withheld[RESTATUS_NOT_CHECKED]++; continue; }
     if (checked.candidate.status === item.candidate.status) { withheld[RESTATUS_SAME]++; continue; }
     asked.push({ key: `${item.key}${RESTATUS_SUFFIX}`, of: item.key, type: 'requirement',
       candidate: checked.candidate });
   }
+  // D101: the rows withheld at the quote gate, by cause, in the private report only (present only when there is one).
+  if (Object.values(causes).some((n) => n > 0)) record.ungroundedCauses = causes;
   const restated = new Map();
   if (!asked.length) return { restated, record, challenge: null };
   let challenge = null;
@@ -1841,12 +2259,13 @@ const [RECOLUMN_BOUND, RECOLUMN_NO_ANSWER, RECOLUMN_NO_ROW, RECOLUMN_COULD_NOT_T
 const filesColumn = (candidate) => plain(candidate) && (plain(candidate.constrainedBy)
   || plain(candidate.instructionReview));
 /** W1 A and G2: a decision proposal grounded as the window's grounding grounds it (`groundNarrative`): the ledger's
- *  answer (`groundDecision`), or null when it cannot be read. `place` is `{ session, repo, pr, end }`. */
+ *  answer (`groundDecision`, with the one set of options a session-only window grounds its decisions by,
+ *  `decisionGrounding`), or null when it cannot be read. `place` is `{ session, repo, pr, end }`. The review of D102's
+ *  third fix: the evidence re-ask's merge reads each decision copy's row by it too (`decisionChecked`). */
 function groundedProposal(decision, { session, repo, pr, end }) {
   try {
     const [candidate] = toCandidates({ decisions: [decision] }, session).decisions;
-    return groundDecision({ repo, session, pr, candidate, instructionHistoryComplete: true, upTo: end,
-      notActing: true, projectFilesShown: true });
+    return groundDecision({ repo, session, pr, candidate, upTo: end, ...decisionGrounding(true) });
   } catch { return null; }
 }
 /** W1 A and G2: the column a decision proposal grounds to, as the window's grounding derives it, or null. */
@@ -2000,10 +2419,9 @@ const actionSet = (candidate) => (plain(candidate) && Array.isArray(candidate.ac
 const sameChoice = (row, own) => plain(row) && plain(own) && row.notActing === true && actionSet(own) !== null
   && actionSet(row) === actionSet(own) && typeof own.dimension === 'string' && row.dimension === own.dimension
   && typeof own.chosen === 'string' && row.chosen === own.chosen && (row.value ?? null) === (own.value ?? null);
-/** G2: is the receipt `next` the refuted anchor `was` again: in its event, one quote holding the other (strings only)? */
-const sameAnchor = (next, was) => plain(next) && plain(was) && typeof next.eventId === 'string'
-  && next.eventId === was.eventId && typeof next.quote === 'string' && typeof was.quote === 'string'
-  && (next.quote.includes(was.quote) || was.quote.includes(next.quote));
+/** G2: is the receipt `next` the refuted anchor `was` again: in its event, one quote holding the other (strings only)?
+ *  D102: the one shared key (ledger.js `nestedReceipts`). */
+const sameAnchor = nestedReceipts;
 
 /**
  * G2 (owner decision 2026-10-15; option (c) of the ask-status spec). A stop to ask the person is often the agent's
@@ -2138,17 +2556,24 @@ async function reanchoredChoices({ refuted, request, aliases, judge, session, wi
  * are merged (`servedAnswer`): the re-ask's answer, and after it every readable proposal of the first answer that it did
  * not repeat by exact identity (`evidence.fromFirst`), so a proposal the first answer grounded in shown text is never lost
  * because the re-ask left it out (a contradiction is never dropped, M33 X), and the served text only adds or corrects.
+ * D102: one rule per row (EVIDENCE_MERGE_RULE): the re-ask's copy, unless code's own check lowers it and passes the first
+ * answer's (`evidence.firstStood`); a first-answer statement beside a re-ask statement of its place that code's check
+ * settles is kept and paired with it (`nested`), for the window to drop once that statement is published settled after
+ * its own challenge (`evidence.nestedDropped`).
  * The re-ask's request and source map — the window's, with every served span appended (C-05) — are the window's from
  * then on: its grounding, its challenges, the report's grounding of what it proposed (a superset of what the first
  * answer was shown, so the first answer's proposals ground as they did). Returns `{ narrative, request, sourceMap,
- * served, evidence }` (`served` the served spans by id, `evidence` the counts; both null when the answer requested
- * nothing).
+ * served, evidence, nested }` (`served` the served spans by id, `evidence` the counts; both null when the answer
+ * requested nothing; `nested` the pairs, empty then).
  */
 async function evidenceReask({ narrative, request, sourceMap, session, repo, window, context = null, settings, aliases,
   judge, requestBound }) {
   let asked = requestsOf(narrative);
-  if (!asked) return { narrative: withoutRequests(narrative), request, sourceMap, served: null, blocks: null, evidence: null };
+  if (!asked) return { narrative: withoutRequests(narrative), request, sourceMap, served: null, blocks: null,
+    evidence: null, nested: [] };
   const evidence = emptyEvidenceRecord();
+  // D102: the first answers' statements kept beside a settled re-ask statement of their place (`servedAnswer`).
+  const nested = [];
   let current = { narrative, request, sourceMap, served: null, blocks: null };
   let servedRanges = {};
   const budget = Number.isSafeInteger(window?.workBudget) && Number.isSafeInteger(window?.workBytes)
@@ -2187,16 +2612,19 @@ async function evidenceReask({ narrative, request, sourceMap, session, repo, win
     bytesLeft -= result.record.servedBytes;
     const servedMap = withServed(current.sourceMap, result.sources);
     // Never replaced by the re-ask: its answer, then every readable proposal of the answer kept so far it did not repeat.
+    // D102: code's own checks of each copy read the window's listed failures and its end, as the window's checks do.
     const merged = servedAnswer({ first: withoutRequests(current.narrative), reask: withoutRequests(answer), session,
-      repo, sourceMap: servedMap });
+      repo, sourceMap: servedMap, window, windowEnd: windowEnd(window), carried: new Set(carriedIds(context)) });
     current = { narrative: merged.narrative, request: reask, sourceMap: servedMap,
       served: withServed(current.served ?? {}, result.sources), blocks };
     evidence.kept = 'merged';
     evidence.fromFirst += merged.fromFirst;
+    evidence.firstStood += merged.firstStood;
+    nested.push(...merged.nested);
     asked = requestsOf(answer);
   }
   return { narrative: withoutRequests(current.narrative), request: current.request, sourceMap: current.sourceMap,
-    served: current.served, blocks: current.blocks, evidence };
+    served: current.served, blocks: current.blocks, evidence, nested };
 }
 
 /** M36 phase 3 (D68 F, critique c6): a claim whose cited contradiction lies in another session than its statement — by
@@ -2222,6 +2650,8 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   // M33 (C-06 "M33 written statements"): the window's proposed written statements, how many were chat
   // claims reclassified, and the challenge runner the window's own challenge uses.
   let written = [], reclassified = 0, ask = null;
+  // D102: each written statement's identity, as the evidence re-ask's merge read it (null each when it paired none).
+  let writtenIdentities = [];
   // M33 (C-06 "M33 per-part verdicts"): whether this window's answer was asked again for an unreadable
   // proposal, whether that re-ask read in full (`reaskedAnswer`), and whether the answer kept still holds one.
   let proposalReasked = false, proposalRecovered = false, proposalUnreadable = false;
@@ -2279,8 +2709,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   const unreadable = (item) => unreadableProposal(item, schema);
   // D80: and the claim each claim kept although its own check did not settle (published without its basis) was proposed
   // as, keyed by the published copy, for the merge of copies of one claim (`withoutUnupheldRepeats`).
-  const checklist = reviewScope === 'session-only' ? { requirementReasons: new Map(), claimReasons: new Map(),
-    claimProposals: new Map(),
+  // D101: and the fields a row the quote gate lowered carries beside its reason (its cause, the quote's place, the length
+  // code measured), keyed alike.
+  const checklist = reviewScope === 'session-only' ? { requirementReasons: new Map(), requirementCauses: new Map(),
+    claimReasons: new Map(), claimProposals: new Map(),
     restsOnRejected: { requirements: zeros(RESTS_ON_REJECTIONS), claims: zeros(RESTS_ON_REJECTIONS) },
     [RESTS_ON_REPAIRED]: { requirements: 0, claims: 0 } } : null;
   let notClaimsAnswer, proposedClaims = [];
@@ -2298,6 +2730,11 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   let shownRecord = shownSession(session, sourceMap);
   // M36 phase 3 (D68 Q): what the window's evidence re-ask served (null: nothing), and its counts.
   let served = null, servedBlocks = null, evidence = null, claimsOtherSession = 0;
+  // D102: the first answer's statements the evidence re-ask's merge kept beside a re-ask statement of their place that
+  // code's check settled (`servedAnswer`): each first copy's identity, with those re-ask statements' identities. Read
+  // after the challenge (`pairedBesideSettled`), so a re-ask copy the challenge does not uphold never drops the first.
+  let nested = [];
+  const pairedWith = new Map();
   const tiered = tieredChallenge(profile);
   let challenge = { complete: false, attemptedCalls: 0, rejected: [], results: [], profile: challengeProfileOf(profile, reviewScope, backend) };
   // Only the transport byte guard is an admission limit: a window whose whole serialized request does not fit is
@@ -2327,9 +2764,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
     // M36 phase 3 (owner decision D68 Q): the answer's evidence requests, served by the deterministic re-ask
     // (`evidenceReask`); the kept answer's request and source map are the window's from here on.
     if (narrative && reviewScope === 'session-only') {
-      ({ narrative, request, sourceMap, served, blocks: servedBlocks, evidence } = await evidenceReask({ narrative,
-        request, sourceMap, session, repo, window, context, settings, aliases, judge, requestBound }));
+      ({ narrative, request, sourceMap, served, blocks: servedBlocks, evidence, nested } = await evidenceReask({
+        narrative, request, sourceMap, session, repo, window, context, settings, aliases, judge, requestBound }));
       if (served) shownRecord = shownSession(session, sourceMap);
+      for (const { first, later } of nested) pairedWith.set(first, [...(pairedWith.get(first) ?? []), ...later]);
     }
     // M33 (C-06 "M33 per-part verdicts"): an answer holding a proposal code cannot read is asked once
     // more — the identical request, so a memoized judge gives it its next D60 occurrence. Review-WP: the
@@ -2362,6 +2800,12 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       written = split.written;
       reclassified = split.reclassified;
       const proposed = proposalsOf(narrative, session, sourceMap, split);
+      // D102: each chat claim's and written statement's identity, as the evidence re-ask's merge read it (`answerReader`
+      // on the window's session and its kept answer's source map), when that merge paired any first copy.
+      const identityIn = pairedWith.size ? answerReader({ session, repo, sourceMap }).identityOf : () => null;
+      const claimIdentity = new Map(proposed.filter((item) => item.type === 'claim')
+        .map((item) => [item.key, identityIn('claims', split.narrative.claims[Number(item.key.split(':')[1])])]));
+      writtenIdentities = written.map((item) => identityIn(WRITTEN_CHANNEL, item));
       // M33 N: a session-only answer's forbidden edits, read apart from the four channels, each by code before anything is
       // asked: one no check can read (`malformed`) is an unreadable proposal (D58: its window is incomplete); one that
       // fails any other check is withheld and counted by its closed reason; the rest are asked (`forbiddenAsked`).
@@ -2388,11 +2832,16 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
         ask: forbiddenChallengeItem(key, read.edit, forbiddenEditProposition(read.edit)) }));
       const forbiddenUnread = forbiddenReads.filter(({ read }) => read.withheld === FORBIDDEN_EDIT_REJECTIONS[0]);
       // M33 X (G01): a readable claim's contradictedBy or supportedBy cited under its command's action id is moved to
-      // that action's one supplied result before anything is checked (`claimResultRepair`), and counted.
+      // that action's one supplied result before anything is checked (`claimResultRepair`), and counted. The review of
+      // D102 (M1): each readable claim is read once by the one claim check the evidence re-ask's merge reads a copy by
+      // too (`claimChecked`), and every check of it below reads that (by its key: `claimRead`).
+      const claimRead = new Map(), requirementRead = new Map();
       for (const item of proposed) {
         if (item.type !== 'claim' || unreadable(item)) continue;
-        const { claim, moved } = claimResultRepair(session, sourceMap, item.candidate);
-        if (moved) { item.candidate = claim; claimReceiptsMoved += moved; }
+        const read = claimChecked(session, shownRecord, item.candidate,
+          { sourceMap, windowEnd: upTo, checklist: checklist !== null });
+        if (read.moved) { item.candidate = read.claim; claimReceiptsMoved += read.moved; }
+        claimRead.set(item.key, read);
       }
       // D71 (S2; owner decision D71 b): each readable session-only requirement's status is checked
       // against its receipts before anything is asked (checklist.js `checkedRequirement`): a status its evidence does not
@@ -2405,20 +2854,17 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
         // it — which source it is comes from the recording, never from the role the model wrote. D84:
         // and so does each check of its instructionReview that cites one (`reviewWithSourceRoles`), so the challenge's
         // proposition names the files the check covers.
+        // The review of D102's fix: by the one reading the evidence re-ask's merge reads a decision's copy by too.
         for (const item of proposed) {
           if (item.type !== 'decision' || unreadable(item) || !plain(item.candidate)) continue;
-          const constrainedBy = constraintWithSourceRole(shownRecord, item.candidate.constrainedBy);
-          if (constrainedBy !== item.candidate.constrainedBy) item.candidate = { ...item.candidate, constrainedBy };
-          const instructionReview = reviewWithSourceRoles(shownRecord, item.candidate.instructionReview);
-          if (instructionReview !== item.candidate.instructionReview)
-            item.candidate = { ...item.candidate, instructionReview };
+          item.candidate = decisionWithSourceRoles(shownRecord, item.candidate);
         }
         // A claim's `restsOn`, checked before it is asked (checklist.js `claimRestsOn`): kept only when every id it
         // cites passed (its own action, before it, shown, its check never completed); otherwise it is asked and published
         // as if it cited none, and each refused id is counted.
         for (const item of proposed) {
           if (item.type !== 'claim' || unreadable(item) || !plain(item.candidate) || item.candidate.restsOn === undefined) continue;
-          const rests = claimRestsOn(shownRecord, item.candidate, sourceMap, upTo);
+          const { rests } = claimRead.get(item.key);
           for (const [reason, n] of Object.entries(rests.rejected)) checklist.restsOnRejected.claims[reason] += n;
           // W2: a cited RESULT checked as the ACTION the recorder typed it answers (`restsOnCheck`), counted.
           checklist[RESTS_ON_REPAIRED].claims += rests.repaired;
@@ -2427,11 +2873,16 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
             ? { ...rest, restsOn: rests.accepted } : rest;
         }
         proposedClaims = proposed.filter((item) => item.type === 'claim' && !unreadable(item)).map((item) => item.candidate);
+        // The review of D102 (M1): by the one check of a requirement the evidence re-ask's merge reads a copy by too
+        // (`requirementChecked`). A row it withholds is withheld for its place before any call (`reasonFor`) or for its
+        // instruction at publication (`groundedExtras`).
         for (const item of proposed) {
           if (item.type !== 'requirement' || unreadable(item)) continue;
-          const checked = checkedRequirement(shownRecord, item.candidate, { sourceMap, windowEnd: upTo });
+          const checked = requirementChecked(shownRecord, item.candidate, { sourceMap, windowEnd: upTo });
+          requirementRead.set(item.key, checked);
           item.candidate = checked.candidate;
           if (checked.reason) checklist.requirementReasons.set(item.candidate, checked.reason);
+          if (checked.cause) checklist.requirementCauses.set(item.candidate, groundingFieldsOf(checked));
           for (const [reason, n] of Object.entries(checked.restsOnRejected)) checklist.restsOnRejected.requirements[reason] += n;
           checklist[RESTS_ON_REPAIRED].requirements += checked[RESTS_ON_REPAIRED];
         }
@@ -2452,23 +2903,24 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // M33 C2 repair (C-06 "M33 the verbatim quote decides"): each readable claim's own words, grounded once by the
       // check its publication applies (`claimVerbatim`), after its receipts were moved above — what its item, its
       // resolution item and its support item are shown as THE claim, or null when they do not ground.
-      const verbatimOf = new Map();
-      const claimWords = (item) => {
-        if (!verbatimOf.has(item)) verbatimOf.set(item, claimVerbatim(shownRecord, sourceMap, item.candidate));
-        return verbatimOf.get(item);
-      };
+      const claimWords = (item) => (claimRead.has(item.key) ? claimRead.get(item.key).words
+        : claimVerbatim(shownRecord, sourceMap, item.candidate));
       // M36 phase 3 (D68 F, c6): a claim contradicted by a result of another session is withheld before it is asked —
       // that agent never received it (ledger.js `other_session` withholds it at grounding too).
       const crossed = new Set(proposed.filter((item) => item.type === 'claim' && !unreadable(item)
-        && contradictedFromAnotherSession(session, item.candidate)).map((item) => item.key));
+        && claimRead.get(item.key)?.crossed === true).map((item) => item.key));
       claimsOtherSession = crossed.size;
       const reasonFor = (item) => {
         if (unreadable(item)) return 'kind_rejected';
         if (crossed.has(item.key)) return 'receipt_rejected';
+        // The review of D102 (M1): a claim's and a session-only requirement's places, as their one check read them.
+        const read = claimRead.get(item.key) ?? requirementRead.get(item.key);
+        if (read) return read.supplied ? null : 'receipt_rejected';
         const channel = item.key.split(':')[0];
         const candidate = channel === 'claims' ? claimBare(item.candidate) : item.candidate;
-        // M33 X: a decision is adopted by this window's own actions; a carried action is the earlier window's.
-        if (channel === 'decisions' && (candidate.actions ?? []).some((id) => carried.has(id))) return 'receipt_rejected';
+        // M33 X: a decision is adopted by this window's own actions; a carried action is the earlier window's. The review
+        // of D102's fix: a decision's places as the evidence re-ask's merge reads a copy's (`decisionPlaced`).
+        if (channel === 'decisions') return decisionPlaced(candidate, { sourceMap, carried }) ? null : 'receipt_rejected';
         return suppliedCandidate(candidate, channel, sourceMap) ? null : 'receipt_rejected';
       };
       // M33 C recheck 2 (C-06 "M33 claims are facts"): every readable claim is put to the challengers. Code withholds
@@ -2483,10 +2935,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // for its quote, so its support is never judged.
       for (const item of items) {
         const claim = item.candidate;
-        if (item.type !== 'claim' || !plain(claim) || claim.supportedBy == null) continue;
-        if (!claim.contradictedBy && !verifyReceipt(shownRecord, claim.stated).ok) continue;
+        // The review of D102 (M1): as the claim's one check read it (`claimChecked`: null without a support to judge).
+        const checked = item.type === 'claim' ? claimRead.get(item.key)?.support ?? null : null;
+        if (checked === null) continue;
         supportsProposed++;
-        const checked = supportCheck(shownRecord, claim, sourceMap, { checklist: checklist !== null });
         if (checked.ok) {
           supports.set(claim, checked.receipt);
           if (Array.isArray(checked.changedSince)) supportChanges.set(claim, checked.changedSince);
@@ -2545,6 +2997,19 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // M33 C (C-05 "M33 vote binding"): a support vote on a publication-bound item counts only when one of its
       // receipts is on one of that item's own events (`bindingsFor`: event level only); refutations are not bound.
       const resultsOf = resultsByInvocation(session);
+      // D103 (owner pick 2026-10-17; F5 part 2): a session-only window's whole-window runs show each batch the window's
+      // evidence with the results its items cite whole (`challengeEvidenceOf`, over the bound the skim and a declared
+      // gap), its votes verified against exactly what it showed. A batch's bytes are counted (`measure`); only a batch
+      // that is sent is rendered (`shown`). A combined review's runs are shown its evidence as is.
+      const wholeCited = reviewScope !== 'session-only' ? null : (() => {
+        const of = challengeEvidenceOf({ session, window, context, settings, aliases,
+          served: servedBlocks ? { byEvent: servedBlocks } : null });
+        return { measure: of.measure, shown: (list, cut) => {
+          const shown = of.shown(list, cut);
+          return { evidence: shown.evidencePrompt,
+            verifyReceipt: verifyAgainst(served ? withServed(shown.sourceMap, served) : shown.sourceMap) };
+        } };
+      })();
       // One challenge run: its calls carry only the items passed to it, batched together within the
       // challenge profile's item and byte limits. `suffix` names it in every label it sends. M33 J:
       // `bounds` are the run's passes and survival bound when a tiered profile names them; the
@@ -2553,7 +3018,8 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
         const bindings = bindingsFor(session, list, resultsOf);
         return challengeItems({ items: list, judge: challengeJudge,
           evidence: request.evidencePrompt, labelPrefix: `challenge:w${window.index + 1}${suffix}`, verifyReceipt: verifyVote,
-          supportEvents: (item) => bindings.get(item.key) ?? null, aliases, ...byteBound, ...(bounds ?? {}),
+          supportEvents: (item) => bindings.get(item.key) ?? null, aliases, ...byteBound,
+          ...(wholeCited ? { batchEvidence: wholeCited } : {}), ...(bounds ?? {}),
           // D71 (S2): a session-only window's challenges judge one proposition per item.
           checklist: reviewScope === 'session-only' });
       };
@@ -2583,10 +3049,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // it showed. The DECIDE-bound run, rare and high-stakes, keeps the whole window evidence.
       // M35: the window's own carried context, settings and aliases, as its narrative request was built with them.
       // M36 phase 3 (D68 Q): a dossier is shown what the window's re-ask served too, after its own evidence.
-      const dossier = (list) => {
+      const dossier = (list, cut = null) => {
         const shown = buildChallengeDossier({ session, window, context, settings, aliases, items: list,
-          checklist: reviewScope === 'session-only', served: servedBlocks ? { byEvent: servedBlocks } : null });
-        return { evidence: shown.evidencePrompt,
+          checklist: reviewScope === 'session-only', served: servedBlocks ? { byEvent: servedBlocks } : null, cut });
+        return { evidence: shown.evidencePrompt, cited: shown.cited,
           verifyReceipt: verifyAgainst(served ? withServed(shown.sourceMap, served) : shown.sourceMap) };
       };
       let proposals;
@@ -2629,6 +3095,8 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       // incomplete, exactly as a claim's. "m33-lean" shows each batch its own dossier — both events whole, every human
       // instruction (the inventory, so every one between them) and the window's whole carried section; M33 N repair: and
       // every human choice an item names between them (`humanChoicesBetween`), whole, with its results.
+      // D103 (F5 part 2): a forbidden edit names no result by its event id (its receipts are a human instruction or a
+      // project file and an action; its choices are actions), so its dossier shows no result whole and cuts none.
       if (forbiddenAsked.length) {
         const forbiddenDossier = (list) => {
           const choices = list.flatMap((item) => (Array.isArray(item?.candidate?.humanChoicesBetween)
@@ -2872,10 +3340,26 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
             [CHALLENGE_ENDED]: endedAs(outcome, [null, DECISION_UNSETTLED, DECISION_UNEXECUTED]) });
         }
       }
+      // D102: a first-answer chat claim the evidence re-ask's merge paired with re-ask claims of its place is dropped,
+      // not kept as a second, unsettled copy, only once one of them is published settled: it survived its own
+      // challenge, and it has a contradiction (which its pairing passed code's check of), or its support's own item
+      // was upheld, or it cites no support (its pairing passed code's check of its `restsOn`) — the basis
+      // `groundedExtras` publishes it by. A re-ask copy refuted, unsettled or never asked drops none; a first copy
+      // whose own words do not ground is withheld for them below, as any such claim, never dropped here.
+      const settledClaim = (item) => survivors.has(item.key) && plain(item.candidate)
+        && (item.candidate.contradictedBy != null || item.candidate.supportedBy == null
+          || supportOutcomes.get(item.candidate) === UPHELD);
+      const settledClaims = new Set(items.filter((item) => item.type === 'claim' && settledClaim(item))
+        .map((item) => claimIdentity.get(item.key)).filter((identity) => identity != null));
+      const besideSettled = (item) => item.type === 'claim'
+        && pairedBesideSettled(pairedWith, claimIdentity.get(item.key), settledClaims);
       // M33 C2 repair: with every claim left unasked for words that do not ground, in its place, for grounding to withhold.
-      narrative = Object.fromEntries(CHANNELS.map((channel) => [channel, proposed
-        .filter((item) => item.key.split(':')[0] === channel && (survivors.has(item.key) || unasked.has(item.key)
-          || uncontested.has(item.key) || lowered.has(item.key)))
+      const kept = proposed.filter((item) => survivors.has(item.key) || unasked.has(item.key)
+        || uncontested.has(item.key) || lowered.has(item.key));
+      const dropped = kept.filter((item) => !unasked.has(item.key) && besideSettled(item));
+      if (dropped.length) evidence.nestedDropped += dropped.length;
+      narrative = Object.fromEntries(CHANNELS.map((channel) => [channel, kept
+        .filter((item) => item.key.split(':')[0] === channel && !dropped.includes(item))
         .map((item) => lowered.get(item.key) ?? item.candidate)]));
       // The internal utility preserves candidate references for callers; the window record keeps
       // only the explicit narrative plus grounded vote records, avoiding duplicate payloads.
@@ -2928,15 +3412,19 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       const ended = failureEnded.get(`${FAILURES_MEMBER}:${index}`);
       let reason = row.reason ?? (ended === undefined || ended === UPHELD ? null
         : endedAs(ended, [FAILURE_REFUTED, FAILURE_UNSETTLED, FAILURE_UNEXECUTED]));
+      // D101: a row the quote gate lowered keeps the cause of the test that refused it beside its reason.
+      let cause = row.reason ? groundingFieldsOf(row) : {};
       let response = null;
       if (reason === null && row.candidate.handling !== FAILURE_NOT_CHECKED) {
-        const check = verifyReceipt(shownRecord, row.candidate.response);
-        if (check.ok) response = check.receipt;
-        else reason = RESPONSE_UNGROUNDED;
+        // Its response grounded again for its published shape (checklist.js `publishedResponse`); should it not hold
+        // here, the row is lowered with the cause the gate names.
+        const published = publishedResponse(shownRecord, row.candidate, { sourceMap });
+        if (published.response) response = published.response;
+        else ({ reason, ...cause } = published);
       }
       return { eventId: row.candidate.eventId, ...outcomeOf.get(row.candidate.eventId),
         handling: reason === null ? row.candidate.handling : FAILURE_NOT_CHECKED,
-        ...(response ? { response } : {}), ...(reason ? { reason } : {}) };
+        ...(response ? { response } : {}), ...(reason ? { reason, ...cause } : {}) };
     });
     const answered = new Set(fromAnswer.map((row) => row.eventId));
     failureRows = [...fromAnswer, ...listed.filter(({ event }) => !answered.has(event.id)).map(({ event }) => ({
@@ -2978,7 +3466,9 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
       contradictionsRejected: zeros(WRITTEN_CONTRADICTION_REJECTIONS), challenge: null }
     : await writtenStatementsOf({ written, session: shownRecord, sourceMap, repo, ask, until: upTo,
       roles: writtenRolesOf(schema),
-      bounds: tiered ? CHALLENGE_TIER_BOUNDS.single : undefined });
+      bounds: tiered ? CHALLENGE_TIER_BOUNDS.single : undefined, identities: writtenIdentities, pairedWith });
+  // D102: and the first answer's written statements dropped so (`writtenStatementsOf`).
+  if (writtenResult.nestedDropped) evidence.nestedDropped += writtenResult.nestedDropped;
   const sessionGroundingComplete = sessionGrounded && failure === null;
   const relevanceApplicable = reviewScope !== 'session-only';
   // `relevanceUnchecked` is absent evidence (the decision's own file, or the file list, was only
@@ -3086,6 +3576,16 @@ function speedProfileFor(speedProfile, reviewScope) {
   return profile;
 }
 
+/** D101 (owner decision 2026-10-17): the checklist's quote gate as the session run profile binds it — the closed reasons
+ *  a requirement or failure row is lowered for, the grounding causes in their order (the length causes, and the anchor's
+ *  causes, which lower a row for its not-after reason), the places of a refused quote, and the quote bounds per field.
+ *  No request byte reads it. */
+export const CHECKLIST_GROUNDING = Object.freeze({
+  reasons: Object.freeze({ requirements: REQUIREMENT_UNCHECKED_REASONS, failures: FAILURE_UNCHECKED_REASONS }),
+  causes: GROUNDING_CAUSES, lengthCauses: GROUNDING_LENGTH_CAUSES, anchorCauses: GROUNDING_ANCHOR_CAUSES,
+  places: QUOTE_PLACES, limits: QUOTE_LIMITS,
+});
+
 /**
  * M33 (C-07). The frozen profile of a review run: everything besides a request's own bytes that
  * decides what a window's answers mean — the review agent, the prompt version, the narrative
@@ -3103,8 +3603,12 @@ function speedProfileFor(speedProfile, reviewScope) {
  * D87 (owner decisions 2026-10-13/14): a session-only run profile holds the code pass's member (code-pass.js
  * `CODE_PASS_PROFILE`: its versions and closed vocabularies) whether or not a review asks for the pass, so the digest a
  * window checkpoint is keyed by is the same with `--code-pass` and without it. No request byte depends on it.
+ *
+ * D103: `harness` is the recording's (`Session.adapter`, the adapter that loaded it): a session-only profile's windowing
+ * member holds the skim it resolves to (windows.js `windowingProfileOf`), so a window record of one skim is never read
+ * as another's. Omitted, or a harness the skim table does not list, it is the smallest skim.
  */
-export function runProfile(reviewScope = 'combined', speedProfile = undefined, backend = undefined) {
+export function runProfile(reviewScope = 'combined', speedProfile = undefined, backend = undefined, harness = undefined) {
   if (!REVIEW_SCOPES.includes(reviewScope)) throw new RangeError('Unknown review scope');
   const profile = speedProfileFor(speedProfile, reviewScope);
   const freeze = (value) => {
@@ -3116,12 +3620,17 @@ export function runProfile(reviewScope = 'combined', speedProfile = undefined, b
     // M33 N: a session-only review's narrative contract holds `forbiddenEdits` (SESSION_NARRATIVE_SCHEMA).
     // M35: the windowing profile (windows.js) replaces the byte-budget segmentation profile, and the carry is gone.
     narrativeSchema: narrativeSchemaOf(reviewScope), challenge: challengeProfileOf(profile, reviewScope, backend),
-    windowing: windowingProfileOf(reviewScope, backend), maxInputBytes: requestBoundOf(profile, reviewScope, backend), reviewScope,
+    windowing: windowingProfileOf(reviewScope, backend, harness), maxInputBytes: requestBoundOf(profile, reviewScope, backend),
+    reviewScope,
     windowIncompleteReasons: WINDOW_INCOMPLETE_REASONS, judgeFailureCodes: JUDGE_FAILURE_CODES,
     // M33 (C-06 "M33 per-part verdicts"): a window's answer can be asked this many more times.
     proposalReasks: PROPOSAL_REASKS[reviewScope],
-    // M36 phase 3 (owner decision D68 Q): a session-only window's evidence requests and their frozen bounds.
-    ...(reviewScope === 'session-only' ? { evidenceRequests: EVIDENCE_REQUEST_LIMITS, codePass: CODE_PASS_PROFILE } : {}),
+    // M36 phase 3 (owner decision D68 Q): a session-only window's evidence requests and their frozen bounds. D102: and the
+    // rule its re-ask's answer is merged with the first by (`servedAnswer`), by name.
+    // D101: and the checklist's quote gate — the reasons it lowers a row for, the causes and places of a refusal and the
+    // quote bounds per field (CHECKLIST_GROUNDING), so a change to any of them recomputes every stored window record.
+    ...(reviewScope === 'session-only' ? { evidenceRequests: EVIDENCE_REQUEST_LIMITS, evidenceMerge: EVIDENCE_MERGE_RULE,
+      codePass: CODE_PASS_PROFILE, grounding: CHECKLIST_GROUNDING } : {}),
     ...(isStandardProfile(profile) ? {} : { speedProfile: profile,
       ...(tieredChallenge(profile) ? { challengeTiers: CHALLENGE_TIER_BOUNDS } : {}) }),
   }));
@@ -3157,7 +3666,7 @@ export const plannedSourceMap = (window) => (window !== null && typeof window ==
   : null);
 const planInputs = ({ session, pr, diff, windowDiffFor, reviewScope, profile, backend }) =>
   ({ session, pr: pr ?? null, diff: diff ?? null, windowDiffFor: windowDiffFor ?? null, reviewScope, profile,
-    settings: windowSettingsOf(reviewScope, backend) });
+    settings: windowSettingsOf(reviewScope, backend, session?.adapter) });
 
 /** The precomputed plan, when `planWindowRequests` built it from exactly these inputs (the same
  *  session, PR, diff and `windowDiffFor` objects, the same scope and — M33 J — the same speed
@@ -3198,7 +3707,8 @@ export function planWindowRequests({ session, pr = null, diff = null, windowDiff
     throw new RangeError('Session-only review must have no PR, diff or code review');
   const profile = speedProfileFor(speedProfile, reviewScope);
   const agent = reviewAgentProfile(reviewScope);
-  const settings = windowSettingsOf(reviewScope, backend);
+  // D103: the recording's harness (the adapter that loaded it) sets the skim; the backend, the budgets.
+  const settings = windowSettingsOf(reviewScope, backend, session?.adapter);
   const repo = pr?.repo ?? { host: 'github.com', id: '0' };
   // ---- phase A: build every request, then run them with bounded concurrency ------------------
   // Every prompt is built BEFORE any judge is called, which is what makes "no model output
@@ -3402,6 +3912,13 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
     && reachedBy(event).length > 0 && reachedBy(event).every((index) => carriedIn[index].has(event.id)))
     .map((event) => event.id));
   const reported = clearedView(session, shownToAll);
+  // D104 (F5 part 4): the results the answered windows' requests showed only in part (their cut, positions only), each
+  // recorded once on one window — its own window, or the first later window that carried it when its own was not read —
+  // so the count (the sum over the windows) holds every result a row is marked for. A window that was not read records
+  // none and carries no field.
+  const seenInPart = seenInPartOfWindows(session, perWindow.map((w, index) => ({ answered: w.narrative !== null,
+    events: w.window.events, shownIds: Object.keys(w.sourceMap ?? {}), settings: requests[index].settings })));
+  seenInPart.records.forEach((list, index) => { if (list.length) perWindow[index].seenInPart = list; });
   const facts = sessionCoverageFacts({ session: reported, windows, perWindow });
   const coverage = coverageFrom(facts);
 
@@ -3457,7 +3974,7 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
   const structuralCalls = profile.windowConcurrency * CHALLENGE_PROFILE.maxConcurrency;
   report.instrument = { reviewAgent: agent.version, windows: windows.length,
     reviewScope,
-    windowing: windowingProfileOf(reviewScope, backend), maxInputBytes: requestBound,
+    windowing: windowingProfileOf(reviewScope, backend, session?.adapter), maxInputBytes: requestBound,
     challenge: challengeProfileOf(profile, reviewScope, backend), windowConcurrency: profile.windowConcurrency,
     maxCallsInFlight: isStandardProfile(profile) ? structuralCalls : Math.min(structuralCalls, profile.maxCallsInFlight),
     speedProfile: profile,
@@ -3689,6 +4206,9 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
   // windows are recomputed from the report (`honestStatuses`), and whether its answer was asked again.
   report.windowResults = perWindow.map((w) => ({ narrative: w.narrative, failure: w.failure,
     eventIds: w.window.events.map((event) => event.id),
+    // D104 (F5 part 4): the results its request showed only in part that it records (`seenInPartOfWindows`), by event,
+    // lines and bytes (positions only; present only when there is one, so every other window keeps its record).
+    ...(w.seenInPart ? { seenInPart: w.seenInPart } : {}),
     proposalReasked: w.proposalReasked, proposalUnreadable: w.proposalUnreadable,
     // D78: the repeated claims its answer held, by class (present only when there was one).
     ...(w.claimRepeats ? { claimRepeats: w.claimRepeats } : {}),
@@ -3773,6 +4293,9 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
       served: total('served'), servedBytes: total('servedBytes'), reasks: total('reasks'),
       reaskFailed: asking.filter((w) => w.evidence.reaskFailed).length,
       kept: asking.filter((w) => w.evidence.kept === 'merged').length, fromFirst: total('fromFirst'),
+      // D102: the first answers' copies that stood in for a re-ask copy code's own check lowered, and the first answers'
+      // unsettled statements dropped beside a settled re-ask statement of their place.
+      firstStood: total('firstStood'), nestedDropped: total('nestedDropped'),
       refused: Object.fromEntries(EVIDENCE_REQUEST_REFUSALS.map((reason) =>
         [reason, asking.reduce((n, w) => n + count(w.evidence.refused?.[reason]), 0)])) };
   }
@@ -3794,6 +4317,11 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
   // rather than declaring one loss twice.
   const declared = new Set(report.gaps ?? []);
   report.gaps = [...declared, ...(reported.adapterGaps ?? []).filter((g) => !declared.has(g))];
+  // D104 (F5 part 4): the mark. Every row of the session review whose evidence cites a result that a request of an
+  // answered window showed only in part (the window's own result, or one it carried) carries the lines left out and
+  // the result's place (`seenInPart`). Its status, its reason and its receipts do not move. The report counts such
+  // results once each, as the sum over its windows' records (the coverage fact `resultsSeenInPart`).
+  markSeenInPart(report, seenInPart.index);
   // The last word. Challenge and grounding gaps must remain visible even when every surviving
   // list is empty, and no intermediate step may leave a status cleaner than its coverage.
   Object.assign(report, honestStatuses(report));

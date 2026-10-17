@@ -29,8 +29,8 @@ import { visible, backtickPieces } from './session-story.js';
 import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
-  REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS }
-  from './report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS,
+  REPORT_SEEN_WORDS } from './report-words.js';
 
 /** The page's layout version, in its generator meta. /37 (D97, owner decisions 2026-10-16): the page
  *  renders the report model — the header (its size line, the runs after the last edit, what Sonah did not check), the
@@ -38,8 +38,22 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  know, Good to know folded), what the agent did and what Sonah could not check, folded. It replaces the checklist
  *  order of D71 (S4) and D88's attention summary; the steps card, the decision cards' step folds and the old parts are
  *  removed. Its only links out are GitHub permalinks built from validated local git facts. (/36 and every version
- *  before it: the checklist page, `git log` of this file.) */
-export const PAGE_VERSION = 'sonah.session-page/37';
+ *  before it: the checklist page, `git log` of this file.) /38 (D98, one reading per recorder fact): what the agent
+ *  did and what Sonah could not check read one effect rule (evidence session.js `effectOf`), so a write refused before
+ *  it ran is no change, no unknown write and no unrecorded body. /39 (D99, F1 guard): a background run's end is said to
+ *  be absent only where the slicer proved it; one Sonah could not read says so, under what Sonah could not check, and
+ *  is never counted as a failure; a run stopped or cancelled before it finished is said as stopped in the header and in
+ *  its failure's what line, never as having no recorded end. /40 (D100, the audit of absence sentences): a sentence
+ *  says an absence only where code proves it (packages/render/test/absence-audit.js); elsewhere it says what Sonah
+ *  found, holds or could not read, and a run Sonah read no result of is counted apart, never as having no recorded end.
+ *  /41 (D101, owner decision 2026-10-17): an ask that Sonah did not check because a test refused its quote says which
+ *  test, with the numbers code measured ("quoted 147 characters, more than the 120 that Sonah checks"), never that the
+ *  quote is in the recording; "did not find the quote, word for word" only where the search ran and failed, only of the
+ *  place cited and of what that answer was shown there. /42 (D104, F5 part 4): a claim, a run and a decision you
+ *  settled show their rows' shown-in-part mark under its label, as an item's evidence and an ask's lines show it; and the
+ *  page never links to a place it does not hold (`heldLinks`): a link to a run, a claim or an item that a trim or a
+ *  list's bound left out keeps its words, unlinked. */
+export const PAGE_VERSION = 'sonah.session-page/42';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -278,6 +292,9 @@ function tiersHtml(model, trim) {
 // ---- what the agent did -------------------------------------------------------------------------------------------
 
 const cap = (n, factor) => Math.floor(n * factor);
+/** D104: a row's shown-in-part mark in a list (`seen`: lines of parts), each line after the row's own, under its label. */
+const seenHtml = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `<span class="label">${esc(REPORT_SEEN_WORDS.label)}`
+  + '</span> ' : ''}${partsHtml(line)}`).join('');
 function didHtml(model, factor) {
   const { did } = model;
   const note = factor < 1 ? `<p class="cut">${esc(REPORT_TRIM_WORDS.listsTrimmed)}</p>` : '';
@@ -308,7 +325,8 @@ function didHtml(model, factor) {
   const runsCut = did.runs.shown.length - runsShown.length;
   const runLine = (run) => `<li id="run-${run.k}">${run.text ? `<code>${esc(run.text)}</code>` : run.tool
     ? `<code>${esc(run.tool)}</code>` : ''}${run.outcome ? ` · ${esc(run.outcome)}` : ''}`
-    + `${run.handling ? ` · ${esc(run.handling)}` : ''}${run.item ? ` <a href="#item-${run.item}">→ item ${run.item}</a>` : ''}</li>`;
+    + `${run.handling ? ` · ${esc(run.handling)}` : ''}${run.item ? ` <a href="#item-${run.item}">→ item ${run.item}</a>` : ''}`
+    + `${seenHtml(run.seen)}</li>`;
   const runs = `<h3 class="sub-h">${esc(REPORT_SECTION_WORDS.runs)}</h3>`
     + (did.runs.total ? `<ol class="rows runs">${runsShown.map(runLine).join('')}</ol>` : `<p class="note">${esc(REPORT_DID_WORDS.noRuns)}</p>`)
     + (did.runs.quietExit0 ? `<p class="cut">${esc(REPORT_DID_WORDS.moreRuns(did.runs.quietExit0))}</p>` : '')
@@ -323,7 +341,7 @@ function didHtml(model, factor) {
     + ` ${c.quote ? partHtml(c.quote) : esc(REPORT_ITEM_WORDS.quoteMissing)}`
     + `${c.confirmedBy ? ` · <span class="label">${esc(REPORT_ITEM_WORDS.recordedResult)}</span> ${partHtml(c.confirmedBy)}` : ''}`
     + `${c.why ? ` · ${esc(c.why)}` : ''}`
-    + `${c.path ? ` · ${esc(REPORT_DID_WORDS.written(c.path))}` : ''}</li>`;
+    + `${c.path ? ` · ${esc(REPORT_DID_WORDS.written(c.path))}` : ''}${seenHtml(c.seen)}</li>`;
   const closingRows = did.claims.closing.rows.slice(0, cap(did.claims.closing.rows.length, factor));
   const closing = did.claims.closing.total ? `<details class="fold"><summary>${esc(REPORT_SECTION_WORDS
     .closingLines(did.claims.closing.total))}</summary><ul class="rows">${closingRows.map((l) => `<li>${partsHtml(l.parts)}</li>`)
@@ -342,7 +360,7 @@ function didHtml(model, factor) {
     + `</ul>${more(did.leftOut.length - leftOutShown.length)}` : `<p class="note">${esc(REPORT_DID_WORDS.noLeftOut)}</p>`);
   const settled = `<h3 class="sub-h">${esc(REPORT_SECTION_WORDS.settled)}</h3>` + (did.settled.length ? `<ul class="rows">`
     + settledShown.map((x) => `<li>${partsHtml(x.parts)}${x.youSaid ? ` · <span class="label">${esc(x.youSaidLabel ?? REPORT_ITEM_WORDS.youSaid)}</span> `
-      + partHtml(x.youSaid) : ''}</li>`).join('') + `</ul>${more(did.settled.length - settledShown.length)}`
+      + partHtml(x.youSaid) : ''}${seenHtml(x.seen)}</li>`).join('') + `</ul>${more(did.settled.length - settledShown.length)}`
     : `<p class="note">${esc(REPORT_DID_WORDS.noSettled)}</p>`);
   return `<details class="card-ui part fold-part" id="did"><summary class="card-bar"><h2>${esc(REPORT_SECTION_WORDS
     .didCounted(did.files.total, did.runs.commands, did.runs.others, did.claims.total))}</h2></summary><div class="content">${note}`
@@ -514,6 +532,16 @@ pre.diff .add { background: var(--add); }
 }
 `;
 
+/**
+ * D104: the page never links to a place it does not hold. A run, a claim or an item that a trim of the page or a list's
+ * bound left out keeps its words, without the link. Structure of the page's own markup only: every in-page link the
+ * page writes is `<a href="#id">…</a>` with no link inside it, and recorded text is escaped, so it never holds one.
+ */
+function heldLinks(html) {
+  const ids = new Set([...html.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]));
+  return html.replace(/<a href="#([^"]+)">([\s\S]*?)<\/a>/g, (link, id, inner) => (ids.has(id) ? link : inner));
+}
+
 /** One composition of the page: which folds keep only their summary, and the factor every list is cut by. */
 function compose(model, theme, trim) {
   const card = `<article class="card-ui review" aria-labelledby="review-title"><div class="card-bar">`
@@ -523,7 +551,7 @@ function compose(model, theme, trim) {
     tiersHtml(model, trim), didHtml(model, trim.did), notCheckedHtml(model, trim.notChecked), footerHtml(model)];
   // One list item a line, so a reader of the source (and a snapshot's diff) can follow it. Recorded text never holds a
   // tag (it is escaped), and no list item is inside a <pre>, so this changes no rendered text.
-  const html = body.join('\n').replace(/<\/li>/g, '</li>\n').replace(/<\/article>/g, '</article>\n');
+  const html = heldLinks(body.join('\n')).replace(/<\/li>/g, '</li>\n').replace(/<\/article>/g, '</article>\n');
   const themeAttribute = theme === SYSTEM ? '' : ` data-theme="${theme}"`;
   const colorScheme = theme === SYSTEM ? 'light dark' : theme;
   const title = model.header.title ? model.header.title.text : REPORT_HEADER_WORDS.review;

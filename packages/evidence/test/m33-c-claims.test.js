@@ -461,7 +461,8 @@ test('M33 C the narrative prompt defines a claim and asks for supportedBy; one v
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   // M35 windowing moved it once more (`sonah.narrative/21`): windows, carried context, trims, aliases (C-07).
   // M36 phase 1 moved it once more (`sonah.narrative/22`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.narrative/23`): the window format (D68; FORMAT_VERSIONS).
@@ -477,7 +478,8 @@ test('M33 C the narrative prompt defines a claim and asks for supportedBy; one v
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
   const base = session();
   const built = prompt.buildNarrativePrompt({ session: base, window: { index: 0, events: base.events } });
   const task = built.prompt.replace(built.evidencePrompt, '').replace(/\s+/g, ' ');
@@ -551,7 +553,8 @@ test('M33 C the challenger is told explicit criteria for claims and supports; on
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   const system = challenge.challengeSystem().replace(/\s+/g, ' ');
   // H3: a hedged statement is judged as said; a contradiction is refuted when the words assert nothing about the work.
   for (const phrase of [/Read the whole AGENT SAID event/, /hedged or not: judge the quoted words as said, hedge included/,
@@ -661,11 +664,26 @@ const MOVED_BY_W1 = Object.freeze({
 const MOVED_BY_W2 = Object.freeze({
   system: 'f70fdc791ae3559182c550229fb19a455ee2ee01e5527f6471e59852cb324f59' });
 
+/** D103 (the skim keyed by the recording's harness, F5 part 1): the large case is a Claude Code recording whose ten 70 KB
+ *  results a window shows 12,000 bytes at each end, no longer 3,600: its evidence and prompts moved. Windowed as before
+ *  the skim (a view of the session that names no harness: `unkeyed`, the smallest skim), they are the pins above, byte
+ *  for byte. The turn case shows no result over 7,200 bytes: not one of its bytes moved. */
+const MOVED_BY_SKIM = Object.freeze({ large: {
+  evidence: 'b252b71c531b1b435fbf9ecdb126d3da3a701182df58cac1899d83d485fb2588',
+  prompts: 'e295e3e45aa7ff8df274920a722426b05d8896b4e8afb7bb00dd04c306bd6e54' } });
+const unkeyed = (session) => Object.create(session, { adapter: { value: undefined, enumerable: true } });
+
 test('M33 C, M35, D71 request bytes: the brief is every window\'s system prompt; the evidence and prompts are pinned by MOVED_BY_D71_BRIEF', () => {
   for (const { name, session: build } of CASES.filter((c) => Object.hasOwn(BEFORE, c.name))) {
-    const session = build();
+    // D103: what the code sends now; then, below, windowed as before the skim.
+    const now = reviewRun.planWindowRequests({ session: build(), reviewScope: 'session-only' }).requests.map((b) => b.request);
+    const session = unkeyed(build());
     const plan = reviewRun.planWindowRequests({ session, reviewScope: 'session-only' });
     const requests = plan.requests.map((b) => b.request);
+    const moved = MOVED_BY_SKIM[name] ?? { evidence: sha(requests.map((r) => r.evidencePrompt).join('\n')),
+      prompts: sha(requests.map((r) => r.prompt).join('\n')) };
+    assert.equal(sha(now.map((r) => r.evidencePrompt).join('\n')), moved.evidence, `${name}: evidence now`);
+    assert.equal(sha(now.map((r) => r.prompt).join('\n')), moved.prompts, `${name}: prompts now`);
     assert.equal(sha(requests.map((r) => r.evidencePrompt).join('\n')), MOVED_BY_D71_BRIEF[name].evidence, `${name}: evidence`);
     assert.notEqual(MOVED_BY_D71_BRIEF[name].evidence, MOVED_BY_M36_FORMAT[name].evidence);
     assert.equal(sha(requests.map((r) => r.system).join('\n')), name === 'turn' ? MOVED_BY_W2.system
@@ -692,7 +710,7 @@ test('M33 C, M35, D71 request bytes: the brief is every window\'s system prompt;
     assert.notEqual(MOVED_BY_D71_CHANNELS[name].prompts, MOVED_BY_D71_BRIEF[name].prompts);
     // The lean profile's narrative requests are the standard ones, byte for byte, still.
     const lean = reviewRun.planWindowRequests({ session: build(), reviewScope: 'session-only', speedProfile: 'm33-lean' });
-    assert.deepEqual(lean.requests.map((b) => b.request.prompt), requests.map((r) => r.prompt), `${name}: lean = standard`);
+    assert.deepEqual(lean.requests.map((b) => b.request.prompt), now.map((r) => r.prompt), `${name}: lean = standard`);
   }
 });
 

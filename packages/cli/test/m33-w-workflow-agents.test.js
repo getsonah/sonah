@@ -876,6 +876,31 @@ const MOVED_BY_RELEASE_CHECK = Object.freeze([
   { story: 'ef0c7dfed30b560cd0c19ae6de28da70c69656b39d107c2be5054367aa980579' },
   { story: '24eafcef3838bea79e0b0790bf321ebc8842e683c67ee218177bde7c95a0a6e2' },
   { story: '9f50a0cce2915bdfd6f772c4ac85e36b8ca4ad21a3d0ea9be69062c4fb3152e8' }]);
+/** D100 (the audit of absence sentences, story /35): every case's story, by the report's words alone — what the agent
+ *  did and the runs say what Sonah found or read ("Sonah found no file in the repository that the agent changed", "Sonah
+ *  found no command in the recording", "Sonah found no decision that you settled", "Sonah read no exit code"), and what
+ *  Sonah could not check says what Sonah holds or could not read, never the recording's word. Nothing renders a story
+ *  back, so every capture below carries it. No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_ABSENCE_AUDIT = Object.freeze([
+  { story: '71b459519eeaec6bb5aa0b03cd36bae3fbc1879ca4f31f373a239aa5e8ec57f3' },
+  { story: 'f66b219968923b61f38a6cfae78ee5d54a6f3991612347ad42504abacdaa2ac7' },
+  { story: 'f52da61943ee432e3eb78e83ae2d1b5e09124f02f21e1f3b1acf470115008f87' }]);
+/** D101 (owner decision 2026-10-17; story /36, report model /2): every case's story, by the report model's version in its
+ *  footer alone (no ask of these cases is lowered at the quote gate, so no cause's words show; rendered with the model's
+ *  /1, each is MOVED_BY_ABSENCE_AUDIT's, byte for byte). Nothing renders a story back, so every capture below carries it.
+ *  No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_GROUNDING_CAUSES = Object.freeze([
+  { story: '5ad4060990cc1101652a2b7358dac683d32f6916995a9f3e31a0659ab8d1db9f' },
+  { story: 'c410e29ca7998e8f4b4ff505bddfdb2fb080219ce3d74523c14d03c5d85d9729' },
+  { story: 'ba8302866a93f79aa8e1f21986e48b00b37e421d0f1df2a89fbb7e4a08be0767' }]);
+/** D104 (F5 part 4, the mark; story /37, report model /3): every case's story, by the report model's version in its
+ *  footer alone — none of these cases holds a result a window showed in part, so no mark and no count moved (rendered with
+ *  the model's /2, each is MOVED_BY_GROUNDING_CAUSES's, byte for byte). Nothing renders a story back, so every capture
+ *  below carries it. No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_SEEN_IN_PART = Object.freeze([
+  { story: '277026d0a2c9cdde768d9f720508a22310d833ae8e57863f4f1997075b541cbf' },
+  { story: 'ffd8c3fdb783ca0cc78a7e816f553b6b8fec01432630eae3083ef181688636f1' },
+  { story: '764db68935e4b58a346ae6ca235bf37efb1f140ec5c4aad75697b00dd1d115ae' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -986,11 +1011,14 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back. D90: and every story once more
   // (MOVED_BY_AGENTIC), the same way. D97: and every story once more (MOVED_BY_STE), the same way; and once more
   // (MOVED_BY_REPORT_MD), the story now the report .md; and once more (MOVED_BY_MD_FIXES), by the report's fixes; and
-  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes.
+  // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes; and once more (MOVED_BY_ABSENCE_AUDIT), by
+  // the audit of absence sentences; and D101 once more (MOVED_BY_GROUNDING_CAUSES), by the report model's version; and
+  // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer.
   const asksFixes = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
     ...MOVED_BY_D71_CHANNELS[at], ...MOVED_BY_D71_FIX[at], ...MOVED_BY_S7[at], ...MOVED_BY_REQUEST_STEPS[at],
     ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at], ...MOVED_BY_AGENTIC[at],
-    ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at] }));
+    ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at],
+    ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at] }));
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: and once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

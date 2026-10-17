@@ -25,7 +25,8 @@ import { countLines } from '../../cli/src/report-output.js';
 import { publicCommentText } from '../../github/index.js';
 import { codeSession } from '../../cli/test/code-pass-fixture.js';
 import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS,
-  REPORT_MD_READER_VERSIONS }
+  REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS,
+  GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
@@ -238,7 +239,8 @@ test('agentic code step: an item of which Sonah checked no repaired version neve
   assert.equal(withheldWhy(item('malformed', 'value_outside_list')),
     'it broke the answer\'s contract, even after one repair (a value is outside its closed list)');
   assert.equal(withheldWhy(item('evidence_grounding_failed', 'anchor_off_quote')), 'Sonah did not find, word for word, '
-    + 'a quote that it rests on, even after one repair (the lines that it names do not hold the code that it quotes)');
+    + 'a quote that it rests on, even after one repair (the lines that it names do not hold the code that it quotes, or '
+    + 'no step of its trace quotes the lines that it is about)');
   // None checked: the reason without the repair, its cause, then why no repaired version was checked.
   assert.deepEqual(CODE_REPAIR_UNCHECKED.map((repair) => withheldWhy(item('malformed', 'value_outside_list', repair))), [
     'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not use the repair\'s finding at '
@@ -253,13 +255,14 @@ test('agentic code step: an item of which Sonah checked no repaired version neve
     'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not check it or ask for its '
       + 'repair, because it is past the most items that its list may hold']);
   assert.deepEqual(['different', 'absent', 'repeated'].map((repair) => withheldWhy(item('evidence_grounding_failed',
-    'quote_ungrounded', repair, 'question'))), ['Sonah did not find, word for word, a quote that it rests on (a quote is '
-    + 'not word for word in the file that it names), and Sonah did not use the repair\'s question at its place, because '
-    + 'that question differs in the item that it concerns', 'Sonah did not find, word for word, a quote that it rests on '
-    + '(a quote is not word for word in the file that it names), and Sonah did not check a repaired version of it, '
-    + 'because the one repair returned no question at its place', 'Sonah did not find, word for word, a quote that it '
-    + 'rests on (a quote is not word for word in the file that it names), and Sonah did not use the repair\'s question at '
-    + 'its place, because that question repeats another question of the code review']);
+    'quote_ungrounded', repair, 'question'))), ['Sonah did not find, word for word, a quote that it rests on (Sonah found '
+    + 'nothing in what it names that matches the quote word for word), and Sonah did not use the repair\'s question at its '
+    + 'place, because that question differs in the item that it concerns', 'Sonah did not find, word for word, a quote '
+    + 'that it rests on (Sonah found nothing in what it names that matches the quote word for word), and Sonah did not '
+    + 'check a repaired version of it, because the one repair returned no question at its place', 'Sonah did not find, '
+    + 'word for word, a quote that it rests on (Sonah found nothing in what it names that matches the quote word for '
+    + 'word), and Sonah did not use the repair\'s question at its place, because that question repeats another question '
+    + 'of the code review']);
   // A reason that says nothing of a repair is said as it is, its cause once.
   assert.equal(withheldWhy(item('out_of_scope', 'out_of_scope', 'failed')),
     'it is not about lines that the change touched, and the call that would repair it failed');
@@ -761,7 +764,23 @@ test('agentic code step: the words for why the step did not run name only closed
 test('agentic code step: the page and the story moved once, one link after the release review\'s, then once by the cleanup', () => {
   // D97: the page moved once more, one link after the cleanup's (REPORT_READER_VERSIONS); the story, now the report .md,
   // once more by its own link (REPORT_MD_READER_VERSIONS).
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [REPORT_READER_VERSIONS.page.after, REPORT_MD_READER_VERSIONS.story.after]);
+  // D98: both once more, one link after D97's (ONE_READING_READER_VERSIONS): one effect rule.
+  assert.deepEqual([ONE_READING_READER_VERSIONS.page.before, ONE_READING_READER_VERSIONS.story.before],
+    [REPORT_READER_VERSIONS.page.after, REPORT_MD_READER_VERSIONS.story.after]);
+  // D99: both once more, one link after D98's (ABSENCE_READER_VERSIONS): an absence only where code proves it.
+  assert.deepEqual([ABSENCE_READER_VERSIONS.page.before, ABSENCE_READER_VERSIONS.story.before],
+    [ONE_READING_READER_VERSIONS.page.after, ONE_READING_READER_VERSIONS.story.after]);
+  // D100: both once more, one link after D99's (ABSENCE_AUDIT_READER_VERSIONS): the audit of absence sentences.
+  assert.deepEqual([ABSENCE_AUDIT_READER_VERSIONS.page.before, ABSENCE_AUDIT_READER_VERSIONS.story.before],
+    [ABSENCE_READER_VERSIONS.page.after, ABSENCE_READER_VERSIONS.story.after]);
+  // D101: both once more, one link after D100's (GROUNDING_CAUSE_READER_VERSIONS): an ask says which test refused its
+  // quote.
+  assert.deepEqual([GROUNDING_CAUSE_READER_VERSIONS.page.before, GROUNDING_CAUSE_READER_VERSIONS.story.before],
+    [ABSENCE_AUDIT_READER_VERSIONS.page.after, ABSENCE_AUDIT_READER_VERSIONS.story.after]);
+  // D104: both once more by the shown-in-part mark, one link after D101's (SEEN_READER_VERSIONS).
+  assert.deepEqual([SEEN_READER_VERSIONS.page.before, SEEN_READER_VERSIONS.story.before],
+    [GROUNDING_CAUSE_READER_VERSIONS.page.after, GROUNDING_CAUSE_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [SEEN_READER_VERSIONS.page.after, SEEN_READER_VERSIONS.story.after]);
   assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
   assert.deepEqual(CLEANUP_READER_VERSIONS, { page: { before: AGENTIC_READER_VERSIONS.page, after: 'sonah.session-page/36' },

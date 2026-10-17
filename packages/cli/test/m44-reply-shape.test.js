@@ -317,8 +317,8 @@ test('M44 attempts.json carries each attempt\'s reply shape; the summary counts 
   const run = await harness.runSessionReviewHarness(options(dir), { ...quiet, write: (line) => { stdout += line; },
     loadSession: async () => manyWindowSession(2),
     createJudge: (args) => createReviewJudge({ ...args, env: { PATH: '/bin' }, spawnProcess }) });
-  assert.equal(run.summary.schema, 'sonah.session-review-harness/17');
-  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/17');
+  assert.equal(run.summary.schema, 'sonah.session-review-harness/19');
+  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/19');
   const attempts = JSON.parse(await readFile(join(dir, 'out', 'attempts.json'), 'utf8'));
   assert.equal(attempts.length, capture.calls);
   assert.ok(attempts.length >= 3, JSON.stringify(run.summary));
@@ -385,7 +385,7 @@ test('D78 (/16) an array reply that answered counts under readAsVotes, never und
   };
   const run = await harness.runSessionReviewHarness(options(dir), { ...quiet, createJudge,
     loadSession: async () => manyWindowSession(2) });
-  assert.equal(run.summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(run.summary.schema, 'sonah.session-review-harness/19');
   const { byCode, readAsVotes, unreadable } = run.summary.replyShape;
   assert.equal(byCode.array, 2, 'every accepted reply shape is still counted by its code');
   assert.equal(readAsVotes, 1, 'the one that answered');

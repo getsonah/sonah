@@ -94,7 +94,10 @@ test('D80 the closed reason: one token, in every list a refused quote is counted
   for (const list of [REQUIREMENT_UNCHECKED_REASONS, FAILURE_UNCHECKED_REASONS, VALUE_UNCHECKED_CAUSES,
     WRITTEN_WITHHELD_CAUSES, VOTE_REJECTION_CAUSES]) {
     assert.ok(Object.isFrozen(list));
-    assert.equal(list.at(-1), UNRUN_WRITE_REASON, 'appended: every earlier member keeps its place');
+    // D99 (F1 guard) appended two more requirement reasons after it (`check_end_unread`, `check_end_unchecked`): this
+    // one keeps its place.
+    assert.equal(list.at(list === REQUIREMENT_UNCHECKED_REASONS ? -3 : -1), UNRUN_WRITE_REASON,
+      'appended: every earlier member keeps its place');
   }
   assert.ok(!JUDGMENT_REASONS.includes(UNRUN_WRITE_REASON), 'a cause and a row reason, never a new judgment reason');
   assert.equal(typeof CHECKLIST_REQUIREMENT_REASON_WORDS[UNRUN_WRITE_REASON], 'string');
@@ -226,9 +229,11 @@ test('D80 a decision\'s value quoted only from an unrun write is unchecked by th
   assert.deepEqual([refused.value, refused.valueReceipt, refused.valueState], [null, null, 'unchecked']);
   assert.deepEqual(refused.valueUnchecked, { cause: UNRUN_WRITE_REASON, action: 'S1' });
   assert.deepEqual(ground('S2', FAILED, 'failing').valueUnchecked, { cause: UNRUN_WRITE_REASON, action: 'S2' });
-  // Also in a real Write: the refusal does not apply, and the write's own unknown outcome is named, as before.
+  // Also in a real Write: D80's refusal of the quote does not apply. D98 (F9): the write's own effect is named by the
+  // one effect rule — its command was refused before it ran, so it did not happen (unsuccessful), never an unknown
+  // outcome.
   assert.deepEqual(ground('S1', SHARED, 'blank lines').valueUnchecked,
-    { cause: 'write_outcome_unknown', action: 'S1' });
+    { cause: 'write_unsuccessful', action: 'S1' });
   // A passing command's licensed write (eligible, one terminal receipt, a typed exit 0) grounds as before.
   const ran = ground('S3', RAN, 'passing');
   assert.deepEqual([ran.valueState, ran.value, ran.valueReceipt.quote], ['grounded', 'passing', RAN]);
@@ -241,7 +246,9 @@ test('D80 a written statement quoted only from an unrun write is withheld, with 
     { text: 'SYNTHETIC_D80 the notes say so', stated, contradictedBy: null }, { session, sourceMap });
   assert.deepEqual(read(code('S1', ONLY)), { withheld: UNRUN_WRITE_REASON });
   assert.deepEqual(read(code('S2', FAILED)), { withheld: UNRUN_WRITE_REASON });
-  assert.equal(read(code('S1', SHARED)).statement.stated.eventId, 'S1');
+  // D98 (F9): also in a real Write, the quote still names a write refused before it ran: it never put the text into its
+  // file, so it is no statement the agent wrote into one.
+  assert.deepEqual(read(code('S1', SHARED)), { withheld: 'written_not_landed' });
   assert.equal(read(code('S3', RAN)).statement.stated.eventId, 'S3');
 });
 

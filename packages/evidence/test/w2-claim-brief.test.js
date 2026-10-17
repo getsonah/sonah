@@ -46,7 +46,8 @@ test('W2 brief: the versions moved once each, and rendered back the brief and th
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   assert.deepEqual([W2_VERSIONS.agent.before, W2_VERSIONS.challenge.before],
     [W1_VERSIONS.agent.after, W1_VERSIONS.challenge.after]);
   assert.deepEqual([W2_VERSIONS.agent.after, W2_VERSIONS.challenge.after],

@@ -14,7 +14,9 @@ import { planWindowRequests, runReview } from '../../evidence/src/run-review.js'
 import { answerStorable, createAnswerCache, memoizeJudge } from '../src/answer-cache.js';
 import { windowOfLabel } from '../src/session-review.js';
 
-const LONG = Array.from({ length: 400 }, (_, k) => `line ${k + 1}: ${k === 199 ? 'not ok 7 - FAILS in the middle'
+// D103: a Claude Code recording's result is cut past twice its 12,000-byte skim: 1,000 lines of about 53 bytes, its
+// failure in the cut middle.
+const LONG = Array.from({ length: 1_000 }, (_, k) => `line ${k + 1}: ${k === 499 ? 'not ok 7 - FAILS in the middle'
   : `ok ${'.'.repeat(40)}`}`).join('\n');
 const blobs = { ask: 'Run the suite and tell me.', cmd: 'npm test', out: LONG, said: 'The whole suite passes.' };
 const ref = (key) => [{ sourceKey: key, fromByte: 0, untilByte: Buffer.byteLength(blobs[key], 'utf8') }];
@@ -43,7 +45,7 @@ test('M36 Q: the re-ask is stored by its bytes; a saved review replays the first
     if (request.challenge) return { votes: request.challenge.items.map((item) => ({ key: item.key, verdict: 'not-refuted',
       explanation: 'Synthetic.', receipts: [item.candidate.contradictedBy ?? item.candidate.stated] })) };
     if (request.label.endsWith(':evidence')) return { ...empty, claims: [claim] };
-    const first = { ...empty, evidenceRequests: [{ eventId: a('A1-r'), fromLine: 199, throughLine: 201 }] };
+    const first = { ...empty, evidenceRequests: [{ eventId: a('A1-r'), fromLine: 499, throughLine: 501 }] };
     assert.equal(answerStorable(request, first), true, 'the store keeps an answer carrying its requests');
     return first;
   };

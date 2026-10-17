@@ -632,6 +632,9 @@ const MOVED_BY_VOID_VOTE_REASK = Object.freeze({ ...MOVED_BY_CODE_STEP_THIRD_REV
 /** Its withdrawal (`sonah.challenge/44`): a vote a reply cast that could not be counted stands again, so no first-round
  *  batch's system moved. The version moved once. */
 const MOVED_BY_CLEANUP = Object.freeze({ ...MOVED_BY_VOID_VOTE_REASK, version: 'sonah.challenge/44' });
+/** D103, cited results shown whole (`sonah.challenge/45`): a session-only batch shows the results its items cite whole;
+ *  no batch's system moved. The version moved once. */
+const MOVED_BY_CITED_WHOLE = Object.freeze({ ...MOVED_BY_CLEANUP, version: 'sonah.challenge/45' });
 
 test('M33 I3: the challenge/10 system prompt is frozen bytes; stored answers stay keyed to them (D60)', async () => {
   const seen = [];
@@ -714,8 +717,9 @@ test('M33 I3: the challenge/10 system prompt is frozen bytes; stored answers sta
     // here moved (MOVED_BY_CODE_STEP_REREVIEW). The third review of the code step moved the version once more; no
     // batch's system here moved (MOVED_BY_CODE_STEP_THIRD_REVIEW). The re-ask of a void vote moved the version once
     // more; no first-round batch's system here moved (MOVED_BY_VOID_VOTE_REASK). Its withdrawal moved the version once
-    // more; no first-round batch's system here moved (MOVED_BY_CLEANUP).
-    MOVED_BY_CLEANUP,
+    // more; no first-round batch's system here moved (MOVED_BY_CLEANUP). D103 moved the version once more; no batch's
+    // system here moved (MOVED_BY_CITED_WHOLE).
+    MOVED_BY_CITED_WHOLE,
     'a change to the challenge system prompt moves the version and misses every stored challenge answer');
 });
 

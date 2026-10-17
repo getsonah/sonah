@@ -50,7 +50,8 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { MIN_QUOTE_CHARS, verifyReceipt, repairReceipt, findingIdentity } from './session.js';
+import { MIN_QUOTE_CHARS, verifyReceipt, repairReceipt, findingIdentity, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS }
+  from './session.js';
 import { requestFits } from './challenge.js';
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, EVIDENCE_QUOTE_MAX, GAP_CODES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES,
   CODE_CHANGE_TYPES, CODE_DIFF_STATES, CODE_PASS_LENSES, CODE_FINDING_KINDS, CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS,
@@ -78,8 +79,10 @@ import { displayPath, parseHunks, linesOf, diffLines, hunksMatch, rebuilds, exte
  *  part of it (the agent reads any file itself), and no file is shown whole. /10 (D90: never blank what the reviewer
  *  needs): a file that changed after the session's last recorded edit (its last recorded write no longer literally in
  *  it) is read and diffed like any changed file, marked `drifted`; only one the session deleted that is there again
- *  keeps no text. */
-export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/10';
+ *  keeps no text. /11 (D98, one effect rule): a path is part of the change, and counted outside it, only for a change
+ *  that could have happened (session.js `effectOf`: landed or unknown); a write refused before it ran, or one that
+ *  failed or was cancelled, changed nothing and names no path. */
+export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/11';
 /** The review agent's request (its brief, the person's words, the project files the session loaded, the change, the
  *  dossier, where it is), its contract and its one repair. /2 to /6: the lens calls and step 1 (retired). /7 (the
  *  agentic code step, D90): one review agent with Read, Grep and Glob over the repository, its method merged from
@@ -98,8 +101,11 @@ export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/10';
  *  entries (`triage`, each against its published finding, question or row), the dropped ones with their cause, one
  *  record an entry (`triageDropped`, `filesDropped`), each shown file's added and removed lines and its
  *  note, and each published finding's anchor lines as read (`anchorSpan`, `anchorSha256`, `anchorChanged`). The tier
- *  table (triage.js `ITEM_KIND_TABLE`, `sonah.tiers/1`) is in the profile, so a table change never replays an answer. */
-export const CODE_PASS_VERSION = 'sonah.code-pass/10';
+ *  table (triage.js `ITEM_KIND_TABLE`, `sonah.tiers/1`) is in the profile, so a table change never replays an answer.
+ *  /11 (the owner's answer of 2026-10-17, "all as suggested"): the dossier's commands after a file's last edit leave
+ *  out a command refused before it ran (session.js `effectOf` `none`), so a file that only such commands follow is
+ *  `never_ran`, as the page's Runs list says it; the brief's words did not move. */
+export const CODE_PASS_VERSION = 'sonah.code-pass/11';
 /** The checking agents' requests (/1): one per finding, told to refute by tracing and to judge the title and each
  *  supporting claim; one for the held statements and the questions; a void verdict re-asked once, naming its cause.
  *  /2: the batch checking agent checks the questions alone (no statement found to hold is given any more). */
@@ -304,30 +310,33 @@ export async function receiptRepairOnce({ judge, request, label, note, failed, r
 // ---- the snapshot: the change under review ---------------------------------------------------------------------------
 
 const WRITES = Object.freeze(['write', 'edit', 'delete']);
-/** A write's outcomes (session.js `actionOutcomeOf`) that prove it left nothing behind: it failed, or was cancelled. */
-const UNDONE = Object.freeze(['failed', 'cancelled']);
+/** D98 (F9): the effect (session.js ACTION_EFFECTS) the record proves a write landed with. */
+const [, , LANDED_EFFECT] = ACTION_EFFECTS;
 
 /**
  * The paths of the change the recording shows, from its structure alone: every path a recorded write, edit or delete
- * changed, in the order they were first changed — each named as the code step names it (code-context.js `displayPath`:
- * relative to `root` when under it), `recordedPath` keeping the first spelling the record used. `last` is what its last
- * change the record proves succeeded left behind — or, when the record proves none succeeded, its last change whose
- * outcome it does not prove failed or cancelled: a delete, or the text that change wrote (its after side, each
+ * could have changed (D98, F9: its effect, session.js `effectOf`, is landed or unknown — never one refused before it
+ * ran, failed or cancelled, which changed nothing), in the order they were first changed — each named as the code step
+ * names it (code-context.js `displayPath`: relative to `root` when under it), `recordedPath` keeping the first spelling
+ * the record used. `last` is what its last change the record proves landed left behind — or, when the record proves
+ * none landed, its last change of unknown effect: a delete, or the text that change wrote (its after side, each
  * uninterrupted span) — what the file must still hold literally for its text to be the session's last write (else it
  * changed after the session's last recorded edit: `drifted`, `changed_since_session` in the record); and `edits` are
- * its changes not proven undone, in order, each its before and after spans (the hunks of a
+ * its changes, in order, each its before and after spans (the hunks of a
  * file with no git base) and `placed`: the rows the recorder's own hunks numbered for it, context and added
  * (code-context.js `recordedNewRows`), carried through every later change of the path by that change's own hunks
- * (`mapRecordedRows`) — null when the recording does not give them or a later change lost them. A path whose every
- * change the record proves failed or cancelled has no `last`. `outside` is the slicer's own write scope
- * (`outsideRepository`). The paths the session only read are no part of it (code-snapshot/9: the review agent reads any
- * file itself). Nothing is read. Pure.
+ * (`mapRecordedRows`) — null when the recording does not give them or a later change lost them. A path no change of
+ * which could have changed it is no part of the change, and is not counted outside it. `outside` is the slicer's own
+ * write scope (`outsideRepository`) of those changes. The paths the session only read are no part of it
+ * (code-snapshot/9: the review agent reads any file itself). Nothing is read. Pure.
  */
 export function codeSnapshotPlan(session, { root = null } = {}) {
   const changed = new Map();
+  const effectOf = effectReader(session);
   for (const event of list(session?.events)) {
     if (event?.kind !== 'invocation' || !WRITES.includes(event.operation)) continue;
-    const outcome = session.actionOutcomeOf(event);
+    const effect = effectOf(event);
+    if (!CHANGING_EFFECTS.includes(effect)) continue;
     for (const change of list(event.changes)) {
       const recordedPath = change?.path;
       if (typeof recordedPath !== 'string' || !recordedPath) continue;
@@ -335,16 +344,14 @@ export function codeSnapshotPlan(session, { root = null } = {}) {
       const entry = changed.get(path) ?? { path, recordedPath, changed: true, recorded: true, outside: false,
         lastEvent: null, unproven: null, edits: [] };
       if (change.outsideRepository === true) entry.outside = true;
-      if (outcome === 'succeeded') entry.lastEvent = event;
-      else if (!UNDONE.includes(outcome)) entry.unproven = event;
-      if (!UNDONE.includes(outcome)) {
-        // Where the earlier edits' lines are after this change, by its own recorded hunks; a delete loses them.
-        for (const edit of entry.edits) if (edit.placed !== null)
-          edit.placed = event.operation === 'delete' ? null : mapRecordedRows(edit.placed, event);
-        if (event.operation !== 'delete')
-          entry.edits.push({ before: session.textSpansOf(change, 'before'), after: session.textSpansOf(change, 'after'),
-            whole: event.operation === 'write', placed: recordedNewRows(event) });
-      }
+      if (effect === LANDED_EFFECT) entry.lastEvent = event;
+      else entry.unproven = event;
+      // Where the earlier edits' lines are after this change, by its own recorded hunks; a delete loses them.
+      for (const edit of entry.edits) if (edit.placed !== null)
+        edit.placed = event.operation === 'delete' ? null : mapRecordedRows(edit.placed, event);
+      if (event.operation !== 'delete')
+        entry.edits.push({ before: session.textSpansOf(change, 'before'), after: session.textSpansOf(change, 'after'),
+          whole: event.operation === 'write', placed: recordedNewRows(event) });
       changed.set(path, entry);
     }
   }

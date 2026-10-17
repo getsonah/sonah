@@ -121,7 +121,9 @@ function sessionRows(session) {
         { deliverable: receipt('commentary', 'F1', 'The auth checks stay before the limiter.') }),
       ask('Do not change the CI config', 'partly-done', { deliverable: receipt('commentary', 'F1', 'I reverted the CI change.'),
         shortfall: receipt('code', 'W3', 'run: npm test --silent') }),
-      ask('Update the README', 'not-checked', { reason: 'deliverable_ungrounded' }),
+      // D101: a row the quote gate lowered carries the cause of the test that refused its quote, and code's numbers.
+      ask('Update the README', 'not-checked', { reason: 'deliverable_ungrounded', cause: 'quote_over_limit',
+        quoteLength: { chars: 134, counted: 134, limit: 120 }, quotePlace: 'cited' }),
       { text: 'Also add a test for the limiter', instruction: receipt('instruction', 'I2', 'Also add a test for the limiter'),
         status: 'not-done', shortfall: receipt('commentary', 'F2', 'I added no test yet.') },
       { instruction: receipt('instruction', 'I1', 'Update the README'), status: 'not-checked' },

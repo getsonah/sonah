@@ -75,7 +75,8 @@ test('W1 B: the versions, the contract and the brief', () => {
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   // W2 moved both once more (story /21, page /26): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
   // D87 moved it once more (sonah.session-story/23, its /22 renumbered at the merge): a review with a code pass lists
@@ -93,8 +94,13 @@ test('W1 B: the versions, the contract and the brief', () => {
   // session), and the code step's new report.
   // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
+  // D98 moved it once more (sonah.session-story/33): its rows, runs and gaps read one effect rule.
   // D97 moved it once more (sonah.session-story/32): the story is the report .md.
-  assert.equal(STORY_VERSION, 'sonah.session-story/32');
+  // D99 moved it once more (sonah.session-story/34): a background run's end, and a stopped run, in the page's words.
+  // D100 moved it once more (sonah.session-story/35): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
+  assert.equal(STORY_VERSION, 'sonah.session-story/37');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -112,7 +118,12 @@ test('W1 B: the versions, the contract and the brief', () => {
   // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
   // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/37');
+  // D98 moved it once more (sonah.session-page/38): what the agent did and what Sonah could not check read one effect rule.
+  // D99 moved it once more (sonah.session-page/39): a background run's end is said absent only where it is proved.
+  // D100 moved it once more (sonah.session-page/40): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/42');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes

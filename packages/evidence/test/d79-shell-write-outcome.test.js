@@ -81,7 +81,7 @@ test('D79 a shell write takes its command\'s did-not-run, and no other end of it
   assert.deepEqual(of('C2'), ['ran-failed', 'exit']);
   assert.deepEqual(of('S2'), COMMAND_FAILED);
   assert.equal(actionOutcome(session, session.event('S2')).words,
-    'no terminal status recorded (its command failed, so whether this write happened is not recorded)');
+    'no terminal status recorded (its command failed, so Sonah could not read whether this write happened)');
   // A command C-02 licenses (eligible, one terminal receipt, a typed exit 0): it ran to exit 0, its write's outcome
   // stays unknown, as before D79.
   assert.equal(session.actionOutcomeOf(session.event('S3')), 'succeeded', 'premise');
@@ -110,7 +110,7 @@ test('D79 a shell write takes its command\'s did-not-run, and no other end of it
       'no terminal status recorded (stopped before it finished)');
     assert.deepEqual(of(write), COMMAND_STOPPED, write);
     assert.equal(actionOutcome(session, session.event(write)).words, 'no terminal status recorded (its command stopped '
-      + 'before it finished, so whether this write happened is not recorded)');
+      + 'before it finished, so Sonah could not read whether this write happened)');
   }
   // D59: the window bound applies to the command's result, as it does to the command itself.
   const refusedAt = session.event('C1').sequence;

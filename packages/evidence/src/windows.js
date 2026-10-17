@@ -17,7 +17,7 @@
 // Labels are the slicer's (C-02 "M34 slice-time labels"): a human message is an instruction event whose label was
 // human (authority `human`, or `agent` — the parent agent's words to a helper — derived from the lineage), never a
 // peer's. Nothing here reads a word of any text. Deterministic: no clock, no random source, no model. Every size is the
-// UTF-8 bytes of the content a window shows, after the trim, and a token is 3.6 bytes (`TOKEN_BYTES`).
+// UTF-8 bytes of the content a window shows, after the cut, and a token is 3.6 bytes (`TOKEN_BYTES`).
 
 /** /4 (M36 phase 2, the window format; D68; C-07 "M36 window format"): what a window shows of an event, and
  *  so every event's planned size, moved — a command line and a tool input whole, a result cut on whole lines, an edit as
@@ -36,7 +36,13 @@
 // /8 (D71, S2: the reviewer brief as the checklist): the window format a session-only
 // request shows moved — each agent message numbered by line (`messageLines`), each window's closing message and last event
 // named (`closingMessages`) — and no window's events, cut or planned size moved: every shown byte is /7's.
-export const WINDOWING_VERSION = 'sonah.windows/8';
+// /9 (D103, owner decision 2026-10-17; amends D68 P): a session-only review's skim — the bytes a side shown of a result
+// over twice it — is keyed by the recording's harness (`SKIM_SIDE_BYTES`): 12,000 bytes a side for a Claude Code
+// recording, 3,600 for a Codex rollout and for any harness the table does not list. The settings name it in bytes
+// (`skimSideBytes`, in place of the 2k-token `trimTokens`), and so does the windowing profile. A Claude Code recording's
+// results from 7,201 to 24,000 bytes are shown whole, and a longer one shows up to 12,000 bytes at each end; every other
+// recording's shown bytes, and a combined review's, are /8's.
+export const WINDOWING_VERSION = 'sonah.windows/9';
 
 /** The deterministic token estimate: UTF-8 bytes / 3.6. */
 export const TOKEN_BYTES = 3.6;
@@ -44,23 +50,47 @@ export const TOKEN_BYTES = 3.6;
 export const bytesOfTokens = (tokens) => Math.floor((tokens * 18) / 5);
 
 /**
- * The settings: a window's current work stays at or under 200k tokens; the carried context on top of it
- * is capped at 200k tokens; every action and observation other than a file edit is trimmed to 2k tokens (its first
- * 1k and its last 1k, by position only). Frozen literals, chosen only by the review's profile, never tuned per repo.
+ * D103 (owner decision 2026-10-17: "for D increase the limit from 3.6k to 12k"; amends D68 P): the skim — the bytes a
+ * session-only window shows at EACH end of a result longer than twice it — keyed by the recording's harness, the adapter
+ * that loaded it (`Session.adapter`, a recorder fact known before any call). One positional cut, never a reading of the
+ * output: a result at or under twice its harness's size is shown whole; a longer one shows a whole-line head and tail of
+ * at most that size each, its middle named by lines and bytes and available on request. Frozen literals, set from
+ * measured real result sizes and measured again each release (D103: on 48 long Claude Code work sessions, 12,000 a side
+ * cuts 1.3% of results, against 7.2% at 3,600, for 14% more windows and 11% more request bytes); never tuned per
+ * repository, never adaptive. A Codex rollout keeps 3,600 until Codex-only data is measured (at 12,000 its
+ * windows grow by about 56%). A harness the table does not list (Cursor, a mixed or unrecognised recording) gets the
+ * smallest size, never a larger one (`SKIM_FALLBACK_BYTES`).
  */
-export const WINDOW_SETTINGS = Object.freeze({ workTokens: 200_000, carriedTokens: 200_000, trimTokens: 2_000 });
+export const SKIM_SIDE_BYTES = Object.freeze({ claude: 12_000, codex: 3_600 });
+/** The size of a harness `SKIM_SIDE_BYTES` does not list: the smallest it lists. */
+export const SKIM_FALLBACK_BYTES = Math.min(...Object.values(SKIM_SIDE_BYTES));
+/** The skim of a recording loaded by `harness` (`Session.adapter`): its listed size, else the smallest. */
+export const skimSideBytesOf = (harness) => (typeof harness === 'string' && Object.hasOwn(SKIM_SIDE_BYTES, harness)
+  ? SKIM_SIDE_BYTES[harness] : SKIM_FALLBACK_BYTES);
+
+/**
+ * The settings: a window's current work stays at or under 200k tokens; the carried context on top of it
+ * is capped at 200k tokens; every observation is cut by position to its first and last `skimSideBytes` (a helper's
+ * report, and what the agent produced, only past the work budget). Frozen literals, chosen only by the review's profile
+ * and the recording's harness (D103), never tuned per repo. These are a review's settings for a recording whose harness
+ * has no size of its own (`SKIM_FALLBACK_BYTES`); `windowSettingsOf` gives each harness its own.
+ */
+export const WINDOW_SETTINGS = Object.freeze({ workTokens: 200_000, carriedTokens: 200_000,
+  skimSideBytes: SKIM_FALLBACK_BYTES });
 
 /** Owner steering 2026-10-09: Codex session reviews use a smaller work/carry profile. These remain
  * byte-based token estimates, not a proof that a complete model request fits its context. */
-export const CODEX_WINDOW_SETTINGS = Object.freeze({ workTokens: 100_000, carriedTokens: 100_000, trimTokens: 2_000 });
+export const CODEX_WINDOW_SETTINGS = Object.freeze({ workTokens: 100_000, carriedTokens: 100_000,
+  skimSideBytes: SKIM_FALLBACK_BYTES });
 
 /**
  * A combined (PR) review's settings. Its windows ride inside a code-review request of at most 524,288 bytes
  * (`MAX_REVIEW_INPUT_BYTES`) beside the PR's hunks and manifest, so its current work keeps the old source budget —
  * 196,608 bytes, 54,613 tokens — and it carries no earlier thoughts (a combined review carried nothing before either;
- * its human messages are in its request's instruction inventory, as always). Everything else is the spec's.
+ * its human messages are in its request's instruction inventory, as always). Everything else is the spec's. D103: its
+ * skim stays 3,600 bytes a side for every harness (the larger size is measured for session-only reviews only).
  */
-export const COMBINED_WINDOW_SETTINGS = Object.freeze({ workTokens: 54_613, carriedTokens: 0, trimTokens: 2_000 });
+export const COMBINED_WINDOW_SETTINGS = Object.freeze({ workTokens: 54_613, carriedTokens: 0, skimSideBytes: 3_600 });
 
 /**
  * The most bytes one window's request (and so one of its challenge requests) may carry: the spec's worst-case call,
@@ -71,28 +101,53 @@ export const WINDOW_REQUEST_TOKENS = 450_000;
 export const WINDOW_REQUEST_MAX_BYTES = bytesOfTokens(WINDOW_REQUEST_TOKENS);
 
 /** The frozen windowing profile of a review: its version, its token estimate (UTF-8 bytes per token, as a string: a
- *  canonical JSON digest admits whole numbers only) and its settings. */
+ *  canonical JSON digest admits whole numbers only) and its settings — D103: its skim in bytes a side, the size its
+ *  recording's harness resolved to, so a window record of one size is never read as another's. */
 export const windowingProfile = (settings = WINDOW_SETTINGS) => Object.freeze({ version: WINDOWING_VERSION,
   bytesPerToken: String(TOKEN_BYTES), workTokens: settings.workTokens, carriedTokens: settings.carriedTokens,
-  trimTokens: settings.trimTokens });
+  skimSideBytes: settings.skimSideBytes });
 export const WINDOWING_PROFILE = windowingProfile(WINDOW_SETTINGS);
 export const CODEX_WINDOWING_PROFILE = windowingProfile(CODEX_WINDOW_SETTINGS);
 export const COMBINED_WINDOWING_PROFILE = windowingProfile(COMBINED_WINDOW_SETTINGS);
-/** The settings, and the frozen profile, a review of `reviewScope` windows by. */
-export const windowSettingsOf = (reviewScope, backend) => (reviewScope === 'session-only'
-  ? (backend === 'codex-cli' ? CODEX_WINDOW_SETTINGS : WINDOW_SETTINGS) : COMBINED_WINDOW_SETTINGS);
-export const windowingProfileOf = (reviewScope, backend) => (reviewScope === 'session-only'
-  ? (backend === 'codex-cli' ? CODEX_WINDOWING_PROFILE : WINDOWING_PROFILE) : COMBINED_WINDOWING_PROFILE);
+
+/** D103: a session-only review's settings and profile for each harness `SKIM_SIDE_BYTES` lists, per reviewer budget —
+ *  built once, so the same review always gets the same frozen object (a precomputed plan is bound to it by identity). */
+const byHarness = (base) => Object.freeze(Object.fromEntries(Object.keys(SKIM_SIDE_BYTES).map((harness) => {
+  const settings = Object.freeze({ ...base, skimSideBytes: skimSideBytesOf(harness) });
+  return [harness, Object.freeze({ settings, profile: windowingProfile(settings) })];
+})));
+const SESSION_ONLY_BY_HARNESS = byHarness(WINDOW_SETTINGS);
+const CODEX_BY_HARNESS = byHarness(CODEX_WINDOW_SETTINGS);
+/** The settings and profile a session-only review of a recording loaded by `harness` windows by: the reviewer's budgets
+ *  (`backend`: codex-cli the smaller), the harness's skim; a harness not listed, its budgets with the smallest skim. */
+function sessionOnlyOf(backend, harness) {
+  const codex = backend === 'codex-cli';
+  const listed = typeof harness === 'string' && Object.hasOwn(SKIM_SIDE_BYTES, harness)
+    ? (codex ? CODEX_BY_HARNESS : SESSION_ONLY_BY_HARNESS)[harness] : null;
+  return listed ?? (codex ? { settings: CODEX_WINDOW_SETTINGS, profile: CODEX_WINDOWING_PROFILE }
+    : { settings: WINDOW_SETTINGS, profile: WINDOWING_PROFILE });
+}
+/** The settings, and the frozen profile, a review of `reviewScope` windows by: by the reviewer `backend` (its budgets)
+ *  and, D103, the recording's `harness` (`Session.adapter`: its skim). A combined review's are one for every harness. */
+export const windowSettingsOf = (reviewScope, backend, harness) => (reviewScope === 'session-only'
+  ? sessionOnlyOf(backend, harness).settings : COMBINED_WINDOW_SETTINGS);
+export const windowingProfileOf = (reviewScope, backend, harness) => (reviewScope === 'session-only'
+  ? sessionOnlyOf(backend, harness).profile : COMBINED_WINDOWING_PROFILE);
+/** D103: the settings a function below uses when it is given none — a session-only review's by the default reviewer, for
+ *  the session's own harness (`session.adapter`), so a recording is shown by the one skim its harness sets wherever no
+ *  caller names other settings. (Every review names its own: `planWindowRequests`.) */
+const sessionSettingsOf = (session) => windowSettingsOf('session-only', undefined, session?.adapter);
 
 // ---- what a window shows of one event (M36 phase 2: the window format) -----------------------------------------------
 //
 // Owner decisions 2026-10-07 (D68 P, L, T, H, critique c1-c4, c8; C-07 "M36 window format"). What the agent
 // PRODUCED is shown whole: a human message, a thought, a command line, a tool input, a code change. What it CONSUMED —
-// an observation — is cut by ONE positional rule: its first and last `trimTokens / 2` tokens' bytes, on whole lines, the
-// middle named by line range and available on request. An edit is shown as the hunks the recorder recorded for it, each
-// maximal same-side run a quotable source of its own; a created file once, whole; an edit the recorder kept no hunks for
-// as its own written and replaced text, whole. The file as the record found it before an edit is never inlined. Nothing
-// is computed from an output's or a thought's words, and no end state of a file is computed anywhere.
+// an observation — is cut by ONE positional rule: its first and last `skimSideBytes` (D103: set by the recording's
+// harness), on whole lines, the middle named by line range and available on request. An edit is shown as the hunks the
+// recorder recorded for it, each maximal same-side run a quotable source of its own; a created file once, whole; an edit
+// the recorder kept no hunks for as its own written and replaced text, whole. The file as the record found it before an
+// edit is never inlined. Nothing is computed from an output's or a thought's words, and no end state of a file is
+// computed anywhere.
 
 const utf8 = (code) => (code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4);
 export const byteLength = (text) => Buffer.byteLength(text, 'utf8');
@@ -101,10 +156,19 @@ export const byteLength = (text) => Buffer.byteLength(text, 'utf8');
  * The closed reasons a window declares where it shows less of what the agent produced than the record holds (C-07 "M36
  * window format"): a command line or a tool input (`action_over_budget`), an edit (`edit_over_budget`), or (M36 phase 2
  * review) a helper's report its parent received (`report_over_budget`), larger than a window's whole work budget alone —
- * its head and tail are shown up to that budget, the gap declared between them.
+ * its head and tail are shown up to that budget, the gap declared between them. D103 (F5 part 2): and a result a
+ * challenge request's items cite, which that request shows whole unless whole it would put the request over its bound
+ * (`result_over_bound`): then it shows the window's head and tail, the gap declared between them.
  */
 export const SHOWN_GAPS = Object.freeze({ actionOverBudget: 'action_over_budget', editOverBudget: 'edit_over_budget',
-  reportOverBudget: 'report_over_budget' });
+  reportOverBudget: 'report_over_budget', resultOverBound: 'result_over_bound' });
+
+/**
+ * D103 (F5 part 2): how a challenge request shows a result its items cite, when the window's skim cuts it: `whole`, or,
+ * when whole it would put the request over its bound, `overBound` — cut by the window's skim and declared
+ * (`SHOWN_GAPS.resultOverBound`). Any other event, and every request but a challenge's, is shown as the window shows it.
+ */
+export const CITED_VIEWS = Object.freeze({ whole: 'whole', overBound: 'over_bound' });
 
 /* D69 (e) (owner decision 2026-10-08): the net view of a file changed twice or more in a window, and its declines
  * (`changedTwice`, `NET_VIEW_DECLINED`: `start_unrecorded`, `end_unrecorded`, `not_computed`), are reverted. A net view
@@ -254,6 +318,35 @@ export function lineCut(regions, side) {
       partFrom: from > 0 && text[from - 1] !== '\n', partThrough: text[until - 1] !== '\n' } };
 }
 
+/**
+ * D103 (F5 part 2): the quotable UTF-8 bytes of lines `from`–`through` (1-based) of an output that its positional cut at
+ * `side` leaves out: only the part of those lines inside the omitted middle, so a line the head or the tail shows in part
+ * counts only its part not shown. 0 when the output is not cut. Positions only, never a word of the output.
+ */
+function omittedLineBytes(regions, side, from, through) {
+  const { text } = regions;
+  if (bytesIn(regions, 0, text.length) <= 2 * side) return 0;
+  const startOf = (line) => {
+    let at = 0;
+    for (let k = 1; k < line; k++) {
+      const nl = text.indexOf('\n', at);
+      if (nl < 0) return text.length;
+      at = nl + 1;
+    }
+    return at;
+  };
+  const a = Math.max(headEnd(regions, side), startOf(from)), b = Math.min(tailStart(regions, side), startOf(through + 1));
+  return a < b ? bytesIn(regions, a, b) : 0;
+}
+
+/** D103 (F5 part 2): `omittedLineBytes` of a result's output at the window's skim (`settings`), for a challenge request
+ *  that shows the result cut over its bound beside lines served for it: each range still not shown names its bytes. */
+export function omittedOutputBytes(session, event, settings, from, through) {
+  const { side } = budgetsOf(settings);
+  if (side === null || event?.kind !== 'observation') return 0;
+  return omittedLineBytes(regionsOf(session, event, 'output'), side, from, through);
+}
+
 /** One shown field: `{ role, holder, field, spans, headCount, omittedBytes, omitted, gap }` — `headCount` the spans
  *  before the cut (all of them when nothing was cut), `gap` the closed reason a cut of what the agent produced names. */
 function shownField(role, holder, field, regions, cut = null, gap = null) {
@@ -268,7 +361,7 @@ function shownField(role, holder, field, regions, cut = null, gap = null) {
 /** The work budget and the observation side of `settings`, in bytes (null: everything whole, a code-only chunk). */
 function budgetsOf(settings) {
   const whole = (n) => Number.isSafeInteger(n) && n > 0;
-  return { side: settings && whole(settings.trimTokens) ? bytesOfTokens(settings.trimTokens) / 2 : null,
+  return { side: settings && whole(settings.skimSideBytes) ? settings.skimSideBytes : null,
     budget: settings && whole(settings.workTokens) ? bytesOfTokens(settings.workTokens) : null };
 }
 
@@ -436,13 +529,14 @@ function fileLinesOf(read, regions, from, through) {
  * What a window shows of one event (C-07 "M36 window format"; `settings` the window's, null showing everything whole):
  *   - instruction, commentary: `{ kind, fields: [whole field] }`;
  *   - observation: `{ kind, fields: [output], facts, lines, bytes, fileLines }` — the output cut by the positional rule
- *     (`lineCut` at `trimTokens / 2`), its label facts (`observationFacts`), its size, and a numbered read's file lines
- *     of the omitted middle (`fileLinesOf`);
+ *     (`lineCut` at `skimSideBytes`), its label facts (`observationFacts`), its size, and a numbered read's file lines
+ *     of the omitted middle (`fileLinesOf`); D103: a result a challenge request's items cite as `cited` says
+ *     (`CITED_VIEWS`): whole, or cut by the skim and declared `result_over_bound`;
  *   - invocation: `{ kind, command, input, paths, edit }` — the command line and a tool's input (an `other` or
  *     `delegate` call's) whole unless over the work budget alone (`action_over_budget`), every path whole, and a
  *     write's, edit's or delete's change (`editView`).
  */
-export function eventView(session, event, settings = WINDOW_SETTINGS) {
+export function eventView(session, event, settings = sessionSettingsOf(session), cited = null) {
   const { side, budget } = budgetsOf(settings);
   const whole = (role, holder, field) => shownField(role, holder, field, regionsOf(session, holder, field));
   switch (event?.kind) {
@@ -455,9 +549,13 @@ export function eventView(session, event, settings = WINDOW_SETTINGS) {
       // whole like a command line — cut only when it alone is larger than the window's whole work budget, declared
       // (`report_over_budget`). Every other result is cut by the one positional rule.
       const report = event.helperReported === true;
+      // D103 (F5 part 2): a cited result a challenge request shows whole is not cut; one it cannot (over its bound) is
+      // cut by the skim and says why.
       const cut = report ? (budget === null ? null : lineCut(regions, budget / 2))
-        : side === null ? null : lineCut(regions, side);
-      const output = shownField('observation', event, 'output', regions, cut, report && cut ? SHOWN_GAPS.reportOverBudget : null);
+        : side === null || cited === CITED_VIEWS.whole ? null : lineCut(regions, side);
+      const gap = !cut ? null : report ? SHOWN_GAPS.reportOverBudget
+        : cited === CITED_VIEWS.overBound ? SHOWN_GAPS.resultOverBound : null;
+      const output = shownField('observation', event, 'output', regions, cut, gap);
       const facts = observationFacts(session, event);
       return { kind: 'observation', fields: [output], facts, lines: lineCount(regions.text),
         bytes: bytesIn(regions, 0, regions.text.length),
@@ -482,8 +580,8 @@ export function eventView(session, event, settings = WINDOW_SETTINGS) {
  * — an invocation's command, its input, then its edit's blocks (a hunk run is `{ field: 'hunk', run }`, a body its
  * change's `after`, `replaced` or `before`).
  */
-export function shownFields(session, event, settings = WINDOW_SETTINGS) {
-  const view = eventView(session, event, settings);
+export function shownFields(session, event, settings = sessionSettingsOf(session), cited = null) {
+  const view = eventView(session, event, settings, cited);
   if (view.kind !== 'invocation') return view.fields;
   const fields = [view.command, ...(view.input ? [view.input] : [])];
   for (const block of view.edit?.blocks ?? []) fields.push(block.kind === 'run'
@@ -495,8 +593,8 @@ export function shownFields(session, event, settings = WINDOW_SETTINGS) {
 
 /** The quotable sources a window shows of one event (C-05: what its source map holds), in render order: every shown
  *  span with its role, and each path whole (after the command and input, before the code, as the evidence renders it). */
-export function shownSources(session, event, settings = WINDOW_SETTINGS) {
-  const view = eventView(session, event, settings);
+export function shownSources(session, event, settings = sessionSettingsOf(session), cited = null) {
+  const view = eventView(session, event, settings, cited);
   const out = [];
   const push = (role, spans) => { for (const text of spans.length ? spans : ['']) out.push({ role, text }); };
   if (view.kind !== 'invocation') {
@@ -512,7 +610,7 @@ export function shownSources(session, event, settings = WINDOW_SETTINGS) {
 
 /** The UTF-8 bytes a window shows of one event (its current-work size): every shown span and every path — exactly the
  *  quotable text its rendering fences (labels, headers and notes are Sonah's words and are not counted). */
-export function shownBytes(session, event, settings = WINDOW_SETTINGS) {
+export function shownBytes(session, event, settings = sessionSettingsOf(session)) {
   return shownSources(session, event, settings).reduce((n, source) => n + byteLength(source.text), 0);
 }
 
@@ -789,12 +887,13 @@ function packSession(stream, sizes, budget) {
   return { segments, windows: windows.filter((window) => window.events.some((event) => event.kind !== 'boundary')) };
 }
 
-/** Settings a planner accepts: whole, positive work and trim budgets and a whole, non-negative carried cap. */
+/** Settings a planner accepts: a whole, positive work budget (tokens) and skim (bytes a side), and a whole,
+ *  non-negative carried cap (tokens). */
 function checkedSettings(settings) {
   const positive = (n) => Number.isSafeInteger(n) && n > 0;
-  if (settings === null || typeof settings !== 'object' || !positive(settings.workTokens) || !positive(settings.trimTokens)
+  if (settings === null || typeof settings !== 'object' || !positive(settings.workTokens) || !positive(settings.skimSideBytes)
       || !(Number.isSafeInteger(settings.carriedTokens) && settings.carriedTokens >= 0))
-    throw new RangeError('Windowing settings must be whole token counts: work and trim positive, carried not negative');
+    throw new RangeError('Windowing settings must be whole counts: work and skim positive, carried not negative');
   return settings;
 }
 
@@ -812,7 +911,7 @@ function checkedSettings(settings) {
  * M36 phase 3 (D68 K): `parts` are the sessions it holds, packed (each `{ session, events, segments, piece, repeats,
  * activeTask, workBytes, oversize }`, in review order); `session` … `activeTask` are its first part's.
  */
-export function planWindows(session, settings = WINDOW_SETTINGS) {
+export function planWindows(session, settings = sessionSettingsOf(session)) {
   // Fails closed, as the splitter did: no session is never an empty plan.
   if (!Array.isArray(session?.events)) throw new TypeError('Windows are planned from a session\'s events');
   const budget = bytesOfTokens(checkedSettings(settings).workTokens);
@@ -916,7 +1015,7 @@ export const windowParts = (window) => (Array.isArray(window?.parts) && window.p
  * always read them. `activeTaskShown` is where an active task is shown: `window` (one of its own events), `repeated` (the
  * top of a later piece) or `carried`.
  */
-export function carriedContext(session, window, settings = WINDOW_SETTINGS, { capBytes: fitted = null } = {}) {
+export function carriedContext(session, window, settings = sessionSettingsOf(session), { capBytes: fitted = null } = {}) {
   if (!settings || !(settings.carriedTokens > 0)) return null;
   const all = (Array.isArray(session?.events) ? session.events : []).filter((event) => !placementOnly(event));
   const position = new Map(all.map((event, at) => [event, at]));

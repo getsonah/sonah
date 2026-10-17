@@ -10,8 +10,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Session, hunkRunsOf, shownSession, verifyReceipt, repairReceipt } from '../src/session.js';
-import { WINDOW_SETTINGS, COMBINED_WINDOW_SETTINGS, bytesOfTokens, eventView, shownFields, shownSources, shownBytes,
-  planWindows, lineCut, lineCount, observationFacts, SHOWN_GAPS, WINDOWING_VERSION }
+import { COMBINED_WINDOW_SETTINGS, bytesOfTokens, eventView, shownFields, shownSources, shownBytes,
+  planWindows, lineCut, lineCount, observationFacts, SHOWN_GAPS, WINDOWING_VERSION, skimSideBytesOf }
   from '../src/windows.js';
 import * as windowsModule from '../src/windows.js';
 import { planWindowRequests, runReview } from '../src/run-review.js';
@@ -45,7 +45,9 @@ const out = (id, invocation, text, over = {}) => ({ id, kind: 'observation', inv
 const session = (events) => new Session({ sessionKey: 'm36-format', adapter: 'claude', blobs: { ...blobs },
   events: events.map((event, sequence) => ({ ...event, sequence })) });
 const lines = (n, tag = 'line') => Array.from({ length: n }, (_, i) => `${tag} ${i + 1} of the synthetic output`).join('\n');
-const SIDE = bytesOfTokens(WINDOW_SETTINGS.trimTokens) / 2;
+// D103: these sessions are Claude Code recordings (`adapter: 'claude'`), whose results a window shows up to 12,000 bytes
+// at each end; a result is cut only past twice that.
+const SIDE = skimSideBytesOf('claude');
 const EMPTY = Object.freeze({ decisions: [], pivots: [], claims: [], requirements: [] });
 
 // ---- the profile ---------------------------------------------------------------------------------------------------------
@@ -54,9 +56,11 @@ test('M36 format: one next windowing version, and the closed reasons a window de
   // M36 phase 3 moved it once more (`sonah.windows/5`): packed windows, carried failures, the evidence re-ask (D68 K, Q, F; CONVERSATION_VERSIONS).
   // D69 moved it once more (`sonah.windows/6`): the net view's declines reverted, the harness home folders, the recorder's cwd (D69_VERSIONS).
   // D71 (S2) moved it once more (sonah.windows/8): the reviewer brief as the checklist (D71_BRIEF_VERSIONS).
-  assert.equal(WINDOWING_VERSION, 'sonah.windows/8');
+  // D103 moved it once more (sonah.windows/9): the skim keyed by the recording's harness, in bytes a side.
+  assert.equal(WINDOWING_VERSION, 'sonah.windows/9');
+  // D103 (F5 part 2): and a cited result a challenge request could not show whole within its bound.
   assert.deepEqual({ ...SHOWN_GAPS }, { actionOverBudget: 'action_over_budget', editOverBudget: 'edit_over_budget',
-    reportOverBudget: 'report_over_budget' });
+    reportOverBudget: 'report_over_budget', resultOverBound: 'result_over_bound' });
   assert.ok(Object.isFrozen(SHOWN_GAPS));
   // D69 (e): the net view's declines are reverted with it.
   assert.equal(windowsModule.NET_VIEW_DECLINED, undefined);
@@ -65,8 +69,8 @@ test('M36 format: one next windowing version, and the closed reasons a window de
 
 // ---- (T) the positional cut, on whole lines ------------------------------------------------------------------------------
 
-test('M36 T: a result over 2k tokens keeps its first and last whole lines within 1k tokens each; its omitted lines are named', () => {
-  const text = `${lines(400)}\n`;
+test('M36 T: a result over twice its skim keeps its first and last whole lines within the skim each; its omitted lines are named', () => {
+  const text = `${lines(1_000)}\n`;
   const s = session([run('A1', 'cat big.txt'), out('A1-r', 'A1', text)]);
   const view = eventView(s, s.event('A1-r'));
   const [output] = view.fields;
@@ -77,10 +81,10 @@ test('M36 T: a result over 2k tokens keeps its first and last whole lines within
   assert.ok(text.endsWith(tail[0]) && text[text.length - tail[0].length - 1] === '\n', 'the tail starts on a whole line');
   assert.ok(Buffer.byteLength(head[0]) <= SIDE && Buffer.byteLength(tail[0]) <= SIDE);
   const shownLines = lineCount(head[0]);
-  assert.deepEqual(output.omitted, { fromLine: shownLines + 1, throughLine: 400 - lineCount(tail[0]), partFrom: false,
+  assert.deepEqual(output.omitted, { fromLine: shownLines + 1, throughLine: 1_000 - lineCount(tail[0]), partFrom: false,
     partThrough: false });
   assert.equal(output.omittedBytes, Buffer.byteLength(text) - Buffer.byteLength(head[0]) - Buffer.byteLength(tail[0]));
-  assert.equal(view.lines, 400);
+  assert.equal(view.lines, 1_000);
   assert.equal(shownBytes(s, s.event('A1-r')), Buffer.byteLength(head[0]) + Buffer.byteLength(tail[0]));
   // The request says so between the head and the tail, outside every fence, and its source map holds only those spans.
   const [built] = planWindowRequests({ session: s, reviewScope: 'session-only' }).requests;
@@ -91,34 +95,35 @@ test('M36 T: a result over 2k tokens keeps its first and last whole lines within
   // D71 (S2): a session-only request offers the lines under its brief's last step (S3: step 6).
   assert.match(prompt, /; ask for them under step 6 if a row's status depends on them \(\[E\d+\] lines \d+–\d+\)\. Quote the shown spans only, never across the cut\./);
   assert.deepEqual(built.sourceMap['A1-r'].map((source) => source.text), [head[0], tail[0]]);
-  // A result within 2k tokens is shown whole.
+  // A result within twice the skim is shown whole.
   const small = session([run('A2', 'ls'), out('A2-r', 'A2', lines(3))]);
   assert.equal(eventView(small, small.event('A2-r')).fields[0].omitted, null);
 });
 
 test('M36 T: a line longer than its side is cut at a character boundary, never inside a character, and said in part', () => {
+  const side = 3_600;
   const text = `${'é'.repeat(5_000)}\nshort\n${'😀'.repeat(3_000)}`;
-  const cut = lineCut({ text, ranges: [{ from: 0, until: text.length }] }, SIDE);
-  assert.equal(Buffer.byteLength(cut.head[0]), SIDE, '1,800 two-byte characters');
-  assert.ok(Buffer.byteLength(cut.tail[0]) <= SIDE && text.endsWith(cut.tail[0]));
+  const cut = lineCut({ text, ranges: [{ from: 0, until: text.length }] }, side);
+  assert.equal(Buffer.byteLength(cut.head[0]), side, '1,800 two-byte characters');
+  assert.ok(Buffer.byteLength(cut.tail[0]) <= side && text.endsWith(cut.tail[0]));
   assert.deepEqual(cut.omitted, { fromLine: 1, throughLine: 3, partFrom: true, partThrough: true });
   // Spans stay separate sources: an artifact between two ranges is never joined across.
   const masked = `${lines(200, 'a')}\n‹dropped›\n${lines(200, 'b')}`;
   const at = masked.indexOf('‹dropped›');
   const regions = { text: masked, ranges: [{ from: 0, until: at }, { from: at + '‹dropped›'.length, until: masked.length }] };
-  const both = lineCut(regions, SIDE);
+  const both = lineCut(regions, side);
   assert.ok(![...both.head, ...both.tail].some((span) => span.includes('‹dropped›')));
 });
 
 test('M36 T: a numbered read names the file lines it omitted only when its output is the recorder\'s numLines lines, nothing dropped', () => {
-  const numbered = Array.from({ length: 300 }, (_, i) => `${String(i + 101).padStart(6)}\tsynthetic source line ${i + 101};`)
+  const numbered = Array.from({ length: 900 }, (_, i) => `${String(i + 101).padStart(6)}\tsynthetic source line ${i + 101};`)
     .join('\n');
   const read = (id, text, numLines) => [{ id, kind: 'invocation', callKey: id, tool: 'read', operation: 'other',
     paths: [{ path: 'src/big.js' }], command: [], input: ref('{"file_path":"src/big.js"}'), changes: [],
-    recorded: { tool: 'Read', read: { startLine: 101, numLines, totalLines: 900 } } }, out(`${id}-r`, id, text)];
+    recorded: { tool: 'Read', read: { startLine: 101, numLines, totalLines: 1_200 } } }, out(`${id}-r`, id, text)];
   const masked = numbered.replace('synthetic source line 150;', '‹redacted:aws-key›');
-  const [r3, r3out] = read('R3', masked, 300);
-  const s = session([...read('R1', numbered, 300), ...read('R2', numbered, 299),
+  const [r3, r3out] = read('R3', masked, 900);
+  const s = session([...read('R1', numbered, 900), ...read('R2', numbered, 899),
     r3, { ...r3out, output: refAround(masked, '‹redacted:aws-key›') }]);
   const v1 = eventView(s, s.event('R1-r'));
   const { fromLine, throughLine } = v1.fields[0].omitted;
@@ -296,12 +301,12 @@ test('M36 a window\'s planned work is exactly the bytes of the sources it render
 // ---- (c4) grounding per shown span --------------------------------------------------------------------------------------
 
 test('M36 c4: a quote grounds only inside one span the window showed — never in a result\'s omitted middle', async () => {
-  const text = lines(400);
+  const text = lines(1_000);
   const s = session([ask('I1', 'Find the line.'), run('A1', 'cat big.txt'), out('A1-r', 'A1', text), said('C1', 'Done.')]);
   const plan = planWindowRequests({ session: s, reviewScope: 'session-only' });
   const { sourceMap } = plan.requests[0];
   const view = shownSession(s, sourceMap);
-  const middle = 'line 200 of the synthetic output', head = 'line 2 of the synthetic output';
+  const middle = 'line 500 of the synthetic output', head = 'line 2 of the synthetic output';
   assert.ok(verifyReceipt(s, { eventId: 'A1-r', role: 'observation', quote: middle }).ok, 'premise: recorded');
   assert.equal(verifyReceipt(view, { eventId: 'A1-r', role: 'observation', quote: middle }).ok, false);
   assert.equal(repairReceipt(view, { eventId: 'A1-r', role: 'observation', quote: middle }).ok, false);

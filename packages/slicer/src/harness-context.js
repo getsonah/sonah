@@ -98,12 +98,49 @@ export const RECORDER_COMMAND_ELEMENTS = Object.freeze(['command-name', 'command
  * notification when it labels it. The call id a Claude Code task notification carries: the inner text of its one
  * `tool-use-id` element — the recorder's own structured notification format, read as structure — or null when the text
  * carries none or more than one. Only links the notification to the call it reports on (events.js
- * `claudeTaskNotification` keeps its own, stricter status join).
+ * `claudeTaskNotification` keeps its own, stricter status join). Which rows carry a notification is decided by
+ * `claudeNotificationCarrier` below, for every reader alike.
  */
 export function recorderNotificationCallId(text) {
   if (typeof text !== 'string') return null;
   const ids = [...text.matchAll(/<tool-use-id>\s*([^<\s]+)\s*<\/tool-use-id>/g)];
   return ids.length === 1 ? ids[0][1] : null;
+}
+
+/** The kind the recorder writes on both carriers of a task notification: an origin's `kind` and a queued command's
+ *  `commandMode`. */
+export const TASK_NOTIFICATION_KIND = 'task-notification';
+const plainRow = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** An origin of the task-notification kind: an object whose `kind` is that kind. Any other key beside it (Claude Code
+ *  2.1.284 and later write `producer` and `runId`) is the recorder's metadata, never part of the test. */
+const notificationOrigin = (origin) => plainRow(origin) && origin.kind === TASK_NOTIFICATION_KIND;
+/** D99 (F1 guard): the keys a known recorder writes on a task notification's origin (`kind`; Claude Code 2.1.284 and
+ *  later `producer` and `runId`). Any other key is accepted all the same (D98) and logged by the recorder census. */
+export const NOTIFICATION_ORIGIN_KEYS = Object.freeze(['kind', 'producer', 'runId']);
+/** D99: the origin a carrier of a task notification records (a user row's, or a queued command's), or null. */
+export function notificationOriginOf(row) {
+  const origin = row?.type === 'user' ? row.origin : row?.type === 'attachment' ? row.attachment?.origin : undefined;
+  return plainRow(origin) ? origin : null;
+}
+
+/**
+ * One reading per recorder fact (F1, D98): whether a Claude Code row carries a task notification, and the text it
+ * carries, by the recorder's own kind field only. Every reader of this fact calls it: the labeller (records.js
+ * `claudeLabeller`), the reader that keeps a queued notification as a record of its own (records.js `readSession`)
+ * and the status join (events.js `claudeTaskNotification`), so a row is a notification for one exactly when it is
+ * one for the others.
+ *   - a `user` row whose `origin` is of the task-notification kind: its message content;
+ *   - a `queued_command` attachment whose `commandMode` is that kind and whose `origin`, if recorded, is that kind too
+ *     (an origin of another kind contradicts the mode: the row is no notification): its `prompt`.
+ * `{ text }`, the text as recorded (not always a string), or null. Each reader reads the text's own format as it needs
+ * it (the call id that links it, the header the status join reads); never its words.
+ */
+export function claudeNotificationCarrier(row) {
+  if (!plainRow(row)) return null;
+  if (row.type === 'user') return notificationOrigin(row.origin) ? { text: row.message?.content } : null;
+  const item = row.type === 'attachment' ? row.attachment : null;
+  if (!plainRow(item) || item.type !== 'queued_command' || item.commandMode !== TASK_NOTIFICATION_KIND) return null;
+  return item.origin === undefined || notificationOrigin(item.origin) ? { text: item.prompt } : null;
 }
 
 export function recorderCommand(text) {

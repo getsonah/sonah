@@ -61,7 +61,9 @@ test('D97: the page is the report model in its order — header, count line, pro
     assert.match(html, new RegExp(`<details class="item gtk t-[a-z]+" id="item-${item.n}"><summary>`));
   // The generator meta names both versions.
   assert.match(html, new RegExp(`<meta name="generator" content="${PAGE_VERSION} ${REPORT_MODEL_VERSION}">`));
-  assert.equal(PAGE_VERSION, 'sonah.session-page/37');
+  // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/42');
 });
 
 test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {
@@ -328,7 +330,7 @@ test('ported (D69 f): the gaps of each message and of the whole session are said
   const section = textOf(html.slice(html.indexOf('id="not-checked"')));
   assert.ok(section.includes('In message 1: the session review did not finish some of this work, and the recorder or Sonah '
     + 'cut short one of your messages here.'), section);
-  assert.ok(section.includes('For the whole session: the recording does not hold all of this work, so the session review '
+  assert.ok(section.includes('For the whole session: Sonah does not hold all of this work, so the session review '
     + 'did not see all of it, and the session has a coverage limit that no message explains.'));
   assert.doesNotMatch(section, /\bT[123]\b|review window/);
 });
@@ -463,7 +465,7 @@ test('ported (M33 Y): the page bound is hard — long messages keep their start,
   for (const start of starts) assert.ok(prompt.includes(`${start}</mark>`), start);
   for (const end of ends) assert.ok(prompt.includes(`<q class="said">${end}</q>`), end);
   // The messages that hold no ask are counted whole; each one shown is its start.
-  assert.ok(prompt.includes('3 more messages hold no ask.'));
+  assert.ok(prompt.includes('Sonah found no ask in 3 more messages.'));
   // What the page shows is word for word from the recording, the cuts outside the quotation marks.
   const recorded = session.events.flatMap((event) => session.textSpansOf(event, 'text'));
   for (const quote of quotesOf(html)) assert.ok(recorded.some((span) => span.includes(quote)), quote.slice(0, 40));

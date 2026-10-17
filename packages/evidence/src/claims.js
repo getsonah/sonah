@@ -19,7 +19,7 @@
 // The vocabularies are closed and live in ledger.js. Pure: no model, network, clock or random source; the same
 // session and claim give the same answer. Never throws on model output.
 
-import { verifyReceipt, recordedFailure } from './session.js';
+import { verifyReceipt, recordedFailure, effectReader, CHANGING_EFFECTS } from './session.js';
 import { SUPPORT_REJECTIONS, RESULT_OUTCOME_CLASSES, STOPPED_OUTCOME_FORMS, CHANGED_SINCE_LABEL, actorKeyOf,
   writeActionOf, samePathChangedBetween, resultOutcome } from './ledger.js';
 
@@ -54,8 +54,9 @@ export function supportShape(value) {
  */
 /* W3 F1(b) (owner decision 2026-10-13): returns `true` when the result is stale beyond asking — its run, or the order or
  * the path of a change, cannot be read, or (F1(a)) the claim actor's own write's path changed again — else the
- * in-repository changes recorded between its run and the statement that did not provably fail or get cancelled, as
- * `[{ eventId, path }]` from their typed changes (empty: nothing changed). */
+ * in-repository changes recorded between its run and the statement that could have changed a file (D98, F9: the one
+ * effect rule, `CHANGING_EFFECTS`: not refused before it ran, failed or cancelled), as `[{ eventId, path }]` from their
+ * typed changes (empty: nothing changed). */
 function staleRun(session, events, seen, said) {
   const run = typeof seen.invocation === 'string' ? session.event(seen.invocation) : null;
   if (!Number.isSafeInteger(run?.sequence) || run.sequence > seen.sequence) return true;
@@ -63,13 +64,14 @@ function staleRun(session, events, seen, said) {
   if (write)
     return samePathChangedBetween(session, write, write.changes.map((change) => change?.path), said.sequence) || [];
   const since = [];
+  const effect = effectReader(session);
   for (const event of events) {
     if (event?.kind !== 'invocation' || !Array.isArray(event.changes)) continue;
     const inside = event.changes.filter((change) => change?.outsideRepository !== true);
     if (!inside.length) continue;
     if (!Number.isSafeInteger(event.sequence)) return true;
     if (event.sequence <= run.sequence || event.sequence >= said.sequence) continue;
-    if (['failed', 'cancelled'].includes(session.actionOutcomeOf(event))) continue;
+    if (!CHANGING_EFFECTS.includes(effect(event))) continue;
     if (inside.some((change) => !plain(change) || typeof change.path !== 'string' || !change.path)) return true;
     for (const path of new Set(inside.map((change) => change.path))) since.push({ eventId: event.id, path });
   }

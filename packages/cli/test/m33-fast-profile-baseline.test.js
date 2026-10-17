@@ -58,7 +58,9 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   VOID_VOTE_REASK_VERSIONS, profileBeforeVoidVoteReask, CHOICE_REANCHOR_VERSIONS, profileBeforeChoiceReanchor,
   AGENTIC_CODE_STEP_VERSIONS, profileBeforeAgenticCodeStep, CHANGED_SINCE_SHOWN_VERSIONS,
   profileBeforeChangedSinceShown, CLEANUP_VERSIONS, profileBeforeCleanup, TRIAGE_VERSIONS, profileBeforeTriage,
-  profileBeforeTiedTier, profileBeforeRepairUnchecked }
+  profileBeforeTiedTier, profileBeforeRepairUnchecked, ONE_READING_VERSIONS, profileBeforeOneReading,
+  profileBeforeGroundingCauses, profileBeforeEvidenceMerge, SKIM_VERSIONS, profileBeforeSkim, modulesBeforeSkim,
+  CITED_WHOLE_VERSIONS, profileBeforeCitedWhole, REFUSED_AFTER_EDIT_VERSIONS, profileBeforeRefusedAfterEdit }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1200,13 +1202,94 @@ const MOVED_BY_REPAIR_UNCHECKED = Object.freeze({
     combined: MOVED_BY_TIED_TIER.runProfile.combined },
   sessionProfileDigest: '4ec6768825716dd7b7a5fe7a2e868d8ab7122b9dc03681b87b1074777f328392',
 });
+/**
+ * One reading per recorder fact (D98, 2026-10-17; m33-integration-fixture.js `ONE_READING_VERSIONS`): the values that
+ * moved from the beta.2 release check's — the session-only run profile alone, through its code-pass member's snapshot
+ * version (`sonah.code-snapshot/11`: the change list holds a path only for a change that could have happened). No case's
+ * request moved, and the combined profile did not move. Rendered back (`profileBeforeOneReading`), the release check's.
+ */
+const MOVED_BY_ONE_READING = Object.freeze({
+  runProfile: { 'session-only': '1d27b93c16751d669bf162e7dedc245b01a232c497d74fdc2a1e11b81681a734',
+    combined: MOVED_BY_REPAIR_UNCHECKED.runProfile.combined },
+  sessionProfileDigest: '1d27b93c16751d669bf162e7dedc245b01a232c497d74fdc2a1e11b81681a734',
+});
+/**
+ * D101 (owner decision 2026-10-17; m33-integration-fixture.js `profileBeforeGroundingCauses`): the values that moved from
+ * D98's — the session-only run profile alone, through its new member (`grounding`: the closed reasons of a lowered
+ * checklist row, the grounding causes in their order, the length causes and the anchor's causes, the places of a refused
+ * quote and the quote bounds per field). No version moved, no case's request moved, and the combined profile did not
+ * move. Rendered back, D98's.
+ */
+const MOVED_BY_GROUNDING_CAUSES = Object.freeze({
+  runProfile: { 'session-only': 'b067a57c820274cc54704183865c45bd7df84995df8a74ba25523ec6f4715498',
+    combined: MOVED_BY_REPAIR_UNCHECKED.runProfile.combined },
+  sessionProfileDigest: 'b067a57c820274cc54704183865c45bd7df84995df8a74ba25523ec6f4715498',
+});
+/**
+ * D102, the evidence merge (F5 part 3, owner pick 2026-10-17; m33-integration-fixture.js `profileBeforeEvidenceMerge`):
+ * the values that moved from D101's — the session-only run profile alone, by its new member `evidenceMerge` (the rule an
+ * evidence re-ask's answer is merged with the first by). No version moved, no case's request moved, and the combined
+ * profile did not move. Rendered back, D101's.
+ */
+const MOVED_BY_EVIDENCE_MERGE = Object.freeze({
+  runProfile: { 'session-only': '08a8c723be3284d094fa93c8dd028e7cfeafe6c15cdcc8e2328f9d390c4a7ee4',
+    combined: MOVED_BY_REPAIR_UNCHECKED.runProfile.combined },
+  sessionProfileDigest: '08a8c723be3284d094fa93c8dd028e7cfeafe6c15cdcc8e2328f9d390c4a7ee4',
+});
+/**
+ * D103, the skim keyed by the recording's harness (F5 part 1, owner pick 2026-10-17; m33-integration-fixture.js
+ * `SKIM_VERSIONS`, `profileBeforeSkim`): the values that moved from the evidence merge's. The `large` case is a Claude
+ * Code recording whose ten 70 KB results a window now shows 12,000 bytes at each end, no longer 3,600: its narrative
+ * and challenge requests moved (`planned`, `sentInOrder`, `sentSorted`); its windows, calls, labels and failures did not.
+ * `turn` and `lanes` show no result over 7,200 bytes: not one of their bytes moved. Both run profiles moved by the
+ * narrative and windowing versions and the windowing member's skim in bytes (`skimSideBytes`, 3,600 for a profile of no
+ * harness); the lean profile by the dossier version too (no digest here holds it). Rendered back, the evidence merge's.
+ */
+const MOVED_BY_SKIM = Object.freeze({
+  cases: [{ planned: 'cdb0a28ad216fbf4ddbe30186c214df8c22abc8aaadbbe452ab7bea6c6baaa6f',
+    sentInOrder: '40c4b770e5aeeb0522e0d7a4dab5f881858c7f0724433ae06dee4313d9810cdc',
+    sentSorted: 'cf0d79207bf2924a29ebfd8f08542497579043704a9578ec84718e4688a10c16' }, {}, {}],
+  runProfile: { 'session-only': 'c6dacf635023754696926ded5b2ac14d13bbb42800d4f6836a85f97938efd591',
+    combined: '8af58391573f4adb0d5e72b03935a0e21524a207939865976c22d760d6005b73' },
+  sessionProfileDigest: 'c6dacf635023754696926ded5b2ac14d13bbb42800d4f6836a85f97938efd591',
+});
+/**
+ * D103, cited results shown whole to the challengers (F5 part 2; m33-integration-fixture.js `CITED_WHOLE_VERSIONS`,
+ * `profileBeforeCitedWhole`): the values that moved from the skim's — both run profiles alone, by the challenge version
+ * and (the lean profile) the dossier version. No case's request moved: no item of theirs cites a result the skim cuts.
+ * Rendered back, the skim's.
+ */
+const MOVED_BY_CITED_WHOLE = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '9a2a8cb884ad47d573ad3c0fdefe85ac225f53607f443d42124ddbadf6656a20',
+    combined: 'bba210e7da047889d9795cc5b4ec64e1956391f5f51313ea6e49217645eb0aac' },
+  sessionProfileDigest: '9a2a8cb884ad47d573ad3c0fdefe85ac225f53607f443d42124ddbadf6656a20',
+});
+/**
+ * The owner's answers of 2026-10-17 ("all as suggested"; m33-integration-fixture.js `REFUSED_AFTER_EDIT_VERSIONS`,
+ * `profileBeforeRefusedAfterEdit`): the values that moved from D103 part 2's — the session-only run profile alone, by its
+ * code-pass member's version (`sonah.code-pass/11`: the dossier leaves out a command refused before it ran from the
+ * commands after a file's last edit). No case's request moved, and the combined profile did not move. Rendered back,
+ * D103 part 2's.
+ */
+const MOVED_BY_REFUSED_AFTER_EDIT = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '1f6fc3b75cc4fcd8713a0bc479aa6ed5b9c168aed66b8c8842854d5f21a3904a',
+    combined: MOVED_BY_CITED_WHOLE.runProfile.combined },
+  sessionProfileDigest: '1f6fc3b75cc4fcd8713a0bc479aa6ed5b9c168aed66b8c8842854d5f21a3904a',
+});
+/** What the evidence merge sent: the agent transport's cases (the cleanup withdrew the void re-asks). */
+const EVIDENCE_MERGE_CASES = AGENT_TRANSPORT_CURRENT.cases;
 /** What the code sends now. */
-const CURRENT = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT, cases: AGENT_TRANSPORT_CURRENT.cases,
-  runProfile: MOVED_BY_REPAIR_UNCHECKED.runProfile, sessionProfileDigest: MOVED_BY_REPAIR_UNCHECKED.sessionProfileDigest });
+const CURRENT = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT,
+  cases: withMoves(withMoves(withMoves({ cases: EVIDENCE_MERGE_CASES }, MOVED_BY_SKIM.cases), MOVED_BY_CITED_WHOLE.cases),
+    MOVED_BY_REFUSED_AFTER_EDIT.cases).cases,
+  runProfile: MOVED_BY_REFUSED_AFTER_EDIT.runProfile, sessionProfileDigest: MOVED_BY_REFUSED_AFTER_EDIT.sessionProfileDigest });
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
- *  code sends now (a run profile rendered back moves no request). */
-const withoutVoidReasks = (capture) => ({ ...capture, cases: CURRENT.cases });
-/** A capture whose cases are what the code sends now: a run profile rendered back moves no request. These are the
+ *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
+ *  `modulesBeforeSkim`). */
+const withoutVoidReasks = (capture) => ({ ...capture, cases: EVIDENCE_MERGE_CASES });
+/** A capture whose cases are what the code sent before D103: a run profile rendered back moves no request. These are the
  *  second release review's cases (the agent transport moved none, and the cleanup withdrew the void re-asks). */
 const withD71Cases = (capture) => ({ ...capture, cases: SECOND_RELEASE_REVIEW_CURRENT.cases });
 
@@ -1293,13 +1376,56 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(typeof modulesBeforeDisclosureWords(modules).runReview, 'function');
   const now = await captureStandard(modules, digests);
   assert.deepEqual(now, CURRENT);
+  // D103: the skim moved the large case's narrative and challenge requests alone (a Claude Code recording's 70 KB
+  // results, shown 12,000 bytes at each end); rendered back (`profileBeforeSkim`), every run profile is the evidence
+  // merge's, and windowed as before it (`modulesBeforeSkim`: no session names a harness), every case is. Every capture
+  // below is rendered back through it.
+  assert.deepEqual(MOVED_BY_SKIM.cases.map((c) => Object.keys(c).sort().join(',')), ['planned,sentInOrder,sentSorted', '', '']);
+  // D103 part 2 (cited results whole) moved no case; rendered back (`profileBeforeCitedWhole`), the run profiles are the
+  // skim's.
+  assert.deepEqual(MOVED_BY_CITED_WHOLE.cases, [{}, {}, {}]);
+  // The owner's answers of 2026-10-17 moved no case and the session-only profile alone, by its code-pass version;
+  // rendered back (`profileBeforeRefusedAfterEdit`), the run profiles are D103 part 2's.
+  assert.deepEqual(MOVED_BY_REFUSED_AFTER_EDIT.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.pass, REFUSED_AFTER_EDIT_VERSIONS.pass.after);
+  assert.equal(REFUSED_AFTER_EDIT_VERSIONS.pass.before, TRIAGE_VERSIONS.pass.after);
+  const answersBack = (...args) => profileBeforeRefusedAfterEdit(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: answersBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(answersBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_CITED_WHOLE.runProfile, sessionProfileDigest: MOVED_BY_CITED_WHOLE.sessionProfileDigest });
+  assert.equal(reviewRun.runProfile('combined').challenge.version, CITED_WHOLE_VERSIONS.challenge.after);
+  assert.equal(reviewRun.runProfile('session-only', 'm33-lean').challenge.dossier, CITED_WHOLE_VERSIONS.dossier.after);
+  const citedBack = (...args) => profileBeforeCitedWhole(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: citedBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(citedBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_SKIM.runProfile, sessionProfileDigest: MOVED_BY_SKIM.sessionProfileDigest });
+  assert.equal(reviewRun.runProfile('session-only').windowing.version, SKIM_VERSIONS.windows.after);
+  assert.equal(reviewRun.runProfile('combined').promptVersion, SKIM_VERSIONS.prompt.after);
+  // And the lean profile's dossier version (the evidence a session-only dossier shows moved as the narrative's), after the
+  // D80 integration's; rendered back, the D80 integration's.
+  assert.equal(SKIM_VERSIONS.dossier.before, D80_VERSIONS.dossier.after);
+  assert.equal(CITED_WHOLE_VERSIONS.dossier.before, SKIM_VERSIONS.dossier.after);
+  assert.equal(profileBeforeCitedWhole(reviewRun.runProfile('session-only', 'm33-lean')).challenge.dossier,
+    SKIM_VERSIONS.dossier.after);
+  assert.equal(profileBeforeSkim(reviewRun.runProfile('session-only', 'm33-lean')).challenge.dossier,
+    D80_VERSIONS.dossier.after);
+  for (const scope of ['session-only', 'combined'])
+    assert.equal(sha256(canonicalJson(profileBeforeSkim(reviewRun.runProfile(scope)))), MOVED_BY_EVIDENCE_MERGE.runProfile[scope]);
+  const beforeSkim = modulesBeforeSkim(modules);
+  const skimBack = (...args) => profileBeforeSkim(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: skimBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(skimBack('session-only', ...args))) }),
+  { ...CURRENT, cases: EVIDENCE_MERGE_CASES, runProfile: MOVED_BY_EVIDENCE_MERGE.runProfile,
+    sessionProfileDigest: MOVED_BY_EVIDENCE_MERGE.sessionProfileDigest });
   // The cleanup: the re-asks of void votes are no longer sent, and that is all that moved of any case — put back, the
   // cases are a file changed since the session, shown's; rendered back (`profileBeforeCleanup`), every run profile is
   // its too.
-  assert.deepEqual(withMoves(CURRENT, MOVED_BY_VOID_VOTE_REASK.cases).cases, CHANGED_SINCE_SHOWN_CURRENT.cases);
-  assert.equal(reviewRun.runProfile('combined').challenge.version, CLEANUP_VERSIONS.challenge.after);
+  assert.deepEqual(withMoves({ cases: EVIDENCE_MERGE_CASES }, MOVED_BY_VOID_VOTE_REASK.cases).cases,
+    CHANGED_SINCE_SHOWN_CURRENT.cases);
+  assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
+  assert.equal(citedBack('combined').challenge.version, CLEANUP_VERSIONS.challenge.after);
   const cleanupBack = (...args) => profileBeforeCleanup(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: cleanupBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: cleanupBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(cleanupBack('session-only', ...args))) }),
   withoutVoidReasks(CHANGED_SINCE_SHOWN_CURRENT));
   // A file changed since the session, shown: rendered back (`profileBeforeChangedSinceShown`), every run profile is the
@@ -1309,13 +1435,14 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(profileBeforeCleanup(reviewRun.runProfile('session-only')).codePass.pass,
     CHANGED_SINCE_SHOWN_VERSIONS.pass.after);
   // The triage moved the session-only profile alone (code-pass/10): rendered back (`profileBeforeTriage`), the
-  // cleanup's; no case moved.
-  assert.equal(reviewRun.runProfile('session-only').codePass.pass, TRIAGE_VERSIONS.pass.after);
+  // cleanup's; no case moved. (The owner's answers of 2026-10-17 moved it once more, to code-pass/11: rendered back
+  // first, the triage's.)
+  assert.equal(profileBeforeRefusedAfterEdit(reviewRun.runProfile('session-only')).codePass.pass, TRIAGE_VERSIONS.pass.after);
   assert.equal(TRIAGE_VERSIONS.pass.before, CLEANUP_VERSIONS.pass.after);
   assert.equal(profileBeforeTriage(reviewRun.runProfile('session-only')).codePass.pass, CLEANUP_VERSIONS.pass.after);
   assert.equal(CLEANUP_VERSIONS.pass.before, CHANGED_SINCE_SHOWN_VERSIONS.pass.after);
   const sinceBack = (...args) => profileBeforeChangedSinceShown(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: sinceBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: sinceBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(sinceBack('session-only', ...args))) }),
   withoutVoidReasks(AGENTIC_CODE_STEP_CURRENT));
   // The agentic code step: rendered back (`profileBeforeAgenticCodeStep`), every run profile is G2's; no case moved,
@@ -1324,15 +1451,15 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(MOVED_BY_AGENTIC_CODE_STEP.runProfile.combined, MOVED_BY_CHOICE_REANCHOR.runProfile.combined);
   assert.equal(CHANGED_SINCE_SHOWN_VERSIONS.pass.before, AGENTIC_CODE_STEP_VERSIONS.pass.after);
   const agenticBack = (...args) => profileBeforeAgenticCodeStep(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: agenticBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: agenticBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(agenticBack('session-only', ...args))) }),
   withoutVoidReasks(CHOICE_REANCHOR_CURRENT));
   // G2: rendered back (`profileBeforeChoiceReanchor`), every run profile is the re-ask of a void vote's; no case moved,
   // and both profiles moved by their prompt version alone.
   assert.deepEqual(MOVED_BY_CHOICE_REANCHOR.cases, [{}, {}, {}]);
-  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.after, reviewRun.runProfile('combined').promptVersion);
+  assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.after, profileBeforeSkim(reviewRun.runProfile('combined')).promptVersion);
   const reanchorBack = (...args) => profileBeforeChoiceReanchor(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: reanchorBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: reanchorBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(reanchorBack('session-only', ...args))) }),
   withoutVoidReasks(VOID_VOTE_REASK_CURRENT));
   // The re-ask of a void vote: rendered back (`profileBeforeVoidVoteReask`), every case and run profile is the agent
@@ -1341,7 +1468,7 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.deepEqual(MOVED_BY_VOID_VOTE_REASK.cases.map((c) => Object.keys(c).sort().join(',')),
     ['labels,sentCount,sentInOrder,sentSorted', '', 'labels,sentCount,sentInOrder,sentSorted']);
   const voidBack = (...args) => profileBeforeVoidVoteReask(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: voidBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: voidBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(voidBack('session-only', ...args))) }),
   AGENT_TRANSPORT_CURRENT);
   // The agent transport: rendered back (`profileBeforeAgentTransport`, which applies `profileBeforeVoidVoteReask`
@@ -1356,7 +1483,7 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
         judgeFailureCodes: codes.filter((code) => !AGENT_TRANSPORT_FAILURE_CODES.includes(code)) });
   }
   const agentBack = (...args) => profileBeforeAgentTransport(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: agentBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: agentBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(agentBack('session-only', ...args))) }),
   SECOND_RELEASE_REVIEW_CURRENT);
   // The second release review: rendered back (`profileBeforeSecondReleaseReview`, which applies
@@ -1366,7 +1493,7 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(SECOND_RELEASE_REVIEW_VERSIONS.prompt.after,
     profileBeforeChoiceReanchor(reviewRun.runProfile('combined')).promptVersion);
   const secondReleaseBack = (...args) => profileBeforeSecondReleaseReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: secondReleaseBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: secondReleaseBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(secondReleaseBack('session-only', ...args))) }),
   RELEASE_REVIEW_CURRENT);
   // The release review: rendered back (`profileBeforeReleaseReview`, which applies `profileBeforeSecondReleaseReview`
@@ -1376,7 +1503,7 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(RELEASE_REVIEW_VERSIONS.prompt.after,
     profileBeforeSecondReleaseReview(reviewRun.runProfile('combined')).promptVersion);
   const releaseBack = (...args) => profileBeforeReleaseReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: releaseBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: releaseBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(releaseBack('session-only', ...args))) }),
   CODE_STEP_FOURTH_REVIEW_CURRENT);
   // The fourth review of the code step: rendered back (`profileBeforeCodeStepFourthReview`, which applies
@@ -1385,83 +1512,84 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.deepEqual(MOVED_BY_CODE_STEP_FOURTH_REVIEW.cases, [{}, {}, {}]);
   assert.equal(MOVED_BY_CODE_STEP_FOURTH_REVIEW.runProfile.combined, MOVED_BY_CODE_STEP_THIRD_REVIEW.runProfile.combined);
   const stepFourthBack = (...args) => profileBeforeCodeStepFourthReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: stepFourthBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: stepFourthBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(stepFourthBack('session-only', ...args))) }),
   CODE_STEP_THIRD_REVIEW_CURRENT);
   // The third review of the code step: rendered back (`profileBeforeCodeStepThirdReview`, which applies
   // `profileBeforeCodeStepFourthReview` first), every run profile is the second review's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_STEP_THIRD_REVIEW.cases, [{}, {}, {}]);
   const stepThirdBack = (...args) => profileBeforeCodeStepThirdReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: stepThirdBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: stepThirdBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(stepThirdBack('session-only', ...args))) }),
   CODE_STEP_REREVIEW_CURRENT);
   // The second review of the code step: rendered back (`profileBeforeCodeStepRereview`, which applies
   // `profileBeforeCodeStepThirdReview` first), every run profile is the review of the code step's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_STEP_REREVIEW.cases, [{}, {}, {}]);
   const stepRereviewBack = (...args) => profileBeforeCodeStepRereview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: stepRereviewBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: stepRereviewBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(stepRereviewBack('session-only', ...args))) }),
   CODE_STEP_REVIEW_CURRENT);
   // The review of the code step: rendered back (`profileBeforeCodeStepReview`, which applies
   // `profileBeforeCodeStepRereview` first), every run profile is the code step's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_STEP_REVIEW.cases, [{}, {}, {}]);
   const stepReviewBack = (...args) => profileBeforeCodeStepReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: stepReviewBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: stepReviewBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(stepReviewBack('session-only', ...args))) }), CODE_STEP_CURRENT);
   // The code step: rendered back (`profileBeforeCodeStep`, which applies `profileBeforeCodeStepReview` first), every run
   // profile is the D87 review's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_STEP.cases, [{}, {}, {}]);
   const stepBack = (...args) => profileBeforeCodeStep(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: stepBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: stepBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(stepBack('session-only', ...args))) }), CODE_PASS_REVIEW_CURRENT);
   // The D87 review: rendered back (`profileBeforeCodePassReview`, which applies `profileBeforeCodeStep` first), every
   // run profile is D87's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_PASS_REVIEW.cases, [{}, {}, {}]);
   const passReviewBack = (...args) => profileBeforeCodePassReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: passReviewBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: passReviewBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(passReviewBack('session-only', ...args))) }), CODE_PASS_CURRENT);
   // D87: rendered back (`profileBeforeCodePass`), every run profile is the fix review's; no case moved.
   assert.deepEqual(MOVED_BY_CODE_PASS.cases, [{}, {}, {}]);
   const passBack = (...args) => profileBeforeCodePass(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: passBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: passBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(passBack('session-only', ...args))) }), FIX_REVIEW_CURRENT);
   // The fix review: rendered back (`modulesBeforeFixReview`, `profileBeforeFixReview`, which applies
-  // `profileBeforeCodePass` first), every case and run profile is W3's.
+  // `profileBeforeCodePass` first), every case and run profile is W3's. D103: a module render-back windows as the code
+  // did before the skim (`modulesBeforeSkim`, innermost), so the large case's requests are its own again.
   const reviewFixBack = (...args) => profileBeforeFixReview(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modulesBeforeFixReview(modules), { canonicalJson, runProfile: reviewFixBack,
+  assert.deepEqual(await captureStandard(modulesBeforeFixReview(beforeSkim), { canonicalJson, runProfile: reviewFixBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(reviewFixBack('session-only', ...args))) }), W3_CURRENT);
   // W3: rendered back (`modulesBeforeW3`, `profileBeforeW3`), every case and run profile is W2's.
   const w3Back = (...args) => profileBeforeW3(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modulesBeforeW3(modules), { canonicalJson, runProfile: w3Back,
+  assert.deepEqual(await captureStandard(modulesBeforeW3(beforeSkim), { canonicalJson, runProfile: w3Back,
     sessionProfileDigest: (...args) => sha256(canonicalJson(w3Back('session-only', ...args))) }), W2_CURRENT);
   // W2: rendered back (`modulesBeforeW2`, `profileBeforeW2`), every case and run profile is W1's.
   const w2Back = (...args) => profileBeforeW2(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modulesBeforeW2(modules), { canonicalJson, runProfile: w2Back,
+  assert.deepEqual(await captureStandard(modulesBeforeW2(beforeSkim), { canonicalJson, runProfile: w2Back,
     sessionProfileDigest: (...args) => sha256(canonicalJson(w2Back('session-only', ...args))) }), W1_CURRENT);
   // W1: rendered back (`modulesBeforeW1`, `profileBeforeW1`), every case and run profile is the asks fixes'.
   const w1Back = (...args) => profileBeforeW1(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modulesBeforeW1(modules), { canonicalJson, runProfile: w1Back,
+  assert.deepEqual(await captureStandard(modulesBeforeW1(beforeSkim), { canonicalJson, runProfile: w1Back,
     sessionProfileDigest: (...args) => sha256(canonicalJson(w1Back('session-only', ...args))) }), ASKS_FIXES_CURRENT);
   // D71 (S2): rendered back (`profileBeforeD71Brief`), the run profiles are the D69 review's; every case's requests are
   // D71's (MOVED_BY_D71_BRIEF), so each render-back below holds for the run profiles with D71's cases (`withD71Cases`).
   const briefBack = (...args) => profileBeforeD71Brief(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: briefBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: briefBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(briefBack('session-only', ...args))) }),
   withD71Cases(D69_REVIEW_CURRENT));
   // The D69 review: rendered back (`profileBeforeD69Review`), every case is D69's — only the run profiles moved, by
   // their versions.
   const reviewBack = (...args) => profileBeforeD69Review(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: reviewBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: reviewBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(reviewBack('session-only', ...args))) }), withD71Cases(D69_CURRENT));
   // D69: rendered back (`profileBeforeD69`), every case is M36 phase 3's — only the run profiles moved, by their versions.
   const d69Back = (...args) => profileBeforeD69(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: d69Back,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: d69Back,
     sessionProfileDigest: (...args) => sha256(canonicalJson(d69Back('session-only', ...args))) }), withD71Cases(M36_CURRENT));
   // M36 phase 3: rendered back (`modulesBeforeM36Conversation`, `profileBeforeConversation`), every case is phase 2's,
   // byte for byte — only the narrative's two texts and the run profiles moved.
   // D71 (S2): the narrative's texts are the brief's now, so nothing renders a request back: only the run profiles.
   const conversationBack = (...args) => profileBeforeConversation(reviewRun.runProfile(...args));
-  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: conversationBack,
+  assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: conversationBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(conversationBack('session-only', ...args))) }),
   withD71Cases(FORMAT_CURRENT));
   for (const scope of ['session-only', 'combined']) {
@@ -1493,7 +1621,10 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt); rendered back (`profileBeforeChoiceReanchor`), the
     // second release review's.
     assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
-    assert.equal(reviewRun.runProfile(scope).promptVersion, CHOICE_REANCHOR_VERSIONS.prompt.after, scope);
+    // D103 moved it once more (SKIM_VERSIONS: prompt); rendered back (`profileBeforeSkim`), G2's.
+    assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
+    assert.equal(reviewRun.runProfile(scope).promptVersion, SKIM_VERSIONS.prompt.after, scope);
+    assert.equal(profileBeforeSkim(reviewRun.runProfile(scope)).promptVersion, CHOICE_REANCHOR_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeChoiceReanchor(reviewRun.runProfile(scope)).promptVersion,
       SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeSecondReleaseReview(reviewRun.runProfile(scope)).promptVersion,
@@ -1551,8 +1682,29 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // The triage moved the session-only profile's code-pass member (code-pass/10, the tier table); rendered back
     // (`profileBeforeTriage`), the cleanup's. The tied tier moved it once more by the tier table alone; rendered back
     // (`profileBeforeTiedTier`), the triage's. The release check's closed list of unchecked repairs moved it once more;
-    // rendered back (`profileBeforeRepairUnchecked`), the tied tier's.
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_REPAIR_UNCHECKED.runProfile[scope], scope);
+    // rendered back (`profileBeforeRepairUnchecked`), the tied tier's. D98 moved it once more by its snapshot version
+    // alone; rendered back (`profileBeforeOneReading`), the release check's. D101's member of the checklist's quote gate
+    // moved it once more; rendered back (`profileBeforeGroundingCauses`), D98's. D102's evidence merge moved the
+    // session-only profile by its new member alone; rendered back (`profileBeforeEvidenceMerge`), D101's. D103's skim moved
+    // every profile by its narrative and windowing versions and its skim in bytes; rendered back (`profileBeforeSkim`),
+    // the evidence merge's. D103's cited results whole moved every profile's challenge version (and the lean profile's
+    // dossier version); rendered back (`profileBeforeCitedWhole`), the skim's. The owner's answers of 2026-10-17 moved
+    // the session-only profile's code-pass version (code-pass/11); rendered back (`profileBeforeRefusedAfterEdit`), D103
+    // part 2's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_REFUSED_AFTER_EDIT.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeRefusedAfterEdit(reviewRun.runProfile(scope)))),
+      MOVED_BY_CITED_WHOLE.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeCitedWhole(reviewRun.runProfile(scope)))), MOVED_BY_SKIM.runProfile[scope],
+      scope);
+    assert.equal(sha256(canonicalJson(profileBeforeSkim(reviewRun.runProfile(scope)))),
+      MOVED_BY_EVIDENCE_MERGE.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeEvidenceMerge(reviewRun.runProfile(scope)))),
+      MOVED_BY_GROUNDING_CAUSES.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeGroundingCauses(reviewRun.runProfile(scope)))),
+      MOVED_BY_ONE_READING.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeOneReading(reviewRun.runProfile(scope)))),
+      MOVED_BY_REPAIR_UNCHECKED.runProfile[scope], scope);
+    assert.equal(ONE_READING_VERSIONS.snapshot.before, CHANGED_SINCE_SHOWN_VERSIONS.snapshot.after);
     assert.equal(sha256(canonicalJson(profileBeforeRepairUnchecked(reviewRun.runProfile(scope)))),
       MOVED_BY_TIED_TIER.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeTiedTier(reviewRun.runProfile(scope)))), MOVED_BY_TRIAGE.runProfile[scope],
@@ -1575,7 +1727,9 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // review's.
     assert.equal(VOID_VOTE_REASK_VERSIONS.challenge.before, CODE_STEP_THIRD_REVIEW_VERSIONS.challenge.after);
     assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
-    assert.equal(reviewRun.runProfile(scope).challenge.version, CLEANUP_VERSIONS.challenge.after, scope);
+    assert.equal(reviewRun.runProfile(scope).challenge.version, CITED_WHOLE_VERSIONS.challenge.after, scope);
+    assert.equal(profileBeforeCitedWhole(reviewRun.runProfile(scope)).challenge.version, CLEANUP_VERSIONS.challenge.after,
+      scope);
     assert.equal(sha256(canonicalJson(profileBeforeVoidVoteReask(reviewRun.runProfile(scope)))),
       MOVED_BY_AGENT_TRANSPORT.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeAgentTransport(reviewRun.runProfile(scope)))),
@@ -1782,13 +1936,16 @@ test('M33 J the fast run profile differs from standard, names the profile and bi
   const fast = reviewRun.runProfile('session-only', 'm33-fast');
   // M35 windowing: the windowing member in place of `segmentation` and the carry bounds, in every profile alike.
   // M36 phase 3 (D68 Q): and a session-only review's evidence requests' bounds.
-  // D87: and the code pass's member, in every profile alike.
-  assert.deepEqual(Object.keys(standard).sort(), ['challenge', 'codePass', 'evidenceRequests', 'judgeFailureCodes',
-    'maxInputBytes', 'narrativeSchema', 'promptVersion', 'proposalReasks', 'reviewAgent', 'reviewScope',
-    'windowIncompleteReasons', 'windowing'],
+  // D87: and the code pass's member, in every profile alike. D101: and the checklist's quote gate, in every profile alike.
+  // D102: and the evidence re-ask's merge rule, alike.
+  assert.deepEqual(Object.keys(standard).sort(), ['challenge', 'codePass', 'evidenceMerge', 'evidenceRequests',
+    'grounding', 'judgeFailureCodes', 'maxInputBytes', 'narrativeSchema', 'promptVersion', 'proposalReasks',
+    'reviewAgent', 'reviewScope', 'windowIncompleteReasons', 'windowing'],
   'the standard profile is today\'s object, the windowing in place of the segmentation and the carry');
   assert.deepEqual(fast.evidenceRequests, standard.evidenceRequests);
+  assert.equal(fast.evidenceMerge, standard.evidenceMerge);
   assert.deepEqual(fast.codePass, standard.codePass);
+  assert.deepEqual(fast.grounding, standard.grounding);
   assert.deepEqual(fast.windowing, standard.windowing);
   assert.deepEqual(standard.windowing, WINDOWING_PROFILE);
   assert.equal(canonicalJson(reviewRun.runProfile('session-only', 'standard')), canonicalJson(standard));

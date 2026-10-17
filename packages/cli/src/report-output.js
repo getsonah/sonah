@@ -23,12 +23,14 @@ export const REPORT_OUTPUT_WORDS = Object.freeze({
   // Pushing adds no link to this report: the next line says how to get a report with them. By the side whose links
   // are missing, each naming only those, as the report's header does: `new` HEAD, `old` the start commit, `both` one
   // commit that both sides need.
+  // D100 (the audit of absence sentences): said as what git showed Sonah (its remote-tracking branches): git here may
+  // not know a push made from elsewhere.
   notPushed: Object.freeze({
-    new: (short, remote) => `Commit ${short} is not on ${remote} yet. This report has no links to the code as the agent `
-      + 'left it.',
-    old: (short, remote) => `Commit ${short} is not on ${remote} yet. This report has no links to the code as it was `
-      + 'before the session.',
-    both: (short, remote) => `Commit ${short} is not on ${remote} yet, so this report has no code links.`,
+    new: (short, remote) => `Git does not show commit ${short} on ${remote}. This report has no links to the code as the `
+      + 'agent left it.',
+    old: (short, remote) => `Git does not show commit ${short} on ${remote}. This report has no links to the code as it `
+      + 'was before the session.',
+    both: (short, remote) => `Git does not show commit ${short} on ${remote}, so this report has no code links.`,
   }),
   rerun: 'To get code links, commit your work. Push the commit. Then run the same command with a new --output file. '
     + 'Sonah reuses its stored answers, and the report gets code links.',

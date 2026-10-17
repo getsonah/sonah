@@ -59,18 +59,19 @@ const out = (id, invocation, text, over = {}) => ({ id, kind: 'observation', inv
 const session = (events) => new Session({ sessionKey: 'm36-review', adapter: 'claude', blobs: { ...blobs },
   events: events.map((event, sequence) => ({ ...event, sequence })) });
 const lines = (n, tag = 'line') => Array.from({ length: n }, (_, i) => `${tag} ${i + 1} of the synthetic output`).join('\n');
-const SIDE = bytesOfTokens(WINDOW_SETTINGS.trimTokens) / 2;
+const SIDE = WINDOW_SETTINGS.skimSideBytes;
 
 // ---- (c4) the report publishes what the window grounded ---------------------------------------------------------------
 
 test('M36 review c4: a claim contradicted only by a result\'s omitted middle publishes no finding in the report', async () => {
-  const rows = Array.from({ length: 400 }, (_, i) => (i === 199 ? 'line 200 FAILED: assertion error in parser'
+  // D103: a Claude Code recording's result is cut past twice its 12,000-byte skim, so this one is about 39 KB.
+  const rows = Array.from({ length: 1_100 }, (_, i) => (i === 549 ? 'line 550 FAILED: assertion error in parser'
     : `line ${i + 1} ok in the synthetic output`)).join('\n');
   const s = session([ask('I1', 'Run the checks and tell me.'), run('A1', './check.sh'), out('A1-r', 'A1', rows),
     said('C1', 'Done: every check passed, nothing failed.')]);
   const plan = planWindowRequests({ session: s, reviewScope: 'session-only' });
   const prompt = plan.requests[0].request.prompt;
-  assert.ok(!prompt.includes('line 200 FAILED'), 'premise: the failing line is in the cut middle');
+  assert.ok(!prompt.includes('line 550 FAILED'), 'premise: the failing line is in the cut middle');
   const alias = (header) => prompt.match(new RegExp(`^\\[(E\\d+)\\] ${header}`, 'm'))[1];
   const review = (quote) => runReview({ session: s, pr: null, reviewScope: 'session-only', plan,
     judge: async (request) => (request.challenge ? { votes: request.challenge.items.map(({ key: k, candidate }) => ({ key: k,
@@ -80,7 +81,7 @@ test('M36 review c4: a claim contradicted only by a result\'s omitted middle pub
         claims: [{ text: 'every check passed', stated: { eventId: alias('AGENT SAID'), role: 'commentary',
           quote: 'every check passed, nothing failed' },
         contradictedBy: { eventId: alias('RESULT'), role: 'observation', quote } }] }) });
-  const hidden = await review('line 200 FAILED: assertion error in parser');
+  const hidden = await review('line 550 FAILED: assertion error in parser');
   assert.equal(hidden.windowResults[0].grounding.rejectedFindings, 1, 'the window withheld it');
   assert.equal(hidden.findings.length, 0, 'and so does the report: never re-grounded in the whole recorded text');
   // A contradiction the window showed still publishes.
@@ -123,11 +124,12 @@ test('M36 review P: a helper\'s report its parent received is shown whole; over 
     operation: 'delegate', paths: [], command: [], input: ref('Look into it.'), changes: [] },
   out('D1-r', 'D1', report, { result: 'unknown', exitCode: null, helperReported: true }),
   run('A1', 'cat big.txt'), out('A1-r', 'A1', report)]);
-  const whole = eventView(s, s.event('D1-r'));
-  assert.equal(whole.fields[0].omitted, null, 'whole, though over the 2k trim');
+  // At the 3,600-byte skim (D103: a harness with no size of its own), the report is over twice it.
+  const whole = eventView(s, s.event('D1-r'), WINDOW_SETTINGS);
+  assert.equal(whole.fields[0].omitted, null, 'whole, though over twice the skim');
   assert.equal(whole.fields[0].spans.join(''), report);
-  assert.ok(eventView(s, s.event('A1-r')).fields[0].omitted, 'any other result is cut by the positional rule');
-  assert.equal(shownBytes(s, s.event('D1-r')), Buffer.byteLength(report), 'planned as shown');
+  assert.ok(eventView(s, s.event('A1-r'), WINDOW_SETTINGS).fields[0].omitted, 'any other result is cut by the positional rule');
+  assert.equal(shownBytes(s, s.event('D1-r'), WINDOW_SETTINGS), Buffer.byteLength(report), 'planned as shown');
   const huge = `${lines(9_000, 'reported')}\n`;
   const big = session([{ ...out('D2-r', 'D2', huge, { result: 'unknown', exitCode: null, helperReported: true }) }]);
   const cut = eventView(big, big.event('D2-r'), COMBINED_WINDOW_SETTINGS).fields[0];
@@ -149,7 +151,8 @@ test('M36 review T: an inline mask cut out of an output\'s refs stays in its lin
   const at = text.indexOf('‹redacted');
   assert.deepEqual(s.textSpansOf(event, 'output'), [text.slice(0, at), text.slice(at + '‹redacted:aws-key›'.length)],
     'the quotable spans are what they were: the mask is never quotable');
-  const view = eventView(s, event);
+  // At the 3,600-byte skim (D103: a harness with no size of its own).
+  const view = eventView(s, event, WINDOW_SETTINGS);
   assert.equal(view.lines, 300);
   const output = view.fields[0];
   const head = output.spans.slice(0, output.headCount).join(''), tail = output.spans.slice(output.headCount).join('');
@@ -185,7 +188,7 @@ test('M36 review: a tail over a block that opens with a line break always makes 
       hunks: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 4, lines: [` ${'x'.repeat(40)}`, '+', '+abcdefghij', ' yyyyyyyy'] }] } };
   const s = session([edit]);
   // Budget 36 bytes, a side of 18: the last run (8 bytes) leaves 10, exactly the added run's bytes ('\nabcdefghij') - 1.
-  const view = eventView(s, s.event('E1'), { workTokens: 10, carriedTokens: 0, trimTokens: 2 }).edit;
+  const view = eventView(s, s.event('E1'), { workTokens: 10, carriedTokens: 0, skimSideBytes: 3 }).edit;
   assert.equal(view.gap.reason, 'edit_over_budget');
   assert.deepEqual(view.blocks.map((b) => [b.run.side, b.part, b.spans.join('')]),
     [['context', 'head', 'x'.repeat(18)], ['added', 'tail', 'abcdefghij'], ['context', null, 'yyyyyyyy']]);

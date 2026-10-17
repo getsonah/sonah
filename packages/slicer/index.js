@@ -5,8 +5,11 @@
 // unrelated tasks. The caller names a lineage's files, oldest first; `sliceLineage` emits ONE ledger per lineage.
 
 import { readSession, SCHEMA_VERSION } from './src/records.js';
-import { opensTurn, partsOf, applyLabel, emptyCounts, countLabel, LINEAGE_ROLES, LABEL_GAPS } from './src/labels.js';
-import { buildEvents } from './src/events.js';
+import { opensTurn, partsOf, applyLabel, emptyCounts, countLabel, LINEAGE_ROLES, LABEL_GAPS, END_MENTIONED_REASONS }
+  from './src/labels.js';
+import { buildEvents, BACKGROUND_ENDS } from './src/events.js';
+import { readBackgroundEnds } from './src/background-ends.js';
+import { recorderCensusOf } from './src/recorder-census.js';
 import { rowIdentity, IDENTITY_SUBS } from './src/event-identity.js';
 import { collectDelegationEvidence } from './src/delegation-records.js';
 import { INTER_AGENT_COUNTS, INTER_AGENT_LOSS_COUNTS } from './src/inter-agent.js';
@@ -92,6 +95,10 @@ export async function sliceLineage(files, opts = {}) {
   const unrecorded = [];
   // M34 labels review (F7): whether a Claude file of the lineage is a helper's by its rows (records.js `helperRows`).
   let helperRows = false;
+  // D99 (F1 guard): each file's line count as its first read took it, and each Codex file's shape misses by carrier with
+  // its recorder version (the recorder census).
+  const lineCounts = [];
+  const codexShapeMisses = [];
   for (const [i, file] of files.entries()) {
     const { records, meta: m, corrupt: c, unknownSchema } = await readSession(file, {
       // M34 labels: a helper's recording is read whole by its own structure (records.js), never by its path.
@@ -100,6 +107,10 @@ export async function sliceLineage(files, opts = {}) {
       noForkChildProof: files.length === 1 ? opts.noForkChildProof ?? null : null,
     });
     corrupt += c;
+    lineCounts.push(Number.isSafeInteger(m.lines) ? m.lines : null);
+    if (m.shapeMisses && typeof m.shapeMisses === 'object')
+      for (const [carrier, count] of Object.entries(m.shapeMisses))
+        codexShapeMisses.push({ carrier, count, version: m.version ?? null });
     if (m.helperRows === true) helperRows = true;
     sources.push(m.sourceIdentity ?? { adapter: m.agent ?? 'unknown', identityConflict: true });
     if (unknownSchema) unknownSchemaFiles++;
@@ -188,12 +199,25 @@ export async function sliceLineage(files, opts = {}) {
   }
 
   const { events, ask, interjections, projectInstructions, claim, sayings, commentary, commentaryCapture, instructionCapture,
-    actionCapture, observationCapture, marks, workflowLaunches, deliveries } = buildEvents(all, { cwd: meta.cwd ?? '',
+    actionCapture, observationCapture, marks, workflowLaunches, deliveries, backgroundRuns, launchMisses } = buildEvents(all,
+    { cwd: meta.cwd ?? '',
     outcomes: opts.outcomes ?? null, claudeLocators: opts.claudeLocators === true,
     // D69 (b): the recording's home, from the path form its recorder wrote it at — the recording's own name
     // (`lineageFiles`, when the bytes were read from a copy) — never from its contents; null fails closed.
     home: recordingHome(Array.isArray(opts.lineageFiles) && opts.lineageFiles.length === files.length
       ? opts.lineageFiles : files) });
+  // D99 (F1 guard): a background run whose end was not read says "no end" only when the recording proves it holds none
+  // (background-ends.js); every other one is marked: a Bash or Workflow launch on its event (`backgroundEnd`), an Agent
+  // launch on its entry of the delivery side channel (`endUnread`, `endUnchecked`). Review of A1b: `unread` only where a
+  // later record is shown to mention the run (END_MENTIONED_REASONS), else `unchecked`. Only a marked run moves a
+  // ledger's bytes.
+  const ends = backgroundRuns.length ? await readBackgroundEnds(files, backgroundRuns, all, { lines: lineCounts }) : [];
+  for (const [i, run] of backgroundRuns.entries()) {
+    if (ends[i] === null) continue;
+    const mentioned = END_MENTIONED_REASONS.includes(ends[i]);
+    if (run.kind === 'agent') run.entry[mentioned ? 'endUnread' : 'endUnchecked'] = true;
+    else events[run.index].backgroundEnd = mentioned ? BACKGROUND_ENDS.unread : BACKGROUND_ENDS.unchecked;
+  }
   if (instructionCapture.nonTextExcluded > 0 || instructionCapture.unclassifiedRows > 0) {
     capture ??= { calls: 0, wrappers: 0, captured: 0, unsupported: 0, missing: 0,
       unmapped: 0, reasons: [], incomplete: false };
@@ -369,6 +393,10 @@ export async function sliceLineage(files, opts = {}) {
       calls: workflowLaunches } } : {}),
     // M33 P: likewise only for the loader that asks, which joins it and drops it (cli/src/session-evidence.js).
     ...(opts.helperDeliveries === true ? { helperDeliveries: helperDeliveriesOf(deliveries, sources) } : {}),
+    // D99 (F1 guard): the recorder census, likewise only for the loader that asks (cli/src/session-evidence.js), which
+    // keeps it for the run record and drops it: no ledger keeps it, so no ledger byte moves for it.
+    ...(opts.recorderCensus === true ? { recorderCensus: recorderCensusOf({ records: all, counted: unrecorded, events,
+      backgroundRuns, ends, launchMisses, codexShapeMisses }) } : {}),
     ...(delegations.length ? { delegations } : {}),
     ...(capture ? { capture } : {}),
     dropped: [
@@ -380,6 +408,7 @@ export async function sliceLineage(files, opts = {}) {
     ],
   };
 }
+
 
 /**
  * M33 P. The slicer's delivery side channel as the loader joins it. An arrival is kept only when its recorded recipient

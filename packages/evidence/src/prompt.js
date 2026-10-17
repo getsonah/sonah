@@ -10,7 +10,7 @@ import { MIN_QUOTE_CHARS } from './session.js';
 import { instructionReviewScope, instructionCompleteRange, windowEnd, resultOutcome, FAILURE_HANDLINGS,
   CONTRADICTION_RECEIPT_ROLES, shownProjectInstructions } from './ledger.js';
 import { carriedIds, eventView, shownSources, startsSegment, windowParts, messageLines, numberedMessage,
-  closingMessages, mapEventIds } from './windows.js';
+  closingMessages, mapEventIds, SHOWN_GAPS, CITED_VIEWS, omittedOutputBytes } from './windows.js';
 import { statusFactLine } from './status-fact.js';
 import { windowFailures } from './checklist.js';
 import { EVIDENCE_REQUEST_LIMITS } from './evidence-requests.js';
@@ -210,7 +210,11 @@ import { EVIDENCE_REQUEST_LIMITS } from './evidence-requests.js';
 // /37 (G2, owner decision 2026-10-15): a session-only choice not to act whose existence check refuted the words it was
 // anchored on is put to the reviewer once more (`reanchorRequest`), built as a requirement's re-ask is, with its own
 // fixed words (REANCHOR_*). Request bytes that moved: none of any request sent before; each such re-ask is a new request.
-export const PROMPT_VERSION = 'sonah.narrative/37';
+// /38 (D103, owner decision 2026-10-17; amends D68 P): a session-only request of a Claude Code recording shows each RESULT
+// up to 12,000 bytes at each end (windows.js `SKIM_SIDE_BYTES`, keyed by the recording's harness), no longer 3,600: one
+// from 7,201 to 24,000 bytes is whole, and a longer one's omission line names a smaller middle. No fixed text moved. A
+// request of any other harness's recording, and every combined request, keeps its bytes.
+export const PROMPT_VERSION = 'sonah.narrative/38';
 
 // Shared wire instructions: joint review removes narrative framing, so this contract must
 // be present in both actual prompts. A schema attached to a request is not itself model input.
@@ -387,7 +391,7 @@ export function omittedLine(id, shown, fileLines = null, what = 'output', reques
   const part = [...new Set([partFrom ? fromLine : null, partThrough ? throughLine : null].filter((n) => n !== null))]
     .map((n) => `line ${thousands(n)}`);
   const file = fileLines ? ` (file ${lineRange(fileLines.from, fileLines.through)})` : '';
-  const gap = shown.gap ? ` (${shown.gap}: larger than a window's whole work budget)` : '';
+  const gap = shown.gap ? ` (${shown.gap}: ${GAP_WORDS[shown.gap] ?? GAP_WORDS.budget})` : '';
   // D71 (S2): a session-only request's line offers the ask as the brief's last step states it (S3: the
   // failures step is step 4, so it is step 6).
   const ask = !requestable ? '' : checklist ? `; ${askUnderStep5(id, fromLine, throughLine)}`
@@ -397,6 +401,12 @@ export function omittedLine(id, shown, fileLines = null, what = 'output', reques
     + `${ask}.`
     + ' Quote the shown spans only, never across the cut.';
 }
+
+/** What a declared gap says of why the part is not shown (windows.js SHOWN_GAPS), in fixed words: larger than a
+ *  window's whole work budget, or (D103, F5 part 2) a cited result a challenge request could not show whole within its
+ *  bound. */
+const GAP_WORDS = Object.freeze({ budget: "larger than a window's whole work budget",
+  [SHOWN_GAPS.resultOverBound]: 'shown whole, it would put this request over its size bound' });
 
 /** D71 (S2): how a session-only request offers omitted lines — fixed words, the event and its lines. */
 const askUnderStep5 = (id, from, through) => `ask for them under step 6 if a row's status depends on them `
@@ -410,13 +420,20 @@ export const servedLabel = (from, through, partial, what) => `  ${lineRange(from
  * D71 (S2): the cut middle of a shown field with the lines served for it in place — in line order,
  * each served range under its label (`servedLabel`) and each range still not shown on an omission line of its own (with
  * the ask when the request still offers one). Positions only.
+ * D103 (F5 part 2): a cited result a challenge request shows cut over its bound (`result_over_bound`) declares its gap on
+ * each range still not shown, with that range's bytes (`bytesOf`, windows.js `omittedOutputBytes`), as `omittedLine`
+ * declares a whole middle. Every other field's lines are as before.
  */
-function servedMiddle(id, shown, blocks, { fileLines = null, what = 'output', requestable = false } = {}) {
+function servedMiddle(id, shown, blocks, { fileLines = null, what = 'output', requestable = false, bytesOf = null } = {}) {
   const { fromLine, throughLine } = shown.omitted;
   const lines = [];
   const fileOf = (a, b) => (fileLines ? ` (file ${lineRange(fileLines.from + a - fromLine, fileLines.from + b - fromLine)})` : '');
-  const unshown = (a, b) => lines.push(`  omitted: ${lineRange(a, b)} of this ${what}${fileOf(a, b)} ${a === b ? 'is' : 'are'}`
-    + ` not shown${requestable ? `; ${askUnderStep5(id, a, b)}` : ''}. Quote the shown spans only, never across the cut.`);
+  const overBound = shown.gap === SHOWN_GAPS.resultOverBound && typeof bytesOf === 'function';
+  const sized = (a, b) => (overBound ? `, ${thousands(bytesOf(a, b))} UTF-8 bytes,` : '');
+  const gap = overBound ? ` (${shown.gap}: ${GAP_WORDS[shown.gap]})` : '';
+  const unshown = (a, b) => lines.push(`  omitted: ${lineRange(a, b)} of this ${what}${fileOf(a, b)}${sized(a, b)}`
+    + ` ${a === b ? 'is' : 'are'} not shown${gap}${requestable ? `; ${askUnderStep5(id, a, b)}` : ''}.`
+    + ' Quote the shown spans only, never across the cut.');
   let cursor = fromLine;
   for (const block of [...blocks].sort((a, b) => a.from - b.from)) {
     if (block.from > cursor) unshown(cursor, block.from - 1);
@@ -429,10 +446,11 @@ function servedMiddle(id, shown, blocks, { fileLines = null, what = 'output', re
 
 /** The spans of one shown field, fenced, with its omission line between its head and its tail. */
 function fencedShown(id, shown, { fileLines = null, what = 'output', requestable = true, checklist = false,
-  served = null } = {}) {
+  served = null, bytesOf = null } = {}) {
   if (!shown.omitted) return fencedSpans(shown.spans);
   const head = shown.spans.slice(0, shown.headCount), tail = shown.spans.slice(shown.headCount);
-  const middle = Array.isArray(served) && served.length ? servedMiddle(id, shown, served, { fileLines, what, requestable })
+  const middle = Array.isArray(served) && served.length
+    ? servedMiddle(id, shown, served, { fileLines, what, requestable, bytesOf })
     : [omittedLine(id, shown, fileLines, what, requestable, checklist)];
   return [...(head.length ? fencedSpans(head) : []), ...middle, ...(tail.length ? fencedSpans(tail) : [])];
 }
@@ -553,6 +571,9 @@ function bodyLines(event, block) {
   return [];
 }
 
+/** The view `citedOf` (a challenge request's: event -> CITED_VIEWS member or null) names for `event`; none, null. */
+const citedViewOf = (citedOf, event) => (typeof citedOf === 'function' ? citedOf(event) ?? null : null);
+
 /** Render one event with every quotable region labelled by the receipt role it carries. M33 K: `bodies`
  *  false leaves out an invocation's written bodies (a challenge dossier's uncited invocation); every other
  *  line is rendered exactly as always. M35 (windowing) and M36 phase 2 (C-07 "M36 window format"): `settings` are the
@@ -568,10 +589,12 @@ function bodyLines(event, block) {
  *  collects what the event does not show in full, for "About this window"; `activeTasks` marks an active task that is not
  *  the human's (a helper's brief). Without `checklist` every byte is as before (the combined route, D71 i). */
 function renderEvent(session, event, inventoryInstruction = null, { bodies = true, settings = null, alias = (id) => id,
-  label = '', requestable = true, checklist = false, served = null, notes = null, activeTasks = null } = {}) {
+  label = '', requestable = true, checklist = false, served = null, notes = null, activeTasks = null,
+  citedOf = null } = {}) {
   const lines = [];
   const id = alias(event.id);
-  const view = eventView(session, event, settings);
+  // D103 (F5 part 2): a challenge request shows a result its items cite as `citedOf` says (windows.js CITED_VIEWS).
+  const view = eventView(session, event, settings, citedViewOf(citedOf, event));
   const blocksOf = (part) => {
     const list = (served?.byEvent?.get(event.id) ?? []).filter((block) => block.part === part);
     for (const block of list) served.used.add(block);
@@ -663,9 +686,12 @@ function renderEvent(session, event, inventoryInstruction = null, { bodies = tru
     const status = statusFactLine(event);
     if (status !== null) lines.push(status);
     // M36 phase 2 review: a withheld output has no fence — an empty one would read as a recorded empty result.
+    // D103 (F5 part 2): a cited result cut over a challenge request's bound names the bytes of each range still not shown.
+    const bytesOf = view.fields[0].gap === SHOWN_GAPS.resultOverBound
+      ? (a, b) => omittedOutputBytes(session, event, settings, a, b) : null;
     lines.push(resultLabelLine(view), ...(view.facts.outputWithheld && !view.fields[0].spans.length ? []
       : fencedShown(id, view.fields[0], { fileLines: view.fileLines, what, requestable, checklist,
-        served: checklist ? blocksOf('output') : null })));
+        served: checklist ? blocksOf('output') : null, bytesOf })));
     if (view.facts.outputWithheld) note(`[${id}] its ${what} (withheld before review; it cannot be asked for)`);
     else if (view.fields[0].omitted) noteCut(view.fields[0].omitted, 'output', what);
   } else if (event.kind === 'boundary') {
@@ -1005,7 +1031,7 @@ export function carriedPart(session, given, { inventory = new Map(), settings = 
       parts.push(renderEvent(session, call, null, { ...render, settings, alias }), '',
         renderEvent(session, result, null, { ...render, settings, alias }), '');
       sources[call.id] = shownSources(session, call, settings);
-      sources[result.id] = shownSources(session, result, settings);
+      sources[result.id] = shownSources(session, result, settings, citedViewOf(render.citedOf, result));
     }
   }
   if (context.thoughts.length || context.thoughtsLeftOut > 0) {
@@ -1030,7 +1056,7 @@ function rideBackLines(session, ride, { settings, alias, sources, render = {} })
     lines.push(renderEvent(session, call, null, { ...render, settings, alias }), '',
       renderEvent(session, result, null, { ...render, settings, alias }), '');
     sources[call.id] = shownSources(session, call, settings);
-    sources[result.id] = shownSources(session, result, settings);
+    sources[result.id] = shownSources(session, result, settings, citedViewOf(render.citedOf, result));
   }
   if (ride.leftOut > 0) lines.push(helperFailuresLeftOutLine(ride.leftOut), '');
   return lines;
@@ -1109,7 +1135,8 @@ function sessionSections(session, window, context, { inventory, settings, alias,
         requestable }), '');
       // D71 (S2): a result shown by its header and outcome line only shows nothing quotable.
       if (event.kind !== 'observation' || how.bodies)
-        shown.push([event.id, shownSources(session, event, settings).filter((s) => how.bodies || s.role !== 'code')]);
+        shown.push([event.id, shownSources(session, event, settings, citedViewOf(render.citedOf, event))
+          .filter((s) => how.bodies || s.role !== 'code')]);
       const ride = rides.get(event.id);
       if (ride && rideFor(ride)) {
         const sources = Object.create(null);
@@ -1221,9 +1248,15 @@ const aliasOf = (aliases) => (aliases && typeof aliases.of === 'function' ? alia
  * so a vote quoting anything it left out is not verified. Deterministic: the same window and the same cited ids give
  * the same bytes, whatever the items' order. M33 N repair: `alsoCited`, ids code names beside the items' receipts (a
  * forbidden edit's `humanChoicesBetween`), are shown exactly as cited ones are; a dossier given none is unchanged.
+ *
+ * D103 (F5 part 2): a session-only dossier (`checklist`) shows each result its items cite whole, but those in `cut` (a
+ * Set of event ids), which it shows by the window's skim with the closed gap `result_over_bound`: the challenge run
+ * names them when whole they would put its request over its bound (challenge.js `challengeItems`). It returns `cited`
+ * too: each cited result it shows that the skim cuts, in recorded order, with the bytes showing it whole adds
+ * (`citedResults`).
  */
 export function buildChallengeDossier({ session, window, context = null, settings = null, aliases = null, items = [],
-  wholeCarry = false, alsoCited = [], checklist = false, served = null }) {
+  wholeCarry = false, alsoCited = [], checklist = false, served = null, cut = null }) {
   const alias = aliasOf(aliases);
   const events = window.events;
   const cited = citedEventIds(listOfCandidates(items));
@@ -1243,8 +1276,10 @@ export function buildChallengeDossier({ session, window, context = null, setting
   // D71 (S2, D22): a challenger is never offered an evidence request (`requestable` false, as the
   // combined route's), and a session-only dossier (`checklist`) is shown what the window's re-ask served at its events.
   const servedState = checklist ? { byEvent: served?.byEvent ?? new Map(), used: new Set() } : null;
+  const activeTasks = checklist ? activeTasksOf(window, context) : null;
+  const views = checklist ? citedViewsOf(session, cited, settings, cut) : null;
   const sections = sessionSections(session, window, context, { inventory, settings, alias, requestable: false,
-    render: checklist ? { checklist: true, served: servedState, activeTasks: activeTasksOf(window, context) } : {},
+    render: checklist ? { checklist: true, served: servedState, activeTasks, citedOf: views.citedOf } : {},
     show: (event) => (event.kind !== 'observation' || full.has(event.id) ? { bodies: event.kind !== 'invocation' || full.has(event.id) }
       : checklist ? { bodies: false } : null),
     carryFor: (k) => wholeCarry || [...cited].some((id) => new Set(carriedIds(contexts[k] ?? null)).has(id)),
@@ -1257,11 +1292,11 @@ export function buildChallengeDossier({ session, window, context = null, setting
     // The human's messages first, as the window's request shows them; then (D71 g) the project's instruction files; then
     // the session; then any served lines no shown event placed (an event the dossier does not show).
     const human = humanAskedParts(instructionScope, completeFor, alias, { inWindow: new Set(events.map((e) => e.id)),
-      activeTasks: activeTasksOf(window, context) });
+      activeTasks });
     const project = projectInstructionParts(session, windowEnd(window), alias);
     for (const [id, sources] of Object.entries(project.sources)) if (!Object.hasOwn(sourceMap, id)) sourceMap[id] = sources;
     return { evidencePrompt: [...human, ...project.lines, ...sections.lines, ...servedElsewhere(servedState, alias)].join('\n'),
-      sourceMap };
+      sourceMap, cited: citedResults(session, views, sourceMap, { settings, alias, served: servedState, activeTasks }) };
   }
   const parts = [...sections.lines];
   parts.push(...instructionParts(instructionScope, completeFor, alias));
@@ -1276,6 +1311,138 @@ function completeForOf(session, instructionScope, upTo) {
 
 /** The candidates of challenge items (`{ key, type, candidate }`), for `citedEventIds`. */
 const listOfCandidates = (items) => (Array.isArray(items) ? items.map((item) => item?.candidate) : []);
+
+// ---- D103 (F5 part 2): the results a challenge request's items cite, shown whole --------------------------------------
+
+/**
+ * How a session-only challenge request shows the results its items cite (`cited`: event ids): each result (an
+ * observation that is not a helper's report, which is shown whole already) that the window's skim cuts is shown
+ * `whole`, but those in `cut`, shown by the skim and declared `overBound` (windows.js CITED_VIEWS). Structure only: the
+ * cited ids, the event's kind and the cut's position; never a word of the output. `{ ids, citedOf }` — `ids` those
+ * results in recorded order, `citedOf(event)` the view of one (null for any other event).
+ */
+function citedViewsOf(session, cited, settings, cut = null) {
+  const skimmed = [];
+  for (const id of cited) {
+    const event = session.event(id);
+    if (event?.kind !== 'observation' || event.helperReported === true) continue;
+    if (eventView(session, event, settings).fields[0]?.omitted) skimmed.push(event);
+  }
+  skimmed.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const kept = cut instanceof Set ? cut : new Set();
+  const views = new Map(skimmed.map((event) => [event.id, kept.has(event.id) ? CITED_VIEWS.overBound : CITED_VIEWS.whole]));
+  return { ids: skimmed.map((event) => event.id), citedOf: (event) => views.get(event?.id) ?? null };
+}
+
+/** The UTF-8 bytes of one result as a session-only challenge request renders it (`checklistEvidence`, a dossier), shown
+ *  as `view` (CITED_VIEWS) or, null, by the window's skim as every other request shows it. */
+function renderedBytes(session, event, view, { settings, alias, served, activeTasks }) {
+  return Buffer.byteLength(renderEvent(session, event, null, { checklist: true, settings, alias, requestable: false,
+    activeTasks, served: served ? { byEvent: served.byEvent, used: new Set() } : null, citedOf: () => view }), 'utf8');
+}
+
+/**
+ * The cited results a request shows that the skim cuts, in recorded order: `[{ id, added }]` — `added` the UTF-8 bytes
+ * the request gains when that result is shown whole rather than by the skim with its over-bound gap (its rendering
+ * either way, alone; each event is one block of the request, so the gains add). Negative when whole is the shorter
+ * (a middle under its omission line's length, or one the re-ask served). A result the request does not show is not
+ * listed. What a challenge run reads to keep its request within its bound (challenge.js `challengeItems`).
+ */
+function citedResults(session, views, sourceMap, render) {
+  return views.ids.filter((id) => Object.hasOwn(sourceMap, id)).map((id) => {
+    const event = session.event(id);
+    return { id, added: renderedBytes(session, event, CITED_VIEWS.whole, render)
+      - renderedBytes(session, event, CITED_VIEWS.overBound, render) };
+  });
+}
+
+/**
+ * D71 (S2): what a challenger is shown of a session-only window — the human block, the project's instruction files, the
+ * session (offering no evidence request), then served lines no shown event placed — and the sources it shows, by
+ * stable id (the narrative's own map, built the same way). D103 (F5 part 2): `citedOf` shows the results the
+ * challenge's items cite as `citedViewsOf` says. `parts` holds what does not depend on the items.
+ */
+function checklistEvidence(session, window, context, { settings, alias, served, parts, citedOf = null }) {
+  const state = { byEvent: served?.byEvent instanceof Map ? served.byEvent : new Map(), used: new Set() };
+  const shown = sessionSections(session, window, context, { inventory: parts.inventory, settings, alias,
+    requestable: false, render: { checklist: true, served: state, activeTasks: parts.activeTasks, citedOf } });
+  const evidencePrompt = [...parts.human, ...parts.project.lines, ...shown.lines, ...servedElsewhere(state, alias)]
+    .join('\n');
+  const sourceMap = Object.create(null);
+  for (const [id, sources] of shown.shown) sourceMap[id] = sources;
+  for (const [id, sources] of Object.entries(shown.carried)) if (!Object.hasOwn(sourceMap, id)) sourceMap[id] = sources;
+  inventorySources(parts.instructionScope, sourceMap);
+  for (const [id, sources] of Object.entries(parts.project.sources)) if (!Object.hasOwn(sourceMap, id)) sourceMap[id] = sources;
+  return { evidencePrompt, sourceMap, state };
+}
+
+/** What a session-only window's checklist request holds that no item changes: its human messages up to its end (the
+ *  inventory and "What the human asked"), its project instruction files and its active tasks. */
+function checklistParts(session, window, context, alias, scope = null) {
+  const bound = windowEnd(window);
+  const instructionScope = scope ?? instructionReviewScope(session, { upTo: bound });
+  const inventory = new Map(instructionScope.instructions.map((instruction) => [instruction.eventId, instruction]));
+  const completeFor = completeForOf(session, instructionScope, bound);
+  const activeTasks = activeTasksOf(window, context);
+  const inWindow = new Set(window.events.map((event) => event.id));
+  return { instructionScope, inventory, completeFor, activeTasks,
+    human: humanAskedParts(instructionScope, completeFor, alias, { inWindow, activeTasks }),
+    project: projectInstructionParts(session, bound, alias) };
+}
+
+/**
+ * D103 (owner pick 2026-10-17; F5 part 2): the evidence of a session-only window's whole-window challenge run, one
+ * batch at a time — the window's challenge evidence (`checklistEvidence`, the narrative's `evidencePrompt` byte for
+ * byte), with each result the batch's items cite shown whole, but those in `cut`, shown by the skim and declared
+ * `result_over_bound`. Returns `{ evidencePrompt, measure, shown }`:
+ *   - `evidencePrompt` the window's evidence as it is, what a batch that cites no result the skim cuts is shown;
+ *   - `measure(items)` → `{ evidenceBytes, cited }`, counted and never rendered: the UTF-8 bytes of the evidence with
+ *     every result the items cite whole (the window's evidence plus each result's own gain, computed once per result and
+ *     kept as numbers), and those results in recorded order with the bytes showing each whole adds over its cut and
+ *     declared view (`[{ id, added }]`, as `citedResults`);
+ *   - `shown(items, cut)` → `{ evidencePrompt, sourceMap }`, rendered, for a batch that is sent: what it shows and the
+ *     sources a vote on it may quote. A batch that cites no result the skim cuts is the window's own, not rendered again.
+ * Each event is one block of the evidence, so `measure` is the rendered bytes exactly. Nothing a batch is shown is kept
+ * past its call: memory is the window's evidence once, whatever the batches. Deterministic.
+ */
+export function challengeEvidenceOf({ session, window, context = null, settings = null, aliases = null, served = null }) {
+  const alias = aliasOf(aliases);
+  const parts = checklistParts(session, window, context, alias);
+  const base = checklistEvidence(session, window, context, { settings, alias, served, parts });
+  const baseBytes = Buffer.byteLength(base.evidencePrompt, 'utf8');
+  const render = { settings, alias, served: base.state, activeTasks: parts.activeTasks };
+  const gains = new Map();
+  const gainOf = (id) => {
+    if (!gains.has(id)) {
+      const event = session.event(id);
+      const skim = renderedBytes(session, event, null, render);
+      gains.set(id, Object.freeze({ whole: renderedBytes(session, event, CITED_VIEWS.whole, render) - skim,
+        overBound: renderedBytes(session, event, CITED_VIEWS.overBound, render) - skim }));
+    }
+    return gains.get(id);
+  };
+  // The cited results this evidence shows that its skim cuts, in recorded order.
+  const viewsOf = (items, cut = null) => citedViewsOf(session, citedEventIds(listOfCandidates(items)), settings, cut);
+  const shownIds = (views) => views.ids.filter((id) => Object.hasOwn(base.sourceMap, id));
+  return Object.freeze({
+    evidencePrompt: base.evidencePrompt,
+    measure: (items) => {
+      let evidenceBytes = baseBytes;
+      const cited = shownIds(viewsOf(items)).map((id) => {
+        const { whole, overBound } = gainOf(id);
+        evidenceBytes += whole;
+        return { id, added: whole - overBound };
+      });
+      return { evidenceBytes, cited };
+    },
+    shown: (items, cut = null) => {
+      const views = viewsOf(items, cut);
+      if (!shownIds(views).length) return { evidencePrompt: base.evidencePrompt, sourceMap: base.sourceMap };
+      const built = checklistEvidence(session, window, context, { settings, alias, served, parts, citedOf: views.citedOf });
+      return { evidencePrompt: built.evidencePrompt, sourceMap: built.sourceMap };
+    },
+  });
+}
 
 /**
  * Build the pass-1 prompt for one window.
@@ -1655,24 +1822,18 @@ function preassignAliases(aliases, session, window, context, instructionScope) {
 function buildChecklistPrompt({ session, window, context, settings, aliases, served = null }) {
   const alias = aliasOf(aliases);
   const bound = windowEnd(window);
-  const instructionScope = instructionReviewScope(session, { upTo: bound });
-  const inventory = new Map(instructionScope.instructions.map((instruction) => [instruction.eventId, instruction]));
-  const completeFor = completeForOf(session, instructionScope, bound);
-  preassignAliases(aliases, session, window, context, instructionScope);
-  const activeTasks = activeTasksOf(window, context);
-  const inWindow = new Set(window.events.map((event) => event.id));
+  const scope = instructionReviewScope(session, { upTo: bound });
+  preassignAliases(aliases, session, window, context, scope);
+  // D71 (g): the project's instruction files the harness gave the agent, recorded before the window's last event.
+  const fixed = checklistParts(session, window, context, alias, scope);
+  const { instructionScope, inventory, activeTasks, human, project } = fixed;
   const reask = served !== null;
-  const stateOf = () => ({ byEvent: served?.byEvent instanceof Map ? served.byEvent : new Map(), used: new Set() });
   const notes = [];
-  const own = stateOf();
+  const own = { byEvent: served?.byEvent instanceof Map ? served.byEvent : new Map(), used: new Set() };
   const sections = sessionSections(session, window, context, { inventory, settings, alias, requestable: !reask,
     render: { checklist: true, served: own, notes, activeTasks } });
-  const theirs = stateOf();
-  const shown = sessionSections(session, window, context, { inventory, settings, alias, requestable: false,
-    render: { checklist: true, served: theirs, activeTasks } });
-  const human = humanAskedParts(instructionScope, completeFor, alias, { inWindow, activeTasks });
-  // D71 (g): the project's instruction files the harness gave the agent, recorded before the window's last event.
-  const project = projectInstructionParts(session, bound, alias);
+  // What a challenger is shown (D103: the whole-window challenge run's evidence when no item cites a cut result).
+  const { evidencePrompt } = checklistEvidence(session, window, context, { settings, alias, served, parts: fixed });
   // About this window: its last event, each session's closing message, what is not shown in full, the harness line.
   const last = window.events.find((event) => event?.sequence === bound) ?? window.events.at(-1) ?? null;
   const closings = closingMessages(session, window);
@@ -1691,7 +1852,6 @@ function buildChecklistPrompt({ session, window, context, settings, aliases, ser
     project.lines.length ? PROJECT_HARNESS_LINE : HARNESS_CONTEXT_LINE, ''];
   const prompt = [checklistTitle(window.index + 1), '', ...human, ...project.lines, ...about, ...sections.lines,
     ...servedElsewhere(own, alias), ...(reask ? NOW_ANSWER_AGAIN : NOW_ANSWER)].join('\n');
-  const evidencePrompt = [...human, ...project.lines, ...shown.lines, ...servedElsewhere(theirs, alias)].join('\n');
   const sourceMap = Object.create(null);
   for (const [id, sources] of sections.shown) sourceMap[id] = sources;
   for (const [id, sources] of Object.entries(sections.carried)) if (!Object.hasOwn(sourceMap, id)) sourceMap[id] = sources;

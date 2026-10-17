@@ -318,8 +318,15 @@ export const MAX_REVIEW_INPUT_BYTES = 524288;
 // /44 (2026-10-16) withdraws it: a vote that was cast and could not be counted is an answer and stands, as before /43;
 // only a slot a reply left without a vote is asked again (`challengeItems`). No first-round request byte and no re-ask
 // of a skipped slot moved; the void re-asks are no longer sent.
+// /45 (D103, owner pick 2026-10-17; F5 part 2): a session-only review's whole-window run shows each batch the window's
+// evidence with every result its items cite whole (prompt.js `challengeEvidenceOf`); whole over the run's bound, from the
+// least view each in recorded order that still fits, the rest by the skim with the closed gap `result_over_bound`
+// (`planned`). A batch is formed with its cited results whole; an item over the bound so is asked alone, unless it fits
+// in a planned batch with the same evidence (the owner's answer of 2026-10-17, `absorbAlone`). Request bytes that moved:
+// a session-only batch that cites a result the skim cuts; no other session batch, and no combined request.
+// A batch holds fewer items when its cited results are whole, so calls are added only where a window's bound binds.
 export const CHALLENGE_PROFILE = Object.freeze({
-  version: 'sonah.challenge/44', passes: 3, requiredSurvivals: 2,
+  version: 'sonah.challenge/45', passes: 3, requiredSurvivals: 2,
   maxConcurrency: 6, maxInputBytes: MAX_REVIEW_INPUT_BYTES,
   batching: 'full-evidence-greedy-bytes-and-items', maxItemsPerBatch: 16, response: 'keyed-votes',
 });
@@ -474,7 +481,13 @@ export const challengeSystem = () => SYSTEM;
 // a stopped denial kind moved with the narrative's (/31, item N). Items Q, M and W move no dossier byte (a batch Q
 // lowers a row from or M's flags join differs in its items, as D78's, under the same versions). A combined dossier's
 // bytes are /8's.
-export const CHALLENGE_DOSSIER_VERSION = 'sonah.challenge-dossier/13';
+// /14 (D103, owner pick 2026-10-17; F5 part 1): the evidence a session-only dossier shows moved as the narrative's (/38):
+// a Claude Code recording's results are cut at 12,000 bytes a side, no longer 3,600. No dossier text moved. A combined
+// dossier's bytes are /8's.
+// /15 (D103, owner pick 2026-10-17; F5 part 2): a session-only dossier shows each result its items cite whole; over its
+// run's bound, by the skim with the closed gap `result_over_bound` (`buildChallengeDossier` `cut`). A dossier that cites
+// no result the skim cuts keeps its bytes. A combined dossier's bytes are /8's.
+export const CHALLENGE_DOSSIER_VERSION = 'sonah.challenge-dossier/15';
 export const DOSSIER_NOTE = 'The supplied evidence is a dossier, not the whole window: results (outputs) and written '
   + 'file bodies that no candidate cites are omitted, absence from the dossier is not evidence of absence, and when '
   + 'the dossier lacks what a candidate needs you must vote uncertain.';
@@ -1265,6 +1278,24 @@ function runChallengeProfile(passes, requiredSurvivals, maxInputBytes, unanimous
  * requests as sent. Without it, not one request byte changes. A run is at most CHALLENGE_PROFILE.passes passes, and survival is
  * always a strict majority of its passes, so no bound admits a minority vote.
  *
+ * D103 (owner pick 2026-10-17; F5 part 2): `batchEvidence` (optional, a session-only window's whole-window run;
+ * `dossier`, given, wins): `{ measure, shown }` — `measure(items)` → `{ evidenceBytes, cited }`, counted without
+ * rendering: the UTF-8 bytes of the window's evidence with each result the items cite whole, and those of them the skim
+ * cuts in recorded order, each with the bytes showing it whole adds over its cut and declared view (`[{ id, added }]`);
+ * `shown(items, cut)` → `{ evidence, verifyReceipt }`, rendered for a batch that is sent: the evidence with each cited
+ * result whole, but those in `cut` (a Set of event ids), shown by the skim and declared `result_over_bound`. A dossier
+ * takes `cut` too and lists its `cited` the same way. A batch is formed with every cited result whole, within the item
+ * and byte bounds; its bytes are counted, and only a batch that is sent is rendered. An item whose request is over the
+ * bound even alone is planned alone (`planned`): from the least it can show (each cited result whose whole view is the
+ * longer cut), each cut one that still fits shown whole, in recorded order; one that does not fit even so is oversize, as
+ * before. It is asked alone only when that plan shows a cited result whole that the skim cuts (the review of D2): one
+ * that shows none whole joins a batch where it fits, its cut results declared, and never one with an item that shows
+ * one of them whole. An item asked alone never closes the batch being formed, so where it sits in the order moves no
+ * other item's batch (the review of D2's fix). A re-ask joins items by the same start and join rule. The owner's answer
+ * of 2026-10-17: once the batches are planned, an item asked alone joins the first that holds it with the same evidence
+ * (`absorbAlone`), in the first ask and in a re-ask, so planned calls never rise. Without either, not one request byte
+ * changes.
+ *
  * M35 (windowing): `aliases` (optional, a session-only window's alias table, windows.js `aliasTable`, frozen): each
  * candidate is shown naming events by the window's aliases, as its evidence does. The caller's judge maps every vote's
  * ids back to stable ids before it returns (run-review.js), so nothing here reads an alias. Without it, not one request
@@ -1291,9 +1322,11 @@ function runChallengeProfile(passes, requiredSurvivals, maxInputBytes, unanimous
 export async function challengeItems({ items, judge, evidence, verifyReceipt,
   labelPrefix = 'challenge', concurrency = CHALLENGE_PROFILE.maxConcurrency,
   passes = CHALLENGE_PROFILE.passes, requiredSurvivals = CHALLENGE_PROFILE.requiredSurvivals,
-  maxInputBytes = CHALLENGE_PROFILE.maxInputBytes, dossier = null, supportEvents = null, aliases = null,
-  checklist = false, unanimous = false }) {
+  maxInputBytes = CHALLENGE_PROFILE.maxInputBytes, dossier = null, batchEvidence = null, supportEvents = null,
+  aliases = null, checklist = false, unanimous = false }) {
   if (!Array.isArray(items) || typeof evidence !== 'string' || (dossier !== null && typeof dossier !== 'function')
+      || (batchEvidence !== null && (!plain(batchEvidence) || typeof batchEvidence.measure !== 'function'
+        || typeof batchEvidence.shown !== 'function'))
       || (supportEvents !== null && typeof supportEvents !== 'function')
       || !Number.isSafeInteger(concurrency) || concurrency < 1
       || concurrency > CHALLENGE_PROFILE.maxConcurrency) throw new TypeError('Invalid challenge input');
@@ -1334,19 +1367,152 @@ export async function challengeItems({ items, judge, evidence, verifyReceipt,
   const requestOf = (list, shownEvidence, shownDossier) => (checklist
     ? checklistBatchRequest(list, shownEvidence, aliases, { dossier: shownDossier })
       : batchRequest(list, shownEvidence, shownDossier ? DOSSIER_SYSTEM : SYSTEM, aliases));
-  const view = (list) => {
-    if (dossier === null) return { request: requestOf(list, evidence, false), verify: verifyReceipt };
-    const shown = dossier(list);
+  // D103 (F5 part 2): the cited results a view or a count names — `[{ id, added }]`, `added` a whole number of bytes
+  // (negative when the whole view is the shorter); none named, none. Anything else is no list a run can size by.
+  const citedList = (value) => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value) || value.some((result) => !plain(result) || typeof result.id !== 'string'
+        || !Number.isSafeInteger(result.added))) throw new TypeError('Invalid challenge dossier');
+    return value;
+  };
+  // D103 (F5 part 2): a batch's own view, its cited results whole but those in `cut` (rendered: only for a batch sent).
+  const shownBy = dossier ?? (batchEvidence === null ? null : (list, cut) => batchEvidence.shown(list, cut));
+  const view = (list, cut = null) => {
+    if (shownBy === null) return { request: requestOf(list, evidence, false), verify: verifyReceipt };
+    const shown = shownBy(list, cut);
     if (!plain(shown) || typeof shown.evidence !== 'string' || typeof shown.verifyReceipt !== 'function')
       throw new TypeError('Invalid challenge dossier');
-    return { request: requestOf(list, shown.evidence, true), verify: shown.verifyReceipt,
-      evidenceBytes: Buffer.byteLength(shown.evidence, 'utf8') };
+    return { request: requestOf(list, shown.evidence, dossier !== null), verify: shown.verifyReceipt,
+      evidenceBytes: Buffer.byteLength(shown.evidence, 'utf8'), cited: citedList(shown.cited) };
   };
-  const batches = [];
-  let pending = [];
+  // D103 (F5 part 2): the bytes of a batch's request with every result its items cite whole, and those results in
+  // recorded order with the bytes showing each whole adds over its cut and declared view (`[{ id, added }]`). The
+  // whole-window run's are counted, never rendered (`batchEvidence.measure`: the window's evidence and each result's own
+  // gain, so no batch's evidence is built to size it); a dossier is rendered and dropped, as it always was.
+  const measured = (list) => {
+    if (dossier === null && batchEvidence !== null) {
+      const counted = batchEvidence.measure(list);
+      if (!plain(counted) || !Number.isSafeInteger(counted.evidenceBytes) || counted.evidenceBytes < 0)
+        throw new TypeError('Invalid challenge dossier');
+      return { bytes: reviewInputBytes(requestOf(list, '', false)) + counted.evidenceBytes, cited: citedList(counted.cited) };
+    }
+    const shown = view(list);
+    return { bytes: reviewInputBytes(shown.request), cited: shown.cited ?? [] };
+  };
+  const measuredOf = (entries) => {
+    try { return measured(entries.map((x) => x.item)); }
+    catch (error) {
+      if (error instanceof TypeError && error.message === 'Invalid challenge dossier') throw error;
+      throw new TypeError('Invalid challenge candidate serialization');
+    }
+  };
+  // D103 (F5 part 2): how one item alone is shown — `cut` null (every result it cites whole) or the Set shown by the skim
+  // and declared `result_over_bound` — and its request's bytes. One item over the bound whole starts from the least it
+  // can show: each cited result whose whole view is the longer cut, the rest (a whole view no longer than its cut one)
+  // whole; then, in recorded order, each cut one that still fits is shown whole. Over the bound even so, it is oversize.
+  // Bytes are added, never rendered: each result is one block. A list of two items or more is counted whole.
+  const planned = (list, whole = measured(list)) => {
+    if (whole.bytes <= maxInputBytes || list.length > 1 || !whole.cited.length) return { cut: null, bytes: whole.bytes };
+    const cut = new Set(whole.cited.filter((result) => result.added > 0).map((result) => result.id));
+    let bytes = whole.bytes;
+    for (const result of whole.cited) if (cut.has(result.id)) bytes -= result.added;
+    if (bytes <= maxInputBytes) for (const result of whole.cited) {
+      if (cut.has(result.id) && bytes + result.added <= maxInputBytes) { cut.delete(result.id); bytes += result.added; }
+    }
+    return { cut, bytes };
+  };
+  // A planned batch as it is sent, rendered once. Its request is checked against the bound again: one over it is
+  // oversize — never clipped and never sent (fails closed; the counted bytes are exact, so this does not happen).
+  const sent = (entries, cut = null) => {
+    const shown = view(entries.map((x) => x.item), cut);
+    return { entries, ...shown, ...(fits(shown.request) ? {} : { oversize: true }) };
+  };
+  // D103 (the review of D2, M): the cited results a count names whose whole view is the longer (`added` > 0) and that are
+  // shown whole (not in `cut`), by event id.
+  const wholeIds = (cited, cut) => cited.filter((result) => result.added > 0 && !cut?.has(result.id))
+    .map((result) => result.id);
+  // D103 (the review of D2, M): each item's own plan alone (`planned`), counted once per item: `gains` when it shows whole
+  // a cited result the skim cuts (then it joins a planned batch where it fits with that result whole, `absorbAlone`, and
+  // is asked alone only where it fits in none); `oversize` when it does not fit even so.
+  const owns = new Map();
+  const own = (entry) => {
+    if (!owns.has(entry.index)) {
+      const whole = measuredOf([entry]);
+      const plan = planned([entry.item], whole);
+      owns.set(entry.index, { ...plan, cited: whole.cited, oversize: plan.bytes > maxInputBytes,
+        gains: plan.cut !== null && wholeIds(whole.cited, plan.cut).length > 0 });
+    }
+    return owns.get(entry.index);
+  };
+  // D103 (the review of D2, M): a batch being formed — its entries, the results it shows by the skim and declares (`cut`,
+  // null for none), the results the skim cuts that it shows whole (`whole`), and whether another item may join it
+  // (`shares`: not an item asked alone for the result it shows whole). A batch starts with one item as its own plan shows
+  // it. An item joins when the batch with it fits the bound with every cited result whole. Or else it joins with each
+  // result that an item there cuts alone shown cut and declared, when that fits, it is not an item asked alone, and no
+  // item there shows whole a result another cuts. So an item is asked in a batch of its own for that reason only when its
+  // plan shows a cited result whole; one that shows none whole alone joins the batch being formed whenever these bounds
+  // let it. It can still be alone where nothing after it fits beside it, or where it cuts a result the batch shows whole.
+  const start = (entry) => {
+    const plan = own(entry);
+    return plan.oversize ? null
+      : { entries: [entry], cut: plan.cut, whole: new Set(wholeIds(plan.cited, plan.cut)), shares: !plan.gains };
+  };
+  const join = (batch, entry) => {
+    const entries = [...batch.entries, entry];
+    const counted = measuredOf(entries);
+    if (counted.bytes <= maxInputBytes)
+      return { entries, cut: null, whole: new Set(wholeIds(counted.cited, null)), shares: true };
+    if (!batch.shares) return null;
+    const plan = own(entry);
+    if (plan.oversize || plan.gains) return null;
+    return keeping(batch, entries, counted, plan);
+  };
+  // D103: the batch `entries` (a batch and one item more, counted whole as `counted`) with each result shown as the
+  // batch and the item's own plan (`plan`) show it: the results either cuts shown cut and declared, and every result
+  // either shows whole still whole. Null when one shows whole a result the other cuts, or when it is over the bound.
+  const keeping = (batch, entries, counted, plan) => {
+    const cut = new Set([...(batch.cut ?? []), ...(plan.cut ?? [])]);
+    const mine = wholeIds(plan.cited, plan.cut);
+    if (mine.some((id) => cut.has(id)) || [...(plan.cut ?? [])].some((id) => batch.whole.has(id))) return null;
+    const bytes = counted.bytes - counted.cited.reduce((n, result) => n + (cut.has(result.id) ? result.added : 0), 0);
+    return bytes <= maxInputBytes ? { entries, cut, whole: new Set([...batch.whole, ...mine]), shares: true } : null;
+  };
+  // The owner's answer of 2026-10-17 ("all as suggested", answer 5: "same evidence, fewer calls"): once every batch is
+  // planned by the rule above, each item asked alone for a cited result it shows whole joins the first batch, in the
+  // planned order, that holds it within the item and byte bounds with every result that batch and that item show whole
+  // still whole, and every result either cuts still cut and declared (`keeping`); its place in the batch is its place in
+  // the fixed order. One that fits in no batch is still asked alone. Each item is shown each result it cites as alone,
+  // or as its batch showed it, so its evidence does not change. The pass only takes batches away, so planned calls never
+  // rise against the rule above. `formed` holds the planned batches, unrendered, and the invalid and oversize ones.
+  const absorbAlone = (formed) => {
+    const out = [...formed];
+    const open = (batch) => batch !== null && !batch.invalid && !batch.oversize;
+    for (let at = 0; at < out.length; at++) {
+      if (!open(out[at]) || out[at].shares !== false || out[at].entries.length !== 1) continue;
+      const [entry] = out[at].entries;
+      const plan = own(entry);
+      for (let k = 0; k < out.length; k++) {
+        if (k === at || !open(out[k]) || out[k].entries.length >= CHALLENGE_PROFILE.maxItemsPerBatch) continue;
+        const entries = [...out[k].entries, entry].sort((a, b) => a.rank - b.rank);
+        const joined = keeping(out[k], entries, measuredOf(entries), plan);
+        if (joined === null) continue;
+        out[k] = joined;
+        out.splice(at, 1);
+        at--;
+        break;
+      }
+    }
+    return out;
+  };
+  // The batches as planned, unrendered (`{ entries, cut, whole, shares }`), and the invalid and oversize ones; each
+  // planned batch is rendered once, after the owner's answer's pass (`absorbAlone`).
+  const formed = [];
+  // D103 (the review of D2's fix, M): the batch being formed holds the place its first item has in the fixed order (`at`),
+  // so an item asked alone after it never closes it.
+  let pending = null;
   const flush = () => {
-    if (pending.length) batches.push({ entries: pending, ...view(pending.map((x) => x.item)) });
-    pending = [];
+    if (pending !== null) { const { at, ...batch } = pending; formed[at] = batch; }
+    pending = null;
   };
   // `rank` is this fixed order, kept so a re-ask batch is filled in the same order (W3d-1).
   const sorted = items.map((item, index) => ({ item, index }))
@@ -1355,26 +1521,30 @@ export async function challengeItems({ items, judge, evidence, verifyReceipt,
   for (const entry of sorted) {
     // An output-planning bound, not a claim that a response cannot truncate. Every candidate
     // still receives three slots; omitted/truncated votes remain explicitly incomplete.
-    if (pending.length === CHALLENGE_PROFILE.maxItemsPerBatch) flush();
+    if (pending?.entries.length === CHALLENGE_PROFILE.maxItemsPerBatch) flush();
     // M33 C2 repair: and a claim-class item without code's verbatim words (`shownCandidate` null) — never shown the
     // narrative model's string as the claim: its slots are checks that did not run (fail closed).
     if (!plain(entry.item.candidate) || shownCandidate(entry.item) === null) {
-      flush(); batches.push({ entries: [entry], request: null, invalid: true }); continue;
+      flush(); formed.push({ entries: [entry], request: null, invalid: true }); continue;
     }
     // Never clip the source or candidate to manufacture a fitting request. An oversized
     // singleton keeps its three explicit unchecked slots, and later fitting batches may run.
-    let request;
-    try { ({ request } = view([...pending, entry].map((x) => x.item))); }
-    catch (error) {
-      if (error instanceof TypeError && error.message === 'Invalid challenge dossier') throw error;
-      throw new TypeError('Invalid challenge candidate serialization');
-    }
-    if (!fits(request) && pending.length) flush();
-    const single = view([entry.item]);
-    if (!fits(single.request)) batches.push({ entries: [entry], ...single, oversize: true });
-    else pending.push(entry);
+    const joined = pending === null ? null : join(pending, entry);
+    if (joined !== null) { pending = { ...joined, at: pending.at }; continue; }
+    // D103: an item that cannot join is planned alone. Shown with a cited result whole that its skim cuts, it is asked
+    // alone, and (the review of D2's fix, M) the batch being formed stays open, so the items after it that show none
+    // whole still share it, as before part 2, wherever such an item sits in the order. The owner's answer of 2026-10-17:
+    // such an item may join a batch where it fits with the same evidence (`absorbAlone`, below).
+    const plan = own(entry);
+    if (!plan.oversize && plan.gains) { formed.push(start(entry)); continue; }
+    flush();
+    // Over the bound even so, it is oversize (never rendered or sent); otherwise it starts the next batch.
+    if (plan.oversize) formed.push({ entries: [entry], request: null, oversize: true });
+    else { pending = { ...start(entry), at: formed.length }; formed.push(null); }
   }
   flush();
+  const batches = absorbAlone(formed).map((batch) => (batch.invalid || batch.oversize ? batch
+    : sent(batch.entries, batch.cut)));
   const queue = batches.flatMap((batch, batchIndex) => Array.from({ length: passes },
     (_, pass) => ({ batch, batchIndex, pass: pass + 1 })));
   let next = 0, attemptedCalls = 0, budgetExhausted = false, quotaStopped = false;
@@ -1432,15 +1602,29 @@ export async function challengeItems({ items, judge, evidence, verifyReceipt,
   const reasks = [];
   for (const [slot, entries] of unvoted.entries()) {
     let left = entries.sort((a, b) => a.rank - b.rank);
-    for (let part = 1; left.length; part++) {
-      const chosen = [];
+    const parts = [];
+    while (left.length) {
+      let forming = null;
       for (const entry of left) {
-        if (chosen.length === CHALLENGE_PROFILE.maxItemsPerBatch) break;
-        if (fits(view([...chosen, entry].map((x) => x.item)).request)) chosen.push(entry);
+        if (forming?.entries.length === CHALLENGE_PROFILE.maxItemsPerBatch) break;
+        // D103: items join by the first ask's start and join rule (one item alone may show a cited result cut and declared;
+        // the review of D2: and one that shows none whole alone shares the batch, its cut results declared). A re-ask holds
+        // only the slots a reply skipped, and an item that cannot join is passed over, not closing the batch, so its
+        // batches are not always the first ask's.
+        const joined = forming === null ? start(entry) : join(forming, entry);
+        if (joined !== null) forming = joined;
       }
-      if (!chosen.length) break;
-      reasks.push({ pass: slot + 1, part, entries: chosen, ...view(chosen.map((x) => x.item)) });
-      left = left.filter((entry) => !chosen.includes(entry));
+      if (forming === null) break;
+      const taken = new Set(forming.entries);
+      parts.push(forming);
+      left = left.filter((entry) => !taken.has(entry));
+    }
+    // The owner's answer of 2026-10-17: an item asked alone joins a re-ask batch where it fits, as in the first ask.
+    for (const [index, planned] of absorbAlone(parts).entries()) {
+      const batch = sent(planned.entries, planned.cut);
+      // Fails closed: a re-ask over its bound is never sent; its slots keep the first reply's reason.
+      if (batch.oversize) break;
+      reasks.push({ pass: slot + 1, part: index + 1, ...batch });
     }
   }
   let nextReask = 0, reaskCalls = 0, reaskedSlots = 0;

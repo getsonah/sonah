@@ -26,6 +26,12 @@ export const STYLE_RULES = Object.freeze({
 export const STYLE_STRUCTURE_ERRORS = Object.freeze(['kind_missing', 'kind_unknown', 'kind_unused', 'fixture_missing',
   'fixture_unused', 'fixture_not_text', 'allow_unknown', 'allow_unused', 'tables_missing']);
 
+/** Where Sonah's word tables are: every module of these folders that declares `STYLE_KINDS`, and these named modules.
+ *  The style linter and the audit of absence sentences (absence-audit.test.js) read the same set. */
+export const WORD_MODULE_DIRS = Object.freeze(['packages/render', 'packages/cli/src', 'packages/github']);
+export const WORD_MODULES_NAMED = Object.freeze(['packages/evidence/src/review.js', 'packages/evidence/src/code-report.js',
+  'packages/evidence/src/ledger.js']);
+
 /** S1: at most 20 words a sentence, counted the STE way (`steWordCount`). */
 export const MAX_SENTENCE_WORDS = 20;
 /** S12: at most 6 sentences a paragraph (one table entry). */

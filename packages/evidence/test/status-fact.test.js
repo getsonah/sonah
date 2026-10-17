@@ -212,7 +212,8 @@ test('status fact: a window states the sentence once under each uncovered result
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   // The challengers' system prompt says it once.
   assert.equal(challenge.challengeSystem().split(STATUS_FACT_TEXT.challengeSystem).length, 2);
   // M33 integration moved it once more (`sonah.challenge/15`): one version above every branch's own (C-05 integration).
@@ -245,7 +246,8 @@ test('status fact: a window states the sentence once under each uncovered result
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
 });
 
 // ---- supports: admissible only through a grounded quote of the result's own output -----------------------------------

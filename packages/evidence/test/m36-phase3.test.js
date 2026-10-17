@@ -62,7 +62,8 @@ const honest = (request) => ({ votes: request.challenge.items.map((item) => ({ k
 test('M36 phase 3: one next version of each instrument whose bytes moved; the run profile states the evidence bounds', () => {
   // D69 moved each once more: the net view's declines reverted, the harness home folders, the recorder's cwd (D69_VERSIONS).
   // D71 (S2) moved it once more (sonah.windows/8): the reviewer brief as the checklist (D71_BRIEF_VERSIONS).
-  assert.equal(WINDOWING_VERSION, 'sonah.windows/8');
+  // D103 moved it once more (sonah.windows/9): the skim keyed by the recording's harness, in bytes a side.
+  assert.equal(WINDOWING_VERSION, 'sonah.windows/9');
   // D71 (S2) moved it once more (sonah.narrative/27), and D71 (S3) once more (sonah.narrative/28): the new channels (D71_CHANNELS_VERSIONS).
   // The D80 integration moved it once more (sonah.narrative/31): a stopped call's outcome line (D80_VERSIONS).
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
@@ -70,8 +71,9 @@ test('M36 phase 3: one next version of each instrument whose bytes moved; the ru
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
-  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words. D103 moved it once
+  // more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes at each end.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   // D71 (S2) moved it once more (sonah.challenge/24), and D71 (S3) once more (sonah.challenge/25): the new channels (D71_CHANNELS_VERSIONS).
   // The column fix moved it once more (sonah.challenge/30): who decided a decision (FIX_COLUMN_VERSIONS).
   // W1 B moved it once more (sonah.challenge/31): the file form of the forbidden-edit proposition and its note.
@@ -93,10 +95,13 @@ test('M36 phase 3: one next version of each instrument whose bytes moved; the ru
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   // D71 (S2) moved it once more (sonah.challenge-dossier/9), and D71 (S3) once more (sonah.challenge-dossier/10): the new channels (D71_CHANNELS_VERSIONS).
   // The D80 integration moved it once more (sonah.challenge-dossier/13): the same outcome line (D80_VERSIONS).
-  assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/13');
+  // D103 moved it once more (sonah.challenge-dossier/14): a Claude Code recording's results are cut at 12,000 bytes a side.
+  // D103 moved it once more (sonah.challenge-dossier/15): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/15');
   // D71 (S2) moved it once more (sonah.code-review/24): the reviewer brief as the checklist (D71_BRIEF_VERSIONS).
   assert.equal(CODE_REVIEW_VERSION, 'sonah.code-review/24');
   assert.deepEqual({ ...EVIDENCE_REQUEST_LIMITS }, { reasks: 1, items: 8, bytes: 72_000, parsed: 256 });
@@ -285,7 +290,7 @@ test('M36 F: over the cap, the human messages are kept, then the most recent fai
   const big = (id, n) => [run(id, `run ${id}`), out(`${id}-r`, id, tokens(n, 'f'), { result: 'failed', exitCode: 1 })];
   const s = session([ask('I1', 'go'), ...big('A1', 80_000), said('C1', tokens(80_000)), ...big('A2', 80_000),
     said('C2', tokens(80_000)), ask('I2', 'next', { turn: 'T2' }), said('C3', tokens(50_000), { turn: 'T2' })]);
-  const settings = { workTokens: 200_000, carriedTokens: 150_000, trimTokens: 2_000 };
+  const settings = { workTokens: 200_000, carriedTokens: 150_000, skimSideBytes: 3_600 };
   const windows = planWindows(s, settings);
   assert.equal(windows.length, 2);
   const context = carriedContext(s, windows.at(-1), settings);
@@ -294,7 +299,7 @@ test('M36 F: over the cap, the human messages are kept, then the most recent fai
   assert.deepEqual(context.failures.map(({ result }) => result.id), ['A1-r', 'A2-r']);
   assert.deepEqual(context.thoughts.map((e) => e.id), ['C2']);
   assert.equal(context.thoughtsLeftOut, 1);
-  const tight = carriedContext(s, windows.at(-1), { workTokens: 200_000, carriedTokens: 2_100, trimTokens: 2_000 });
+  const tight = carriedContext(s, windows.at(-1), { workTokens: 200_000, carriedTokens: 2_100, skimSideBytes: 3_600 });
   assert.deepEqual(tight.failures.map(({ result }) => result.id), ['A2-r'], 'the most recent failure');
   assert.equal(tight.failuresLeftOut, 1);
   assert.deepEqual(tight.thoughts, []);
@@ -409,7 +414,9 @@ test('M36 F, c6: a helper\'s proven failures ride back beside its report, labell
 
 // ---- (Q) the deterministic evidence re-ask ------------------------------------------------------------------------------
 
-const LONG = Array.from({ length: 400 }, (_, k) => `line ${k + 1}: ${k === 199 ? 'not ok 7 - FAILS in the middle'
+// D103: a Claude Code recording's result is cut past twice its 12,000-byte skim: 1,000 lines of about 53 bytes, its
+// failure in the cut middle (lines 227–774 are not shown).
+const LONG = Array.from({ length: 1_000 }, (_, k) => `line ${k + 1}: ${k === 499 ? 'not ok 7 - FAILS in the middle'
   : `ok ${'.'.repeat(40)}`}`).join('\n');
 /** One window: the human's ask, a long test output whose failure is in its cut middle, a claim. */
 function middle() {
@@ -439,7 +446,7 @@ test('M36 Q: an omitted middle is served by one re-ask — the window\'s request
   assert.ok(!built.sourceMap['A1-r'].some((source) => source.text.includes('FAILS in the middle')), 'the middle is cut');
   const seen = [];
   const report = await runReview({ session: s, pr: null, reviewScope: 'session-only', plan,
-    judge: asking([{ eventId: alias, fromLine: 199, throughLine: 201 }], { seen }) });
+    judge: asking([{ eventId: alias, fromLine: 499, throughLine: 501 }], { seen }) });
   const reask = seen.find((request) => request.label === 'narrative:w1:evidence');
   assert.ok(reask, 'one re-ask, labelled for its window');
   // D71 (S2): the re-ask is the window re-rendered with the served lines AT THEIR EVENT, between its
@@ -448,8 +455,8 @@ test('M36 Q: an omitted middle is served by one re-ask — the window\'s request
   assert.ok(!reask.prompt.includes('## Evidence served on your request'));
   assert.ok(reask.prompt.endsWith(NOW_ANSWER_AGAIN.join('\n')));
   const OK = `ok ${'.'.repeat(40)}`;
-  const label = '  lines 199–201 of this output, served after the first answer asked for them:';
-  assert.ok(reask.prompt.includes(`${label}\n<<<\nline 199: ${OK}\nline 200: not ok 7 - FAILS in the middle\nline 201: ${OK}\n>>>`));
+  const label = '  lines 499–501 of this output, served after the first answer asked for them:';
+  assert.ok(reask.prompt.includes(`${label}\n<<<\nline 499: ${OK}\nline 500: not ok 7 - FAILS in the middle\nline 501: ${OK}\n>>>`));
   const at = reask.prompt.indexOf(label);
   assert.ok(at > reask.prompt.indexOf(`[${alias}] RESULT of ${built.aliases.of('A1')}`), 'at its event');
   assert.ok(reask.prompt.slice(0, at).includes('  omitted: lines ') && reask.prompt.slice(at).includes('  omitted: lines '),
@@ -461,9 +468,9 @@ test('M36 Q: an omitted middle is served by one re-ask — the window\'s request
     && !request.prompt.includes(NOW_ANSWER_AGAIN[1])));
   // The run record, counts only.
   assert.deepEqual(report.windowResults[0].evidence, { requested: 1, items: 1, served: 1,
-    servedBytes: Buffer.byteLength(`line 199: ${OK}\nline 200: not ok 7 - FAILS in the middle\nline 201: ${OK}`),
+    servedBytes: Buffer.byteLength(`line 499: ${OK}\nline 500: not ok 7 - FAILS in the middle\nline 501: ${OK}`),
     refused: Object.fromEntries(EVIDENCE_REQUEST_REFUSALS.map((r) => [r, 0])), reasks: 1, reaskFailed: false, kept: 'merged',
-    fromFirst: 0 });
+    fromFirst: 0, firstStood: 0, nestedDropped: 0 });
   assert.equal(report.counts.evidenceRequests.served, 1);
   assert.equal(report.counts.evidenceRequests.kept, 1);
   assert.equal(Object.hasOwn(report.windowResults[0].narrative, 'evidenceRequests'), false, 'never kept in the record');
@@ -485,13 +492,13 @@ test('M36 Q: the same requested set gives the same re-ask bytes, whatever its or
     await runReview({ session: s, pr: null, reviewScope: 'session-only', plan, judge: asking(requests, { seen }) });
     return seen.find((request) => request.label === 'narrative:w1:evidence').prompt;
   };
-  const a = await reaskOf([{ eventId: alias, fromLine: 150, throughLine: 160 }, { eventId: alias, fromLine: 199, throughLine: 201 }]);
-  const b = await reaskOf([{ eventId: alias, fromLine: 199, throughLine: 201 }, { eventId: alias, fromLine: 150, throughLine: 160 },
-    { eventId: alias, fromLine: 199, throughLine: 201 }]);
+  const a = await reaskOf([{ eventId: alias, fromLine: 450, throughLine: 460 }, { eventId: alias, fromLine: 499, throughLine: 501 }]);
+  const b = await reaskOf([{ eventId: alias, fromLine: 499, throughLine: 501 }, { eventId: alias, fromLine: 450, throughLine: 460 },
+    { eventId: alias, fromLine: 499, throughLine: 501 }]);
   assert.equal(a, b);
   // Overlapping ranges are one range.
-  const c = await reaskOf([{ eventId: alias, fromLine: 150, throughLine: 155 }, { eventId: alias, fromLine: 154, throughLine: 160 },
-    { eventId: alias, fromLine: 199, throughLine: 201 }]);
+  const c = await reaskOf([{ eventId: alias, fromLine: 450, throughLine: 455 }, { eventId: alias, fromLine: 454, throughLine: 460 },
+    { eventId: alias, fromLine: 499, throughLine: 501 }]);
   assert.equal(c, a);
 });
 
@@ -508,7 +515,7 @@ test('M36 Q: every item not served is said by a closed reason; nothing served as
     { eventId: a('A2-r'), fromLine: 1, throughLine: 1 },              // withheld
     { eventId: a('A3-r'), fromLine: 1, throughLine: 1 },              // shown whole
     { eventId: a('C1'), fromLine: 1, throughLine: 1 },                // a statement: not requestable
-    { eventId: a('A1-r'), fromLine: 900, throughLine: 901 },          // out of range
+    { eventId: a('A1-r'), fromLine: 1_900, throughLine: 1_901 },      // out of range
     { eventId: a('A1-r'), fromLine: 1, throughLine: 2 },              // shown (the head)
     { eventId: a('A1-r'), fromLine: 0, throughLine: 2 },              // malformed
     'not an item',                                                    // malformed
@@ -519,7 +526,7 @@ test('M36 Q: every item not served is said by a closed reason; nothing served as
     not_requestable: 1, withheld: 1, out_of_range: 1, shown: 2 });
   assert.equal(report.windowResults[0].evidence.reasks, 0);
   // Items past the bound are refused by count; refusals are listed when something is served.
-  const many = Array.from({ length: 12 }, (_, k) => ({ eventId: a('A1-r'), fromLine: 100 + 10 * k, throughLine: 100 + 10 * k }));
+  const many = Array.from({ length: 12 }, (_, k) => ({ eventId: a('A1-r'), fromLine: 400 + 10 * k, throughLine: 400 + 10 * k }));
   const seen2 = [];
   const report2 = await runReview({ session: s, pr: null, reviewScope: 'session-only', plan,
     judge: asking([...many, { eventId: a('A2-r'), fromLine: 1, throughLine: 1 }], { seen: seen2, claims: [] }) });
@@ -564,7 +571,7 @@ test('M36 Q: a re-ask that fails leaves the first answer standing; a saved revie
   const failing = await runReview({ session: s, pr: null, reviewScope: 'session-only', plan, judge: async (request) => {
     if (request.challenge) return honest(request);
     if (request.label.endsWith(':evidence')) throw Object.assign(new Error('x'), { code: 'model_unavailable' });
-    return narrativeOf({ evidenceRequests: [{ eventId: alias, fromLine: 199, throughLine: 200 }],
+    return narrativeOf({ evidenceRequests: [{ eventId: alias, fromLine: 499, throughLine: 500 }],
       claims: [{ ...CLAIM, contradictedBy: null }] });
   } });
   assert.equal(failing.windowResults[0].failure, null, 'the re-ask\'s failure is not the window\'s');
@@ -573,7 +580,7 @@ test('M36 Q: a re-ask that fails leaves the first answer standing; a saved revie
   // D60: answers memoized by exact request bytes; the second review makes no call and reports the same.
   const store = new Map();
   let live = 0;
-  const inner = asking([{ eventId: alias, fromLine: 199, throughLine: 201 }]);
+  const inner = asking([{ eventId: alias, fromLine: 499, throughLine: 501 }]);
   const memo = async (request) => {
     const key = JSON.stringify([request.system, request.prompt]);
     const n = (memo.count.get(key) ?? 0) + 1;
@@ -604,13 +611,13 @@ test('M36 Q: what is served is capped by the window\'s remaining work budget', a
   plan.windows[0].workBudget = plan.windows[0].workBytes + 60;
   const seen = [];
   const report = await runReview({ session: s, pr: null, reviewScope: 'session-only', plan,
-    judge: asking([{ eventId: alias, fromLine: 199, throughLine: 201 }], { seen, claims: [] }) });
+    judge: asking([{ eventId: alias, fromLine: 499, throughLine: 501 }], { seen, claims: [] }) });
   const { evidence } = report.windowResults[0];
   assert.equal(evidence.served, 1);
   assert.ok(evidence.servedBytes <= 60);
   assert.equal(evidence.refused.over_budget, 1);
   const reask = seen.find((request) => request.label.endsWith(':evidence'));
-  assert.ok(reask.prompt.includes('lines 200–201 of its output (over_budget)'));
+  assert.ok(reask.prompt.includes('lines 500–501 of its output (over_budget)'));
 });
 
 test('M36 Q: a request member that is not a list is one malformed request — counted, read apart, never a failed answer', async () => {
@@ -633,9 +640,9 @@ test('M36 Q: at most one re-ask a window — requests in the re-ask\'s answer ar
   const plan = planWindowRequests({ session: s, reviewScope: 'session-only' });
   const alias = plan.requests[0].aliases.of('A1-r');
   const seen = [];
-  const again = [{ eventId: alias, fromLine: 150, throughLine: 151 }, { eventId: alias, fromLine: 160, throughLine: 161 }];
+  const again = [{ eventId: alias, fromLine: 450, throughLine: 451 }, { eventId: alias, fromLine: 460, throughLine: 461 }];
   const report = await runReview({ session: s, pr: null, reviewScope: 'session-only', plan,
-    judge: asking([{ eventId: alias, fromLine: 199, throughLine: 201 }], { seen,
+    judge: asking([{ eventId: alias, fromLine: 499, throughLine: 501 }], { seen,
       reask: () => narrativeOf({ claims: [CLAIM], evidenceRequests: again }) }) });
   assert.equal(seen.filter((request) => request.label.includes(':evidence')).length, 1);
   const { evidence } = report.windowResults[0];
@@ -653,7 +660,7 @@ test('M36 Q: the lean profile\'s dossier is shown what the re-ask served; the re
   const decision = { dimension: 'suite', chosen: 'ran it', value: null, valueReceipt: null, actions: [plan.requests[0].aliases.of('A1')],
     stated: null, constrainedBy: null };
   await runReview({ session: s, pr: null, reviewScope: 'session-only', plan, speedProfile: 'm33-lean',
-    judge: asking([{ eventId: alias, fromLine: 199, throughLine: 201 }], { seen,
+    judge: asking([{ eventId: alias, fromLine: 499, throughLine: 501 }], { seen,
       reask: () => narrativeOf({ decisions: [decision] }) }) });
   const single = seen.filter((request) => request.challenge && request.label.includes(':t1'));
   // D71 (S2): the dossier shows the served lines at their event too.

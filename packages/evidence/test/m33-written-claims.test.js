@@ -422,7 +422,8 @@ test('M33 written: the narrative asks for writtenClaims apart from claims, and t
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   const schema = prompt.NARRATIVE_SCHEMA;
   // Asked for, never required: an answer without it proposes no written statement and stays storable (D60).
   assert.deepEqual(schema.required, ['decisions', 'pivots', 'claims', 'requirements']);
@@ -457,7 +458,8 @@ test('M33 written: the narrative asks for writtenClaims apart from claims, and t
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
   // The combined route closes the same schema.
   // M33 brittleness M4 moved it (`sonah.code-review/14`): a session finding's disclosure is its own proposition.
   // M33 integration moved it once more (`sonah.code-review/15`): one version above M33 forbidden-edit repair's /14.
@@ -528,7 +530,8 @@ test('M33 written: the challenger is told how to judge a written statement', asy
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   const seen = [];
   await review(narrativeOf({ writtenClaims: [written(STATUS, TESTS)] }), upholdAll, { seen });
   const flat = challengeRequests(seen)[0].system.replace(/\s+/g, ' ');

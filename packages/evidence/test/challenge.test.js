@@ -111,7 +111,8 @@ test('R3 challenge profile 3 defines source-region roles and fresh receipt prove
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(result.profile.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(result.profile.version, 'sonah.challenge/45');
   for (const request of requests) {
     assert.deepEqual(request.schema.properties.votes.items.properties.receipts.items.properties.role.enum,
       ['instruction', 'commentary', 'action', 'observation', 'code']);
@@ -556,7 +557,8 @@ test('R3 one full batch handles sixteen candidates in three fresh keyed passes',
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(result.profile.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(result.profile.version, 'sonah.challenge/45');
   assert.equal(result.attemptedCalls, 3);
   assert.equal(result.plannedBatches, 1);
   assert.equal(result.plannedItems, 16);

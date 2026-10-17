@@ -753,7 +753,8 @@ test('M33 H repair: the narrative prompt asks for a relay as the passing agent\'
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   // M35 windowing moved it once more (`sonah.narrative/21`): windows, carried context, trims, aliases (C-07).
   // M36 phase 1 moved it once more (`sonah.narrative/22`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.narrative/23`): the window format (D68; FORMAT_VERSIONS).
@@ -768,7 +769,8 @@ test('M33 H repair: the narrative prompt asks for a relay as the passing agent\'
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
   const session = agentSession();
   // D71 (S2): a combined request keeps the relay rule in its task (D71 i); a session-only review says it in its brief.
   const { SONAH_SESSION_REVIEW_AGENT } = await import('../src/review-agent.js');
@@ -828,7 +830,8 @@ test('M33 H repair: the challengers judge a relay as the passing agent\'s own cl
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   // M35 windowing moved it once more (`sonah.challenge/18`): every evidence byte and a session-only candidate's aliases.
   // M36 phase 1 moved it once more (`sonah.challenge/19`): the evidence it carries (D68; RECORDED_FACTS_VERSIONS).
   // M36 phase 2 moved it once more (`sonah.challenge/20`): the window format (D68; FORMAT_VERSIONS).
@@ -856,7 +859,8 @@ test('M33 H repair: the challengers judge a relay as the passing agent\'s own cl
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/45');
   const system = flat(challenge.challengeSystem());
   for (const words of [RULE.challenge, RULE.challengeNotClaim]) assert.ok(system.includes(words), words);
   assert.ok(!system.includes(BEFORE_REPAIR.challenge));

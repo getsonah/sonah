@@ -460,6 +460,13 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     reasons: [], incomplete: false };
   meta.capture = capture;
   const reason = (name) => { if (!capture.reasons.includes(name)) capture.reasons.push(name); };
+  // D99 (F1 guard): every row of a shape this reader does not know is one unsupported row under the shape reason, as
+  // before, and is counted by its carrier (labels.js CODEX_SHAPE_CARRIERS) for the recorder census (`meta.shapeMisses`).
+  const shapeMisses = {};
+  const shapeMiss = (carrier) => {
+    capture.unsupported++; reason(REASON.shape);
+    shapeMisses[carrier] = (shapeMisses[carrier] ?? 0) + 1;
+  };
   let corrupt = 0;
   let sourceRows = 0;
   let unknownRows = 0;
@@ -974,16 +981,16 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
         // promotes none of its text; any other shape stays an unsupported row with its gap.
         if (turnAbortedBoundary(d.payload, raw))
           records.push({ kind: TURN_ABORTED.record, line, raw: null, markSource: TURN_ABORTED.markSource });
-        else { capture.unsupported++; reason(REASON.shape); }
+        else { shapeMiss('turn_aborted'); }
         continue;
       }
       if (!EVENT_NOTIFICATIONS.has(type)
         || type === 'item_completed' && !EVENT_ITEMS.has(d.payload?.item?.type)) {
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('event_msg');
       }
       if (type === 'item_completed' && !keysWithin(d.payload,
         ['type', 'item', 'completed_at_ms', 'started_at_ms', 'thread_id', 'turn_id'])) {
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('item_completed');
       }
       if (type === 'item_completed' && d.payload?.item?.type === 'McpToolCall') {
         const item = d.payload.item;
@@ -991,7 +998,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
           'status', 'duration', 'pluginId', 'readOnlyHint'])
           && keysWithin(item.result, ['content', 'isError', '_meta']);
         const unsafe = !shapeSafe || duplicateJsonKeys(raw);
-        if (unsafe) { capture.unsupported++; reason(REASON.shape); }
+        if (unsafe) { shapeMiss('mcp_tool_call'); }
         uiMcpItems.push({ line, threadId: d.payload.thread_id, item, unsafe, native });
       }
       if (type === 'item_completed' && isWebSearchItem(d.payload?.item)) {
@@ -1006,7 +1013,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       if (type === 'item_completed' && d.payload?.item?.type === 'FileChange') {
         const unsafe = duplicateJsonKeys(raw) || !keysWithin(d.payload,
           ['type', 'item', 'completed_at_ms', 'started_at_ms', 'thread_id', 'turn_id']);
-        if (unsafe) { capture.unsupported++; reason(REASON.shape); }
+        if (unsafe) { shapeMiss('file_change'); }
         uiFileChanges.push({ line, threadId: d.payload.thread_id, item: d.payload.item, unsafe, native });
       }
       if (type === 'item_completed' && d.payload?.item?.type === 'CommandExecution') {
@@ -1018,14 +1025,14 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
         // negative exit on a failed item is a sentinel), so an otherwise strict row's untyped
         // status is declared after the scan only if the item does not become that action.
         const deferUntyped = paginated && !duplicate && outerSafe && !typed;
-        if (duplicate || !outerSafe || !typed && !deferUntyped) { capture.unsupported++; reason(REASON.shape); }
+        if (duplicate || !outerSafe || !typed && !deferUntyped) { shapeMiss('command_execution'); }
         uiCommandExecutions.push({ line, threadId: d.payload.thread_id, item: d.payload.item,
           unsafe: duplicate || !outerSafe || !typed, deferUntyped, native });
       }
       if (type === 'patch_apply_end') {
         const unsafe = duplicateJsonKeys(raw) || !keysWithin(d.payload,
           ['type', 'call_id', 'success', 'status', 'changes']);
-        if (unsafe) { capture.unsupported++; reason(REASON.shape); }
+        if (unsafe) { shapeMiss('patch_apply_end'); }
         legacyPatchEnds.push({ line, item: { id: d.payload.call_id }, payload: d.payload, unsafe });
       }
       continue;
@@ -1043,7 +1050,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     }
     if (METADATA_ROWS.has(d.type)) continue;
     if (d.type !== 'response_item') {
-      unknownRows++; capture.unsupported++; reason(REASON.shape);
+      unknownRows++; shapeMiss('row_type');
       continue;
     }
     const p = d.payload ?? {};
@@ -1060,7 +1067,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       sourceRows++;
       if (duplicateJsonKeys(raw)) {
         labelled.push(labelOf(null, LABEL_BASIS.codexContext, { gap: LABEL_GAPS.unknownRow }));
-        capture.unsupported++; reason(REASON.shape); continue;
+        shapeMiss('inter_agent_message'); continue;
       }
       const agentLabel = agentMessageLabel(p.author);
       // M33 F: the recorded header, read exactly (inter-agent.js). A helper's plaintext final report is kept WHOLE,
@@ -1087,7 +1094,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       continue;
     }
     if (!['message', 'function_call', 'custom_tool_call', 'function_call_output', 'custom_tool_call_output'].includes(p.type)) {
-      unknownRows++; capture.unsupported++; reason(REASON.shape);
+      unknownRows++; shapeMiss('response_item');
       continue;
     }
     sourceRows++;
@@ -1097,7 +1104,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
         // Neither the role nor the content of a repeated-key row is trustworthy. Treat it
         // as an opaque turn boundary so later sidecars cannot reach across unknown dialogue.
         turn++;
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('message');
         continue;
       }
       if (p.role === 'user') turn++;
@@ -1108,7 +1115,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
         continue;
       }
       if (!['user','assistant'].includes(p.role)) {
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('message');
         continue;
       }
       if (p.role === 'assistant' && ['analysis','reasoning'].includes(p.channel)) continue;
@@ -1140,7 +1147,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       capture.calls++;
       const commandCallUnsafe = duplicateJsonKeys(raw);
       if (commandCallUnsafe) {
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('function_call');
         // C-02 M33 native-first: this row may be a wrapper or a direct call; its turn's
         // inventory cannot be proved complete, and none of its candidate IDs is a native action.
         if (paginated) statsOf(turnKey).inexact = true;
@@ -1286,7 +1293,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
       // C-02: a result ROW that repeats a key is not a serializer product. Neither its call_id,
       // its output nor any typed field is evidence; the call keeps its unmapped or unknown gap.
       if (!desc.wrapper && !desc.wait && duplicateJsonKeys(raw)) {
-        capture.unsupported++; reason(REASON.shape);
+        shapeMiss('function_call_output');
         if (desc.delegation) {
           const record = { kind: 'user', line, raw: { type: 'user', toolUseResult: undefined,
             message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: desc.id, content: '', is_error: false }] } } };
@@ -1429,7 +1436,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     const built = paginated && ui.native?.rowStrict && ownThread && ui.threadId === ownThread && !ui.unsafe
       && typeof id === 'string' && id && recordedItemIds.get(id) === 1 && !recordedCallIds.has(id)
       ? nativeWebSearch(ui) : null;
-    if (!built) { capture.unsupported++; reason(REASON.shape); continue; }
+    if (!built) { shapeMiss('web_search'); continue; }
     ui.native.slot.records.push(...built);
     nativeItems++;
   }
@@ -1604,7 +1611,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     if (emittedNative.has(ui)) continue;
     // An untyped status on a row that did not become a native action is the row-shape gap it is
     // in every other recording (declared here rather than at the row; see deferUntyped).
-    if (ui.deferUntyped) { capture.unsupported++; reason(REASON.shape); }
+    if (ui.deferUntyped) { shapeMiss('command_execution'); }
     // A typed user shell notification describes a human command, not missing agent work.
     if (ui.item?.source === 'user_shell' && !ui.unsafe) {
       if (exactOwner(ui)) unmatchedNative();
@@ -1771,7 +1778,8 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     childIdentity.nested === true ? LINEAGE_ROLES.helper : LINEAGE_ROLES.root)].map((value) => ({ uuid: null, value }));
   return { records: childRecording && (childBoundaryMissing || childHistoryInvalid)
     ? [] : ordered.filter((record) => !discardedResults.has(record)),
-    meta: { ...meta, sourceIdentity: childIdentity }, corrupt, unknownSchema };
+    meta: { ...meta, sourceIdentity: childIdentity, ...(Object.keys(shapeMisses).length ? { shapeMisses } : {}) },
+    corrupt, unknownSchema };
 }
 
 /**

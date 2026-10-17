@@ -56,6 +56,12 @@ const ROLE_FOR_KIND = Object.freeze({
 // own text, inside a ref and quotable. So a ref is never split again here by what its text says.
 const REDACTION_ARTIFACT = /‹(?:redacted|dropped)(?::[^›\n]+)?›|(?:^|\n)\[… \d+ line\(s\) dropped: [A-Za-z][A-Za-z -]*[A-Za-z] …\](?=\n|$)/g;
 
+/** The receipt roles an event's kind holds (C-05 role/event compatibility): an ACTION's command or its code, and one
+ *  role for every other kind; none for a kind no receipt cites. The one rule `verifyReceipt` and the grounding tests
+ *  (ledger.js GROUNDING_CAUSES) read. */
+export const eventRoles = (event) => (event?.kind === 'invocation' ? ['action', 'code']
+  : typeof event?.kind === 'string' && Object.hasOwn(ROLE_FOR_KIND, event.kind) ? [ROLE_FOR_KIND[event.kind]] : []);
+
 // A one-or-two letter quote would ground anywhere.
 export const MIN_QUOTE_CHARS = 4;
 
@@ -69,8 +75,121 @@ export const NATIVE_RESULT_SOURCES = Object.freeze(['native', 'hook']);
  * asks this, so a parsed outcome can only ever lead to `unknown`.
  */
 export function recordedFailure(observation) {
-  return (['failed', 'cancelled'].includes(observation?.result) && NATIVE_RESULT_SOURCES.includes(observation.sourceOfResult))
+  return (UNDONE_RESULTS.includes(observation?.result) && NATIVE_RESULT_SOURCES.includes(observation.sourceOfResult))
     || (Number.isFinite(observation?.exitCode) && observation.exitCode !== 0);
+}
+
+// ---- D98 (F9): one effect rule, which every reader that asks "could this have changed something" reads ---------------
+
+/** The C-02 results (`actionOutcomeOf`) that say an action did not run to a success: it failed, or was cancelled. */
+const UNDONE_RESULTS = Object.freeze(['failed', 'cancelled']);
+/** The operations that change a file. */
+const FILE_WRITES = Object.freeze(['write', 'edit', 'delete']);
+/**
+ * Owner decisions D79 and D80: the members of the recorder's closed denial vocabulary (Claude Code's `toolDenialKind`, as
+ * the slicer types it on the call: `recorded.denial`; redact `RECORDED_FACTS.denial`) that mean the call was refused
+ * before it ran — by the human, a permission rule or the auto-mode classifier. The two kinds left out, `interrupted`
+ * and `cancelled` (`STOPPED_DENIALS`), mean the call started and was stopped. One list (D98): the story
+ * re-exports it, and test/d79-refusals.test.js holds it against the redactor's vocabulary.
+ */
+export const REFUSED_DENIALS = Object.freeze(['user-rejected', 'permission-rule', 'automode-blocked',
+  'automode-unavailable', 'automode-parsing-error']);
+/** Owner decision D80 (2026-10-12): the members of the recorder's closed denial vocabulary (`recorded.denial`; redact
+ *  `RECORDED_FACTS.denial`) that mean the call was stopped, not refused: it started and did not finish. Such a call
+ *  reads as "stopped before it finished" everywhere (ledger.js `STOPPED_WORDS`; ledger.js re-exports this list), never
+ *  as did-not-run. Every other kind of the vocabulary is a REFUSED_DENIALS kind. */
+export const STOPPED_DENIALS = Object.freeze(['interrupted', 'cancelled']);
+/**
+ * D98 (F9): what the record proves about an action's effect on files, a closed set (`effectOf`):
+ *   none     the recorder typed the call, or the call this event was parsed from (`shellWriteOf`), as refused before it
+ *            ran (a REFUSED_DENIALS kind, on a call with a recorded result): it changed nothing;
+ *   undone   a direct write, edit or delete whose one typed result says it failed or was cancelled, on a call the
+ *            recorder did not type as stopped: it left nothing;
+ *   landed   proved to have succeeded (C-02 `actionOutcomeOf` is `succeeded`), on a call the recorder did not type as
+ *            stopped;
+ *   unknown  anything else: a failed or stopped command, a call typed as stopped (a STOPPED_DENIALS kind on it or on the
+ *            call it was parsed from, D80) whatever result it carries, an untyped refusal, a call with no result, a write
+ *            parsed from a command that did not succeed by a typed zero exit.
+ */
+export const ACTION_EFFECTS = Object.freeze(['none', 'undone', 'landed', 'unknown']);
+const [NO_EFFECT, UNDONE_EFFECT, LANDED_EFFECT, UNKNOWN_EFFECT] = ACTION_EFFECTS;
+/** The effects after which an action could have changed a file: every reader that lists, counts or compares a change
+ *  reads only these. An action of any other effect changed nothing, and its attempt stays visible where it is listed. */
+export const CHANGING_EFFECTS = Object.freeze([LANDED_EFFECT, UNKNOWN_EFFECT]);
+
+/**
+ * C-02's outcome of an action (`Session.actionOutcomeOf`), over a lookup of its terminal results (`receipts(id)`, in
+ * recorded order). Direct writes need one uniquely attributable native/hook terminal status before their semantic
+ * result can prove adoption. A second terminal row, or a parsed-text success, establishes no write outcome. A
+ * shell-inferred write can be proved only by one eligible simple direct-write command with a typed zero exit. A failed
+ * or compound process can have written before failing, or failed before succeeding elsewhere. One implementation:
+ * `actionOutcomeOf` and `effectOf` both read it.
+ */
+function recordedOutcome(event, receipts) {
+  if (!event) return 'none';
+  if (!event.shellWriteOf) {
+    const rows = receipts(event.id);
+    if (!FILE_WRITES.includes(event.operation)) return rows[0]?.result ?? 'none';
+    if (!rows.length) return 'none';
+    return rows.length === 1 && rows[0].terminalStatusProven === true
+      && NATIVE_RESULT_SOURCES.includes(rows[0].sourceOfResult)
+      && ['succeeded', ...UNDONE_RESULTS].includes(rows[0].result) ? rows[0].result : 'unknown';
+  }
+  if (event.shellWriteStatusEligible !== true) return 'unknown';
+  const rows = receipts(event.shellWriteOf);
+  // A command's semantic result may be parsed from output even when its numeric exit came from a typed native sidecar.
+  // `terminalStatusProven` plus exit=0 proves that exit; requiring `sourceOfResult` here would discard legitimate typed
+  // command-status evidence.
+  return rows.length === 1 && rows[0].terminalStatusProven === true
+    && rows[0].exitCode === 0 && rows[0].result === 'succeeded' ? 'succeeded' : 'unknown';
+}
+
+/**
+ * D98 (F9): one index over a session's events (`session.events`, and `session.event` where it has one), and the effect
+ * of each of its events (ACTION_EFFECTS) read from it: `read(event, { until })`. `until` (D59), a sequence, reads only
+ * the results recorded at or before it. Typed fields only: the call's recorded denial, the parent link the slicer writes
+ * (`shellWriteOf`; any future parent link goes here, never into a reader) and the C-02 outcome. Pure; never throws.
+ * Build one per pass over a session; `effectOf` builds one for a single question.
+ */
+export function effectReader(session) {
+  const events = Array.isArray(session?.events) ? session.events : [];
+  const byId = new Map();
+  const terminals = new Map();
+  for (const event of events) {
+    if (event === null || typeof event !== 'object') continue;
+    if (typeof event.id === 'string') byId.set(event.id, event);
+    if (event.kind !== 'observation' || event.phase !== 'terminal' || typeof event.invocation !== 'string') continue;
+    if (!terminals.has(event.invocation)) terminals.set(event.invocation, []);
+    terminals.get(event.invocation).push(event);
+  }
+  const lookup = typeof session?.event === 'function' ? (id) => session.event(id) ?? byId.get(id) ?? null
+    : (id) => byId.get(id) ?? null;
+  return (event, { until = null } = {}) => {
+    if (event === null || typeof event !== 'object' || event.kind !== 'invocation') return UNKNOWN_EFFECT;
+    const bounded = Number.isSafeInteger(until);
+    const receipts = (id) => (terminals.get(id) ?? []).filter((row) => !bounded
+      || (Number.isSafeInteger(row.sequence) && row.sequence <= until));
+    const parent = typeof event.shellWriteOf === 'string' && event.shellWriteOf ? event.shellWriteOf : null;
+    const call = parent === null ? event : lookup(parent);
+    if (call === null || typeof call !== 'object') return UNKNOWN_EFFECT;
+    // Refused before it ran, as the record types it once a result of the call is recorded (as ledger.js
+    // `actionOutcome` reads it: did-not-run). Effect never grows along a parent link: a write parsed from such a call is
+    // `none` too.
+    if (REFUSED_DENIALS.includes(call.recorded?.denial) && receipts(call.id).length > 0) return NO_EFFECT;
+    // D80: a call typed as stopped started and did not finish, whatever result it carries (ledger.js `resultOutcome`
+    // reads the denial before the result: no-terminal-status, "stopped before it finished"). Whether it, or a write
+    // parsed from it, changed anything is not recorded: never `undone`, never `landed`.
+    if (STOPPED_DENIALS.includes(call.recorded?.denial)) return UNKNOWN_EFFECT;
+    const outcome = recordedOutcome(event, receipts);
+    if (outcome === 'succeeded') return LANDED_EFFECT;
+    return parent === null && FILE_WRITES.includes(event.operation) && UNDONE_RESULTS.includes(outcome)
+      ? UNDONE_EFFECT : UNKNOWN_EFFECT;
+  };
+}
+
+/** D98 (F9): the effect (ACTION_EFFECTS) the record proves for one event of `session` (`effectReader`). */
+export function effectOf(session, event, options = {}) {
+  return effectReader(session)(event, options);
 }
 
 /**
@@ -195,26 +314,14 @@ export class Session {
    * before succeeding elsewhere. */
   actionOutcomeOf(action) {
     const event = typeof action === 'string' ? this.event(action) : action;
-    if (!event) return 'none';
-    if (!event.shellWriteOf) {
-      if (!['write', 'edit', 'delete'].includes(event.operation)) return this.outcomeOf(event.id);
-      const receipts = this.events.filter((row) => row.kind === 'observation'
-        && row.phase === 'terminal' && row.invocation === event.id);
-      if (!receipts.length) return 'none';
-      return receipts.length === 1 && receipts[0].terminalStatusProven === true
-        && ['native', 'hook'].includes(receipts[0].sourceOfResult)
-        && ['succeeded', 'failed', 'cancelled'].includes(receipts[0].result)
-        ? receipts[0].result : 'unknown';
-    }
-    if (event.shellWriteStatusEligible !== true) return 'unknown';
-    const receipts = this.events.filter((row) => row.kind === 'observation'
-      && row.phase === 'terminal' && row.invocation === event.shellWriteOf);
-    // A command's semantic result may be parsed from output even when its numeric exit came
-    // from a typed native sidecar. `terminalStatusProven` plus exit=0 proves that exit; requiring
-    // `sourceOfResult` here would discard legitimate typed command-status evidence.
-    return receipts.length === 1 && receipts[0].terminalStatusProven === true
-      && receipts[0].exitCode === 0 && receipts[0].result === 'succeeded'
-      ? 'succeeded' : 'unknown';
+    return recordedOutcome(event, (id) => this.events.filter((row) => row.kind === 'observation'
+      && row.phase === 'terminal' && row.invocation === id));
+  }
+
+  /** D98 (F9): what the record proves about an action's effect on files (`effectOf`, ACTION_EFFECTS). Every reader that
+   *  asks whether an action could have changed something reads this one rule. */
+  effectOf(action, options = {}) {
+    return effectOf(this, typeof action === 'string' ? this.event(action) : action, options);
   }
 
   /**
@@ -515,9 +622,7 @@ function citableSources(session, receipt) {
   if (!event) return null; // cites an event that does not exist
 
   // Role/event compatibility: a commentary quote cannot be sold as an instruction.
-  const natural = ROLE_FOR_KIND[event.kind];
-  const allowed = event.kind === 'invocation' ? ['action', 'code'] : [natural];
-  if (!allowed.includes(receipt.role)) return null;
+  if (!eventRoles(event).includes(receipt.role)) return null;
 
   // Session identity: a quote cannot borrow matching text from another session.
   if (receipt.sessionKey != null && receipt.sessionKey !== session.sessionKey) return null;

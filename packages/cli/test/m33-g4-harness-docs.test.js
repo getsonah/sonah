@@ -109,7 +109,7 @@ async function run(t, session, answer) {
 const CAUSES = [...WITHHELD_REJECTION_CAUSES, ...WRITTEN_WITHHELD_CAUSES];
 
 test('M33 G4 the harness summary schema is /11 (the { n, atLeast } cause shape, written statements, parts; /6 M33 J; /7 M33 K; /8 M33 C; /9 M36 evidence requests; /10 D70 context window; /11 D71 no status)', () => {
-  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/17');
+  assert.equal(harness.HARNESS_SUMMARY_SCHEMA, 'sonah.session-review-harness/19');
 });
 
 test('M33 G4 the harness summary counts withheld proposals by closed cause and claims shown as findings', async (t) => {
@@ -124,7 +124,7 @@ test('M33 G4 the harness summary counts withheld proposals by closed cause and c
       decisions: [decision(['A1', 'child:worker:A1'], `${SENTINEL}_MIXED`), decision(['A1'], `${SENTINEL}_PARENT`)],
       claims: [{ text: `${SENTINEL}_CLAIM`, stated, contradictedBy: null },
         { text: `${SENTINEL}_CLAIM`, stated, contradictedBy: against }] }));
-  assert.equal(summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(summary.schema, 'sonah.session-review-harness/19');
   assert.equal(summary.state, 'finished');
   assert.equal(summary.decisions, 1, 'the single-actor decision is published');
   assert.equal(summary.findings, 1, 'premise: the contradicted claim is a finding');
@@ -159,7 +159,7 @@ test('M33 C the harness summary counts promises by status — counts only; a pla
     : { ...EMPTY, claims: [{ text: `${SENTINEL}_DONE`, stated: done, contradictedBy: null },
       { text: `${SENTINEL}_PLAN`, stated: plan, contradictedBy: null }] }));
   // D71 (S2): /12 — `incomplete` is counted too, and the checklist's counts ride beside them.
-  assert.equal(summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(summary.schema, 'sonah.session-review-harness/19');
   assert.deepEqual(summary.promisesByStatus, { open: 1, verified: 0, incomplete: 0 });
   assert.deepEqual(Object.keys(summary.withheld.causes).sort(), [...CAUSES].sort(), 'no claim cause');
   assert.equal(summary.withheld.proposals, 0);
@@ -171,4 +171,9 @@ test('M33 G4 a summary with nothing withheld still carries the closed zero count
   assert.equal(summary.promisesAsFindings, 0);
   assert.deepEqual(summary.withheld, { proposals: 0, unsettled: 0,
     causes: Object.fromEntries(CAUSES.map((cause) => [cause, 0])) });
+  // /9 (M36 phase 3): the evidence requests' counts, zeros when no window asked; /18 (D102): with what the merge rule did.
+  const { refused, ...counts } = summary.evidenceRequests;
+  assert.deepEqual(counts, { windows: 0, requested: 0, items: 0, served: 0, servedBytes: 0, reasks: 0, kept: 0,
+    fromFirst: 0, firstStood: 0, nestedDropped: 0, reaskFailed: 0 });
+  assert.ok(Object.values(refused).every((n) => n === 0));
 });

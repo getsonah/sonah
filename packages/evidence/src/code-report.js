@@ -45,20 +45,23 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + 'where code found it again.',
   base: (commit) => (commit ? `The change runs from the commit where the session started (${commit}) to the files as `
     + 'they are now.'
-    : 'Git history does not show where the session started, so the change is the edits that the session recorded.'),
+    // D100 (the audit of absence sentences): git can fail to say for any reason, so said as what Sonah could not read.
+    : 'Sonah could not read from git where the session started, so the change is the edits that the session recorded.'),
   files: (shown, total, others) => `The change covers ${plural(total, 'file')}, and the code review saw the change of `
     + `${shown}.${others ? ` The others: ${others}.` : ''}`,
   // A report of an earlier code step, whose list held the files the session read beside those of the change.
   earlierFiles: (shown, total, others) => `The code review saw ${shown} of ${plural(total, 'file')} that the session `
     + `changed or read, or that differ from its start.${others ? ` The others: ${others}.` : ''}`,
-  noRoot: 'The code review did not run. The working directory that the recording names is not on this computer, so '
-    + 'Sonah read no file.',
+  // D100: the recording may name none, or one Sonah cannot read here: said as what Sonah could not read.
+  noRoot: 'The code review did not run. Sonah could not read a working directory of the session on this computer, so it '
+    + 'read no file.',
   // Why the step did not run, by its gap (the report's `gaps[].code`), when it names one.
   notRun: Object.freeze({ code_step_backend: 'The code review did not run. It needs Claude Code and its read-only tools, '
     + 'and this review used another backend.' }),
   // The session changed no file: the code review had no change to read, and no reader says every file was shown.
-  noFile: 'The code review had no change to review. No file in the working directory differs from where the session '
-    + 'started.',
+  // D100: with no git base the change is the recorded edits only: said as what Sonah found.
+  noFile: 'The code review had no change to review. Sonah found no file in the working directory that differs from where '
+    + 'the session started.',
   coverage: Object.freeze({ partial: 'The code review did not finish every part of its work. The list below shows '
     + 'what it did not cover.', missing: 'The code review did not finish. The list below shows what it did not cover.' }),
   besideGroup: 'Beside what the session review found', restGroup: 'Other problems that the code review found',
@@ -123,8 +126,13 @@ export const CODE_REPORT_WORDS = Object.freeze({
     dossier_key_unknown: 'it names a key that the session review does not hold',
     ask_key_required: 'an ask not met must name the ask',
     claim_key_required: 'a claim that the code contradicts must name the claim or decision',
-    quote_ungrounded: 'a quote is not word for word in the file that it names',
-    anchor_off_quote: 'the lines that it names do not hold the code that it quotes',
+    // D100 (the audit of absence sentences): the cause also stands for a receipt of the wrong shape or length, and for
+    // a session quote, so it says what Sonah did not find, never what a file lacks.
+    quote_ungrounded: 'Sonah found nothing in what it names that matches the quote word for word',
+    // D100: two checks give this cause (code-pass.js `groundCodeReceipt`, a quote that is not on the lines that it
+    // names; `groundFinding`, lines that no code step of the trace quotes), and the words name both.
+    anchor_off_quote: 'the lines that it names do not hold the code that it quotes, or no step of its trace quotes '
+      + 'the lines that it is about',
     file_not_readable: 'it names a file that Sonah could not read', out_of_scope: 'it is not about lines that the change '
       + 'touched',
     shape: 'the check\'s answer broke its contract',

@@ -322,7 +322,8 @@ test('M33 H1 refreeze: the challenger judges the contradiction and the resolutio
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   assert.equal(challenge.CHALLENGE_PROFILE.requiredSurvivals, 2, 'vote semantics unchanged');
   const seen = [];
   await review([claim(RESOLVED)], upholdAll, { seen });
@@ -370,7 +371,8 @@ test('M33 H1 refreeze: the challenger judges the contradiction and the resolutio
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(reviewRun.runProfile('session-only').challenge.version, 'sonah.challenge/45');
 });
 
 // ---- a human instruction between the claim and the resolution ---------------------------------------

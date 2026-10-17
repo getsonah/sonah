@@ -9,6 +9,7 @@ import { REPORT_ITEM_KINDS, REPORT_ITEM_TYPES, RESULT_OUTCOME_WORDS, RESULT_OUTC
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
 import { PERMISSION_DENIALS } from '../../evidence/src/triage.js';
+import { effectOf } from '../../evidence/src/session.js';
 import * as words from '../report-words.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { renderSessionPage } from '../session-page.js';
@@ -97,7 +98,7 @@ test('D97 (5): header line D counts from structure; line E stands exactly when t
   const a = modelOf(triagedReport);
   // The claims the claims list shows as not checked, with the one resting on a check that did not finish (its row says
   // so in its own words; Sonah did not check it either), and the written statements it shows as not checked.
-  assert.deepEqual(a.header.didNotCheck.phrases, ['1 ask', '1 ask that only the agent says is done', '3 claims',
+  assert.deepEqual(a.header.didNotCheck.phrases, ['1 ask', '1 ask that rests only on the agent\'s words', '3 claims',
     '1 statement that the agent wrote into a file']);
   assert.equal(a.header.noCode, null);
   // What Sonah could not check names the same counts in the same terms: one term for one thing (S4).
@@ -347,7 +348,7 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     '“Add rate limiting to the public API.”',
     'Claude Code recording · 1 file changed, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
-    'Sonah did not check: 1 ask · 1 ask that only the agent says is done',
+    'Sonah did not check: 1 ask · 1 ask that rests only on the agent\'s words',
     'Must act 2 · Must know 0 · Good to know 0 (folded) · Your prompt: 4 done, 1 partly done, 1 not checked',
     'Must act: ask 2 · fix the Retry-After unit',
     'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
@@ -357,14 +358,16 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     'Sonah checked only the marked parts of your message.',
     'ask 2 · Partly done · See item 1.',
     'ask 5 · Not checked · Sonah did not find, word for word, the evidence that the session review cited for it.',
-    'ask 6 · Done · Only the agent says so. Sonah found no recorded result or change for it.',
+    'ask 6 · Done · The session review cited only the agent\'s words for it. Sonah found no recorded result or change '
+      + 'for it.',
     // Item 1 is the partly done ask: an ask comes before a bug in a tier (D97).
     '1 Fix: The agent did only part of ask 2.',
     '“100 requests per minute per API key”',
     'Where: ask 2 · src/middleware/rateLimit.ts',
   ].join('\n'));
-  // 7 + 12 + 15 + 16 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 19 + 10 + 7 + 5 words, line by line, by `wc -w`.
-  assert.equal(firstScreenWords(model), 217);
+  // 7 + 12 + 15 + 16 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 24 + 10 + 7 + 5 words, line by line, by `wc -w` (D100: the line
+  // of an ask that rests only on the agent's words says what the session review cited, five words more).
+  assert.equal(firstScreenWords(model), 222);
   assert.equal(firstScreenExcerptLines(model), 0);
   // The bug, item 2, carries the code review's impact and action, and one excerpt of at most 8 lines.
   assert.equal(itemVisibleText(model.tiers.must_act[1]), ['2 Fix: Retry-After gives the wait in milliseconds',
@@ -456,8 +459,9 @@ test('D97 (19): the D93 split — a done ask with a code finding is counted apar
   const notChecked = model.prompt.asks[4];
   const question = itemsOf(model).find((item) => item.kind === 'code_question' && textOf(item.what.parts)
     === 'Is a 429 body needed?');
+  // D101: the ask the quote gate lowered says which test refused its quote, with code's numbers.
   assert.deepEqual(notChecked.lines.map(textOf), [
-    'Sonah did not find, word for word, the evidence that the session review cited for it.',
+    'The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.',
     'Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the '
       + 'section What Sonah could not check.',
     `The code review asks you about this ask. See item ${question.n}.`]);
@@ -481,7 +485,10 @@ test('D97 (21): line C names every result class; the runs map every class and fo
   assert.deepEqual(Object.keys(words.REPORT_OUTCOME_WORDS).sort(), Object.keys(RESULT_OUTCOME_WORDS).sort());
   for (const cls of Object.keys(RESULT_OUTCOME_WORDS))
     assert.deepEqual(Object.keys(words.REPORT_OUTCOME_WORDS[cls]).sort(), Object.keys(RESULT_OUTCOME_WORDS[cls]).sort(), cls);
-  assert.deepEqual(Object.keys(words.REPORT_RESULT_PARTS).sort(), [...RESULT_OUTCOME_CLASSES].sort());
+  // D99 (F1 guard): and one part for a run stopped before it finished, said apart from one with no recorded end. D100:
+  // and one for a run Sonah read no result of, said as what Sonah found.
+  assert.deepEqual(Object.keys(words.REPORT_RESULT_PARTS).sort(), [...RESULT_OUTCOME_CLASSES, 'stopped', 'no-result']
+    .sort());
   assert.equal(words.REPORT_OUTCOME_WORDS['output-no-status'].unread().includes('no result recorded'), false);
   assert.equal(words.REPORT_OUTCOME_WORDS['output-no-status'].output().includes('no result recorded'), false);
   // One command of each of the seven classes after the last edit.
@@ -511,9 +518,9 @@ test('D97 (21): line C names every result class; the runs map every class and fo
   // recording cannot tell failed from refused: "the agent ran 6 commands. Results: … 1 failed or the harness refused it"
   // counted as run a command that may never have run.
   assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 5 commands.',
-    'Results: 1 exited with code 0, 1 completed with no exit code recorded, 1 failed, 1 has no recorded end, 1 has no '
-      + 'exit code recorded.',
-    'After the agent\'s last edit, 1 command failed or the harness refused it. The recording does not say which.',
+    'Results: 1 exited with code 0, 1 completed with no exit code that Sonah read, 1 failed, 1 has no recorded end, for 1 '
+      + 'Sonah read no exit code.',
+    'After the agent\'s last edit, 1 command failed or the harness refused it. The recorder does not mark which.',
     'The recording shows 1 command after the agent\'s last edit as refused before it ran.']);
   // Before the last edit, an exit-0 run is counted apart from what a cap cuts.
   const many = sessionBuilder();
@@ -587,7 +594,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/1 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/3 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -759,10 +766,11 @@ test('D97: count-dependent words agree with their count', () => {
   assert.equal(W.REPORT_ITEM_WORDS.checkedAgainst(1, ['AGENTS.md']),
     'The session review checked it against 1 earlier message and the project instruction file AGENTS.md. None of them '
       + 'covered it.');
+  // D100 (review of A1c): what Sonah could read, never what the recording does not show; D98: a stopped direct write too.
   assert.equal(W.REPORT_DID_WORDS.unconfirmed(1),
-    'The recording does not show whether 1 write of a failed or stopped command happened.');
+    'Sonah could not read whether 1 write happened: it stopped before it finished, or its command failed or stopped.');
   assert.equal(W.REPORT_DID_WORDS.unconfirmed(2),
-    'The recording does not show whether 2 writes of failed or stopped commands happened.');
+    'Sonah could not read whether 2 writes happened: each stopped before it finished, or its command failed or stopped.');
   assert.equal(W.REPORT_DID_WORDS.runsCut(1, 2, '2 failed'), 'Sonah shows 1 run. It does not show 2 more: 2 failed.');
   assert.equal(W.REPORT_NOT_CHECKED_WORDS.encryptedMessages(1, false),
     'The recorder encrypted 1 message between agents, so Sonah cannot show it.');
@@ -979,7 +987,7 @@ test('R5: the header and the Runs list read one last edit (a write that landed),
   refusedCommand(c, 'X2', 'ruff format src', 'permission-rule');
   const t = c.session();
   const refusedModel = reportModel(t, windowed(t), {});
-  assert.deepEqual(refusedModel.header.runs, ['The agent ran no command after its last edit.',
+  assert.deepEqual(refusedModel.header.runs, ['Sonah found no command that the agent ran after its last edit.',
     'The recording shows 2 commands after the agent\'s last edit as refused before they ran.']);
   assert.deepEqual(refusedModel.did.runs.neverRan, ['src/parse.js'], 'a refused command ran after no edit');
   // A command the recording cannot tell failed from refused may have run: never counted as run, and never "ran no
@@ -998,14 +1006,50 @@ test('R5: the header and the Runs list read one last edit (a write that landed),
   const v = u.session();
   const unclearModel = reportModel(v, windowed(v), {});
   assert.deepEqual(unclearModel.header.runs, ['After the agent\'s last edit, 1 command failed or the harness refused '
-    + 'it. The recording does not say which.']);
+    + 'it. The recorder does not mark which.']);
   assert.deepEqual(unclearModel.did.runs.neverRan, [], 'it may have run after the edit');
   // A file edited before such a command keeps no "never ran"; a file edited after it, with nothing after, does.
   u.change('W2', 'src/util.js', { after: 'export const id = (x) => x;\n' });
   const x = u.session();
   const later = reportModel(x, windowed(x), {});
-  assert.deepEqual(later.header.runs, ['The agent ran no command after its last edit.']);
+  assert.deepEqual(later.header.runs, ['Sonah found no command that the agent ran after its last edit.']);
   assert.deepEqual(later.did.runs.neverRan, ['src/util.js']);
+});
+
+test('D98: the header and the Runs list read a write\'s last edit by the one effect rule', () => {
+  // One reading per recorder fact: a write is the last edit exactly when evidence session.js `effectOf` says it could
+  // have changed its file (landed or unknown), as the story, the code step and the adapter's gaps read it.
+  const windowed = (session) => ({ windowResults: [{ windowIndex: 0, eventIds: session.events.map((e) => e.id),
+    failure: null }] });
+  /** A write, then the tests, then an edit of the same file whose own typed end is `end` (a result, or a denial). */
+  const after = ({ result = 'failed', denial = null, exitCode }) => {
+    const b = sessionBuilder();
+    b.ask('I1', 'Fix the parser and run the tests.');
+    b.change('W1', 'src/parse.js', { after: 'export const parse = () => [];\n' });
+    b.run('R1', 'npm test', 'succeeded', 'ok');
+    b.change('W2', 'src/parse.js', { operation: 'edit', before: 'export', after: 'export', priorState: 'edit-text',
+      result });
+    if (exitCode !== undefined) b.events.find((e) => e.id === 'W2-r').exitCode = exitCode;
+    if (denial !== null) b.events.find((e) => e.id === 'W2').recorded = { denial };
+    const s = b.session();
+    return { effect: effectOf(s, s.event('W2')), model: reportModel(s, windowed(s), {}) };
+  };
+  const ranAfter = ['After its last edit, the agent ran 1 command.', 'Results: 1 exited with code 0.'];
+  const ranNone = ['Sonah found no command that the agent ran after its last edit.'];
+  // An edit typed cancelled, with no exit code, left nothing: the tests still ran after the last edit.
+  const cancelled = after({ result: 'cancelled', exitCode: null });
+  assert.equal(cancelled.effect, 'undone');
+  assert.deepEqual([cancelled.model.header.runs, cancelled.model.did.runs.neverRan], [ranAfter, []]);
+  // An edit the recorder typed as stopped (D80) may have changed the file, whatever its result says: no command ran
+  // after it.
+  const stopped = after({ denial: 'interrupted', exitCode: null });
+  assert.equal(stopped.effect, 'unknown');
+  assert.deepEqual([stopped.model.header.runs, stopped.model.did.runs.neverRan], [ranNone, ['src/parse.js']]);
+  // A denial kind outside the recorder's closed vocabulary is never read as refused: an edit with a typed success under
+  // one landed.
+  const unknownKind = after({ result: 'succeeded', denial: 'SYNTHETIC_E9_KIND', exitCode: null });
+  assert.equal(unknownKind.effect, 'landed');
+  assert.deepEqual([unknownKind.model.header.runs, unknownKind.model.did.runs.neverRan], [ranNone, ['src/parse.js']]);
 });
 
 test('The header says nothing of a last edit when no write landed', () => {
@@ -1096,7 +1140,7 @@ test('R15: a refusal names who refused only when the recording types it; user-re
     failures: [{ eventId: 'X1-r', action: 'X1', outcome: 'failed-or-refused', form: 'untyped', tool: 'Bash',
       handling: 'passed-over' }] }, {});
   assert.equal(textOf(one(untyped, 'failure_passed_over').what.parts), 'A Bash call failed, or was refused before it ran. '
-    + 'The recording does not say which. The agent did not act on it or tell you.');
+    + 'The recorder does not mark which. The agent did not act on it or tell you.');
 });
 
 test('R17: a list cut to N says how many it left out, and a lone hidden entry is shown, never "and 1 more"', () => {
@@ -1133,7 +1177,7 @@ test('R17: a list cut to N says how many it left out, and a lone hidden entry is
 
 test('R17: the header, the Runs fold and What Sonah could not check count commands in the same terms', () => {
   // s2: "16 commands" in the header, "17 runs" in the fold (a refused WebFetch); u06: "1 command has no recorded exit
-  // code" beside 15 runs that read "completed, no exit code recorded" (a proven end of another class).
+  // code" beside 15 runs that then read "completed, no exit code recorded" (a typed end of another class).
   const model = modelOf(triagedReport);
   assert.ok(model.header.size.includes(`${model.did.runs.commands} commands`));
   assert.equal(model.did.runs.commands + model.did.runs.others, model.did.runs.total);
@@ -1141,7 +1185,7 @@ test('R17: the header, the Runs fold and What Sonah could not check count comman
     + '· 7 claims)');
   assert.equal(words.REPORT_SECTION_WORDS.didCounted(5, 6, 0, 7), 'What the agent did (5 files · 6 commands · 7 claims)');
   const unknown = words.REPORT_CAUSE_WORDS.command_outcome_unknown({ n: 1 });
-  assert.equal(unknown, 'the recording does not show how 1 command ended, so Sonah cannot tell if it passed');
+  assert.equal(unknown, 'Sonah could not read whether or how 1 command ended, so it cannot tell if it passed');
   assert.doesNotMatch(unknown, /exit code/);
 });
 

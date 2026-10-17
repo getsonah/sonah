@@ -79,7 +79,9 @@ test('fourth review of the code step: one rule decides whose words a project fil
   // A helper's typed write counts as the agent's does (the review's surviving mutation M6), whatever the path's
   // spelling; an edit and a delete too; one the record proves cancelled does not.
   const entry = { id: 'P1', kind: 'project-instructions', path: 'sub/CLAUDE.md', childId: null };
-  const sessionOf = (event, outcome = 'succeeded') => ({ events: [event], actionOutcomeOf: () => outcome });
+  // D98 (F9): read by the one effect rule (session.js `effectOf`), from the change's own typed result.
+  const sessionOf = (event, outcome = 'succeeded') => ({ events: [event, { id: `${event.id}.r`, kind: 'observation',
+    phase: 'terminal', invocation: event.id, result: outcome, terminalStatusProven: true, sourceOfResult: 'native' }] });
   const change = (operation, path, extra = {}) => ({ id: 'W9', kind: 'invocation', operation, changes: [{ path }], ...extra });
   for (const event of [change('write', 'sub/CLAUDE.md', { childId: 'agent-helper' }), change('edit', './sub/../sub/CLAUDE.md'),
     change('delete', 'sub/CLAUDE.md', { childId: 'agent-helper' })])

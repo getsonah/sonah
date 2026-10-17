@@ -224,11 +224,14 @@ test('M34 labels: the route reads the slicer\'s labels, never tag names; the con
   // M34 labels (C-02 "Slice-time labels"; owner decision 2026-10-06): no reader decides from a list of tag names which
   // text of a record is a harness's. The tag lists and their span reader are gone; the element-shape helpers that remain
   // serve only the recorder's own element formats (a prompt command's elements, the legacy fallback's opening element,
-  // and — M34 labels review, F5 — the call id a task notification carries).
+  // and — M34 labels review, F5 — the call id a task notification carries). D98 (F1): and the one carrier rule of a task
+  // notification, which reads the recorder's kind field and never a tag name. D99 (F1 guard): and the origin keys a
+  // known recorder writes beside that kind, which the recorder census reads to log any other one.
   for (const name of ['EMBEDDED_CONTEXT_TAGS', 'contextElementSpans', 'SLASH_COMMAND_TAGS', 'slashCommandArgs',
     'LOCAL_COMMAND_OUTPUT_TAGS', 'isLocalCommandOutput', 'META_OPENINGS', 'CONTEXT_TAGS', 'HUMAN_REPLY_TAGS',
     'isHarnessContext', 'isHarnessContextSpans', 'humanReplyText']) assert.equal(context[name], undefined, name);
-  assert.deepEqual(Object.keys(context).sort(), ['RECORDER_COMMAND_ELEMENTS', 'isWhollyElements', 'recorderCommand',
+  assert.deepEqual(Object.keys(context).sort(), ['NOTIFICATION_ORIGIN_KEYS', 'RECORDER_COMMAND_ELEMENTS',
+    'TASK_NOTIFICATION_KIND', 'claudeNotificationCarrier', 'isWhollyElements', 'notificationOriginOf', 'recorderCommand',
     'recorderNotificationCallId', 'startsWithElement']);
 });
 

@@ -2,7 +2,7 @@
 // 2026-10-15: privacy is not a design constraint; the code step may see everything): what `sonah review` reads from
 // disk for the code step, by structure, before its first call.
 //
-// The snapshot (`sonah.code-snapshot/10`): the change under review, the review agent's starting map — the paths the
+// The snapshot (`sonah.code-snapshot/11`): the change under review, the review agent's starting map — the paths the
 // recorded session changed (evidence/src/code-pass.js `codeSnapshotPlan`), then every path that differs from the session's
 // start commit (git's own list, and the untracked files a recorded edit wrote or that changed after the session began),
 // each one's file now, its file at that commit and git's own patch of it. The start commit is the one the recording

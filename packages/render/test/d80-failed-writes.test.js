@@ -1,7 +1,7 @@
 // D80 (owner decision 2026-10-12), the first and fourth answers. (1) D79's "or failed" is narrowed: a write the slicer
 // parsed from a command (a heredoc's body, `shellWriteOf`) has no change row only when its command did not run; one
 // whose command failed keeps its row, never as done — named apart with its own closed words (its command failed, so
-// whether this write happened is not recorded) in the report .md, on the page and as the write's evidence outcome
+// Sonah could not read whether this write happened) in the report .md, on the page and as the write's evidence outcome
 // (ledger.js `actionOutcome`, the form `command-failed`). (2) One phrase for a stopped command: a call the recorder
 // typed with a stopped denial kind (`interrupted`, `cancelled`: ledger.js STOPPED_DENIALS) reads "stopped before it
 // finished" in the report .md, on the page and in the evidence alike — never failed, never did not run. Typed fields only.
@@ -18,6 +18,8 @@ import { REPORT_OUTCOME_WORDS, REPORT_DID_WORDS } from '../report-words.js';
 import { resultOutcome, actionOutcome, STOPPED_DENIALS, STOPPED_WORDS, RESULT_OUTCOME_WORDS }
   from '../../evidence/src/ledger.js';
 import { CHECKLIST_OUTCOME_WORDS } from '../../evidence/src/review.js';
+import { effectOf } from '../../evidence/src/session.js';
+import { codeSnapshotPlan } from '../../evidence/src/code-pass.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 import { checklistSession, checklistReport } from './session-page-checklist-fixture.js';
 
@@ -56,8 +58,9 @@ const unescape = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&
 const textOf = (html) => unescape(html.replace(/<style>[\s\S]*?<\/style>/, '').replace(/<\/?code>/g, '')
   .replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').replace(/ ([.,;:])/g, '$1');
 
-const FAILED_WORDS = 'its command failed, so whether this write happened is not recorded';
-const STOPPED_WRITE_WORDS = 'its command stopped before it finished, so whether this write happened is not recorded';
+const FAILED_WORDS = 'its command failed, so Sonah could not read whether this write happened';
+const STOPPED_WRITE_WORDS = 'its command stopped before it finished, so Sonah could not read whether this write '
+  + 'happened';
 
 /** One heredoc write of `src/a.js` by a command that ended as `end`, beside one plain Write of `NOTES.md`. */
 function heredocBy(end) {
@@ -80,9 +83,9 @@ test('D80 the words: one phrase for a stopped call, and one for a write its fail
     assert.equal(words['command-failed'], `no terminal status recorded (${FAILED_WORDS})`);
     assert.equal(words['command-stopped'], `no terminal status recorded (${STOPPED_WRITE_WORDS})`);
     assert.equal(REPORT_OUTCOME_WORDS['no-terminal-status']['command-failed'](),
-      'its command failed, so the recording does not show whether this write happened');
+      'its command failed, so Sonah could not read whether this write happened');
     assert.equal(REPORT_OUTCOME_WORDS['no-terminal-status']['command-stopped'](),
-      'its command stopped, so the recording does not show whether this write happened');
+      'its command stopped, so Sonah could not read whether this write happened');
   });
 
 test('D80 facts and report .md: a heredoc whose command failed keeps its row, named apart, never as done', () => {
@@ -137,7 +140,7 @@ test('D80 an interrupted and a cancelled denial read the same, stopped before it
           story.includes(REPORT_DID_WORDS.unconfirmed(1)), /failed, exit code|did not run: refused/.test(story)],
         page: [/<li id="run-1"><code>[^<]*<\/code> · stopped before it finished<\/li>/.test(page),
           // The write parsed from the command is its last recorded edit, after the command itself.
-          t.includes('The agent ran no command after its last edit.'),
+          t.includes('Sonah found no command that the agent ran after its last edit.'),
           t.includes(REPORT_DID_WORDS.unconfirmed(1)), /failed, exit code|did not run: refused/.test(page)],
         evidence: [resultOutcome(session, result), actionOutcome(session, session.event('H1-w1')).form,
           REPORT_OUTCOME_WORDS[resultOutcome(session, result).class][resultOutcome(session, result).form]()],
@@ -165,16 +168,17 @@ test('D80 page: the header and the runs count failed, refused and stopped comman
     const s = b.session();
     const html = renderSessionPage(s, reportOf(s));
     const t = textOf(html);
-    assert.ok(t.includes('After its last edit, the agent ran 3 commands. Results: 1 failed, 2 have no recorded end. '
-      + 'The recording shows 1 command after the agent\'s last edit as refused before it ran.'), t);
+    // D99 (F1 guard): a stopped or cancelled command has a recorded end: it is said as stopped, never "no recorded end".
+    assert.ok(t.includes('After its last edit, the agent ran 3 commands. Results: 1 failed, 2 stopped before they '
+      + 'finished. The recording shows 1 command after the agent\'s last edit as refused before it ran.'), t);
     assert.match(html, /<code>npm test<\/code> · failed, exit code 1<\/li>/);
     assert.match(html, /<code>rm -rf build<\/code> · did not run: refused<\/li>/);
     assert.match(html, /<code>npm run watch<\/code> · stopped before it finished<\/li>/);
     assert.match(html, /<code>npm run long<\/code> · stopped before it finished<\/li>/);
     // The report .md: the same header and the same runs, each kind apart.
     const story = renderReportMarkdown(s, reportOf(s));
-    assert.ok(story.includes('After its last edit, the agent ran 3 commands. Results: 1 failed, 2 have no recorded end. '
-      + 'The recording shows 1 command after the agent\'s last edit as refused before it ran.'), story);
+    assert.ok(story.includes('After its last edit, the agent ran 3 commands. Results: 1 failed, 2 stopped before they '
+      + 'finished. The recording shows 1 command after the agent\'s last edit as refused before it ran.'), story);
     for (const line of ['`npm test` · failed, exit code 1', '`rm -rf build` · did not run: refused',
       '`npm run watch` · stopped before it finished', '`npm run long` · stopped before it finished'])
       assert.ok(story.includes(line), line);
@@ -195,3 +199,37 @@ test('D80 page: a failure row of a stopped call reads stopped before it finished
       assert.equal(item.includes('did not run'), false, kind);
     }
   });
+
+test('D98 (review of A1a): a direct write the recorder typed as stopped is listed apart, never as a changed file', () => {
+  // The one effect rule reads a call typed with a stopped denial kind as `unknown`, whatever its result says (D98), and
+  // the code step names its path among the writes of unknown outcome. The story, the page and the report .md list it
+  // apart, as they list a write its failed or stopped command may not have made: never "1 file changed".
+  for (const kind of STOPPED_DENIALS) {
+    const b = sessionBuilder();
+    b.ask('I1', 'Write the notes.');
+    b.change('W1', 'NOTES.md', { after: 'hello world\n', result: 'failed' });
+    b.events.find((e) => e.id === 'W1').recorded = { denial: kind };
+    const session = b.session();
+    assert.equal(effectOf(session, session.event('W1')), 'unknown', kind);
+    assert.deepEqual(codeSnapshotPlan(session).map((entry) => entry.path), ['NOTES.md'], kind);
+    const facts = storyFacts(session, reportOf(session));
+    assert.deepEqual(facts.whole.unconfirmed.map((row) => [row.event.id, row.path, row.unconfirmed]),
+      [['W1', 'NOTES.md', 'stopped']], kind);
+    assert.deepEqual([facts.whole.changes, facts.whole.files], [[], []], kind);
+    assert.equal(reportModel(session, reportOf(session), {}).did.files.unconfirmed, 1, kind);
+    const story = renderReportMarkdown(session, reportOf(session));
+    assert.ok(story.includes(REPORT_DID_WORDS.unconfirmed(1)), story);
+    assert.equal(/`NOTES\.md` · changed|1 file changed/.test(story), false, story);
+    const page = textOf(renderSessionPage(session, reportOf(session)));
+    assert.ok(page.includes(REPORT_DID_WORDS.unconfirmed(1)), page);
+    assert.equal(/NOTES\.md · changed|1 file changed/.test(page), false, page);
+  }
+  // A direct write whose own result the record proved failed left nothing: no row, listed nowhere (effect undone).
+  const b = sessionBuilder();
+  b.ask('I1', 'Write the notes.');
+  b.change('W1', 'NOTES.md', { after: 'hello world\n', result: 'failed' });
+  const undone = b.session();
+  assert.equal(effectOf(undone, undone.event('W1')), 'undone');
+  const facts = storyFacts(undone, reportOf(undone));
+  assert.deepEqual([facts.whole.unconfirmed, facts.whole.changes], [[], []]);
+});

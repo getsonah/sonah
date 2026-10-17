@@ -79,9 +79,10 @@ const bump = (tally, token) => tally.set(token, (tally.get(token) ?? 0) + 1);
 /** The SHA-256 (hex) of the canonical JSON of the frozen session-only run profile. M33 J: under the
  *  named speed profile — nothing, or `standard`, is the digest it always was; any other profile's
  *  differs, so the two never share a window checkpoint key. The codex-cli backend also binds its smaller windows;
- *  default and Claude profile digests remain unchanged. */
-export function sessionProfileDigest(speedProfile = undefined, backend = undefined) {
-  return sha256(canonicalJson(runProfile(SESSION_ONLY, speedProfile, backend)));
+ *  default and Claude profile digests remain unchanged. D103: `harness`, the recording's (`Session.adapter`), binds the
+ *  skim it resolves to; omitted, the smallest. */
+export function sessionProfileDigest(speedProfile = undefined, backend = undefined, harness = undefined) {
+  return sha256(canonicalJson(runProfile(SESSION_ONLY, speedProfile, backend, harness)));
 }
 
 /** C-07: SHA-256 (hex) of the canonical JSON of the narrative request's D60 answer key, the run
@@ -374,7 +375,8 @@ export function createSessionReviewStore(directory) {
  * It is planned and run under that profile, its window keys bind that profile's digest, and its calls
  * pass a limiter of that profile's `maxCallsInFlight` at its own byte ceiling (`boundedJudge`).
  * `concurrency` defaults to the profile's `windowConcurrency`.
- * The existing `backend` selects the window settings in planning, execution, reports and checkpoint identity.
+ * The existing `backend` selects the window settings in planning, execution, reports and checkpoint identity, and (D103)
+ * the session's harness (`session.adapter`) their skim.
  *
  * `rateLimitTally` (M33 K, optional): returns the latest rate-limit fields the caller's transport reported
  * (`{ status, rateLimitType, utilization, resetsAt, windows }`, closed codes and numbers only: review-judge.js
@@ -382,7 +384,7 @@ export function createSessionReviewStore(directory) {
  */
 export async function reviewSession({ session, judge, answerCache, store, backend, model, signal = null,
   onProgress = () => {}, onWindowRecord = () => {}, servedModelTally = () => null, concurrency = undefined,
-  speedProfile = undefined, rateLimitTally = null }) {
+  speedProfile = undefined, rateLimitTally = null, census = null }) {
   if (typeof backend !== 'string' || !backend || typeof model !== 'string' || !model)
     throw new TypeError('A session review is keyed by the backend and model that answer');
   const { name: speed, windowConcurrency } = reviewSpeedProfile(speedProfile);
@@ -394,7 +396,8 @@ export async function reviewSession({ session, judge, answerCache, store, backen
   try {
     const prior = await store.readProgress();
     const attempt = (prior?.attempt ?? 0) + 1;
-    const profile = sessionProfileDigest(speed, backend);
+    // D103: the window keys bind the skim the recording's harness resolves to, as the plan below windows by it.
+    const profile = sessionProfileDigest(speed, backend, session?.adapter);
     // Planned once: runReview takes this very plan rather than building it again.
     const plan = planWindowRequests({ session, reviewScope: SESSION_ONLY, speedProfile: speed, backend });
     const total = plan.requests.length;
@@ -468,7 +471,10 @@ export async function reviewSession({ session, judge, answerCache, store, backen
         windowsReplayed: perWindow.filter((c) => c.calls === 0 && c.reused > 0).length,
         windowsLive: perWindow.filter((c) => c.calls > 0 && c.reused === 0).length,
         windowsMixed: perWindow.filter((c) => c.calls > 0 && c.reused > 0).length,
-        recordsDiscarded: ordered(CHECKPOINT_DISCARD_REASONS, discarded), stateChanged } };
+        recordsDiscarded: ordered(CHECKPOINT_DISCARD_REASONS, discarded), stateChanged },
+        // D99 (F1 guard): the recorder census of the recordings this review read (session-evidence.js
+        // `recorderCensusOf`): counts by closed reason and recorder version, kept in the run record only.
+        ...(census !== null && typeof census === 'object' ? { recorderCensus: census } : {}) };
       // The recording is rebuilt from the recording; it is never stored beside the report.
       const { session: omitted, ...saved } = report;
       await store.saveReport(saved);

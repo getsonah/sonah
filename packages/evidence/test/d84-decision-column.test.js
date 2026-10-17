@@ -89,7 +89,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   // W1 A moved it once more (sonah.session-page/25): a decision kept "could not tell" for a refuted column says why.
   // W2 moved it once more (sonah.session-page/26): the agent's own earlier text that contradicts a claim says so.
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
@@ -107,7 +108,12 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
   // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/37', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D98 moved it once more (sonah.session-page/38): what the agent did and what Sonah could not check read one effect rule.
+  // D99 moved it once more (sonah.session-page/39): a background run's end is said absent only where it is proved.
+  // D100 moved it once more (sonah.session-page/40): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/42', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -125,15 +131,20 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
   // D97 moved it once more (sonah.session-story/32): the story is the report .md, the report model rendered for a pull
-  // request comment.
-  assert.equal(STORY_VERSION, 'sonah.session-story/32', 'renumbered later: /18 is D84\'s masking');
+  // request comment. D98 moved it once more (sonah.session-story/33): its rows, runs and gaps read one effect rule.
+  // D99 moved it once more (sonah.session-story/34): a background run's end, and a stopped run, in the page's words.
+  // D100 moved it once more (sonah.session-story/35): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
+  assert.equal(STORY_VERSION, 'sonah.session-story/37', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37', 'no narrative request byte moved here (/31)');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38', 'no narrative request byte moved here (/31)');
   assert.equal(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'), 'The project instruction file CLAUDE.md says:');
 });
 

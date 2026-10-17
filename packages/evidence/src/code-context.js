@@ -19,7 +19,7 @@ import { isAbsolute, relative, resolve, sep, win32 } from 'node:path';
 import { CODE_DIFF_STATES, CODE_CHANGE_TYPES, CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES, PROMISE_STATUSES,
   REQUIREMENT_STATUSES, FAILURE_HANDLINGS, DECISION_COLUMNS, WRITTEN_LABELS, FORBIDDEN_EDIT_BREACHES, personsProjectFile }
   from './ledger.js';
-import { isRead } from './session.js';
+import { isRead, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS } from './session.js';
 import { itemKindOf } from './triage.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -703,25 +703,36 @@ export function codeDossier({ report, session, root = null }) {
 /** The kind of an event the code step reads as a command run: a recorded invocation of operation `command`. */
 const isCommand = (event) => event?.kind === 'invocation' && event.operation === 'command';
 const EDITS = Object.freeze(['write', 'edit', 'delete']);
+/** D98 (F9): the effect of a call the recorder typed as refused before it ran (session.js ACTION_EFFECTS `none`). */
+const [NO_EFFECT] = ACTION_EFFECTS;
 
 /**
  * Per changed path (`paths`, as the code step names them), the commands recorded after its last recorded edit, each
  * with its exit code (or its recorded outcome when no exit code is typed), or none. Ordering only: whether a command
- * reached the file is the reviewer's to judge. Pure.
+ * reached the file is the reviewer's to judge. A path's last edit is its last change that could have happened (D98,
+ * one reading per recorder fact: session.js `effectOf` is landed or unknown), as the change list (code-pass.js
+ * `codeSnapshotPlan`) and the page's Runs list read it: a write refused before it ran, failed or cancelled changed
+ * nothing, so commands recorded after an earlier change are not hidden behind it. A command whose effect is `none`
+ * (refused before it ran) ran nothing, so it is not listed (the owner's answer of 2026-10-17, "all as suggested",
+ * code-pass/11): a file that only such commands follow is `never_ran`, as the page's Runs list says it
+ * (report-model.js `neverRanPaths`). The run list still shows the refused command. Pure.
  */
 export function commandsAfterLastEdit(session, paths, root = null) {
   const events = list(session?.events);
   const lastEdit = new Map();
+  const effect = effectReader(session);
   events.forEach((event, at) => {
     if (event?.kind !== 'invocation' || !EDITS.includes(event.operation)) return;
+    if (!CHANGING_EFFECTS.includes(effect(event))) return;
     for (const change of list(event.changes)) {
       const named = displayPath(change?.path, root);
       if (typeof named === 'string') lastEdit.set(named, at);
     }
   });
+  const mayHaveRun = (event) => isCommand(event) && effect(event) !== NO_EFFECT;
   return list(paths).map((path) => {
     if (!lastEdit.has(path)) return { path, after: null };
-    const after = events.slice(lastEdit.get(path) + 1).filter(isCommand).map((event) => {
+    const after = events.slice(lastEdit.get(path) + 1).filter(mayHaveRun).map((event) => {
       const result = session.observationFor?.(event.id) ?? null;
       const exit = Number.isSafeInteger(result?.exitCode) ? result.exitCode : null;
       return { ran: headTail(textOf(session, event, 'command'), 150), ...(exit !== null ? { exit }
@@ -733,8 +744,8 @@ export function commandsAfterLastEdit(session, paths, root = null) {
 }
 
 /** The dossier as a request shows it: one JSON line per item, then the commands after each changed file's last edit
- *  (`never_ran` when none). Every path is named (D90). An item the code review may triage names its report item kind
- *  (`item`, code-pass/10), never its tier: a tier shown would anchor the proposal. Pure. */
+ *  (`never_ran` when none that may have run). Every path is named (D90). An item the code review may triage names its
+ *  report item kind (`item`, code-pass/10), never its tier: a tier shown would anchor the proposal. Pure. */
 export function renderDossier(items, commands) {
   const line = (item) => JSON.stringify({ key: item.key, kind: item.kind, actor: item.actor,
     ...(item.move ? { move: item.move } : {}), ...(item.itemKind ? { item: item.itemKind } : {}), ...item.shown,

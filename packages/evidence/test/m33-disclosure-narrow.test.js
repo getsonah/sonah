@@ -33,10 +33,11 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   D84_OUTPUT_READER_VERSIONS, FIX_COLUMN_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, W1_READER_VERSIONS,
   W2_READER_VERSIONS, W4_READER_VERSIONS, CODE_PASS_VERSIONS, CODE_PASS_READER_VERSIONS, W4_REVERT_READER_VERSIONS,
   JUDGMENT_FIRST_READER_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS,
-  CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CODE_STEP_READER_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
+  CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CITED_WHOLE_VERSIONS, CODE_STEP_READER_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
   JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
-  CLEANUP_READER_VERSIONS, REPORT_MD_READER_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS }
+  CLEANUP_READER_VERSIONS, REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS,
+  ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -114,7 +115,9 @@ test('Disclosure narrowed: the proposition and the note ask whether the agent sa
   // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
   // stands again, as before /43.
   assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
+  // D103 moved it once more (CITED_WHOLE_VERSIONS: challenge): a session-only batch shows the results its items cite whole.
+  assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CITED_WHOLE_VERSIONS.challenge.after);
   assert.equal(challenge.DISCLOSURE_PROPOSITION, DISCLOSURE_NARROW.texts.proposition[1]);
   assert.equal(challenge.DISCLOSURE_NOTE, DISCLOSURE_NARROW.texts.note[1]);
   assert.ok(challenge.DISCLOSURE_NOTE.includes('did that statement tell the human that the agent went against the '
@@ -288,7 +291,9 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   // G2 moved it once more (CHOICE_REANCHOR_VERSIONS: prompt): the re-ask of a choice not to act whose existence check
   // refuted its words.
   assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
-  assert.equal(prompt.PROMPT_VERSION, CHOICE_REANCHOR_VERSIONS.prompt.after);
+  // D103 moved it once more (SKIM_VERSIONS: prompt): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
+  assert.equal(prompt.PROMPT_VERSION, SKIM_VERSIONS.prompt.after);
   // M35 windowing moved it once more (WINDOWING_VERSIONS: codeReview).
   assert.equal(WINDOWING_VERSIONS.codeReview.before, DISCLOSURE_WORDS_VERSIONS.codeReview.after);
   // M36 phase 1 moved it once more (RECORDED_FACTS_VERSIONS: codeReview): the evidence it carries (D68).
@@ -361,7 +366,18 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.equal(CLEANUP_READER_VERSIONS.story.before, AGENTIC_READER_VERSIONS.story);
   // D97 moved it once more (REPORT_MD_READER_VERSIONS: story): the story is the report .md.
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
-  assert.equal(story.STORY_VERSION, REPORT_MD_READER_VERSIONS.story.after);
+  // D98 moved it once more (ONE_READING_READER_VERSIONS: story): its rows, runs and gaps read one effect rule.
+  assert.equal(ONE_READING_READER_VERSIONS.story.before, REPORT_MD_READER_VERSIONS.story.after);
+  // D99 moved it once more (ABSENCE_READER_VERSIONS: story): a background run's end, and a stopped run, in the page's
+  // words.
+  assert.equal(ABSENCE_READER_VERSIONS.story.before, ONE_READING_READER_VERSIONS.story.after);
+  // D100 moved it once more (ABSENCE_AUDIT_READER_VERSIONS: story): an absence only where code proves it.
+  assert.equal(ABSENCE_AUDIT_READER_VERSIONS.story.before, ABSENCE_READER_VERSIONS.story.after);
+  // D101 moved it once more (GROUNDING_CAUSE_READER_VERSIONS: story): an ask says which test refused its quote.
+  assert.equal(GROUNDING_CAUSE_READER_VERSIONS.story.before, ABSENCE_AUDIT_READER_VERSIONS.story.after);
+  // D104 moved it once more (SEEN_READER_VERSIONS: story): the shown-in-part mark.
+  assert.equal(SEEN_READER_VERSIONS.story.before, GROUNDING_CAUSE_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, SEEN_READER_VERSIONS.story.after);
   // Readers: the report .md and the page say what the challengers upheld, with the agent's own words.
   // D71 (a): said as what it is, never "shown for information".
   // D97: the page and the report .md: an edit against what you said that the agent told you about, and its words.

@@ -331,6 +331,17 @@ test('explicit state directory contains reports and exact-answer reuse without t
   await assert.rejects(stat(input.env.SONAH_HOME), { code: 'ENOENT' });
 });
 
+test('D99 F1 guard: the command hands the loaded recorder census to the run record', async (t) => {
+  const input = await fixture(t), calls = [];
+  const census = { notices: { labelled: 1, typed: 0 }, launches: { background: 0, typed: 0, stopped: 0, unread: 0,
+    absent: 0, other: 0, linked: 0 }, entries: [{ reason: 'notification_no_call_id', version: '2.1.299', count: 1 }] };
+  const options = { ...input.options, ...streams(), createJudge: fakeTransport({ calls }),
+    loadSession: async (args) => ({ ...(await loadRecordedSessionWithHash(args)), census }) };
+  assert.equal(await sessionOnly([input.file, '--state-dir', 'census-state'], options), 0);
+  const saved = JSON.parse(await readFile(join(input.repo, 'census-state', 'review', 'report.private.json'), 'utf8'));
+  assert.deepEqual(saved.instrument.recorderCensus, census);
+});
+
 test('Claude aliases and unattested or wrong-context answers cannot enter the answer cache', async (t) => {
   for (const [argv, metadata] of [[['--model', 'sonnet'], null], [[], { attestation: 'unattested' }],
     [[], { contextWindow: 200000 }]]) {

@@ -91,7 +91,7 @@ test('release review: the code step on by default never makes the exit code non-
     const missing = await review(t, { session: codeSession(), cwd: gone, format });
     assert.equal(missing.code, 0, format);
     assert.equal(missing.report.codePass.ran, false);
-    assert.match(missing.out, /^Code review: did not run\. The recording names no working directory that exists here/m);
+    assert.match(missing.out, /^Code review: did not run\. Sonah could not read a working directory of the session here/m);
     assert.ok(missing.out.includes(`code review did not run${APART})`), missing.out);
     assert.ok(missing.written.includes(STORY_CODE_WORDS.noRoot), format);
   }

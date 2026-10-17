@@ -32,7 +32,7 @@
 // The report model imports its facts from this file and this file renders the report model: an import cycle, so nothing
 // at this file's top level reads a binding of report-model.js (it is read only inside the functions).
 
-import { verifyReceipt } from '../evidence/src/session.js';
+import { verifyReceipt, effectReader, CHANGING_EFFECTS, REFUSED_DENIALS, ACTION_EFFECTS } from '../evidence/src/session.js';
 import { startsSegment } from '../evidence/src/windows.js';
 import { locateQuote, overlapping, sharedChars } from '../evidence/src/ask-code-links.js';
 import { DISCLOSURE_REASONS, REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, STOPPED_DENIALS, REPORT_TIERS,
@@ -42,15 +42,21 @@ import { INTER_AGENT_GAP_NOTES } from '../evidence/adapters/sonah-ledger.js';
 import { reportModel, REPORT_LIMITS } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
-  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS } from './report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS } from './report-words.js';
 
 /** The Markdown report's layout version. /32 (D97, owner decisions 2026-10-16): the story is now the report .md — the
  *  report model rendered for a pull request comment, in the page's order and with its counts: the header, the count
  *  line, your prompt as a table, Must act and Must know open, Good to know, what the agent did and what Sonah could not
  *  check folded, and the footer; GitHub permalinks on their own lines; no pings; at most 60,000 bytes. The story's
  *  charts, its product, lead and engineer sections and its overview are removed. (/31 and every version before it: the
- *  session story, `git log` of this file.) */
-export const STORY_VERSION = 'sonah.session-story/32';
+ *  session story, `git log` of this file.) /33 (D98, one reading per recorder fact): its rows, its runs and the gaps it
+ *  names read one effect rule (evidence session.js `effectOf`), as the page does. /34 (D99, F1 guard): a background run's
+ *  end, and a stopped run, in the page's words. /35 (D100, the audit of absence sentences): an absence only where code
+ *  proves it, in the page's words. /36 (D101, owner decision 2026-10-17): an ask that Sonah did not check because a
+ *  test refused its quote says which test, with the numbers code measured, as the page does. /37 (D104, F5 part 4): a
+ *  claim, a run and a decision you settled show their rows' shown-in-part mark under its label, as an item's evidence
+ *  and an ask's lines show it. */
+export const STORY_VERSION = 'sonah.session-story/37';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -66,18 +72,16 @@ const readableStatus = (status) => REQUIREMENT_STATUSES.includes(status) || LEGA
 
 const HEREDOC = 'heredoc';   // the tool a shell heredoc write carries (slicer events.js SHELL_WRITES `how`)
 const WRITE_OPERATIONS = Object.freeze(['write', 'edit', 'delete']);
-const NOT_DONE = Object.freeze(['failed', 'cancelled']);
 /** /16 (D79): the recorder's typed prior states of a write (redact `RECORDED_FACTS.prior`) that say the file was there
  *  before it — its record holds the file whole or as hunks — so the write is never read as a create. */
 const PRIOR_HELD = Object.freeze(['file', 'hunks']);
-/** /16 (owner decision D79): the members of the recorder's closed denial vocabulary (Claude Code's `toolDenialKind`,
- *  as the slicer types it on the call: `recorded.denial`; redact `RECORDED_FACTS.denial`) that mean the call was
- *  refused before it ran — by the human, a permission rule or the auto-mode classifier — so the command did not run
- *  and is never counted among the ones that failed. The two kinds left out, `interrupted` and `cancelled` (D80: the
- *  ledger's `STOPPED_DENIALS`), mean the call was stopped: such a command is `stopped` (`commandEnd`), never failed.
- *  Asserted against the redactor's vocabulary in test/d79-refusals.test.js. */
-export const REFUSED_DENIALS = Object.freeze(['user-rejected', 'permission-rule', 'automode-blocked',
-  'automode-unavailable', 'automode-parsing-error']);
+/** /16 (owner decision D79): the members of the recorder's closed denial vocabulary that mean the call was refused
+ *  before it ran, so the command did not run and is never counted among the ones that failed. D98 (F9): one list, the
+ *  effect rule's (evidence session.js), re-exported here; test/d79-refusals.test.js holds it against the redactor's
+ *  vocabulary. */
+export { REFUSED_DENIALS };
+/** D98 (F9): the effect of a call the recorder typed as refused before it ran (session.js ACTION_EFFECTS). */
+const [NO_EFFECT] = ACTION_EFFECTS;
 const GAP = '‹…›';   // shown where a recorded body's quotable spans are not contiguous (a cut)
 
 // ---- text safety ------------------------------------------------------------------------------------
@@ -302,9 +306,8 @@ const plainObject = (value) => value !== null && typeof value === 'object' && !A
 /**
  * Recorded outcomes, indexed once per render: the Session's own `observationFor` / `outcomeOf` scan every
  * event per call, which is quadratic over a long session. `result` and `outcome` are those two methods'
- * definitions over the index (the FIRST terminal observation of an invocation). `notDone` asks the
- * Session's `actionOutcomeOf` itself, but only for a write that has a failed or cancelled terminal
- * receipt of its own — the only receipt that method can return a failed or cancelled result from.
+ * definitions over the index (the FIRST terminal observation of an invocation). `effect` is the one effect rule every
+ * reader reads (D98, F9: evidence session.js `effectReader`), over one index of the session.
  */
 function outcomeIndex(session, events) {
   const terminals = new Map();
@@ -313,18 +316,19 @@ function outcomeIndex(session, events) {
     if (!terminals.has(event.invocation)) terminals.set(event.invocation, []);
     terminals.get(event.invocation).push(event);
   }
+  const effect = effectReader(session);
   return {
     result: (id) => terminals.get(id)?.[0] ?? null,
     outcome: (id) => terminals.get(id)?.[0]?.result ?? 'none',
-    notDone: (event) => (terminals.get(event.id) ?? []).some((row) => NOT_DONE.includes(row.result))
-      && NOT_DONE.includes(session.actionOutcomeOf(event)),
+    effect: (event) => effect(event),
   };
 }
 
 /**
  * /16 (owner decision D79): how a command's record says it ended, by typed fields only. `didNotRun`: the recorder typed
- * the call as refused before it ran (`recorded.denial`, a REFUSED_DENIALS kind) — then it is not a failed command,
- * whatever its result row says (Claude Code records a refusal as an error result). `failed` (M1): its result `failed`
+ * the call as refused before it ran — its effect is none (D98, F9: the one effect rule, a REFUSED_DENIALS kind on a call
+ * with a recorded result) — then it is not a failed command, whatever its result row says (Claude Code records a
+ * refusal as an error result). `failed` (M1): its result `failed`
  * (only ever from a native or hook status: sonah-ledger.js), or a recorded nonzero exit — whatever command it was.
  * D80: `stopped`: the recorder typed the call with a stopped denial kind (`STOPPED_DENIALS`) — it started and did not
  * finish; neither failed nor did not run, whatever its result row says.
@@ -332,7 +336,7 @@ function outcomeIndex(session, events) {
 function commandEnd(outcomes, event) {
   const result = outcomes.result(event.id);
   const exitCode = Number.isInteger(result?.exitCode) ? result.exitCode : null;
-  const didNotRun = REFUSED_DENIALS.includes(event.recorded?.denial);
+  const didNotRun = outcomes.effect(event) === NO_EFFECT;
   const stopped = STOPPED_DENIALS.includes(event.recorded?.denial);
   const failed = !didNotRun && !stopped
     && (outcomes.outcome(event.id) === 'failed' || (exitCode !== null && exitCode !== 0));
@@ -344,26 +348,32 @@ function commandEnd(outcomes, event) {
  * the record says failed or was cancelled changed nothing and has no row. Each path's recorded state is
  * carried from one change to the next, so a rewrite is diffed against the body written before it.
  * /16 (D79): a write the slicer parsed from a command (`shellWriteOf`, a heredoc's body) has no result of its own; it
- * changed nothing when its command did not run (`commandEnd`), so it has no row and never becomes the state a later
+ * changed nothing when its command did not run, so it has no row and never becomes the state a later
  * write of the path is compared with — as the ledger reads it (`actionOutcome`: did-not-run), by typed outcome, never
- * by text. D80 (owner decision 2026-10-12): one whose command failed or was stopped keeps its row, marked `unconfirmed`
+ * by text. D98 (F9): both by the one effect rule (`outcomes.effect`): only a write whose effect could have changed the
+ * file (`CHANGING_EFFECTS`: landed or unknown) has a row. D80 (owner decision 2026-10-12): one whose command failed or was stopped keeps its row, marked `unconfirmed`
  * (`failed` or `stopped`: a SHELL_WRITE_ENDS key): the record does not say whether it happened (C-02; the ledger's
  * `command-failed` and `command-stopped` forms), so after it the path's content is not known (`UNKNOWN`).
+ * D98: the mark reads the call that holds the write — the command a parsed write came from, or the direct write's own
+ * call — by the one typed end (`commandEnd`): a call the recorder typed as stopped (a STOPPED_DENIALS kind) marks its
+ * write `stopped`, whether the write is parsed or direct (the ledger's `command-stopped` and `interrupted` forms; the
+ * effect rule's `unknown`), and a command that failed marks the writes parsed from it `failed`. A direct write whose
+ * own result the record proved failed or cancelled left nothing (effect `undone`) and has no row.
  */
 function countedChanges(session, events, outcomes) {
   const counted = new Map();
   const state = new Map();
-  const shellEnd = (event) => {
-    if (typeof event.shellWriteOf !== 'string' || !event.shellWriteOf) return null;
-    const command = session.event(event.shellWriteOf);
-    if (!command) return null;
-    const end = commandEnd(outcomes, command);
-    return end.didNotRun ? 'didNotRun' : end.failed ? 'failed' : end.stopped ? 'stopped' : null;
+  const unconfirmedEnd = (event) => {
+    const parsed = typeof event.shellWriteOf === 'string' && event.shellWriteOf !== '';
+    const call = parsed ? session.event(event.shellWriteOf) : event;
+    if (!call) return null;
+    const end = commandEnd(outcomes, call);
+    return parsed && end.failed ? 'failed' : end.stopped ? 'stopped' : null;
   };
   for (const event of events) {
-    if (event.kind !== 'invocation' || !WRITE_OPERATIONS.includes(event.operation) || outcomes.notDone(event)) continue;
-    const end = shellEnd(event);
-    if (end === 'didNotRun') continue;
+    if (event.kind !== 'invocation' || !WRITE_OPERATIONS.includes(event.operation)
+      || !CHANGING_EFFECTS.includes(outcomes.effect(event))) continue;
+    const end = unconfirmedEnd(event);
     const rows = [];
     list(event.changes).forEach((change, index) => {
       if (typeof change?.path !== 'string' || !change.path) return;
@@ -706,8 +716,8 @@ function checklistRequirement(session, r, spansOf) {
 
 /** What a list of events did: its commands (each with how its record says it ended, `commandEnd`), the files it
  *  changed in the repository with their line counts, and hand-offs. Changes outside the repository are only counted, as
- *  distinct paths. D80: a write of a failed or stopped command (`unconfirmed`, inside the repository or not) is none of
- *  the changes: it is listed apart. */
+ *  distinct paths. D80: a write of a failed or stopped command, and (D98) a direct write the recorder typed as stopped
+ *  (`unconfirmed`, inside the repository or not), is none of the changes: it is listed apart. */
 function stepActivity(session, events, outcomes, counted) {
   const commands = [], changes = [], unconfirmed = [], outside = new Set();
   let spawns = 0;
@@ -1065,6 +1075,9 @@ function goodToKnowSection(model, trim, notice) {
 }
 
 const cap = (n) => Math.min(n, REPORT_LIMITS.files);
+/** D104: a row's shown-in-part mark in a list (`seen`: lines of parts), each line after the row's own, under its label. */
+const seenMd = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `${mdOwn(REPORT_SEEN_WORDS.label)} ` : ''}`
+  + partsMd(line)).join('');
 function didSection(model, trim, notice) {
   const { did } = model;
   const summary = escHtml(REPORT_SECTION_WORDS.didCounted(did.files.total, did.runs.commands, did.runs.others,
@@ -1110,7 +1123,7 @@ function didSection(model, trim, notice) {
   else if (did.runs.shown.length) blocks.push(did.runs.shown.map((run) => `- ${mdOwn(REPORT_ITEM_WORDS.run(run.k))}`
     + `${run.text ? ` · ${codeSpan(run.text)}` : run.tool ? ` · ${codeSpan(run.tool)}` : ''}`
     + `${run.outcome ? ` · ${mdOwn(run.outcome)}` : ''}${run.handling ? ` · ${mdOwn(run.handling)}` : ''}`
-    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}`).join('\n'));
+    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}${seenMd(run.seen)}`).join('\n'));
   if (did.runs.quietExit0) blocks.push(mdOwn(REPORT_DID_WORDS.moreRuns(did.runs.quietExit0)));
   if (did.runs.cut) blocks.push(mdOwn(REPORT_DID_WORDS.runsCut(did.runs.shown.length, did.runs.cut,
     did.runs.cutParts.join(', ') || String(did.runs.cut))));
@@ -1122,8 +1135,8 @@ function didSection(model, trim, notice) {
     + `${c.item ? `${c.status ? ' ' : ''}→ ${mdOwn(REPORT_ITEM_WORDS.item(c.item))}` : ''}`
     + ` ${c.quote ? partMd(c.quote) : mdOwn(REPORT_ITEM_WORDS.quoteMissing)}`
     + `${c.confirmedBy ? ` · ${mdOwn(REPORT_ITEM_WORDS.recordedResult)} ${partMd(c.confirmedBy)}` : ''}`
-    + `${c.why ? ` · ${mdOwn(c.why)}` : ''}${c.path ? ` · ${mdOwnNaming(REPORT_DID_WORDS.written, [c.path])}` : ''}`)
-    .join('\n'));
+    + `${c.why ? ` · ${mdOwn(c.why)}` : ''}${c.path ? ` · ${mdOwnNaming(REPORT_DID_WORDS.written, [c.path])}` : ''}`
+    + seenMd(c.seen)).join('\n'));
   if (did.claims.more > 0) blocks.push(mdOwn(REPORT_DID_WORDS.moreClaims(did.claims.more)));
   if (did.claims.closing.total) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.closingLines(did.claims.closing.total)), [
     did.claims.closing.rows.map((l) => `- ${partsMd(l.parts)}`).join('\n'),
@@ -1134,7 +1147,7 @@ function didSection(model, trim, notice) {
     .join('\n') : mdOwn(REPORT_DID_WORDS.noLeftOut));
   blocks.push(sub(REPORT_SECTION_WORDS.settled));
   blocks.push(did.settled.length ? did.settled.map((x) => `- ${partsMd(x.parts)}${x.youSaid
-    ? ` · ${mdOwn(x.youSaidLabel ?? REPORT_ITEM_WORDS.youSaid)} ${partMd(x.youSaid)}` : ''}`).join('\n')
+    ? ` · ${mdOwn(x.youSaidLabel ?? REPORT_ITEM_WORDS.youSaid)} ${partMd(x.youSaid)}` : ''}${seenMd(x.seen)}`).join('\n')
     : mdOwn(REPORT_DID_WORDS.noSettled));
   return { text: fold(summary, blocks), shortened: false };
 }

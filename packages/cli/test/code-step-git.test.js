@@ -172,7 +172,7 @@ test('code step git: through the CLI, the review agent\'s request carries git\'s
   const reused = /^Stored session answers: the store answers (\d+) of (\d+) session calls, with no new call\.$/m.exec(dry.out);
   assert.ok(reused && Number(reused[1]) > 0 && reused[1] === reused[2], dry.out);
   assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\)\. Then it would send one check for each finding and one for its questions\.$/m);
-  assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 2 paths differ, and no recorded edit wrote 1 of them\./);
+  assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 2 paths differ, and Sonah found no recorded edit that wrote 1 of them\./);
   assert.deepEqual(await listing(state), before, 'the dry run wrote nothing, and touched no stored answer');
   // A state with no stored answers: they are counted as asked live, still with no call.
   const empty = await once(join(dir, 'empty-state'), ['--dry-run']);

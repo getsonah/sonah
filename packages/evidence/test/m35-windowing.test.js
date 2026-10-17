@@ -41,8 +41,10 @@ const ids = (events) => events.map((event) => event.id);
 // ---- the settings ------------------------------------------------------------------------------------------------------
 
 test('M35 the settings are the spec\'s frozen literals; a token is 3.6 UTF-8 bytes', () => {
-  assert.deepEqual({ ...WINDOW_SETTINGS }, { workTokens: 200_000, carriedTokens: 200_000, trimTokens: 2_000 });
-  assert.deepEqual({ ...COMBINED_WINDOW_SETTINGS }, { workTokens: 54_613, carriedTokens: 0, trimTokens: 2_000 });
+  // D103: the skim is in bytes a side, keyed by the recording's harness; these are the settings of a harness with no
+  // size of its own (the smallest, 3,600).
+  assert.deepEqual({ ...WINDOW_SETTINGS }, { workTokens: 200_000, carriedTokens: 200_000, skimSideBytes: 3_600 });
+  assert.deepEqual({ ...COMBINED_WINDOW_SETTINGS }, { workTokens: 54_613, carriedTokens: 0, skimSideBytes: 3_600 });
   assert.equal(TOKEN_BYTES, 3.6);
   assert.equal(bytesOfTokens(200_000), 720_000);
   assert.equal(bytesOfTokens(1_000), 3_600);
@@ -167,7 +169,8 @@ test('M35 trim (M36 amendment T): an observation over 2k tokens keeps its first 
 });
 
 test('M35 trim by structure (M36 amendments P and H): a thought, a human message, a command and a file edit in full; a result trimmed; a prior state never inlined', () => {
-  const long = tokens(5_000);
+  // D103: a Claude Code recording's result is cut past twice its 12,000-byte skim: this one is 36,000 bytes.
+  const long = tokens(10_000);
   const edit = { id: 'E1', kind: 'invocation', callKey: 'E1', tool: 'edit', operation: 'edit', paths: [{ path: 'src/a.js' }],
     command: [], input: [], changes: [{ path: 'src/a.js', after: ref(long), before: ref(long), extent: { priorState: 'edit-text' } }] };
   const write = { id: 'W1', kind: 'invocation', callKey: 'W1', tool: 'create', operation: 'write', paths: [{ path: 'src/b.js' }],
@@ -181,12 +184,12 @@ test('M35 trim by structure (M36 amendments P and H): a thought, a human message
   assert.deepEqual(omitted('E1'), [['action', 'command', false], ['code', 'after', false], ['code', 'before', false]]);
   assert.deepEqual(omitted('W1'), [['action', 'command', false], ['code', 'after', false]],
     'the file as the record found it is not inlined');
-  assert.equal(shownBytes(s, s.event('A1-r')), 7_200);
+  assert.equal(shownBytes(s, s.event('A1-r')), 24_000);
   // The request says so between the shown head and tail, and its source map holds only the shown spans.
   const { requests } = planWindowRequests({ session: s, reviewScope: 'session-only' });
   const [built] = requests;
-  assert.ok(built.request.prompt.includes('omitted: line 1 of this output, 10,800 UTF-8 bytes, is not shown; line 1 in part'));
-  assert.deepEqual(built.sourceMap['A1-r'].map((source) => Buffer.byteLength(source.text)), [3_600, 3_600]);
+  assert.ok(built.request.prompt.includes('omitted: line 1 of this output, 12,000 UTF-8 bytes, is not shown; line 1 in part'));
+  assert.deepEqual(built.sourceMap['A1-r'].map((source) => Buffer.byteLength(source.text)), [12_000, 12_000]);
   assert.equal(built.sourceMap.C1[0].text, long);
   assert.equal(built.sourceMap.A1[0].text, long);
 });

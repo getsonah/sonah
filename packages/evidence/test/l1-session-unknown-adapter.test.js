@@ -59,10 +59,11 @@ test('L1 session-type review: a count the marks do not cover, a count out of sha
 test('L1 session-type review: the loss is named by its own cause', () => {
   assert.ok(COVERAGE_CAUSES.includes('instructions_refusal_session_unknown'));
   // The refused call is the subject, so "the call" (or "any of them") is what can hold an answer, never the session.
-  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 1 }), '1 refused call is in a session that '
-    + 'does not record whether you were there to answer, so the call can hold an answer that Sonah did not read');
-  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 2 }), '2 refused calls are in a session that '
-    + 'does not record whether you were there to answer, so any of them can hold an answer that Sonah did not read');
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 1 }), '1 refused call is in a session where '
+    + 'Sonah found no record of whether you were there to answer, so the call can hold an answer that Sonah did not read');
+  assert.equal(COVERAGE_SENTENCE.instructions_refusal_session_unknown({ n: 2 }), '2 refused calls are in a session where '
+    + 'Sonah found no record of whether you were there to answer, so any of them can hold an answer that Sonah did not '
+    + 'read');
   const report = { repo: { host: 'github.com', id: 'l1s' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 2, instructions: 2,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -73,7 +74,7 @@ test('L1 session-type review: the loss is named by its own cause', () => {
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]),
     [['instructions_refusal_session_unknown', 3]]);
   const header = causeLine(report);
-  assert.match(header, /3 refused calls are in a session that does not record whether you were there to answer/);
+  assert.match(header, /3 refused calls are in a session where Sonah found no record of whether you were there to answer/);
 });
 
 // Review finding L1S-headless-parent-helper-refusal (not built: a helper run under a non-interactive parent is not

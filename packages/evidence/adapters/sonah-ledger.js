@@ -9,7 +9,7 @@
 //     result, so the observation is marked sourceOfResult:'parsed-output', never 'native'.
 
 import { createHash } from 'node:crypto';
-import { Session } from '../src/session.js';
+import { Session, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS } from '../src/session.js';
 
 // H1: a ledger command's `unproven` (a zero status that does not speak for every command of its line) and an older
 // slicer's `errored` (read from text) are `unknown` here: neither is a recorded pass or failure.
@@ -482,6 +482,24 @@ export const LEDGER_POSITIONED_GAPS = Object.freeze(['legacy_recorder', 'interru
  */
 export const LEDGER_COMMAND_STATUS_SOURCES = Object.freeze(['claude_native_verdict', 'claude_task_notification']);
 /**
+ * D99 (F1 guard): what the slicer read of a background run's end that is no typed completion or failure (its event's
+ * `backgroundEnd`; slicer events.js BACKGROUND_ENDS, re-declared: this package never imports the slicer; asserted equal
+ * in the tests): `stopped` (its notification typed it stopped or killed), `unread` (no end read, none proved absent,
+ * and a later record mentions the run) or `unchecked` (no end read, and Sonah could not check whether the recording
+ * holds one: no later mention is established; review of A1b). Carried on the invocation as recorded; any other value
+ * is not carried. The typed outcome reads it (ledger.js `resultOutcome`).
+ */
+export const LEDGER_BACKGROUND_ENDS = Object.freeze({ stopped: 'stopped', unread: 'unread', unchecked: 'unchecked' });
+/** D99 (F1 guard): the note of the `command_outcome_unknown` gap that names the background runs whose end the slicer
+ *  could not read while a later record mentions them (`backgroundEnd` `unread`), apart from every other command whose
+ *  status the recording does not establish; review.js names it by its own cause (`ends_unread`). */
+export const END_UNREAD_NOTE = 'later records mention these background runs, but Sonah could not read whether or how '
+  + 'they ended';
+/** D99 (review of A1b): the note of the `command_outcome_unknown` gap that names the background runs whose end the
+ *  slicer could not read and could not check for (`backgroundEnd` `unchecked`): no later mention is established, so the
+ *  note claims none. review.js names it by its own cause (`ends_unchecked`). */
+export const END_UNCHECKED_NOTE = 'Sonah could not check whether the recording holds an end of these background runs';
+/**
  * Status fact (owner decision 2026-10-06; C-02): why a zero status does not speak for every command of its line — the
  * slicer's events.js EXIT_STATUS_GAPS, re-declared (this package never imports the slicer; asserted equal in
  * test/status-fact.test.js). A ledger reason outside it is never copied.
@@ -497,6 +515,13 @@ export const WORKFLOW_GAP_NOTES = Object.freeze({
   agents: 'a workflow ran agents whose recordings are not linked or reviewed',
   unlaunched: 'a workflow call recorded no successful launch; any agents it started are not linked or reviewed',
   launched: 'a workflow was launched asynchronously without an attributable completed result',
+  // The owner's answer of 2026-10-17 ("all as suggested", answer 8): such a launch whose end the slicer could not read
+  // (D99 `backgroundEnd`), in the words approved for each reason: a later record mentions the run (`unread`), or no
+  // later mention is established (`unchecked`). review.js names each by the background-end cause.
+  launchedEndUnread: 'later records mention a workflow run that was launched asynchronously, but Sonah could not read '
+    + 'whether or how it ended',
+  launchedEndUnchecked: 'Sonah could not check whether the recording holds an end of a workflow run that was launched '
+    + 'asynchronously',
   notified: 'a workflow completion was recorded only by a harness notification whose result text is not read',
   // C-03 M33 W2: a linked run's agents stand where the parent received the run's completion; with no receipt recorded
   // (the session ended first, or no completion joined the chain's last call) they keep the launch placement, declared.
@@ -504,6 +529,12 @@ export const WORKFLOW_GAP_NOTES = Object.freeze({
   // finished after any of it). Before the repair: at its launch, where d7226ec read it.
   unreceived: 'a workflow\'s agents are placed after the session\'s last request because the parent recorded no '
     + 'receipt of its completion',
+  // D99 (F1 guard): a run with no receipt read whose end the slicer could not read, and could not prove absent.
+  endUnread: 'later records mention a workflow run, but Sonah could not read whether or how it ended; its agents are '
+    + 'placed after the session\'s last request',
+  // D99 (review of A1b): the same, where no later mention of the run is established.
+  endUnchecked: 'Sonah could not check whether the recording holds an end of a workflow run; its agents are placed '
+    + 'after the session\'s last request',
   // M33 P (W2 recheck minor): a resumed run's agents stand at its LAST call's receipt, while an earlier call of the same
   // run recorded a receipt of its own; the journal records no call per agent, so which agent's work the parent received
   // at that earlier receipt is not recorded.
@@ -599,8 +630,16 @@ export const HELPER_DELIVERY_GAP_NOTES = Object.freeze({
   // L2: a Claude agent whose hand-off result recorded no typed launch status.
   helper_launch_mode_unknown: 'a helper\'s hand-off result recorded no typed launch status, so whether the parent waited '
     + 'for it or received it later is not recorded; its work is placed after the session\'s last request',
+  // D99 (F1 guard): a Claude agent run in the background whose end Sonah could not read, and could not prove absent.
+  helper_end_unread: 'later records mention a helper that ran in the background, but Sonah could not read whether or '
+    + 'how it ended; its work is placed after the session\'s last request',
+  // D99 (review of A1b): the same, where no later mention of it is established.
+  helper_end_unchecked: 'Sonah could not check whether the recording holds an end of a helper that ran in the '
+    + 'background; its work is placed after the session\'s last request',
   unreadable: 'a recorded helper delivery loss could not be read',
 });
+/** D99 (F1 guard): the helper delivery losses of a background agent whose end the slicer could not read. */
+const HELPER_END_UNREAD = Object.freeze(['helper_end_unread', 'helper_end_unchecked']);
 /** C-03 M33 P: the exact Codex names of a send_message action (slicer helper-deliveries.js `CODEX_SEND_NAMES`). */
 const CODEX_SEND_NAMES = Object.freeze(['send_message', 'collaboration.send_message']);
 /** Internal options of `sessionFromLedger` (never part of its public shape). */
@@ -1952,6 +1991,9 @@ export function sessionFromLedger(ledger, options = {}) {
         // carry (its label's `links.notifies`). A count only: their text is not read (C-02 M33 D), and a notification
         // whose carried id names no recorded call is declared (`notification_unmatched`; one carrying no id is not).
         ...(Number.isSafeInteger(act.notified) && act.notified > 0 ? { notified: act.notified } : {}),
+        // D99 (F1 guard): how the slicer read a background run's end that is no typed completion or failure. Present
+        // only when it is a member of the closed set, so every other invocation keeps its bytes.
+        ...(Object.values(LEDGER_BACKGROUND_ENDS).includes(act.backgroundEnd) ? { backgroundEnd: act.backgroundEnd } : {}),
         // D68 (C-02 "M36 recorded facts"): the recorder's typed facts about the call, as data for the windows to render.
         ...recordedFactsOf(act.recorded, ids, spellField),
         // D71 (S2): the slicer's mark on a call a recorder that types no refusal recorded as failed
@@ -2432,8 +2474,13 @@ export function sessionFromLedger(ledger, options = {}) {
   // M33 P second repair: an `ambiguous` piece under its own note; a Claude helper's work after its own later request is
   // declared once by its hand-off's recorded loss (`helper_continued_unproven`), not here.
   const unprovenPieces = [...piecesOf.values()].flat().filter((piece) => !piece.receipt && piece.request === null);
+  // D99 (F1 guard): a hand-off whose end the slicer could not read is declared as that, by its own recorded loss
+  // (`helper_end_unread`), and never as a helper whose parent recorded no receipt of its result.
+  const endUnread = new Set((Array.isArray(ledger.helperDeliveryLosses) ? ledger.helperDeliveryLosses : [])
+    .filter((loss) => HELPER_END_UNREAD.includes(loss?.reason) && countOf(loss.delivery?.delegation))
+    .map((loss) => loss.delivery.delegation));
   for (const [note, pieces] of [[HELPER_PLACEMENT_NOTES.unreceived,
-    unprovenPieces.filter((piece) => !piece.shared && !piece.ambiguous)],
+    unprovenPieces.filter((piece) => !piece.shared && !piece.ambiguous && !endUnread.has(piece.delivery?.delegation))],
   [HELPER_PLACEMENT_NOTES.shared, unprovenPieces.filter((piece) => piece.shared)],
   [HELPER_PLACEMENT_NOTES.ambiguous, unprovenPieces.filter((piece) => piece.ambiguous)]])
     if (pieces.length) session.adapterGaps.push({ code: 'incomplete_inventory', channel: 'children', scope: 'session',
@@ -2515,12 +2562,17 @@ export function sessionFromLedger(ledger, options = {}) {
  * outside the repository — because whether it caps session coverage depends on what covered it,
  * and that is decided where the PR and the code review's placement are known (ledger.js
  * `unrecordedCover`), never here.
+ *
+ * D98 (F9): only a write that could have changed its file (session.js `effectOf`: landed or unknown). One the recorder
+ * typed as refused before it ran, or that failed or was cancelled, did no work, so the record lacks nothing of it.
  */
 function unrecordedWrites(events) {
   let count = 0, shell = 0;
   const eventIds = [], writes = [];
+  const effect = effectReader({ events });
   for (const event of events) {
     if (event.kind !== 'invocation' || event.operation === 'delete') continue;
+    if (!CHANGING_EFFECTS.includes(effect(event))) continue;
     const missing = (event.changes ?? []).filter((c) => c?.extent?.recorded === false);
     if (!missing.length) continue;
     count += missing.length;
@@ -2535,7 +2587,13 @@ function unrecordedWrites(events) {
 /** An invocation is evidence of an attempt, never proof that a status-bearing action finished.
  * Only a structurally proved single direct shell write may inherit a typed zero exit.
  * The observation index is built from the final transferred event list, so linked children obey
- * the same rule. A duplicate terminal row is ambiguous even if its labels happen to agree. */
+ * the same rule. A duplicate terminal row is ambiguous even if its labels happen to agree.
+ * D98 (F9): a write's outcome is unknown exactly when its effect is (session.js `effectOf`, the one rule every reader
+ * reads): one refused before it ran (its own call or the command it was parsed from) changed nothing and says so, so
+ * it is no unknown write. A command refused before it ran is never an unknown command, by construction: its effect is
+ * `none` only once a result of it is recorded, and the slicer types a refused call's result by the call's own error
+ * flag, so that one terminal row has a proven status. test/d98-effect-rule.test.js checks it on every fixture
+ * session. */
 function unknownActionOutcomes(events) {
   const terminals = new Map();
   for (const event of events) {
@@ -2545,28 +2603,29 @@ function unknownActionOutcomes(events) {
     prior.push(event);
     terminals.set(event.invocation, prior);
   }
+  const effect = effectReader({ events });
   // A command can have a typed exit while its semantic test label was parsed from output;
-  // sourceOfResult names the latter. Direct writes require typed provenance for their result.
-  const known = (id, write = false) => {
+  // sourceOfResult names the latter.
+  const known = (id) => {
     const rows = terminals.get(id) ?? [];
-    return rows.length === 1 && rows[0].terminalStatusProven === true
-      && (!write || ['native', 'hook'].includes(rows[0].sourceOfResult)
-        && ['succeeded', 'failed', 'cancelled'].includes(rows[0].result));
-  };
-  const shellWriteSucceeded = (event) => {
-    if (event.shellWriteStatusEligible !== true) return false;
-    const rows = terminals.get(event.shellWriteOf) ?? [];
-    return rows.length === 1 && rows[0].terminalStatusProven === true
-      && rows[0].exitCode === 0 && rows[0].result === 'succeeded';
+    return rows.length === 1 && rows[0].terminalStatusProven === true;
   };
   const writes = events.filter((event) => event.kind === 'invocation'
     && ['write', 'edit', 'delete'].includes(event.operation)
-    && !(event.shellWriteOf ? shellWriteSucceeded(event) : known(event.id, true))).map((event) => event.id);
-  const commands = events.filter((event) => event.kind === 'invocation'
+    && effect(event) === UNKNOWN_EFFECT).map((event) => event.id);
+  const unknownCommands = events.filter((event) => event.kind === 'invocation'
     && event.operation === 'command'
-    && !known(event.id)).map((event) => event.id);
-  return { writes, commands };
+    && !known(event.id));
+  // D99 (F1 guard): a background run whose end the slicer could not read is that loss, named apart; review of A1b: by
+  // whether a later record mentions it (`unread`) or Sonah could not check for its end (`unchecked`).
+  const marked = (end) => (event) => event.backgroundEnd === end;
+  const { unread, unchecked } = LEDGER_BACKGROUND_ENDS;
+  return { writes, commands: unknownCommands.filter((event) => !marked(unread)(event) && !marked(unchecked)(event))
+    .map((event) => event.id), unread: unknownCommands.filter(marked(unread)).map((event) => event.id),
+  unchecked: unknownCommands.filter(marked(unchecked)).map((event) => event.id) };
 }
+/** D98 (F9): the effect (session.js ACTION_EFFECTS) the write gap reads. */
+const [, , , UNKNOWN_EFFECT] = ACTION_EFFECTS;
 
 /** C-03 M33 D: did this Workflow action launch? A recorded own result that is not an error or failure, not
  *  interrupted, conflicting, retracted or recorder-withheld (`outcomeUnknown`). The slicer states the same rule
@@ -2919,6 +2978,11 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
   if (unknown.commands.length) gaps.push({ code: 'command_outcome_unknown', channel: 'observations',
     scope: 'session', count: unknown.commands.length, eventIds: unknown.commands,
     note: 'the recording does not establish whether these shell or test commands completed' });
+  // D99 (F1 guard): the background runs whose end the slicer could not read, declared apart under their own note.
+  if (unknown.unread.length) gaps.push({ code: 'command_outcome_unknown', channel: 'observations',
+    scope: 'session', count: unknown.unread.length, eventIds: unknown.unread, note: END_UNREAD_NOTE });
+  if (unknown.unchecked.length) gaps.push({ code: 'command_outcome_unknown', channel: 'observations',
+    scope: 'session', count: unknown.unchecked.length, eventIds: unknown.unchecked, note: END_UNCHECKED_NOTE });
   // Delegated, unreviewed work is DECLARED as what it is. Relabelling it `incomplete_inventory`
   // (or dropping it) is how a session that handed its work to an uncaptured sub-agent rendered
   // CLEAN (audit B1/G6). A LINKED child is transferred instead, and declares its own losses
@@ -3096,11 +3160,20 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
   // completion, but the result text that notification carried is not read: a narrower, still
   // declared loss. Every other launch keeps the original one.
   const notified = (act) => WORKFLOW_NOTIFICATION_FINAL.includes(act.workflowNotificationStatus);
-  const unresolvedAsyncWorkflow = asyncWorkflow.filter((act) => !notified(act))
-    .map((act) => ids.act(act));
-  if (unresolvedAsyncWorkflow.length) gaps.push({ code: 'incomplete_inventory', channel: 'observations',
-    scope: 'session', count: unresolvedAsyncWorkflow.length, eventIds: unresolvedAsyncWorkflow,
-    note: WORKFLOW_GAP_NOTES.launched });
+  // The owner's answer of 2026-10-17 (answer 8): a launch whose end the slicer marked as one it could not read (D99:
+  // `unread` where a later record mentions the run, `unchecked` where no later mention is established) is declared as
+  // that, never as a launch with no attributable completed result. One declaration a launch, by its mark.
+  const unresolvedAsyncWorkflow = asyncWorkflow.filter((act) => !notified(act));
+  const endMarks = [LEDGER_BACKGROUND_ENDS.unread, LEDGER_BACKGROUND_ENDS.unchecked];
+  for (const [note, acts] of [
+    [WORKFLOW_GAP_NOTES.launched, unresolvedAsyncWorkflow.filter((act) => !endMarks.includes(act.backgroundEnd))],
+    [WORKFLOW_GAP_NOTES.launchedEndUnread,
+      unresolvedAsyncWorkflow.filter((act) => act.backgroundEnd === LEDGER_BACKGROUND_ENDS.unread)],
+    [WORKFLOW_GAP_NOTES.launchedEndUnchecked,
+      unresolvedAsyncWorkflow.filter((act) => act.backgroundEnd === LEDGER_BACKGROUND_ENDS.unchecked)]]) {
+    if (acts.length) gaps.push({ code: 'incomplete_inventory', channel: 'observations', scope: 'session',
+      count: acts.length, eventIds: acts.map((act) => ids.act(act)), note });
+  }
   const notifiedWorkflow = asyncWorkflow.filter(notified).map((act) => ids.act(act));
   if (notifiedWorkflow.length) gaps.push({ code: 'incomplete_inventory', channel: 'observations',
     scope: 'session', count: notifiedWorkflow.length, eventIds: notifiedWorkflow, note: WORKFLOW_GAP_NOTES.notified });
@@ -3142,15 +3215,28 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
   // before the rule, or a record that is not valid) keeps the launch placement. Declared once, counted by agent, naming
   // each such call's event and those agents' own delegate events (so it is never one declaration with a run loss that
   // names the call alone).
-  const unreceived = (ledger.delegations ?? []).filter((d) => d?.kind === WORKFLOW_AGENT_KIND && d.status === 'linked'
+  const unplaced = (ledger.delegations ?? []).filter((d) => d?.kind === WORKFLOW_AGENT_KIND && d.status === 'linked'
     && delegationEventIds.has(d) && !runOf.get(`${d.turn}:${d.workflowSeq}`)?.receipt);
-  if (unreceived.length) {
-    const workflowAt = new Set((ledger.ledger ?? []).filter((act) => act?.tool === 'Workflow')
-      .map((act) => `${act.turn}:${act.seq}`));
+  // D99 (F1 guard): a run a call of whose chain the slicer marked with an end it could not read (`backgroundEnd`
+  // `unread`: a notification linked to it, or its task id in a later row the agent did not write; review of A1b:
+  // `unchecked`, its task id in a row before its launch, or a search that could not run) is declared as that, never as
+  // one whose parent recorded no receipt of its completion. A chain any call of which a later record mentions is
+  // `unread`.
+  const workflowActs = new Map((ledger.ledger ?? []).filter((act) => act?.tool === 'Workflow')
+    .map((act) => [`${act.turn}:${act.seq}`, act]));
+  const chainMarked = (end) => (d) => [`${d.turn}:${d.workflowSeq}`,
+    ...(runOf.get(`${d.turn}:${d.workflowSeq}`)?.resumes ?? [])].some((key) => workflowActs.get(key)?.backgroundEnd === end);
+  const chainUnread = chainMarked(LEDGER_BACKGROUND_ENDS.unread);
+  const chainUnchecked = (d) => !chainUnread(d) && chainMarked(LEDGER_BACKGROUND_ENDS.unchecked)(d);
+  for (const [note, unreceived] of [[WORKFLOW_GAP_NOTES.unreceived,
+    unplaced.filter((d) => !chainUnread(d) && !chainUnchecked(d))],
+  [WORKFLOW_GAP_NOTES.endUnread, unplaced.filter(chainUnread)],
+  [WORKFLOW_GAP_NOTES.endUnchecked, unplaced.filter(chainUnchecked)]]) {
+    if (!unreceived.length) continue;
     const callEvents = [...new Set(unreceived.map((d) => `${d.turn}:${d.workflowSeq}`))]
-      .filter((key) => workflowAt.has(key)).map((key) => ids.actAtKey(key));
+      .filter((key) => workflowActs.has(key)).map((key) => ids.actAtKey(key));
     gaps.push({ code: 'incomplete_inventory', channel: 'children', scope: 'session', count: unreceived.length,
-      eventIds: [...callEvents, ...unreceived.map((d) => delegationEventIds.get(d))], note: WORKFLOW_GAP_NOTES.unreceived });
+      eventIds: [...callEvents, ...unreceived.map((d) => delegationEventIds.get(d))], note });
   }
   // M33 P (W2 recheck minor): a resumed run placed at its last call's receipt whose earlier call recorded its own
   // receipt: which agent work was received at that earlier receipt is not recorded. Declared once, counted by agent,

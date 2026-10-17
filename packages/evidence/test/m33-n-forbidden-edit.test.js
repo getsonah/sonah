@@ -214,7 +214,8 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   // The disclosure narrowing moved the challenge once more (DISCLOSURE_NARROW_VERSIONS: /15 -> /16).
   assert.equal(DISCLOSURE_NARROW_VERSIONS.challenge.before, INTEGRATION_VERSIONS.challenge.after);
   // Stable event ids moved it once more (/16 -> /17): a recorded session's event ids alone (C-01 event identity).
@@ -251,7 +252,8 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   assert.equal(challenge.FORBIDDEN_EDIT_PROPOSITION, 'the human\'s quoted instruction forbade what the quoted action did, '
     + 'and no later human instruction recorded before the action lifted it');
   // D64 wording (owner decision 2026-10-07): an upheld disclosure's statement says what the challengers upheld.
@@ -973,7 +975,8 @@ test('M33 N bytes: a review whose answers propose nothing sends no new request, 
     // is left out of the window's project files. The second release review moved it once more
     // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
     // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/37');
+    // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/38');
   }
   // A combined review's answer carrying the member it was never asked for is outside its contract, exactly as before.
   const combined = await reviewRun.runReview({ session, pr: null, judge: async (request) => (request.challenge ? { votes: [] }

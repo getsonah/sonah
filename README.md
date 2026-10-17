@@ -90,7 +90,7 @@ holds it. Read them before you share them. See [Privacy](docs/PRIVACY.md), and
 
 ## Status and known limits
 
-- A beta (`0.3.0-beta.2`): commands, the page and the files under `~/.sonah` can change between betas.
+- A beta (`0.3.0-beta.3`): commands, the page and the files under `~/.sonah` can change between betas.
 - Claude Code and Codex are supported, Cursor is experimental. macOS and Linux are supported; Windows is not verified.
 - The default reviewer needs `claude-sonnet-5-5[1m]`; the Codex CLI and the Anthropic API are the alternatives.
 - The review can miss a decision or put one in the wrong place: check the rows that matter against their evidence.

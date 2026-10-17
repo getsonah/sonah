@@ -407,16 +407,27 @@ test('M33 the run profile is frozen plain data that binds the review\'s closed v
   // D70 review (S0): the model a claude-cli review asks by default is no member of the profile (run-review.js
   // SESSION_REVIEW_CLAUDE_CLI_MODEL), so the window checkpoint's digest is the review's alone.
   // D87: the code pass's member (its versions and closed vocabularies), whether or not a review runs the pass.
-  assert.deepEqual(Object.keys(profile).sort(), ['challenge', 'codePass', 'evidenceRequests', 'judgeFailureCodes',
-    'maxInputBytes', 'narrativeSchema', 'promptVersion', 'proposalReasks', 'reviewAgent', 'reviewScope',
-    'windowIncompleteReasons', 'windowing']);
+  // D101: the checklist's quote gate (its reasons, causes, places and quote bounds), so a change to any recomputes.
+  // D102: the rule an evidence re-ask's answer is merged with the first by, by name.
+  assert.deepEqual(Object.keys(profile).sort(), ['challenge', 'codePass', 'evidenceMerge', 'evidenceRequests',
+    'grounding', 'judgeFailureCodes', 'maxInputBytes', 'narrativeSchema', 'promptVersion', 'proposalReasks',
+    'reviewAgent', 'reviewScope', 'windowIncompleteReasons', 'windowing']);
+  assert.deepEqual(profile.grounding, { reasons: { requirements: [...ledger.REQUIREMENT_UNCHECKED_REASONS],
+    failures: [...ledger.FAILURE_UNCHECKED_REASONS] }, causes: [...ledger.GROUNDING_CAUSES],
+  lengthCauses: [...ledger.GROUNDING_LENGTH_CAUSES], anchorCauses: [...ledger.GROUNDING_ANCHOR_CAUSES],
+  places: [...ledger.QUOTE_PLACES],
+  limits: JSON.parse(JSON.stringify(ledger.QUOTE_LIMITS)) });
+  assert.equal(Object.hasOwn(runProfile('combined'), 'grounding'), false, 'the combined route has no checklist');
+  assert.equal(profile.evidenceMerge, 'later-copy-unless-code-lowers');
+  assert.equal(Object.hasOwn(runProfile('combined'), 'evidenceMerge'), false, 'a combined review asks no evidence again');
   // The code step: its versions moved, step 1's to /2. The review of the code step: to /3. Its
   // second review: to /4. Its third: to /5. The second release review: to /6. The agentic code step (D90): step 1 is
   // retired (no `check`), the review agent is code-pass/7 and its checking agents code-verify/1. A file changed since
   // the session, shown: code-pass/8. The cleanup (nothing held): code-pass/9 and code-verify/2. The triage (D96):
-  // code-pass/10, the tier table bound.
+  // code-pass/10, the tier table bound. The owner's answers of 2026-10-17: code-pass/11, the dossier leaves out a command
+  // refused before it ran.
   assert.equal(Object.hasOwn(profile.codePass, 'check'), false);
-  assert.deepEqual([profile.codePass.pass, profile.codePass.verify], ['sonah.code-pass/10', 'sonah.code-verify/2']);
+  assert.deepEqual([profile.codePass.pass, profile.codePass.verify], ['sonah.code-pass/11', 'sonah.code-verify/2']);
   assert.equal(profile.codePass.triage.table, 'sonah.tiers/1');
   assert.equal(profile.proposalReasks, 1);
   assert.deepEqual(profile.evidenceRequests, { reasks: 1, items: 8, bytes: 72_000, parsed: 256 });

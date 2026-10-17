@@ -122,7 +122,7 @@ test('M33 G2 a declared cause with no count is printed with the count of its dec
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   // The causes are listed as the PR comment lists them, with no semicolon (S6).
   assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper · '
-    + 'at least 1 part of the session evidence is incomplete.');
+    + 'at least 1 part of the evidence that Sonah read is incomplete.');
 });
 
 /** The delegated session plus the agent's own words: a claim the challengers can uphold. */

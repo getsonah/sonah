@@ -50,7 +50,8 @@ test('settled level: the versions are the branch\'s unreleased ones, not new num
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
 });
 
 const LEVEL = 'Report a choice such words settle as "You settled it" at the level the words address it, even when the'
@@ -192,7 +193,10 @@ test('settled level: a settled choice and a narrower chose-how one on the same a
 test('settled level: across a re-ask, a settled and a narrower pair citing the same words is one proposal (D79)',
   async (t) => {
     const parts = await fixture(t);
-    const [settled, narrower] = answerOf(parts).decisions;
+    const [short, narrower] = answerOf(parts).decisions;
+    // The settled entry with a value quote that grounds: the fixture's "°C" is under the quote minimum, so its value
+    // cell is published unchecked (below).
+    const settled = { ...short, valueReceipt: { ...short.valueReceipt, quote: ')} °C' } };
     // The narrower entry cites the very words the settled one does (the brief's own "show it in Celsius" case): the
     // two then share a structure, and settles, dimension and value are not part of it.
     const same = { ...narrower, constrainedBy: { ...settled.constrainedBy, settles: false, settledValueQuote: null } };
@@ -204,6 +208,9 @@ test('settled level: across a re-ask, a settled and a narrower pair citing the s
     assert.deepEqual(reasked(answer(settled), answer(settled, same)), ['temperature unit']);
     assert.deepEqual(served(answer(settled, same), answer(settled)), ['temperature unit']);
     assert.deepEqual(served(answer(settled), answer(same)), ['decimal places shown'], 'the settled entry is lost');
+    // D102 (the review of its third fix): a re-ask copy whose value code lowers gives way to the first answer's copy of
+    // that one proposal that grounds its value and every part the re-ask copy grounded.
+    assert.deepEqual(served(answer(short, same), answer(short)), ['decimal places shown'], 'the settled entry is lost');
     // Citing other words (the file for the unit, the message for the decimals), both are kept either way.
     assert.deepEqual(served(answer(settled), answer(narrower)), ['decimal places shown', 'temperature unit']);
     assert.deepEqual(reasked(answer(settled), answer(settled, narrower)), ['temperature unit', 'decimal places shown']);

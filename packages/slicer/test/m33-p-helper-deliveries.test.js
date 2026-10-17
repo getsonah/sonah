@@ -41,7 +41,10 @@ test('M33 P the closed vocabulary: reasons, receipt statuses, send names and arr
     // M33 P second repair: a Claude helper whose own recording received a later request no receipt places.
     continued: 'helper_continued_unproven',
     // L2: a Claude helper whose hand-off result recorded no typed launch status.
-    launchUnknown: 'helper_launch_mode_unknown' });
+    launchUnknown: 'helper_launch_mode_unknown',
+    // D99 (F1 guard): a Claude helper run in the background whose end the slicer could not read; its review: the same,
+    // where no later mention of it is established.
+    endUnread: 'helper_end_unread', endUnchecked: 'helper_end_unchecked' });
   // The adapter re-declares them as fixed notes (it never imports the slicer), plus one for a loss it cannot read.
   assert.deepEqual(Object.keys(HELPER_DELIVERY_GAP_NOTES), [...Object.values(HELPER_DELIVERY_REASONS), 'unreadable']);
   assert.equal(HELPER_RECEIPT_STATUSES, WORKFLOW_RECEIPT_STATUSES, 'a final state only: stopped proves nothing');

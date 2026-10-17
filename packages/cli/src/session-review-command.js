@@ -5,8 +5,9 @@
 // --post-comment`, pr-sharing.js); the pull request's metadata is the only thing read from GitHub.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import { setMaxListeners } from 'node:events';
 import { constants } from 'node:fs';
-import { access, lstat, readFile, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
@@ -95,6 +96,14 @@ export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
   '                           confirm it',
   '',
   'With no PR number, gh pr comment --body-file FILE posts to your branch\'s PR.'].join('\n');
+/** How many abort listeners one of a review's own signals (the one that stops its transports, its admission signal and
+ *  its budget's) may hold before Node warns of a leak (`setMaxListeners`). Each call in flight holds one listener on the
+ *  transports' signal until it settles (review-judge.js `cancellationOf`) and a slot of its profile's limiter meanwhile
+ *  (session-review.js `boundedJudge`, the session review's and the code review's calls alike), so at most the largest
+ *  `maxCallsInFlight` of any profile are there at once, beside the review's own listener (`stopAdmission`). Node's
+ *  default, 10, is less than twelve calls in flight; a listener past this bound is a leak, and Node still warns of it. */
+export const REVIEW_SIGNAL_MAX_LISTENERS = Math.max(...REVIEW_SPEED_PROFILE_NAMES
+  .map((name) => reviewSpeedProfile(name).maxCallsInFlight)) + 1;
 const failure = (code) => Object.assign(new Error(code), { code });
 /** A usage error, and the problem it names in fixed words (the option, when it is one the person typed). */
 const usageError = (problem) => Object.assign(new Error('usage'), { code: 'usage', problem });
@@ -236,6 +245,15 @@ export const ANSWER_REUSE_WORDS = Object.freeze({
   session: (reused, total) => `Model answers: ${reused} of ${total} reused (no call).`,
   code: (reused, total) => `Code review answers: ${reused} of ${total} reused (no call).`,
 });
+/** What the review prints when the system refuses Sonah access to the folder it runs in (`process.cwd()` fails with
+ *  EPERM: macOS keeps a terminal without access out of ~/Documents, ~/Desktop and ~/Downloads), and the fix. `refused`
+ *  names the folder only when Sonah can tell which folder it is (`shellFolderOf`), else null. */
+export const WORKING_FOLDER_WORDS = Object.freeze({
+  refused: (folder) => `The system refused Sonah access to ${folder === null ? 'the folder'
+    : `${folder}, the folder`} that Sonah runs in.`,
+  fix: 'Run sonah from a folder that this terminal can read. Or give this terminal access to the folder in the privacy '
+    + 'settings of your system.',
+});
 /** The advice for any other failure code. */
 export const REVIEW_FIX_DEFAULT = 'Run sonah doctor --no-probe, inspect the recording with --dry-run, and choose an '
   + 'output directory you own.';
@@ -245,7 +263,7 @@ const fixOf = (code) => (Object.hasOwn(REVIEW_FIX_WORDS, code) ? REVIEW_FIX_WORD
  *  lines are fragments: each line of the help is read as it stands. */
 export const STYLE_KINDS = Object.freeze({
   sessionReviewUsage: 'fragment', REVIEW_FIX_WORDS: 'notice', REVIEW_FIX_DEFAULT: 'notice', NO_SESSION_WORDS: 'notice',
-  ANSWER_REUSE_WORDS: 'notice',
+  ANSWER_REUSE_WORDS: 'notice', WORKING_FOLDER_WORDS: 'notice',
   SAVED_COMMENT_WORDS: 'description', 'SAVED_COMMENT_WORDS.target': 'label', 'SAVED_COMMENT_WORDS.noReview': 'fragment',
   'SAVED_COMMENT_WORDS.unreadable': 'fragment',
   RUN_STATE_WORDS: 'fragment', 'RUN_STATE_WORDS.line': 'notice', CODE_STEP_SOURCE_WORDS: 'fragment',
@@ -257,6 +275,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'SAVED_COMMENT_WORDS.target': [['owner/repo', 7]],
   'NO_SESSION_WORDS.searched': [['/folder/one', '/folder/two']],
   'ANSWER_REUSE_WORDS.session': [[1, 2], [5, 5]], 'ANSWER_REUSE_WORDS.code': [[0, 3], [3, 3]],
+  'WORKING_FOLDER_WORDS.refused': [['/folder/project'], [null]],
   'SAVED_COMMENT_WORDS.none': [['PR comment for owner/repo#7', 'this recording has no finished review yet'],
     ['PR comment for owner/repo#7', 'Sonah could not read the last saved review of this recording']],
   'SAVED_COMMENT_WORDS.lead': [['PR comment for owner/repo#7']],
@@ -276,8 +295,8 @@ export const STYLE_FIXTURES = Object.freeze({
 });
 /** "Working directory" and "settings" are technical nouns, not verbs in progress. */
 export const STYLE_ALLOW = Object.freeze(Object.fromEntries(['CODE_PASS_NO_ROOT', 'CODE_SNAPSHOT_WORDS.gitBase',
-  'CODE_STEP_SOURCE_WORDS.config', 'REPLAY_UNREAD', 'REVIEW_FIX_WORDS.config_invalid'].map((key) => [key,
-  ['technical-noun']])));
+  'CODE_STEP_SOURCE_WORDS.config', 'REPLAY_UNREAD', 'REVIEW_FIX_WORDS.config_invalid', 'WORKING_FOLDER_WORDS.fix']
+  .map((key) => [key, ['technical-noun']])));
 
 /** What a review writes in its state folder (`--state-dir`, else `session-reviews/<digest>` in Sonah's home), and
  *  nothing else there: the stored session answers, the review's record (and its lock), the code step's stored answers,
@@ -302,6 +321,17 @@ export function codeJudgeConfig(env, { backend, codeModel }) {
   return config;
 }
 
+/** The folder that the shell's PWD names, when it is the folder this process runs in (the same device and inode as
+ *  `.`), else null: a line about the folder Sonah runs in names only a folder that Sonah can tell is that one. */
+async function shellFolderOf(env) {
+  const named = env?.PWD;
+  if (typeof named !== 'string' || !isAbsolute(named)) return null;
+  try {
+    const [here, there] = await Promise.all([stat('.', { bigint: true }), stat(named, { bigint: true })]);
+    return here.dev === there.dev && here.ino === there.ino ? named : null;
+  } catch { return null; }
+}
+
 /** Injectable boundaries are for synthetic tests; the default path uses the product's own loaders,
  * transport, private stores and renderers. Selection and dry planning do not construct a reviewer.
  * D90 (owner decision 2026-10-15, privacy is not a design constraint): the session is loaded as recorded
@@ -309,7 +339,7 @@ export function codeJudgeConfig(env, { backend, codeModel }) {
  * is masked for a person. The answers and the review kept under SONAH_HOME hold the model's quotes as it read them: they stay on
  * this computer, owner-only (0600 files in 0700 folders). */
 export async function runSessionReviewCommand(argv, { stdout = process.stdout, stderr = process.stderr,
-  cwd = process.cwd(), env = process.env, discover = discoverSessions, loadSession = loadRecordedSessionWithHash,
+  cwd = undefined, env = process.env, discover = discoverSessions, loadSession = loadRecordedSessionWithHash,
   createJudge = createReviewJudge, runSession = reviewSession, loadReviews = loadDecisionReviews,
   signal = null, installSignals = true, openPage = openLocalPage, client = null, confirm = undefined,
   resolveToken = null, readCode = readCodeSnapshot, runCode = reviewCodePass } = {}) {
@@ -327,8 +357,19 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     stdout.write(`${sessionReviewUsage}\n`);
     return 0;
   }
+  // The folder the review runs in, first read here. When the system refuses Sonah access to it (EPERM), the review
+  // says so in fixed words, with the fix, as a problem Sonah names (exit 2), never as a crash.
+  if (cwd === undefined) {
+    try { cwd = process.cwd(); }
+    catch (error) {
+      if (error?.code !== 'EPERM') throw error;
+      stderr.write(`${WORKING_FOLDER_WORDS.refused(await shellFolderOf(env))}\nFix: ${WORKING_FOLDER_WORDS.fix}\n`);
+      return 2;
+    }
+  }
   const controller = new AbortController();
   const admission = new AbortController();
+  setMaxListeners(REVIEW_SIGNAL_MAX_LISTENERS, controller.signal, admission.signal);
   const stopAdmission = () => admission.abort();
   const abort = () => controller.abort();
   let admissionFailure = null;
@@ -338,6 +379,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   let usageModels = undefined;
   try {
     budget = createReviewBudget(options);
+    setMaxListeners(REVIEW_SIGNAL_MAX_LISTENERS, budget.signal);
     // B3: the principal ids a post needs are checked before anything is read; the token and the pull request itself
     // before the first model call (below).
     if (options.postComment) (await import('./pr-sharing.js')).validatePrSharing({ env });
@@ -512,7 +554,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
         answerCache: createAnswerCache(join(state, STATE_ANSWERS), config),
         store: createSessionReviewStore(join(state, STATE_REVIEW)),
         speedProfile: options.profile, concurrency: options.concurrency, signal: admission.signal,
-        rateLimitTally: () => latestRateLimit,
+        rateLimitTally: () => latestRateLimit, census: loaded.census ?? null,
         onWindowRecord: (event) => stderr.write(`Review window ${event.window}/${event.of} finished\n`) });
     } finally {
       signal?.removeEventListener('abort', abort);
@@ -664,7 +706,8 @@ export const RUN_STATE_WORDS = Object.freeze({
   session: Object.freeze({ complete: 'complete', incomplete: 'did not finish' }),
   codePass: Object.freeze({ complete: 'covered the whole change', partial: 'did not cover all of the change and its checks',
     missing: 'did not run', incomplete: 'did not finish',
-    noFile: 'had no change to review, because the session changed no file here',
+    // D100 (the audit of absence sentences): what Sonah found, never that the session changed no file.
+    noFile: 'had no change to review, because Sonah found no changed file here',
     backend: 'did not run, because it runs only on the claude-cli backend' }),
   // The release review: after a code pass short of complete that the person did not require on the command line.
   codePassApart: ', which does not change the exit code (add --code-pass to make it count)',
@@ -828,8 +871,8 @@ export function codeStepLine({ on, source } = {}, snapshot = null) {
 }
 
 /** D87: what the CLI says when the code step has no working directory to read the session's files under. */
-export const CODE_PASS_NO_ROOT = 'Code review: did not run. The recording names no working directory that exists here, '
-  + 'so Sonah read no file.';
+export const CODE_PASS_NO_ROOT = 'Code review: did not run. Sonah could not read a working directory of the session here, '
+  + 'so it read no file.';
 /** The agentic code step: what the CLI says when the review's backend cannot run it. */
 export const CODE_STEP_BACKEND_LINE = 'Code review: did not run. It runs only on the claude-cli backend, whose reviewer '
   + 'can read the repository. Sonah read nothing.';
@@ -844,10 +887,12 @@ export const CODE_SNAPSHOT_WORDS = Object.freeze({
     + `changed or that git shows as different. Sonah can read ${readable} of them now${others ? ` (not readable: `
       + `${others})` : ''}.`,
   gitBase: (commit, how, differ, unrecorded, outside) => ` The change runs from the start commit ${commit} of the `
-    + `session (${how}). ${differ} ${differ === 1 ? 'path differs' : 'paths differ'}${unrecorded ? `, and no recorded `
-      + `edit wrote ${unrecorded} of them` : ''}.${outside ? ` Sonah counts ${outside} more outside the working `
-      + 'directory.' : ''}`,
-  noBase: ' Git does not show where the session started, so the change is the edits that the session recorded.',
+    + `session (${how}). ${differ} ${differ === 1 ? 'path differs' : 'paths differ'}${unrecorded ? `, and Sonah found no `
+      + `recorded edit that wrote ${unrecorded} of them` : ''}.${outside ? ` Sonah counts ${outside} more outside the `
+      + 'working directory.' : ''}`,
+  // D100: git can fail to say for any reason: said as what Sonah could not read.
+  noBase: ' Sonah could not read from git where the session started, so the change is the edits that the session '
+    + 'recorded.',
   tail: ' The code review can read any file of the repository.',
 });
 export function codeSnapshotLine(snapshot) {
@@ -877,7 +922,7 @@ export const REPLAY_WORDS = Object.freeze({
       : ''}`,
   code: (n, list, model) => `Code review: it would first send ${n} ${n === 1 ? 'call' : 'calls'} (${list})${model
     ? ` to ${model}` : ''}. Then it would send one check for each finding and one for its questions.`,
-  noCode: 'Code review: it would send no call, because there is no change to review.',
+  noCode: 'Code review: it would send no call, because Sonah found no change to review.',
 });
 /** The reuse dry run's lines: the stored session answers a review would reuse, and the code step's first
  *  request (the review agent), counted. Counts, labels of Sonah's own and sizes only; with `codeModel` (--code-model), the model they would

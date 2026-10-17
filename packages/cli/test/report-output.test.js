@@ -89,18 +89,18 @@ test('D97 (8): a commit not on GitHub, a file not committed, and report files in
   // keeps its link), then the re-run line. It never says to push and then post this report: pushing adds no link to
   // it. The re-run line says how.
   assert.deepEqual(reportOutputLines({ md, repo, github: { ...github, pushed: false }, files: ['src/a.js'] }).slice(2),
-    [`Commit ${HEAD.slice(0, 7)} is not on origin yet. This report has no links to the code as the agent left it.`,
+    [`Git does not show commit ${HEAD.slice(0, 7)} on origin. This report has no links to the code as the agent left it.`,
       REPORT_OUTPUT_WORDS.rerun]);
   // Only the start commit missing: its short id, and the links to the code before the session.
   assert.deepEqual(reportOutputLines({ md, repo, github: { ...github, startPushed: false }, files: [] }).slice(2),
-    [`Commit ${START.slice(0, 7)} is not on origin yet. This report has no links to the code as it was before the `
+    [`Git does not show commit ${START.slice(0, 7)} on origin. This report has no links to the code as it was before the `
       + 'session.', REPORT_OUTPUT_WORDS.rerun]);
   // Both missing: each side's line, by its own commit; one commit that both sides need: no code links, said once.
   assert.deepEqual(reportOutputLines({ md, repo, github: { ...github, pushed: false, startPushed: false }, files: [] })
     .slice(2), [REPORT_OUTPUT_WORDS.notPushed.new(HEAD.slice(0, 7), 'origin'),
     REPORT_OUTPUT_WORDS.notPushed.old(START.slice(0, 7), 'origin'), REPORT_OUTPUT_WORDS.rerun]);
   assert.deepEqual(reportOutputLines({ md, repo: { ...repo, start: HEAD }, github: { ...github, pushed: false,
-    startPushed: false }, files: [] }).slice(2), [`Commit ${HEAD.slice(0, 7)} is not on origin yet, so this report has no `
+    startPushed: false }, files: [] }).slice(2), [`Git does not show commit ${HEAD.slice(0, 7)} on origin, so this report has no `
     + 'code links.', REPORT_OUTPUT_WORDS.rerun]);
   // Pushed state unknown (git could not say): no line claims it is not pushed.
   assert.equal(reportOutputLines({ md, repo, github: { ...github, pushed: null }, files: ['src/a.js'] }).length, 2);

@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.2",
+  "version": "0.3.0-beta.3",
   "description": "Code review for your agent's PRs: did you get what you asked for? Reviews the Claude Code or Codex session behind the change, locally.",
   "keywords": [
     "ai-agents",
@@ -96,6 +96,7 @@
     "packages/evidence/src/review-profiles.js",
     "packages/evidence/src/review.js",
     "packages/evidence/src/run-review.js",
+    "packages/evidence/src/seen-in-part.js",
     "packages/evidence/src/session.js",
     "packages/evidence/src/status-fact.js",
     "packages/evidence/src/ste-count.js",
@@ -116,6 +117,7 @@
     "packages/render/session-story.js",
     "packages/slicer/index.js",
     "packages/slicer/src/ask.js",
+    "packages/slicer/src/background-ends.js",
     "packages/slicer/src/before.js",
     "packages/slicer/src/child-links.js",
     "packages/slicer/src/codex-exec.js",
@@ -132,6 +134,7 @@
     "packages/slicer/src/labels.js",
     "packages/slicer/src/outcome.js",
     "packages/slicer/src/recorded.js",
+    "packages/slicer/src/recorder-census.js",
     "packages/slicer/src/recording-identity.js",
     "packages/slicer/src/records.js",
     "packages/slicer/src/strict-json.js",

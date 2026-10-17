@@ -536,7 +536,8 @@ test('M33 C repair: the challenger judges a support item on its own, and refutes
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44', 'still one version bump for M33 C');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45', 'still one version bump for M33 C');
   const system = challenge.challengeSystem().replace(/\s+/g, ' ');
   for (const phrase of [/A support candidate names a claim/, /earlier recorded result of the same measurement/,
     /cite the result that candidate cites/])
@@ -568,7 +569,8 @@ test('M33 C repair: the challenger judges a support item on its own, and refutes
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37', 'still one version bump');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38', 'still one version bump');
   const built = prompt.buildNarrativePrompt({ session: supportedSession(), window: { index: 0, events: supportedSession().events } });
   const task = built.prompt.replace(built.evidencePrompt, '').replace(/\s+/g, ' ');
   assert.match(task, /A claim an earlier RESULT already contradicts takes contradictedBy, never supportedBy/);

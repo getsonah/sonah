@@ -255,7 +255,7 @@ test('the coverage phrasebook is closed and complete', () => {
 
 for (const [name, over, expected] of [
   ['no windows', { windows: 0 }, 'Sonah found nothing in the session to review'],
-  ['no actions', { actions: 0 }, 'the recording holds no action of the agent'],
+  ['no actions', { actions: 0 }, 'Sonah found no action of the agent in the recording'],
   ['failed windows', { windowsFailed: 1 }, '1 of 2 review windows did not finish'],
   ['elided instructions', { instructionsElided: 2 }, 'the recorder shortened 2 messages of yours'],
   ['unlinked delegations', { delegationsUnlinked: 1 }, 'Sonah found no checked recording for 1 delegation to a helper'],
@@ -269,9 +269,9 @@ for (const [name, over, expected] of [
 test('an incomplete PR file list is named too, and a complete one is not', () => {
   const partial = { ...completePr, enumeration: 'partial' };
   assert.ok(causeLine(shell({ pr: partial, coverageFacts: FACTS({ windowsFailed: 1 }) }))
-    .includes('the file list of the pull request is incomplete'));
+    .includes('Sonah could not read the whole file list of the pull request'));
   assert.ok(!causeLine(shell({ coverageFacts: FACTS({ windowsFailed: 1 }) }))
-    .includes('the file list of the pull request is incomplete'));
+    .includes('Sonah could not read the whole file list of the pull request'));
   assert.deepEqual(coverageCauses({ pr: completePr, coverageFacts: FACTS() }), []);
 });
 

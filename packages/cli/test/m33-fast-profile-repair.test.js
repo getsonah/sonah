@@ -34,7 +34,11 @@ const plan = (session, speedProfile) => reviewRun.planWindowRequests({ session, 
 // fast window's request outgrow its bound is bounded by construction; a request over the spec's worst-case call is
 // `unreviewed_scope`, never re-cut or clipped.
 test('M35 the inventory session: every request fits the one bound, no window is re-cut and none is lost', async () => {
-  const session = inventorySession();
+  // D103: a Claude Code recording's 30 KB results are shown whole now (24,000 bytes each at most), so 25 of them fill one
+  // window's work as the fixture's 60 did at 3,600 bytes a side. (All 60 in one segment with no message between them are
+  // larger than the work budget alone: that window is oversize, its request over the bound and declared unreviewed,
+  // never clipped; d103-skim.test.js pins it.)
+  const session = inventorySession({ units: 25 });
   for (const speedProfile of [undefined, FAST]) {
     const planned = plan(session, speedProfile);
     assert.ok(sizes(planned).every((bytes) => bytes <= WINDOW_REQUEST_MAX_BYTES), String(speedProfile));

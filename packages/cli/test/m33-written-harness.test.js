@@ -63,7 +63,7 @@ test('M33 written: the harness summary counts written statements by closed label
       { text: `${SENTINEL} status`, stated: stated(`${SENTINEL}_STATUS: every synthetic check passes.`), contradictedBy: failed },
       { text: `${SENTINEL} scope`, stated: stated(`${SENTINEL}_SCOPE: covers the empty input.`), contradictedBy: null },
       `${SENTINEL} not an object`] }));
-  assert.equal(summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(summary.schema, 'sonah.session-review-harness/19');
   assert.equal(summary.state, 'finished');
   assert.deepEqual(Object.keys(summary.writtenClaims).sort(), [...WRITTEN_LABELS].sort(), 'every closed label, always');
   assert.deepEqual(summary.writtenClaims, { unverified: 1, contradicted: 1 });

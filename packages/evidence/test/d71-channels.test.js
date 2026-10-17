@@ -65,7 +65,8 @@ test('D71 S3: the closed vocabularies, each in one constants place, and the vers
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
   // W1 B moved it once more (sonah.session-review-agent/10): an edit may go against a project instruction file.
@@ -91,9 +92,12 @@ test('D71 S3: the closed vocabularies, each in one constants place, and the vers
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   // The D80 integration moved it once more (sonah.challenge-dossier/13): the same outcome line (D80_VERSIONS).
-  assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/13');
+  // D103 moved it once more (sonah.challenge-dossier/14): a Claude Code recording's results are cut at 12,000 bytes a side.
+  // D103 moved it once more (sonah.challenge-dossier/15): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_DOSSIER_VERSION, 'sonah.challenge-dossier/15');
 });
 
 test('D71 S3: the brief adds step 4 (failures) and renumbers the rest; the combined route\'s texts are unchanged', () => {

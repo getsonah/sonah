@@ -1,5 +1,188 @@
 # Changelog
 
+## 0.3.0-beta.3
+
+Sonah states fewer false things about a recording, and it reads more of each long output. A finished background run
+now shows its end. Each check that Sonah could not do now names the test that stopped it. Commands, the page and the
+files under `~/.sonah` can still change between betas.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, Sonah reviews again every long session that an earlier version reviewed. It also reviews again about half of
+the short ones.
+
+### One reading per recorder fact
+
+- Claude Code 2.1.284 and later write extra keys on a background task's notice. Sonah now reads these notices. A
+  finished background run shows its end, not "no end".
+- A command that moved to the background at its timeout now joins its notice too. Sonah reads the run's id from the
+  recorder's own field, not from a sentence.
+- A notice that Claude Code queued while the agent worked now closes its run too. A new key on its row no longer
+  hides it.
+- Sonah now reads what a call changed by one rule in every part. A write inside a refused command changed nothing.
+  The page no longer counts it as an unknown write, a missing body or a change outside the repository.
+- A failed edit no longer counts as a write whose body the recording lacks.
+- A write stopped before it finished may have changed its file. Sonah keeps it in the change list, with an unknown
+  outcome.
+- The page and the .md list such a write apart from the changed files. They no longer call it a changed file.
+- The page's header and the code review find a file's last edit by the same rule. A refused write after a test run no
+  longer hides that run.
+- Sonah no longer tells the code review that a refused command ran after a file's last edit. Like the page, Sonah
+  tells it that no command ran after that edit. The page still lists each refused command, as one that did not run.
+- The code review's list of changed files holds only changes that could have happened.
+- Sonah never takes a refused write's body as a file's earlier state.
+- Sonah reviews a session again only where its recording's evidence moved.
+
+### A run has no end only when the recording proves it
+
+- A background run may end in a notice that Sonah cannot read. Sonah now checks the recording before it says the run
+  has no end.
+- Later records can mention such a run. There the page reads: "Later records mention this run, but Sonah could not
+  read whether or how it ended."
+- Otherwise the page reads: "Sonah could not check whether the recording holds an end of this run." This happens
+  when the run's id is only in records before its start, or Sonah could not search for it.
+- The page lists such a run under What Sonah could not check, never as a failure. A claim that rests on it stays open.
+- The page's header says that Sonah could not read whether or how these runs ended. It never says that they ended.
+- An ask that cites such a run is not checked. Its reason says that Sonah could not read the end.
+- A run that its notice marks as stopped or killed now reads "stopped before it finished".
+- The header and the failure items no longer say that a stopped or cancelled run has no recorded end.
+- A Workflow or a background agent with no receipt follows the same rule.
+- So does a Workflow that Sonah could not link to a result, when Sonah could not read its end. The page names it
+  under What Sonah could not check, as a run whose end Sonah could not read.
+- Sonah now counts each record that one reader knew and another could not read. It counts them by reason and recorder
+  version, Codex included. The counts go to the review's private record, not to the page.
+- The counts include every notice that Sonah labels, also one that no reader kept.
+- The counts name the kind of each run whose end Sonah could not read: a command, Workflow or agent. A check can
+  then account for every notice linked to a command.
+- Sonah reviews a session again only where its recording's evidence moved.
+
+### Sonah says what it could not read, never that something is missing
+
+- Sonah read every fixed sentence of the page, the .md, the PR comment and the terminal. A sentence that says something
+  is missing now needs code that proves it.
+- Where no code proves it, the sentence says what Sonah found or could not read. For example: "Sonah found no command
+  in the recording."
+- A command with no result that Sonah read no longer "has no recorded end". The header says "for 1 Sonah found no
+  result".
+- The causes of what Sonah could not check no longer speak for the recording. They say what Sonah holds or could not
+  read.
+- A claim rests on "a check that Sonah did not see finish".
+- The code review's lines say that Sonah could not read the working directory, or the start from git.
+- The report says that git did not show a commit on GitHub. Git on your computer can miss a push from another one.
+- A run that Claude Code marks as completed reads "completed, Sonah read no exit code". Its notice can name the
+  exit code.
+- A call that failed or was refused reads "The recorder does not mark which." Its recorded text can still say which.
+- A code finding that Sonah withheld for its lines now names both checks that could fail.
+- A write whose command failed or stopped reads "Sonah could not read whether this write happened". A later record can
+  still show the file.
+- A test now fails when a word table gains a sentence that no one read.
+- The test also checks how far each sentence claims. A sentence about the whole recording needs a proof that searched it.
+- What Sonah sends for a review does not change.
+
+### Why an ask is not checked
+
+- Sonah now names the check that refused the quote for an ask. Before, it always said that it did not find the quote
+  word for word.
+- For a quote that is too long, Sonah writes words like these. "The session review quoted 134 characters, more than
+  the 120 that Sonah checks, so Sonah did not check it."
+- Sonah says that it did not find the quote only when it searched for it and did not find it. These words name only
+  where Sonah searched: the place that the session review cited. Sonah searched only the text that it showed the
+  session review for the answer that gave the quote. The quote can be in another part of the recording.
+- The words for the other checks also say no more than the check read. Sonah says that the session review named a
+  kind of text, not that it quoted one. A cited part that Sonah does not hold is "not in the recording as Sonah read
+  it".
+- The words never say that the quote is in the recording, or where it is. Sonah did not check the quote, so it is no
+  evidence.
+- The words say no more than the check found. Sonah names a mark like the ones that it writes only as a mark. The
+  recording itself can hold such a mark.
+- A quote from another agent than the one you asked now has its own reason. Sonah says that it could not place the
+  quote in the same agent's work as your ask.
+- For a quote not after your ask, Sonah says that it could not place it after your ask.
+- Sonah counts the characters of a quote as you see them. Where its check counted a different number, the words give
+  both numbers. An emoji is one character, and the check counts it as two.
+- The status of the ask does not change. Sonah still did not check it.
+- The stored report keeps the cause of each refused quote beside its reason, and where Sonah found the quote. No page
+  and no .md shows where.
+- The stored report also counts the causes of quotes that Sonah refused in a second answer about an ask.
+- A report that an earlier version wrote keeps its words.
+- This changes the known limit of 0.3.0-beta.2 about asks that Sonah did not check. The reason now names the check
+  that refused the quote.
+
+### Sonah says what it saw only in part
+
+- Sonah can show its reviewer only the start and the end of a long output. The report now says so.
+- An item, an ask, a claim or a run that cites such an output gets a mark. The mark names the output's run
+  or place, and the lines that Sonah left out.
+- When Sonah cut inside a line, the mark says so. For a file read, it also names the lines of the file.
+- The mark changes no status. A confirmed claim stays confirmed and carries the mark.
+- The mark says what Sonah left out, and nothing more. It does not say what those lines would change.
+- What Sonah could not check counts these outputs. The count does not lower the coverage of the review.
+- Sonah reviews a long session in parts. It counts each such output once, also when only a later part saw it.
+- The page no longer links to a run or a claim that it leaves out to keep its size. It keeps the words.
+- No request to the model changed. Sonah reuses its saved answers and shows the marks without a new call.
+
+### Sonah reads more of each long output
+
+- In a Claude Code session, Sonah now shows its reviewer each tool output whole, up to 24,000 bytes.
+- A longer output shows its first and last 12,000 bytes. Sonah names the lines it left out, and the reviewer can
+  ask for them.
+- Codex sessions keep the old size: 3,600 bytes at each end.
+- Long Claude Code reviews make about 14% more calls.
+- Saved reviews of Claude Code sessions ask again where a request changed.
+- Separate checkers test each item Sonah reports. A checker now sees whole each output that its item quotes or names.
+- The output of an action that an item names, such as a decision's commands, still shows in part.
+- When an output is too large for the checker's request, the checker sees its first and last parts. Sonah tells it
+  why and names the bytes it left out.
+- Whole outputs make a checker's request larger, so it holds fewer items. A long review can make more checker calls.
+- An item can cite more output than a checker can see whole at once. Sometimes the checker can still see one of those
+  outputs whole. Such an item shares a checker with other items where that output stays whole. If it fits nowhere, it
+  goes to a checker alone. An item that shows no output whole shares a checker where it fits, as before. An item that
+  goes alone does not stop the items around it from sharing.
+- Rarely, an item still goes alone and its checker sees no output whole. One cause: the note that names a cut output
+  makes a shared request too large. The other: the checker that it would share sees whole an output that this item cuts.
+
+### A second answer never erases a first
+
+- The session review can ask again and show more of a long output. Sonah now merges the two answers by one rule.
+- For each ask, claim, failed command, decision or change of approach, the second answer wins. If Sonah's own check
+  refuses the second answer's evidence but accepts the first answer's evidence, the first answer stays.
+- This is the check that Sonah applies before it shows you each of them. For an ask, it also checks the words of your
+  message that the ask quotes. For a decision or a change of approach, it checks each place that the answer cites.
+  Sonah must have shown its reviewer that place, as the answer names it.
+- Sonah checks each part of a decision on its own: what the agent chose, the value and who decided it. The first
+  decision stays only when Sonah refuses a part of the second and accepts that part of the first. Sonah must also
+  accept in the first each part that it accepts in the second.
+- If both answers quote the same words of your message for an ask, the two are one ask. The rule above chooses the
+  answer that Sonah shows. If the second answer quotes only part of those words, Sonah can still show two asks.
+- Neither answer can drop a contradiction that the other answer found. Sonah checks each contradiction as usual.
+- Sometimes a claim of the first answer cites no contradiction and no other evidence that Sonah accepts. A claim of the
+  second answer can quote the same message. Their quotes can be one inside the other. Sonah drops the first claim only
+  after every check upholds the second claim. Otherwise Sonah keeps the first claim and checks it as usual.
+- Sonah reads its saved answers again with this rule. It asks again only where the merged answer changes.
+
+### In the terminal
+
+- A long review no longer warns of a memory leak. Twelve calls at once are normal, and Node still warns of a real leak.
+- In a folder that the system keeps your terminal out of, `sonah review` now says so and gives the fix, not `EPERM`.
+
+### Known limits
+
+- On a long session, the code review often does not run, because what Sonah would send it is too large. The page can
+  then still name the files of the change as if the code review saw them. A later beta fixes both.
+- A long session can take many calls to review. One session of 3 MB took about 100 calls.
+- The code review reads the repository as it is now. A repository that moved after the session gives it later work
+  to review too.
+- A helper agent's background command carries no id, so Sonah does not read it as a background run.
+- An edit with no recorded result still counts as a changed file. Most such edits come from helper agents, and most
+  of them did happen.
+- The known limits of 0.3.0-beta.2 below still hold, except two. A write inside a refused command no longer shows as a
+  write. A quote that Sonah could not check now gets its true reason.
+
+### Versions
+
+- These versions move: `sonah.session-page/42`, `sonah.session-story/37`, `sonah.report-model/3`,
+  `sonah.code-snapshot/11`, `sonah.code-pass/11`, `sonah.narrative/38`, `sonah.challenge/45` and
+  `sonah.challenge-dossier/15`.
+
 ## 0.3.0-beta.2
 
 Sonah writes one report, ordered by what you must do. The code review is now an agent that reads your repository

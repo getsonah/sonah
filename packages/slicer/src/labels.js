@@ -168,6 +168,81 @@ export const LABEL_GAPS = Object.freeze({
 const GAP_SET = new Set(Object.values(LABEL_GAPS));
 
 /**
+ * D99 (F1 guard; extends LABEL_GAPS and `notification_unmatched`): the recorder census. Each record of a recorder fact
+ * that one reader recognised and another could not read is counted once, under one closed reason, with the recorder
+ * version of its row (recorder-census.js `recorderCensusOf`). Recorders change their record shapes between releases; a
+ * count by reason and version shows a new shape on the day it is first recorded, instead of a loss no one sees. The
+ * census is a side channel for the run record (only a caller that asks receives it), so no ledger byte moves for it;
+ * only an end that it leaves unread (`end_unread_*`, events.js BACKGROUND_ENDS `unread`) changes a ledger, and the
+ * evidence adapter declares that as a gap. Closed, so each reason's rate stays computable.
+ */
+export const RECORDER_CENSUS_REASONS = Object.freeze({
+  // ---- a Claude row the labeller labels a task notification that the status join does not type, by the first test
+  //      of the join it fails (events.js `claudeTaskNotification`); every such row has exactly one ----
+  /** Its text is not one `<task-notification>` block, or a header element is recorded more than once. */
+  notificationUnparsed: 'notification_unparsed',
+  /** Its header carries no call id (`<tool-use-id>`) of an id's shape. */
+  notificationNoCallId: 'notification_no_call_id',
+  /** Its header carries no task id (`<task-id>`) of an id's shape. */
+  notificationNoTaskId: 'notification_no_task_id',
+  /** Its header carries no status, or one outside the closed set (events.js TASK_NOTIFICATION_STATUSES). */
+  notificationStatusUnknown: 'notification_status_unknown',
+  /** A Claude row the labeller and the status join's own reading (events.js `taskNotificationRead`) disagree on: one
+   *  takes it for a task notification, the other not. Counted once, under this reason only. Both call the one carrier
+   *  rule (harness-context.js `claudeNotificationCarrier`), so none is expected; it is counted so that one would show. */
+  readerDisagreement: 'reader_disagreement',
+  /** A labelled task notification whose origin carries a key beside its kind that no known recorder writes
+   *  (harness-context.js NOTIFICATION_ORIGIN_KEYS): accepted (D98), and logged by its name (`key`) and version. */
+  originUnknownKeys: 'origin_unknown_keys',
+  // ---- a Claude Bash result that records a background task id and registers no launch ----
+  /** Its sidecar is not the known shape (a key or a type the reader does not know); each key it does not know is
+   *  logged by its name (`key`). */
+  sidecarUnknownKeys: 'sidecar_unknown_keys',
+  /** Its visible result does not name the typed id as a token of its own (events.js `resultNamesTypedId`). */
+  launchTextLacksId: 'launch_text_lacks_id',
+  // ---- a background run (a Bash launch, a Workflow or an Agent with no receipt) whose end code could not read, and
+  //      could not prove absent (background-ends.js), by the first test that failed ----
+  /** A notification is linked to it (its `notified` count), and none typed its end. */
+  endUnreadLinked: 'end_unread_linked',
+  /** Its task id is in a later row of the lineage that the agent did not write. */
+  endUnreadMentioned: 'end_unread_mentioned',
+  /** Its task id is in a row before its launch, so no search for it can prove an absence. */
+  endUnreadBefore: 'end_unread_before',
+  /** Its task id is not of an id's shape, so no verbatim search for it is sound. */
+  endUnreadIdUnsearchable: 'end_unread_id_unsearchable',
+  /** A file of the lineage could not be read again for the search. */
+  endUnreadScanFailed: 'end_unread_scan_failed',
+  // ---- Codex ----
+  /** A Codex row of a shape its reader does not know (each counted `unsupported` row), by its carrier
+   *  (CODEX_SHAPE_CARRIERS). */
+  codexShapeMiss: 'codex_shape_miss',
+});
+/** D99 (F1 guard): a recorder key the census logs by its name, when it has a key's shape; any other is counted with no
+ *  name. */
+export const CENSUS_KEY_SHAPE = /^[A-Za-z_$][A-Za-z0-9_$.-]{0,63}$/;
+/** D99 (F1 guard): the Codex carriers a shape miss is counted by — the row type or item type each strict reader of
+ *  codex.js reads. Closed. */
+export const CODEX_SHAPE_CARRIERS = Object.freeze(['row_type', 'event_msg', 'turn_aborted', 'item_completed',
+  'mcp_tool_call', 'web_search', 'file_change', 'command_execution', 'patch_apply_end', 'response_item',
+  'inter_agent_message', 'message', 'function_call', 'function_call_output']);
+/** D99: the kinds of background run whose end the absence search reads (events.js `backgroundRunsOf`): a Bash command
+ *  run in the background, a Workflow run, a background Agent. An `end_unread_*` census entry names its run's kind, so
+ *  the link-conservation identity over Bash launches is computable apart from Workflow and Agent runs. Closed. */
+export const BACKGROUND_RUN_KINDS = Object.freeze(['bash', 'workflow', 'agent']);
+/** D99: the census's `end_unread_*` reasons, in the order background-ends.js tests them. */
+export const END_UNREAD_REASONS = Object.freeze([RECORDER_CENSUS_REASONS.endUnreadLinked,
+  RECORDER_CENSUS_REASONS.endUnreadIdUnsearchable, RECORDER_CENSUS_REASONS.endUnreadScanFailed,
+  RECORDER_CENSUS_REASONS.endUnreadMentioned, RECORDER_CENSUS_REASONS.endUnreadBefore]);
+/** D99 (review of A1b): the `end_unread_*` reasons that establish that a later record mentions the run — a notification
+ *  linked to it, or its task id in a later row of the lineage that the agent did not write — so a run read under one is
+ *  marked `unread` (events.js BACKGROUND_ENDS): later records mention it, and Sonah could not read whether or how it
+ *  ended. Under each other reason (its id in a row before its launch, an id no verbatim search is sound for, a file that
+ *  could not be read again) no later mention is established: the run is marked `unchecked`, Sonah could not check
+ *  whether the recording holds an end of it. */
+export const END_MENTIONED_REASONS = Object.freeze([RECORDER_CENSUS_REASONS.endUnreadLinked,
+  RECORDER_CENSUS_REASONS.endUnreadMentioned]);
+
+/**
  * M34 labels review (F2; C-02 "Slice-time labels", positional label gaps). The label gaps whose loss is at a row: an
  * untyped row where Claude Code writes its interruption notice, and a row the declared legacy fallback labelled. Each
  * row carrying one leaves a mark at its position in the ledger (events.js `LABEL_GAP_MARK`), one per counted label, so

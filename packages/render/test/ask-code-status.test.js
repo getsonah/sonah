@@ -141,13 +141,16 @@ test('the page: a done ask a finding bears on keeps its status word, and its lin
   const question = itemNumberOf(model, 'SYNTHETIC should the changelog name the issue?');
   assert.ok(notMet && weak && question);
   // The ask keeps the session review's status; its line says what the code review found, linked to the item.
-  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${REPORT_PROMPT_WORDS.agentOnly} · ${REPORT_PROMPT_WORDS.codeFinding(notMet)}`);
+  // D100: the words of an ask that rests only on the agent's words name what the session review cited (an apostrophe,
+  // escaped on the page).
+  const agentOnly = REPORT_PROMPT_WORDS.agentOnly.replaceAll("'", '&#39;');
+  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${agentOnly} · ${REPORT_PROMPT_WORDS.codeFinding(notMet)}`);
   assert.match(page, new RegExp(`<mark class="ask s-doneCode" id="ask-1"><span class="tag">Done</span>`));
   // A not-checked ask whose words a finding's trace quotes: its status as it was, and the line.
   assert.ok(askLineOf(page, 3).startsWith('ask 3 · Not checked · '));
   assert.ok(askLineOf(page, 3).endsWith(REPORT_PROMPT_WORDS.codeFinding(weak)));
   // The question about request 3's ask: a line, linked to the question's item, never a count.
-  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${REPORT_PROMPT_WORDS.agentOnly} · ${REPORT_PROMPT_WORDS.codeQuestion(question)}`);
+  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${agentOnly} · ${REPORT_PROMPT_WORDS.codeQuestion(question)}`);
   // Without the links (an earlier build's report) no ask has such a line.
   const before = pageOf(unlinked(joined()));
   assert.equal(before.includes(REPORT_PROMPT_WORDS.codeFinding(notMet)), false);

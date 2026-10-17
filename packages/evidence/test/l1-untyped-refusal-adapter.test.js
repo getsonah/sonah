@@ -55,9 +55,9 @@ test('L1 review: the loss is named by its own cause', () => {
   assert.ok(COVERAGE_CAUSES.includes('instructions_refusal_untyped'));
   // The failed call is the subject, so "the call" (or "any of them") is what can hold an answer, never the recorder.
   assert.equal(COVERAGE_SENTENCE.instructions_refusal_untyped({ n: 1 }), '1 failed call comes from a recorder version '
-    + 'that does not record which calls you refused, so the call can hold an answer that Sonah did not read');
+    + 'that does not mark which calls you refused, so the call can hold an answer that Sonah did not read');
   assert.equal(COVERAGE_SENTENCE.instructions_refusal_untyped({ n: 2 }), '2 failed calls come from a recorder version '
-    + 'that does not record which calls you refused, so any of them can hold an answer that Sonah did not read');
+    + 'that does not mark which calls you refused, so any of them can hold an answer that Sonah did not read');
   const report = { repo: { host: 'github.com', id: 'l1' }, pr: null, session: null, hasSessionEvidence: true,
     coverageFacts: { windows: 1, windowsWithNarrative: 1, windowsFailed: 0, actions: 2, instructions: 2,
       instructionsElided: 0, instructionsWithheld: 0, delegationsUnlinked: 0, adapterGaps: 1, declared: 'partial' },
@@ -67,5 +67,5 @@ test('L1 review: the loss is named by its own cause', () => {
     coverage: 'partial', codeCoverage: 'complete' };
   assert.deepEqual(coverageCauses(report).map(([cause, { n }]) => [cause, n]), [['instructions_refusal_untyped', 3]]);
   const header = causeLine(report);
-  assert.match(header, /3 failed calls come from a recorder version that does not record which calls you refused/);
+  assert.match(header, /3 failed calls come from a recorder version that does not mark which calls you refused/);
 });

@@ -41,7 +41,9 @@ const honest = (request) => ({ votes: request.challenge.items.map((item) => ({ k
 
 // ---- 1. the evidence re-ask never replaces the first answer --------------------------------------------------------------
 
-const LONG = Array.from({ length: 400 }, (_, k) => `line ${k + 1}: ${k === 199 ? 'not ok 7 - FAILS in the middle'
+// D103: a Claude Code recording's result is cut past twice its 12,000-byte skim: 1,000 lines of about 53 bytes, its
+// failure in the cut middle.
+const LONG = Array.from({ length: 1_000 }, (_, k) => `line ${k + 1}: ${k === 499 ? 'not ok 7 - FAILS in the middle'
   : `ok ${'.'.repeat(40)}`}`).join('\n');
 /** A lint error shown whole, a long test run whose failing line lies in its cut middle, an edit, the closing claim. */
 function lintAndTests() {
@@ -79,7 +81,7 @@ test('M36 phase 3 review (1): a re-ask that leaves out a contradiction the first
   const reviewWith = (reask) => reviewRun.runReview({ session: s, pr: null, reviewScope: 'session-only', plan, judge: async (request) => {
     if (request.challenge) return honest(request);
     if (request.label.endsWith(':evidence')) { if (reask === null) throw new Error('down'); return reask; }
-    return { ...empty(), claims: [lint], evidenceRequests: [{ eventId: a('A1-r'), fromLine: 199, throughLine: 201 }] };
+    return { ...empty(), claims: [lint], evidenceRequests: [{ eventId: a('A1-r'), fromLine: 499, throughLine: 501 }] };
   } });
   const findings = (report) => report.findings.map((f) => [f.kind, f.status,
     f.receipts.find((r) => r.role === 'observation')?.eventId]);
@@ -290,7 +292,7 @@ test('M36 phase 3 review (4): an edit\'s own lines and an empty output are not r
   assert.deepEqual(nonzero(serve(quiet, [{ eventId: b('B1-r'), fromLine: 1, throughLine: 1 }]).record.refused),
     { not_requestable: 1 });
   // Lines past a text that is there are still out of range.
-  assert.deepEqual(nonzero(serve(s, [{ eventId: a('A1-r'), fromLine: 900, throughLine: 901 }]).record.refused),
+  assert.deepEqual(nonzero(serve(s, [{ eventId: a('A1-r'), fromLine: 1_900, throughLine: 1_901 }]).record.refused),
     { out_of_range: 1 });
 });
 

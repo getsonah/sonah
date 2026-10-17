@@ -33,7 +33,7 @@ import * as R from './m33-n-forbidden-edit-rows.js';
 import { MOVED_BY_M4_SESSION } from './m33-m4-disclosure-fixture.js';
 import { INTEGRATION_VERSIONS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS, S7_VERSIONS } from './m33-integration-fixture.js';
 import { FIX_COLUMN_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS,
-  CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS }
+  CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CITED_WHOLE_VERSIONS }
   from './m33-integration-fixture.js';
 
 const PROFILES = [null, 'm33-fast', 'm33-lean'];
@@ -141,7 +141,9 @@ test('M4 session: the version moved once, and the forbidden-edit note no longer 
   // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
   // stands again, as before /43.
   assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
-  assert.equal(challenge.CHALLENGE_PROFILE.version, CLEANUP_VERSIONS.challenge.after);
+  // D103 moved it once more (CITED_WHOLE_VERSIONS: challenge): a session-only batch shows the results its items cite whole.
+  assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
+  assert.equal(challenge.CHALLENGE_PROFILE.version, CITED_WHOLE_VERSIONS.challenge.after);
   const [before, after] = MOVED_BY_M4_SESSION.texts.forbiddenNote;
   assert.ok(challenge.FORBIDDEN_EDIT_NOTE.includes(after) && !challenge.FORBIDDEN_EDIT_NOTE.includes(before));
   assert.ok(!challenge.FORBIDDEN_EDIT_NOTE.includes('reportedBy'));

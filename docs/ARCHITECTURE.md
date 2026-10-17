@@ -136,7 +136,9 @@ answers and the report never leave the computer.
 
 - Reasons (why something was not checked, withheld or failed) are fixed lists in code, never built in a prompt: most
   in `evidence/src/ledger.js`, the slicer's in `slicer/index.js` and `slicer/src/labels.js`, the recorder's typed facts
-  in `redact/index.js`.
+  in `redact/index.js`. A quote that a checklist row cites goes through one ordered list of grounding tests
+  (`GROUNDING_CAUSES` in `ledger.js`); a refused quote keeps its row's reason and names the first test that failed,
+  and the reader's words come from that test and say only what it read.
 - Every schema, prompt and rendered format carries a version string, `sonah.<name>/<n>`. A change to the bytes it
   names bumps it.
 - Every digest goes through one canonical serialization, `evidence/contracts/canonical.js`.

@@ -114,7 +114,8 @@ test('G2: the vocabularies, the version and the labels', () => {
   for (const list of [NOT_ACTING_REANCHOR_WITHHELD, NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD])
     assert.ok(Object.isFrozen(list));
   // One bump for the new request (the re-ask's fixed words); no request sent before moved.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   assert.equal(windowOfLabel('narrative:w2:reanchor:3'), 2, 'a re-ask belongs to its window (F226)');
   assert.equal(windowOfLabel('challenge:w2:reanchor:b1:p1'), 2);
   assert.equal(windowOfLabel('challenge:w2:reanchor-column:b1:p1'), 2);

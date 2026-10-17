@@ -13,12 +13,14 @@ import { DECISION_ORDER, honestStatuses, unrecordedCover,
   WRITTEN_LABELS, WRITTEN_WITHHELD_CAUSES, PART_REASONS, reviewRunState,
   PROMISE_STATUSES, DISCLOSURE_REASONS, FORBIDDEN_EDIT_BREACHES, FORBIDDEN_WITHHELD_CAUSE, STOPPED_WORDS, FAILURE_HANDLINGS,
   DECISION_COLUMNS,
-  shellWriteWords, UNRUN_WRITE_REASON, OWN_WRITTEN_SOURCE,
+  shellWriteWords, UNRUN_WRITE_REASON, OWN_WRITTEN_SOURCE, NO_RESULT_OUTCOME_FORM, END_UNCHECKED_FORM,
   REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, ASK_CODE_LINKS, ASK_CODE_ATTENTION_LINKS, CODE_FINDING_KINDS,
-  claimRowKind, derivedColumn, DERIVED_COLUMN_STATE }
+  claimRowKind, derivedColumn, DERIVED_COLUMN_STATE, GROUNDING_CAUSES, GROUNDING_LENGTH_CAUSES, GROUNDING_GATE_REASONS }
   from './ledger.js';
 import { INSTRUCTION_GAP_NOTES, DELEGATION_BRIEF_GAP_NOTES, INTER_AGENT_GAP_NOTES, HELPER_REPORT_CLIPPED_NOTE, LABEL_GAP_NOTES,
-  CLOSING_STATEMENT_CLIPPED_NOTE, BODY_CAPPED_NOTE, HUMAN_INTERACTION_UNKNOWN_NOTE } from '../adapters/sonah-ledger.js';
+  CLOSING_STATEMENT_CLIPPED_NOTE, BODY_CAPPED_NOTE, HUMAN_INTERACTION_UNKNOWN_NOTE, END_UNREAD_NOTE, END_UNCHECKED_NOTE,
+  WORKFLOW_GAP_NOTES }
+  from '../adapters/sonah-ledger.js';
 import { promisesBesideFindings } from './run-review.js';
 import { codeContradictedRows, codePassFindings } from './code-pass.js';
 import { withheldWhy } from './code-report.js';
@@ -146,7 +148,8 @@ export const FOLDED_SECTION_WORDS = Object.freeze({
   lead: 'Sonah could not check these items. This section keeps each one, with the reason when the session review '
     + 'recorded one. Sonah does not count them in the summary of what needs your attention.',
   groups: Object.freeze({ asksNotChecked: 'Asks not checked', claimsOpen: 'Claims not checked against a recorded result',
-    claimsIncomplete: 'Claims that rest on a check that did not finish', failuresNotChecked: 'Failures not checked',
+    claimsIncomplete: 'Claims that rest on a check that Sonah did not see finish',
+    failuresNotChecked: 'Failures not checked',
     writtenOpen: 'Statements that the agent wrote into files, not checked' }),
   here: (n, one, many) => `Sonah could not check ${counted(n, one, many)}. ${n === 1 ? 'It is' : 'They are'} under What `
     + 'Sonah could not check.',
@@ -186,21 +189,109 @@ export const ATTENTION_WORDS = Object.freeze({
 
 /** D71 (S4), owner decision (b): why an ask was kept as not checked — its closed reason (ledger.js
  *  REQUIREMENT_UNCHECKED_REASONS) in plain words; and the fact code adds beside a row (REQUIREMENT_FACTS). One table for
- *  the session page and the PR comment; the vocabularies stay closed in ledger.js, these are only their reader words. */
+ *  the session page and the PR comment; the vocabularies stay closed in ledger.js, these are only their reader words.
+ *  D101: a row the quote gate lowered with a cause reads its cause's words instead (`checklistReasonWords`); these words
+ *  stay for every other reason and for a row an earlier report wrote with no cause. */
 export const CHECKLIST_REQUIREMENT_REASON_WORDS = Object.freeze({
   deliverable_ungrounded: 'Sonah did not find, word for word, the evidence that the session review cited for it',
   deliverable_not_after: 'the evidence that Sonah cited comes from before your ask',
-  check_not_completed: 'the result, command or edit that the session review cited for it did not run to an end',
+  // D100 (the audit of absence sentences): an action Sonah read no result of by its window's end, and a call that failed
+  // or was refused, read the same as one that never ended: said as what Sonah could not show.
+  check_not_completed: 'Sonah could not show that what the session review cited for it ran to an end',
+  // D99 (F1 guard): never "did not run to an end": later records mention the run.
+  check_end_unread: 'later records mention the run that the session review cited for it, but Sonah could not read '
+    + 'whether or how it ended',
+  // D99 (review of A1b): where no later mention of the run is established, the words claim none.
+  check_end_unchecked: 'Sonah could not check whether the recording holds an end of the run that the session review '
+    + 'cited for it',
   shortfall_ungrounded: 'Sonah did not find, word for word after your ask, what the session review said is missing',
-  ask_unreviewed: 'the session review did not name what you asked in this message, so nothing shows whether the agent '
-    + 'did it',
+  ask_unreviewed: 'the session review did not name what you asked in this message, so Sonah did not check whether the '
+    + 'agent did it',
   challenge_refuted: "the session review's own check did not uphold the status that it first gave",
   challenge_unsettled: "the session review's own check on it did not settle",
   challenge_unexecuted: "the session review's own check on it did not run",
-  // D80: a deliverable quoted only from the body of a write whose command did not run, failed or was stopped.
-  [UNRUN_WRITE_REASON]: 'the code that the session review cited for it is only in a file write whose command did not '
-    + `run, failed or ${STOPPED_WORDS}, so the recording does not show that the write happened`,
+  // D80: a deliverable quoted only from the body of a write whose command did not run, failed or was stopped. D100
+  // (review of A1c): the search reads the places shown after the write, and a later record can still show that the
+  // write happened, so the words say what Sonah found and what it did, never what the recording does not show.
+  [UNRUN_WRITE_REASON]: 'Sonah found the code that the session review cited for it only in a file write whose command '
+    + `did not run, failed or ${STOPPED_WORDS}, so Sonah did not count that write as done`,
 });
+/**
+ * D101 (owner decision 2026-10-17): why Sonah did not check a quote that a checklist row cited, by the grounding test that
+ * refused it (ledger.js GROUNDING_CAUSES), in plain words. Each entry names only that test and the numbers code measured
+ * (`quoteLength`), never that the quoted text is in the recording or where, and never more than its test proved: a
+ * quote Sonah did not check is no evidence. "Did not find the quote, word for word" is said only for `not_found`, the
+ * literal search that ran and failed, and only of what it searched: the place cited (the cited event, in the cited
+ * role), in what the window that gave the quote showed there (the caller's `shownSession` view and source map), never
+ * the recording or all that the window showed; `event_not_shown` says the same of what that window was shown (another
+ * window may have shown the place, and this one its event in another role). The receipt's own fields are said as what
+ * the session review named (a kind of text, a recording), never as what it quoted; a missing event is missing from the
+ * recording as Sonah read it, and a kind of text an event cannot hold is one Sonah does not read from it (`eventRoles`,
+ * a rule of Sonah's, not the event's words). A mark like Sonah's may be the recording's own text, so `synthetic_marker`
+ * names only the mark; an anchor's test fails for an event before the anchor and for one code cannot place, so its
+ * words say only that Sonah could not place it. A length is the quote's characters as given; where the bound counted
+ * another length (blank space at its ends left out, or a character counted as two), the words give that count too. One
+ * table for every reader; each entry takes `{ chars, counted, limit, anchor }` (`checklistReasonWords`).
+ */
+export const CHECKLIST_GROUNDING_CAUSE_WORDS = Object.freeze({
+  receipt_malformed: () => 'the session review gave no quote in the form that Sonah checks',
+  // The test reads the kind of text the receipt names, never the quote: the quoted words may be of a kind it accepts.
+  role_not_allowed: () => 'the session review named a kind of text that Sonah does not accept here',
+  quote_too_short: ({ chars, counted: as, limit }) => (as === chars
+    ? `the session review quoted ${counted(chars, 'character')}, fewer than the ${limit} that Sonah needs, so Sonah `
+      + 'did not check it'
+    : `the session review quoted ${counted(chars, 'character')}, which Sonah counts as ${as}, fewer than the ${limit} `
+      + 'it needs'),
+  quote_over_limit: ({ chars, counted: as, limit }) => (as === chars
+    ? `the session review quoted ${counted(chars, 'character')}, more than the ${limit} that Sonah checks, so Sonah `
+      + 'did not check it'
+    : `the session review quoted ${counted(chars, 'character')}, which Sonah counts as ${as}, more than the ${limit} `
+      + 'it checks'),
+  // The test reads the recording as Sonah read it (the session's events), never the recorder's file.
+  event_missing: () => 'the session review cited a part that is not in the recording as Sonah read it',
+  // The test reads Sonah's rule of which kinds of text it reads from a part of that kind (session.js `eventRoles`), not
+  // the part's words: a message can hold text that looks like code, and Sonah reads it only as the message.
+  role_not_event_kind: () => 'the session review named a kind of text that Sonah does not read from the part of the '
+    + 'recording that it cited',
+  // The test reads the recording the receipt names, never a part of another recording.
+  session_mismatch: () => 'the session review named a recording other than this one',
+  // The test reads only whether the window that gave the quote was shown the place cited: its part of the recording may
+  // be shown in another kind of text, and another window may have shown the place.
+  event_not_shown: () => 'Sonah did not show the session review the place that it cited, for the answer that gave the '
+    + 'quote',
+  synthetic_marker: () => 'the session review quoted a mark like the ones that Sonah writes, so Sonah did not check it',
+  // The search ran only at the place cited (its part of the recording, in its kind of text), in what the answer that
+  // gave the quote was shown there: the quote can be elsewhere in what Sonah showed, or where that answer was not shown.
+  not_found: () => 'Sonah did not find the quote, word for word, at the place that the session review cited, in what '
+    + 'Sonah showed it for the answer that gave the quote',
+  not_anchor_session: ({ anchor }) => `Sonah could not place the quote that the session review cited in the same `
+    + `agent's work as ${anchor}`,
+  not_after: ({ anchor }) => `Sonah could not place the quote that the session review cited after ${anchor}`,
+});
+/** D101: what a checklist row's quote must come after (the anchor's tests), by the row's kind. */
+export const CHECKLIST_QUOTE_ANCHOR_WORDS = Object.freeze({ requirement: 'your ask', failure: 'the failure' });
+/**
+ * D101: the words of why a checklist row is not checked — `kind` `requirement` (an ask) or `failure`. A row the quote gate
+ * lowered (a reason of ledger.js GROUNDING_GATE_REASONS) with a cause reads its cause's words
+ * (CHECKLIST_GROUNDING_CAUSE_WORDS), filled with the length code measured for a length cause; with such a cause and no
+ * valid length, none. Any other row, and a row an earlier report wrote with no cause, reads its reason's words. Null for
+ * a reason outside the table. Pure.
+ */
+export function checklistReasonWords(row, kind) {
+  if (!rowObject(row) || !Object.hasOwn(GROUNDING_GATE_REASONS, kind)) return null;
+  if (GROUNDING_CAUSES.includes(row.cause) && GROUNDING_GATE_REASONS[kind].includes(row.reason)) {
+    const measured = rowObject(row.quoteLength) ? row.quoteLength : null;
+    const length = GROUNDING_LENGTH_CAUSES.includes(row.cause);
+    const count = (n) => Number.isSafeInteger(n) && n >= 0;
+    if (length && !(measured && count(measured.chars) && count(measured.counted) && count(measured.limit)
+      && measured.limit > 0)) return null;
+    return CHECKLIST_GROUNDING_CAUSE_WORDS[row.cause]({ chars: length ? measured.chars : null,
+      counted: length ? measured.counted : null, limit: length ? measured.limit : null,
+      anchor: CHECKLIST_QUOTE_ANCHOR_WORDS[kind] });
+  }
+  const table = kind === 'failure' ? CHECKLIST_FAILURE_REASON_WORDS : CHECKLIST_REQUIREMENT_REASON_WORDS;
+  return typeof row.reason === 'string' && Object.hasOwn(table, row.reason) ? table[row.reason] : null;
+}
 /** S6 (S5 review H1), owner decision D71 (b): why a claim is kept as not checked although the review proposed a basis
  *  for it — its own challenge did not settle (ledger.js PROMISE_UNCHECKED_REASONS), in plain words (the page and the PR
  *  comment). */
@@ -293,15 +384,18 @@ export const CHECKLIST_FAILURE_REASON_WORDS = Object.freeze({
   response_ungrounded: 'Sonah did not find, word for word, what the session review cited for what the agent did',
   response_not_after: 'what the session review cited comes from before the failure',
   response_other_agent: "what the session review cited is another agent's",
-  response_not_shown_to_human: "the words that the session review cited are a helper's, and you do not see them",
+  // D100 (the audit of absence sentences): the check reads the event's kind and lineage (a message to you is the main
+  // thread's commentary), so the words name that, never only a helper.
+  response_not_shown_to_human: "the words that the session review cited are not a message of the agent's to you",
   turn_end_not_cited: "the session review did not cite the end of the agent's turn after it",
   failure_unreviewed: 'the session review said nothing about it',
   challenge_refuted: "the session review's own check did not uphold what it first said",
   challenge_unsettled: "the session review's own check on it did not settle",
   challenge_unexecuted: "the session review's own check on it did not run",
   // D80: an acted-on response quoted only from the body of a write whose command did not run, failed or was stopped.
-  [UNRUN_WRITE_REASON]: 'the code that the session review cited for what the agent did is only in a file write whose '
-    + `command did not run, failed or ${STOPPED_WORDS}, so the recording does not show that the write happened`,
+  // D100 (review of A1c): said as what Sonah found and what it did, as the ask's reason is.
+  [UNRUN_WRITE_REASON]: 'Sonah found the code that the session review cited for what the agent did only in a file '
+    + `write whose command did not run, failed or ${STOPPED_WORDS}, so Sonah did not count that write as done`,
 });
 /** D71 (S4): a result's typed outcome (ledger.js `resultOutcome`: its class and, where a class has several phrases, its
  *  form — recorder fields only) in plain words, never the recorder's terms (the page
@@ -310,7 +404,9 @@ export const CHECKLIST_OUTCOME_WORDS = Object.freeze({
   'ran-failed': (exit) => (Number.isSafeInteger(exit) && exit !== 0 ? `It ran and failed with exit code ${exit}.`
     : 'It ran and failed.'),
   // A recorder that types no refusal: a refusal before a call runs is the harness's (its rules, or your answer to it).
-  'failed-or-refused': () => 'The command failed, or the harness refused it before it ran. The recording does not say '
+  // D100: the recorder marks neither; the result text that it records can say which, so the words never name the
+  // recording.
+  'failed-or-refused': () => 'The command failed, or the harness refused it before it ran. The recorder does not mark '
     + 'which.',
   // A refusal before a call runs is the harness's, as above (its rules, or your answer to it); the recorder's denial
   // kind says which, beside these words.
@@ -319,14 +415,23 @@ export const CHECKLIST_OUTCOME_WORDS = Object.freeze({
   // status, and a result recorded with none of its output shown is no longer listed (output-no-status `unread`).
   // D80: the one phrase for a stopped call (`STOPPED_WORDS`), and a write whose command failed or was stopped
   // (SHELL_WRITE_OUTCOME_WORDS).
+  // D100 (the audit of absence sentences): "no end of it" only for a background run whose recording the slicer proved
+  // holds none; a call Sonah read no result of, or any other form, is said as what Sonah found or could not read.
   'no-terminal-status': (exit, form) => (form === 'background' ? 'It started in the background. The recording shows no '
     + 'end of it.'
     : form === 'interrupted' || form === 'cancelled' ? `It ${STOPPED_WORDS}.`
       : form === 'command-failed' || form === 'command-stopped' ? SHELL_WRITE_OUTCOME_WORDS[form]
-        : form === 'none' ? 'The recording holds no result of it.' : 'The recording shows no end of it.'),
+        : form === NO_RESULT_OUTCOME_FORM ? 'Sonah found no result of it.'
+          : 'Sonah could not read whether or how it ended.'),
+  // D99 (F1 guard): a background run whose end Sonah could not read, and could not prove absent. Not a failure. Review
+  // of A1b: where no later mention of it is established (END_UNCHECKED_FORM), the words claim none.
+  'end-unread': (exit, form) => (form === END_UNCHECKED_FORM
+    ? 'Sonah could not check whether the recording holds an end of this run.'
+    : 'Later records mention this run, but Sonah could not read whether or how it ended.'),
 });
-/** D80: what is said of a write whose command failed or was stopped: the ledger's own words (`shellWriteWords`, which a
- *  model request carries), so the page, the story and the evidence say it alike, and they are not rewritten here. */
+/** D80: what is said of a write whose command failed or was stopped: the ledger's own words (`shellWriteWords`), so the
+ *  page, the story and the evidence say it alike. D100 (review of A1c): no request carries them (`resultOutcome` never
+ *  returns these forms), and they say what Sonah could read, never that the recording does not show the write. */
 export const SHELL_WRITE_OUTCOME_WORDS = Object.freeze({ 'command-failed': `Its ${shellWriteWords('failed')}.`,
   'command-stopped': `Its ${shellWriteWords('stopped')}.` });
 /** D71 (e), (g), S4: what contradicts a claim, by the finding's code-set source (ledger.js CONTRADICTION_SOURCES). */
@@ -344,7 +449,7 @@ export const COVERAGE_CAUSES = Object.freeze(['no_windows', 'no_actions', 'windo
   'instructions_elided', 'instructions_withheld', 'instructions_capped', 'instructions_stripped',
   'instructions_nontext', 'instructions_nontext_unplaced',
   'labels_legacy_recorder', 'interruptions_untyped', 'commands_args_unrecorded', 'answers_unrecorded',
-  'origins_unknown', 'notifications_unmatched',
+  'origins_unknown', 'notifications_unmatched', 'ends_unread', 'ends_unchecked',
   'instructions_refusal_untyped', 'instructions_refusal_session_unknown', 'human_interaction_unknown',
   'delegations_unlinked',
   'delegations_ambiguous',
@@ -353,7 +458,9 @@ export const COVERAGE_CAUSES = Object.freeze(['no_windows', 'no_actions', 'windo
   'unsupported_message', 'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit', 'carry_capped',
   'other_gap', 'code_unreviewable',
   'pr_hunks_withheld',
-  'pr_files_incomplete']);
+  'pr_files_incomplete',
+  // D104 (F5 part 4): the one cause that never caps coverage (`UNCAPPED_CAUSES`), named last.
+  'results_seen_in_part']);
 
 /**
  * How a cause's count is said. `n` is the count; `atLeast` marks it as a lower bound — M33 (C-06): "a
@@ -370,7 +477,10 @@ const nounOf = (counts, singular, plural) => (one(counts) ? singular : plural);
 
 export const COVERAGE_SENTENCE = Object.freeze({
   no_windows: () => 'Sonah found nothing in the session to review',
-  no_actions: () => 'the recording holds no action of the agent',
+  // D100 (the audit of absence sentences): each sentence below says what Sonah found, holds or could not read where code
+  // proves no absence; a sentence about the recording or the recorder stands only where a recorder field, a recorder
+  // version or a closed list of Sonah's own kinds proves it (packages/render/test/absence-audit.js).
+  no_actions: () => 'Sonah found no action of the agent in the recording',
   windows_incomplete: ({ n, m }) => `${n} of ${m} review windows did not finish`,
   // F170: these two are also how a declared missing child, or an elided ask, is named when no fact
   // counted it (GAP_HEADER_CAUSE) — and a declaration may state no count.
@@ -402,40 +512,52 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // M34 labels (C-02 "Slice-time labels"): each counted label gap, declared by the adapter with its own closed note
   // (sonah-ledger.js `LABEL_GAP_NOTES`), is named by its own cause, never by another's.
   // M34 labels review (F6): every row the fallback labelled is counted, whichever way it read it.
-  labels_legacy_recorder: (counts = {}) => `${amount(counts)} ${nounOf(counts, 'record comes', 'records come')} from an `
-    + `old recorder that does not mark your messages, so Sonah could not check whether ${nounOf(counts, 'it holds',
+  // The legacy fallback also labels a row of no plain version, so "an old recorder" is not proved of every row.
+  labels_legacy_recorder: (counts = {}) => `${amount(counts)} ${nounOf(counts, 'record carries', 'records carry')} no `
+    + `mark of your messages that Sonah can read, so Sonah could not check whether ${nounOf(counts, 'it holds',
       'they hold')} a message of yours`,
-  interruptions_untyped: (counts = {}) => `the recorder did not mark ${amount(counts)} `
-    + `${nounOf(counts, 'record', 'records')} where it writes that you stopped the agent, so the recording does not `
-    + 'show where you stopped it',
-  commands_args_unrecorded: (counts = {}) => `the recorder kept ${amount(counts)} slash `
-    + `${nounOf(counts, 'command', 'commands')} that you ran without ${nounOf(counts, 'its', 'their')} arguments, so `
-    + `Sonah does not have the words that you typed with ${nounOf(counts, 'it', 'them')}`,
-  answers_unrecorded: (counts = {}) => `the recording links no answer of yours to ${amount(counts)} `
+  // An untyped row is one with none of the typed fields Sonah reads: a field it does not read reads the same.
+  interruptions_untyped: (counts = {}) => `Sonah read no type on ${amount(counts)} ${nounOf(counts, 'record', 'records')} `
+    + 'of the kind where the recorder writes that you stopped the agent, so it cannot tell whether or where you stopped it',
+  commands_args_unrecorded: (counts = {}) => `Sonah found no arguments for ${amount(counts)} slash `
+    + `${nounOf(counts, 'command', 'commands')} that you ran, so it does not have the words that you typed with `
+    + `${nounOf(counts, 'it', 'them')}`,
+  answers_unrecorded: (counts = {}) => `Sonah found no answer of yours linked to ${amount(counts)} `
     + `${nounOf(counts, 'question', 'questions')} that the agent asked you`,
+  // An origin of a kind outside the closed set: the recorder names it, and Sonah does not know the name.
   origins_unknown: (counts = {}) => `${amount(counts)} ${nounOf(counts, 'record carries', 'records carry')} a source `
-    + `that the recorder does not name, so Sonah did not label ${nounOf(counts, 'it', 'them')}`,
-  // Owner decision 2026-10-07: only notifications whose carried call id names a call the recording does not hold.
+    + `that Sonah does not know, so Sonah did not label ${nounOf(counts, 'it', 'them')}`,
+  // Owner decision 2026-10-07: only notifications whose carried call id names a call Sonah did not read before them.
   notifications_unmatched: (counts = {}) => `${amount(counts)} ${nounOf(counts, 'notice', 'notices')} from background `
-    + `tasks ${nounOf(counts, 'names', 'name')} a call that the recording does not hold, so Sonah could not tie `
+    + `tasks ${nounOf(counts, 'names', 'name')} a call that Sonah did not find in the recording, so Sonah could not tie `
     + `${nounOf(counts, 'it', 'them')} to the work`,
+  // D99 (F1 guard): background runs whose end Sonah could not read, and could not prove absent (the adapter's
+  // END_UNREAD_NOTE; the owner's answer of 2026-10-17: and WORKFLOW_GAP_NOTES.launchedEndUnread). Never said to have had
+  // no end.
+  ends_unread: (counts = {}) => `later records mention ${amount(counts)} background `
+    + `${nounOf(counts, 'run', 'runs')}, but Sonah could not read whether or how ${nounOf(counts, 'it', 'they')} ended`,
+  // D99 (review of A1b): background runs whose end Sonah could not read where no later mention is established (the
+  // adapter's END_UNCHECKED_NOTE; and WORKFLOW_GAP_NOTES.launchedEndUnchecked): the words claim none.
+  ends_unchecked: (counts = {}) => `Sonah could not check whether the recording holds an end of ${amount(counts)} `
+    + `background ${nounOf(counts, 'run', 'runs')}`,
   // L1 review (OWNER DECISION 2026-10-06): calls a Claude Code recorder that types no refusal recorded as failed. Any of
   // them may be the human's refusal holding an unread answer: the adapter declares them with its own note
   // (INSTRUCTION_GAP_NOTES.refusal_untyped).
+  // D100: the recorder version marks no refusal; the result text that it records can still say one.
   instructions_refusal_untyped: (counts = {}) => `${amount(counts)} failed ${nounOf(counts, 'call comes',
-    'calls come')} from a recorder version that does not record which calls you refused, so `
+    'calls come')} from a recorder version that does not mark which calls you refused, so `
     + `${nounOf(counts, 'the call', 'any of them')} can hold an answer that Sonah did not read`,
   // L1 session-type review (finding L1S-unknown-type-not-counted): calls refused in a session whose recorder did not
   // record whether a human was there to answer. Each keeps its declaration under the adapter's own note
   // (INSTRUCTION_GAP_NOTES.refusal_session_unknown).
   instructions_refusal_session_unknown: (counts = {}) => `${amount(counts)} refused ${nounOf(counts, 'call is',
-    'calls are')} in a session that does not record whether you were there to answer, so `
+    'calls are')} in a session where Sonah found no record of whether you were there to answer, so `
     + `${nounOf(counts, 'the call', 'any of them')} can hold an answer that Sonah did not read`,
   // M33 brittleness L3 review: a recorder whose schema the adapter does not know (HUMAN_INTERACTION_UNKNOWN_NOTE) cannot
   // say which of its actions asked the human or recorded the human's choice. Nothing was elided and no instruction is
   // counted: the declaration's count is the session's actions, so the sentence states none.
-  human_interaction_unknown: () => 'the format of the recorder does not say which actions asked you a question or kept '
-    + 'your answer',
+  human_interaction_unknown: () => 'Sonah does not know how this recorder marks the actions that asked you a question or '
+    + 'kept your answer',
   delegations_unlinked: (counts) => `Sonah found no checked recording for ${amount(counts)} `
     + `${nounOf(counts, 'delegation', 'delegations')} to a helper`,
   // F191: an `ambiguous_child` had candidate child sessions — more than one — not none, so the
@@ -454,12 +576,13 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // F170: every other code a declared gap can cap with. A count no declaration stated is not
   // invented: `coverageCauses` counts such a declaration as one, and says "at least". W3c-8:
   // `unrecorded_body` (F96) and `code_unreviewable` (F106) were the first two.
-  incomplete_inventory: (counts = {}) => `${positiveAmount(counts)} ${nounOf(counts, 'part', 'parts')} of the session `
-    + `evidence ${nounOf(counts, 'is', 'are')} incomplete`,
-  observations_incomplete: (counts = {}) => `the recording does not show the result of ${positiveAmount(counts)} `
-    + `${nounOf(counts, 'action', 'actions')}, so Sonah cannot tell whether ${nounOf(counts, 'it', 'they')} succeeded`,
-  source_clipped: (counts) => `the recorder shortened ${amount(counts)} recorded ${nounOf(counts, 'text', 'texts')}, so `
-    + 'Sonah cannot quote what it left out',
+  incomplete_inventory: (counts = {}) => `${positiveAmount(counts)} ${nounOf(counts, 'part', 'parts')} of the evidence `
+    + `that Sonah read ${nounOf(counts, 'is', 'are')} incomplete`,
+  observations_incomplete: (counts = {}) => `Sonah could not read the result of ${positiveAmount(counts)} `
+    + `${nounOf(counts, 'action', 'actions')}, so it cannot tell whether ${nounOf(counts, 'it', 'they')} succeeded`,
+  // A text the recorder cut and one an earlier Sonah cut are declared alike here: said as what Sonah holds.
+  source_clipped: (counts) => `Sonah holds only part of ${amount(counts)} recorded ${nounOf(counts, 'text', 'texts')}, `
+    + 'so it cannot quote the rest',
   // M33 F: a helper's final report THIS REVIEW capped (the redactor's bound of the scrubbed report). The recorder kept
   // the whole report, so the cut is never credited to it: the adapter declares it with its own note
   // (HELPER_REPORT_CLIPPED_NOTE), and the header names it in the same terms.
@@ -477,11 +600,11 @@ export const COVERAGE_SENTENCE = Object.freeze({
     + 'its review, so it cannot quote what it left out',
   unsupported_message: (counts) => `${amount(counts)} ${nounOf(counts, 'record has', 'records have')} a form that Sonah `
     + 'cannot read',
-  unrecorded_body: (counts) => `the recording holds no text for ${amount(counts)} ${nounOf(counts, 'write', 'writes')}, `
-    + `so Sonah cannot quote the code that ${nounOf(counts, 'it', 'they')} wrote`,
-  write_outcome_unknown: (counts) => `the recording does not show whether ${amount(counts)} `
+  unrecorded_body: (counts) => `Sonah found no text for ${amount(counts)} ${nounOf(counts, 'write', 'writes')} in the `
+    + `recording, so it cannot quote the code that ${nounOf(counts, 'it', 'they')} wrote`,
+  write_outcome_unknown: (counts) => `Sonah could not read whether ${amount(counts)} `
     + `${nounOf(counts, 'write', 'writes')} succeeded`,
-  command_outcome_unknown: (counts) => `the recording does not show the exit status of ${amount(counts)} `
+  command_outcome_unknown: (counts) => `Sonah could not read the exit status of ${amount(counts)} `
     + `${nounOf(counts, 'command', 'commands')}`,
   input_limit: (counts) => `Sonah reviewed ${amount(counts)} ${nounOf(counts, 'action and its result',
     'actions and their results')} in separate windows`,
@@ -501,9 +624,27 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // M33: counted by what declared it short — an enumeration that was not complete, and each listed
   // file whose content was not.
   pr_files_incomplete: (counts = {}) => (isCount(counts.n) && counts.n > 0
-    ? `the file list of the pull request is incomplete (${amount(counts)} ${nounOf(counts, 'shortfall', 'shortfalls')})`
-    : 'the file list of the pull request is incomplete'),
+    ? `Sonah could not read the whole file list of the pull request (${amount(counts)} `
+      + `${nounOf(counts, 'shortfall', 'shortfalls')})`
+    : 'Sonah could not read the whole file list of the pull request'),
+  // D104 (F5 part 4): the recorded results a window's request showed as a head and a tail, its middle left out (the
+  // coverage fact `resultsSeenInPart`, the sum over the windows). It says the count alone: a row's own mark says the rest.
+  results_seen_in_part: (counts = {}) => `Sonah first showed the session review only part of ${amount(counts)} recorded `
+    + `${nounOf(counts, 'result', 'results')}`,
 });
+
+/**
+ * D104 (F5 part 4): the causes a report names whatever its coverage — facts beside it that never cap it, so no status
+ * reads them (`coverageFrom` and `coverageCauses` do not) — in COVERAGE_CAUSES order. One so far: the results the
+ * session review saw only in part.
+ */
+export const UNCAPPED_CAUSES = Object.freeze(['results_seen_in_part']);
+/** D104: the uncapped causes the report's own facts establish, each with its count (`[cause, { n }]`), in
+ *  UNCAPPED_CAUSES order. Read from `coverageFacts` only, never from a model field. */
+export function uncappedCauses(report) {
+  const n = report?.coverageFacts?.resultsSeenInPart;
+  return isCount(n) && n > 0 ? [['results_seen_in_part', { n }]] : [];
+}
 
 // F170. Which header cause names a declared gap, by its code: its own, or — where a fact above
 // already counts the same loss, by every route that declares it — that fact's, so one loss is named
@@ -592,8 +733,25 @@ const COMMENTARY_NOTE_CAUSE = Object.freeze({
 const CODE_NOTE_CAUSE = Object.freeze({
   [BODY_CAPPED_NOTE]: 'bodies_capped',
 });
+// The owner's answer of 2026-10-17 (answer 8). And on the `observations` channel: a Workflow run launched asynchronously
+// whose end Sonah could not read is named by the background-end cause of its reason (D99), never as an action whose
+// result Sonah could not read.
+const WORKFLOW_END_NOTE_CAUSE = Object.freeze({
+  [WORKFLOW_GAP_NOTES.launchedEndUnread]: 'ends_unread',
+  [WORKFLOW_GAP_NOTES.launchedEndUnchecked]: 'ends_unchecked',
+});
 const headerCauseOf = (gap) => {
   if (gap.channel === 'observations' && gap.code === 'input_limit' && gap.note === CARRY_CAPPED_NOTE) return 'carry_capped';
+  // D99 (F1 guard): background runs whose end Sonah could not read are named as that, apart from commands whose status
+  // the recording does not establish.
+  if (gap.channel === 'observations' && gap.code === 'command_outcome_unknown' && gap.note === END_UNREAD_NOTE)
+    return 'ends_unread';
+  if (gap.channel === 'observations' && gap.code === 'command_outcome_unknown' && gap.note === END_UNCHECKED_NOTE)
+    return 'ends_unchecked';
+  // The owner's answer of 2026-10-17 (answer 8): so are Workflow runs launched asynchronously whose end Sonah could not
+  // read (the adapter's WORKFLOW_GAP_NOTES.launchedEndUnread and launchedEndUnchecked), each by its reason's cause.
+  if (gap.channel === 'observations' && gap.code === 'incomplete_inventory' && typeof gap.note === 'string'
+      && Object.hasOwn(WORKFLOW_END_NOTE_CAUSE, gap.note)) return WORKFLOW_END_NOTE_CAUSE[gap.note];
   if (gap.channel === 'code' && gap.code === 'source_clipped' && typeof gap.note === 'string'
       && Object.hasOwn(CODE_NOTE_CAUSE, gap.note)) return CODE_NOTE_CAUSE[gap.note];
   if (gap.channel === 'observations' && gap.code === 'source_clipped' && typeof gap.note === 'string'
@@ -743,9 +901,10 @@ export function coverageCauses(report) {
 
 /** The words of the failures a reader lists: what the list holds, and the sentence for none. */
 export const FAILURE_SECTION_WORDS = Object.freeze({
-  intro: 'These results failed, did not run or have no recorded end. Each one shows what the agent did about it. '
-    + 'Sonah checked what the session review found against the recording.',
-  none: 'The recording shows no result that failed, did not run or has no end.',
+  intro: 'These results failed, did not run, stopped before they finished or have no recorded end. Each one shows what '
+    + 'the agent did about it. Sonah checked what the session review found against the recording.',
+  // D100 (the audit of absence sentences): what Sonah found, never what the recording holds.
+  none: 'Sonah found no result that failed, did not run, stopped or has no recorded end.',
 });
 /** A checklist report's failure rows (each with its RESULT's event id), or null for a report from before the checklist. */
 const failureRows = (report) => (Array.isArray(report.failures)
@@ -842,6 +1001,7 @@ export const STYLE_KINDS = Object.freeze({
   'FOLDED_SECTION_WORDS.show': 'label',
   ATTENTION_WORDS: 'description',
   CHECKLIST_REQUIREMENT_REASON_WORDS: 'fragment', CHECKLIST_CLAIM_REASON_WORDS: 'fragment',
+  CHECKLIST_GROUNDING_CAUSE_WORDS: 'fragment', CHECKLIST_QUOTE_ANCHOR_WORDS: 'fragment',
   CHECKLIST_REQUIREMENT_FACT_WORDS: 'notice',
   ASK_CODE_WORDS: 'description', 'ASK_CODE_WORDS.label': 'label',
   CHECKLIST_FAILURE_WORDS: 'status', CHECKLIST_FAILURE_REASON_WORDS: 'fragment',
@@ -860,12 +1020,23 @@ export const STYLE_FIXTURES = Object.freeze({
     [ASK_CODE_WORDS.status['not-checked'], ASK_CODE_WORDS.bearsOn]],
   'CHECKLIST_OUTCOME_WORDS.ran-failed': [[1], [null]], 'CHECKLIST_OUTCOME_WORDS.failed-or-refused': [[]],
   'CHECKLIST_OUTCOME_WORDS.did-not-run': [[]],
-  // Its own forms; the two that read the ledger's words are SHELL_WRITE_OUTCOME_WORDS, linted there.
-  'CHECKLIST_OUTCOME_WORDS.no-terminal-status': ['background', 'interrupted', 'cancelled', 'none', 'other']
-    .map((form) => [null, form]),
+  'CHECKLIST_OUTCOME_WORDS.end-unread': [[null, 'background'], [null, 'unchecked']],
+  // Every form, the two that read the ledger's words (SHELL_WRITE_OUTCOME_WORDS) included, so the audit of absence
+  // sentences reads each one it can say.
+  'CHECKLIST_OUTCOME_WORDS.no-terminal-status': ['background', 'interrupted', 'cancelled', 'command-failed',
+    'command-stopped', 'none', 'other'].map((form) => [null, form]),
+  // D101: every cause with one length over and one under the bounds, after each anchor; each length also counted
+  // otherwise by the bound, and one of a single character.
+  ...Object.fromEntries(Object.keys(CHECKLIST_GROUNDING_CAUSE_WORDS).map((cause) => [`CHECKLIST_GROUNDING_CAUSE_WORDS.${cause}`,
+    [[{ chars: 147, counted: 147, limit: 120, anchor: CHECKLIST_QUOTE_ANCHOR_WORDS.requirement }],
+      [{ chars: 2, counted: 2, limit: 4, anchor: CHECKLIST_QUOTE_ANCHOR_WORDS.failure }],
+      [{ chars: 61, counted: 122, limit: 120, anchor: CHECKLIST_QUOTE_ANCHOR_WORDS.requirement }],
+      [{ chars: 6, counted: 2, limit: 4, anchor: CHECKLIST_QUOTE_ANCHOR_WORDS.failure }],
+      [{ chars: 1, counted: 1, limit: 4, anchor: CHECKLIST_QUOTE_ANCHOR_WORDS.requirement }]]])),
   ...Object.fromEntries(COVERAGE_CAUSES.map((cause) => [`COVERAGE_SENTENCE.${cause}`,
     cause === 'windows_incomplete' ? [[{ n: 1, m: 2 }], [{ n: 2, m: 3 }]] : counts])),
 });
-/** The style rules a table's words pass by a closed reason: a write whose command failed or stopped reads the ledger's
- *  words, which a model request carries, and only those words carry the reason. */
-export const STYLE_ALLOW = Object.freeze({ SHELL_WRITE_OUTCOME_WORDS: ['request-bytes'] });
+/** The style rules a table's words pass by a closed reason: none here. D100 (review of A1c): the words of a write whose
+ *  command failed or stopped (SHELL_WRITE_OUTCOME_WORDS) are the ledger's, which no request carries, so they pass every
+ *  rule as they are. */
+export const STYLE_ALLOW = Object.freeze({});

@@ -216,7 +216,8 @@ test('M33 G4 every review prompt says a decision cites one actor, and the versio
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   // D71 (S2) moved it once more (sonah.session-review-agent/3), and D71 (S3) once more (sonah.session-review-agent/4): the new channels (D71_CHANNELS_VERSIONS).
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
@@ -266,7 +267,8 @@ test('M33 G4 every review prompt says a decision cites one actor, and the versio
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(profile.promptVersion, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(profile.promptVersion, 'sonah.narrative/38');
   assert.equal(reviewRun.runProfile('combined').reviewAgent, 'sonah.review-agent/2');
 });
 

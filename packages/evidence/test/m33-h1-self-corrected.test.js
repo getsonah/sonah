@@ -345,7 +345,8 @@ test('M33 H1 the challenger is told to weigh later results and to judge a suppli
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/44');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(challenge.CHALLENGE_PROFILE.version, 'sonah.challenge/45');
   assert.equal(challenge.CHALLENGE_PROFILE.requiredSurvivals, 2, 'vote semantics unchanged');
   const seen = [];
   await review1([claim(RESOLVED)], { seen });
@@ -417,7 +418,8 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
   const claims = prompt.NARRATIVE_SCHEMA.properties.claims.items;
   const resolvedBy = claims.properties.resolvedBy;
   assert.deepEqual(resolvedBy.type, ['object', 'null']);
@@ -451,7 +453,8 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
 });
 
 test('M33 H1 the combined route asks for the same resolvedBy, and its version moved', () => {

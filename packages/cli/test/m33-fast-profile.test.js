@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as reviewRun from '../../evidence/src/run-review.js';
 import { reviewInputBytes } from '../../evidence/src/challenge.js';
-import { WINDOW_REQUEST_MAX_BYTES, WINDOWING_PROFILE } from '../../evidence/src/windows.js';
+import { WINDOW_REQUEST_MAX_BYTES, windowingProfileOf } from '../../evidence/src/windows.js';
 import { boundedJudge, windowOfLabel, windowsToReask } from '../src/session-review.js';
 import { createAnswerCache } from '../src/answer-cache.js';
 import * as sr from '../src/session-review.js';
@@ -52,15 +52,18 @@ test('M33 J the instrument names the profile and states its bounds', async () =>
   assert.deepEqual(fast.speedProfile, profiles.REVIEW_SPEED_PROFILES[FAST]);
   assert.equal(fast.windowConcurrency, 12);
   // M35 windowing: every profile's request bound is the spec's worst-case window call, and its windowing the spec's.
+  // D103: the windowing of the session's harness (a Claude Code recording: 12,000 bytes a side).
+  const windowing = windowingProfileOf('session-only', undefined, 'claude');
+  assert.equal(windowing.skimSideBytes, 12_000);
   assert.equal(fast.maxInputBytes, WINDOW_REQUEST_MAX_BYTES);
   assert.equal(Object.hasOwn(fast, 'segmentation'), false);
-  assert.deepEqual(fast.windowing, WINDOWING_PROFILE);
+  assert.deepEqual(fast.windowing, windowing);
   assert.equal(fast.challenge.maxInputBytes, WINDOW_REQUEST_MAX_BYTES);
   const standard = (await run(null)).instrument;
   assert.deepEqual(standard.speedProfile, profiles.REVIEW_SPEED_PROFILES.standard);
   assert.equal(standard.windowConcurrency, 3);
   assert.equal(standard.maxInputBytes, WINDOW_REQUEST_MAX_BYTES);
-  assert.deepEqual(standard.windowing, WINDOWING_PROFILE);
+  assert.deepEqual(standard.windowing, windowing);
   assert.equal(standard.maxCallsInFlight, 18, 'the evidence package\'s declared bound is unchanged');
 });
 

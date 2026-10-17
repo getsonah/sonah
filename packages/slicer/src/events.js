@@ -125,8 +125,27 @@ export const COMMAND_STATUS_SOURCES = Object.freeze({
   claudeNativeVerdict: 'claude_native_verdict',
   claudeTaskNotification: 'claude_task_notification',
 });
-/** C-02 M33 D: the closed header statuses of a Claude task notification. */
-export const TASK_NOTIFICATION_STATUSES = Object.freeze(['completed', 'failed', 'stopped']);
+/** C-02 M33 D: the closed header statuses of a Claude task notification. D99 (F1 guard): `killed` is one of them, a
+ *  recorded end that is no completion, as `stopped` is (STOPPED_NOTIFICATION_STATUSES). */
+export const TASK_NOTIFICATION_STATUSES = Object.freeze(['completed', 'failed', 'stopped', 'killed']);
+/** D99 (F1 guard): the notification statuses that say a background run was stopped before it finished. Neither types a
+ *  completion or a failure, and neither is a receipt (WORKFLOW_RECEIPT_STATUSES). */
+export const STOPPED_NOTIFICATION_STATUSES = Object.freeze(['stopped', 'killed']);
+/**
+ * D99 (F1 guard): what the slicer read of a background Bash run's end when the run has no typed completion or failure,
+ * on its launch event as `backgroundEnd` (and, `unread` or `unchecked` only, on a Workflow launch with no receipt). A
+ * closed set:
+ *   stopped    its own notification typed it stopped or killed (STOPPED_NOTIFICATION_STATUSES);
+ *   unread     no end was read, and a later record mentions the run: a notification is linked to it, or its task id is
+ *              in a later row of the lineage that the agent did not write (labels.js END_MENTIONED_REASONS);
+ *   unchecked  no end was read, and code could not check whether the recording holds one: its task id is in a row
+ *              before its launch, is of no shape a verbatim search is sound for, or a file could not be read again
+ *              (background-ends.js `readBackgroundEnds`; D99, review of A1b).
+ * A launch with no typed end and no mark is one whose recording code proved holds no end of it. The evidence adapter
+ * re-declares the set (sonah-ledger.js `LEDGER_BACKGROUND_ENDS`; it never imports the slicer) and a test holds the two
+ * equal.
+ */
+export const BACKGROUND_ENDS = Object.freeze({ stopped: 'stopped', unread: 'unread', unchecked: 'unchecked' });
 
 /** The input fields that locate what a read tool read: they become the call's path, never its input. */
 const READ_LOCATORS = Object.freeze(['file_path', 'notebook_path', 'path']);
@@ -297,7 +316,8 @@ function claudeOtherSpec(name, input) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// C-02 M33 D: the typed completion evidence Claude Code writes today (versions 2.1.121–2.1.284).
+// C-02 M33 D: the typed completion evidence Claude Code writes (versions 2.1.121 and later; D98 reads a
+// notification by its kind whatever keys sit beside it, and a launch by its typed id).
 // ---------------------------------------------------------------------------------------------
 const BASH_SIDECAR_REQUIRED = Object.freeze(['stdout', 'stderr', 'interrupted', 'isImage', 'noOutputExpected']);
 const BASH_SIDECAR_OPTIONAL = Object.freeze(['bashEditDiff', 'gitOperation', 'dangerouslyDisableSandbox',
@@ -334,11 +354,23 @@ function claudeBashSidecar(res) {
   }
   return own(s, 'returnCodeInterpretation') ? { kind: 'benign_nonzero' } : { kind: 'succeeded' };
 }
-/** The launch stub names its background id exactly once, and it is the sidecar's. */
-function backgroundStubAgrees(text, nativeId) {
-  if (typeof text !== 'string') return false;
-  const ids = [...text.matchAll(/Command running in background with ID: ([A-Za-z0-9_-]+)/g)].map((m) => m[1]);
-  return ids.length === 1 && ids[0] === nativeId;
+/** The characters of a task id's own token: a neighbour of one of these continues the token, so an id standing beside
+ *  one is part of another token. */
+const ID_TOKEN_CHAR = /[A-Za-z0-9_-]/;
+/**
+ * D98 (F1, audit L2 applied to Bash): a background launch is identified by its typed sidecar id alone, and its visible
+ * result names that very id. True when `id` (a typed task id) appears literally in `text` as a token of its own: the
+ * characters around it are not id characters. No harness sentence decides it, so the stub of a launched command, the
+ * stub of a command moved to the background at its timeout, and any later rewording of either are read alike.
+ */
+export function resultNamesTypedId(text, id) {
+  if (typeof text !== 'string' || !taskId(id)) return false;
+  for (let at = text.indexOf(id); at !== -1; at = text.indexOf(id, at + 1)) {
+    const before = at > 0 ? text[at - 1] : '';
+    const after = text[at + id.length] ?? '';
+    if (!ID_TOKEN_CHAR.test(before) && !ID_TOKEN_CHAR.test(after)) return true;
+  }
+  return false;
 }
 const EDIT_SIDECAR_REQUIRED = Object.freeze(['filePath', 'oldString', 'newString', 'originalFile', 'replaceAll',
   'structuredPatch', 'userModified']);
@@ -368,33 +400,47 @@ function claudeWriteSidecar(raw) {
   return plain(raw) && (raw.type === 'create' || raw.type === 'update' || string(raw.filePath)) ? raw : null;
 }
 /**
- * A Claude task notification, on one of its two typed carriers:
- *   - a `user` row whose `origin` is exactly `{kind: 'task-notification'}`, its string content; or
+ * A Claude task notification, on one of its two typed carriers (D98, F1: the one carrier rule every reader of the
+ * fact calls, harness-context.js `claudeNotificationCarrier`):
+ *   - a `user` row whose `origin` is of the `task-notification` kind, its string content; or
  *   - a `queued_command` attachment (records.js kind `notification`) whose `commandMode` is exactly
  *     `task-notification`, its string `prompt` (an `origin`, if recorded, must be that same kind).
- * The text is one `<task-notification>` block. Its header (before any `<summary>` or `<result>`, which
- * carry model-written text) holds the one `<task-id>`, `<tool-use-id>` and `<status>` of the whole
- * text. Returns those three, or null. Status only: no summary or result text is read.
+ * Recorder keys beside an origin's kind (`producer`, `runId`) are its metadata. The text is one `<task-notification>`
+ * block. Its header (before any `<summary>` or `<result>`, which carry model-written text) holds the one `<task-id>`,
+ * `<tool-use-id>` and `<status>` of the whole text. Returns those three, or null. Status only: no summary or result
+ * text is read.
  */
-function claudeTaskNotification(d) {
-  const typedOrigin = (origin) => plain(origin) && Object.keys(origin).length === 1
-    && origin.kind === 'task-notification';
-  const queued = d?.type === 'attachment' && plain(d.attachment) && d.attachment.type === 'queued_command'
-    && d.attachment.commandMode === 'task-notification'
-    && (d.attachment.origin === undefined || typedOrigin(d.attachment.origin));
-  const content = queued ? d.attachment.prompt
-    : d?.type === 'user' && typedOrigin(d.origin) ? d.message?.content : undefined;
-  if (!string(content)) return null;
-  const text = content.trim();
-  if (!text.startsWith('<task-notification>') || !text.endsWith('</task-notification>')) return null;
-  const once = (tag) => text.split(`<${tag}>`).length === 2 && text.split(`</${tag}>`).length === 2;
-  if (!['task-notification', 'task-id', 'tool-use-id', 'status'].every(once)) return null;
+export function claudeTaskNotification(d) {
+  return taskNotificationRead(d)?.notice ?? null;
+}
+
+/**
+ * D99 (F1 guard): the status join's one reading of a row (`claudeTaskNotification` is its `notice`): null when the row is
+ * no task notification by the carrier rule; `{ notice }` when the join types it; else `{ miss }`, the census reason
+ * (labels.js RECORDER_CENSUS_REASONS) of the first test of the join it fails, so every carrier the join does not type is
+ * counted under exactly one reason. The tests and their order are the join's, unchanged: one block; each header element
+ * recorded at most once (one recorded twice, or unbalanced, is unparsed); then the call id, the task id and the status.
+ */
+export function taskNotificationRead(d) {
+  const carrier = claudeNotificationCarrier(d);
+  if (carrier === null) return null;
+  const R = RECORDER_CENSUS_REASONS;
+  if (!string(carrier.text)) return { miss: R.notificationUnparsed };
+  const text = carrier.text.trim();
+  if (!text.startsWith('<task-notification>') || !text.endsWith('</task-notification>'))
+    return { miss: R.notificationUnparsed };
+  const count = (tag) => [text.split(`<${tag}>`).length - 1, text.split(`</${tag}>`).length - 1];
+  const times = (tag, n) => count(tag).every((k) => k === n);
+  if (!times('task-notification', 1) || ['task-id', 'tool-use-id', 'status'].some((tag) => !times(tag, 1)
+    && !times(tag, 0))) return { miss: R.notificationUnparsed };
   const bodyAt = [text.indexOf('<summary>'), text.indexOf('<result>')].filter((at) => at >= 0);
   const header = bodyAt.length ? text.slice(0, Math.min(...bodyAt)) : text;
   const field = (tag) => header.match(new RegExp(`<${tag}>\\s*([^<\\s]+)\\s*</${tag}>`))?.[1];
   const id = field('task-id'), callId = field('tool-use-id'), status = field('status');
-  return taskId(id) && taskId(callId) && TASK_NOTIFICATION_STATUSES.includes(status)
-    ? { taskId: id, toolUseId: callId, status } : null;
+  if (!taskId(callId)) return { miss: R.notificationNoCallId };
+  if (!taskId(id)) return { miss: R.notificationNoTaskId };
+  if (!TASK_NOTIFICATION_STATUSES.includes(status)) return { miss: R.notificationStatusUnknown };
+  return { notice: { taskId: id, toolUseId: callId, status } };
 }
 
 
@@ -700,6 +746,11 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   const claudeEditInputs = new Map();
   // M34 labels review (F5): each ledger action's count of the task notifications linked to it (by event index).
   const notified = new Map();
+  // D99 (F1 guard): the row of each Claude command's own result, by event index — `{source, record, uuid}` — where a
+  // background launch's verbatim search starts (background-ends.js); and each Claude Bash result whose recorded
+  // background task id registered no launch, `{reason, version}` (the recorder census).
+  const resultRows = new Map();
+  const launchMisses = [];
   // M33 W2: `at` is where the row was read — its human turn, the actions recorded before it (as commentary and a typed
   // interrupt mark record it) and its row. A Workflow launch keeps the EARLIEST row that joined it (`receipt`): where
   // the parent received the run's completion, kept only if the join settles (below). Never a timestamp.
@@ -720,6 +771,8 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       else {
         const index = pending.get(key) ?? settled.get(key)?.index;
         if (index !== undefined) notified.set(index, (notified.get(index) ?? 0) + 1);
+        // D99 (F1 guard): a notification linked to an Agent hand-off (no ledger action) counts on the hand-off.
+        else if (handOffCalls.has(key)) handOffCalls.get(key).notified = (handOffCalls.get(key).notified ?? 0) + 1;
       }
     }
     const launch = notice ? notificationLaunches.get(resultKey(notice.toolUseId)) : undefined;
@@ -795,6 +848,8 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     }
     call.launched = true;
     call.agentId = agentId;
+    // D99 (F1 guard): the launch's own row, where the verbatim search for its agentId starts (background-ends.js).
+    call.launchRow = { source: at.source, record: at.record, version: d?.version };
     notificationLaunches.set(key, { kind: 'agent', taskId: agentId, statuses: new Set(), conflict: false, agent: call, at });
   };
   const rowAt = (rec, recordIndex) => ({ turn, beforeEvent: events.length, source: rec.source ?? 0,
@@ -1127,14 +1182,33 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
             uuid: d?.uuid });
         // A launch whose own result is typed and unambiguous may be closed by a later notification.
         const launched = events[idx];
-        if (sidecar?.kind === 'background' && backgroundStubAgrees(res.visibleText, sidecar.taskId)
+        const namesId = sidecar?.kind === 'background' && resultNamesTypedId(res.visibleText, sidecar.taskId);
+        // D99 (F1 guard): where a Claude command's own result is (its background run's verbatim search starts there), and
+        // why a background task id it records registered no launch (the recorder census, labels.js).
+        if (claudeRecord && command) {
+          resultRows.set(idx, { source: rec.source ?? 0, record: rec.line ?? recordIndex + 1, version: d?.version });
+          const recordsId = plain(res.raw) && own(res.raw, 'backgroundTaskId') && res.isErrorFalse === true
+            && res.isError !== true;
+          if (recordsId && sidecar?.kind !== 'background') {
+            // Each key the reader does not know is logged by its name; a sidecar of known keys only had a type it does not
+            // know, and is counted once with no name.
+            const unknown = Object.keys(res.raw).filter((k) => ![...BASH_SIDECAR_REQUIRED, ...BASH_SIDECAR_OPTIONAL,
+              ...BASH_SIDECAR_BACKGROUND].includes(k));
+            for (const key of unknown.length ? unknown : [null])
+              launchMisses.push({ reason: RECORDER_CENSUS_REASONS.sidecarUnknownKeys, version: d?.version, key });
+          }
+          else if (sidecar?.kind === 'background' && !namesId)
+            launchMisses.push({ reason: RECORDER_CENSUS_REASONS.launchTextLacksId, version: d?.version });
+        }
+        // D98 (F1): by its typed sidecar id, which its visible result names; no harness sentence decides it.
+        if (namesId
           && launched.interrupted !== true && launched.conflict !== true && launched.outcomeUnknown !== true)
           notificationLaunches.set(key, { index: idx, taskId: sidecar.taskId, kind: 'bash',
             statuses: new Set(), conflict: false });
         else if (claudeRecord && launched.tool === 'Workflow' && launched.workflowAsyncUnresolved === true
           && taskId(launched.workflowTaskId) && !unattributedAsyncWorkflow)
           notificationLaunches.set(key, { index: idx, taskId: launched.workflowTaskId, kind: 'workflow',
-            statuses: new Set(), conflict: false, at: rowAt(rec, recordIndex) });
+            statuses: new Set(), conflict: false, at: rowAt(rec, recordIndex), version: d?.version });
         settled.set(key, { index: idx, before, adapter: rec.adapter ?? 'claude',
           fingerprint: resultFingerprint(res, d, id, events[idx].genericTool === true) });
         pending.delete(key);
@@ -1370,8 +1444,12 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       }
       continue;
     }
-    if (status === 'stopped' || ev.outcomeUnknown === true || ev.conflict === true
+    if (ev.outcomeUnknown === true || ev.conflict === true
       || ev.interrupted === true || ev.isError === true || Number.isFinite(ev.exitCode)) continue;
+    // D99 (F1 guard): a run its own notification typed stopped or killed was stopped before it finished: a recorded end
+    // that is no completion and no failure. It types no status (it proved nothing it finished) and is never read as
+    // having no end.
+    if (STOPPED_NOTIFICATION_STATUSES.includes(status)) { ev.backgroundEnd = BACKGROUND_ENDS.stopped; continue; }
     ev.statusSource = COMMAND_STATUS_SOURCES.claudeTaskNotification;
     if (status === 'failed') { ev.outcome = 'failed'; ev.outcomeSource = 'native'; }
     // H1: `completed` is a zero status, read as `attachResult` reads one (`exitStatusCovers`), for every command.
@@ -1409,6 +1487,10 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     const key = Object.hasOwn(missingByAdapter, adapter) ? adapter : 'unknown';
     missingByAdapter[key]++;
   }
+  const agentLaunches = new Map([...handOffCalls.values()]
+    .filter((call) => call.mode === 'launch' && call.launched && !call.conflict)
+    .map((call) => [call, { callId: call.callId, agentId: call.agentId, source: call.source, record: call.record,
+      turn: call.turn, ...(call.receipt ? { receipt: { ...call.receipt } } : {}) }]));
 
   return {
     events,
@@ -1416,9 +1498,10 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     interjections,
     projectInstructions,
     workflowLaunches: workflowLaunchesOf(workflowCalls, events),
-    deliveries: { agents: [...handOffCalls.values()].filter((call) => call.mode === 'launch' && call.launched && !call.conflict)
-      .map((call) => ({ callId: call.callId, agentId: call.agentId, source: call.source, record: call.record,
-        turn: call.turn, ...(call.receipt ? { receipt: { ...call.receipt } } : {}) })),
+    // D99 (F1 guard): the background runs whose end the slicer has not read, for the verbatim search (index.js).
+    backgroundRuns: backgroundRunsOf({ events, resultRows, notified, notificationLaunches, workflowCalls, agentLaunches }),
+    launchMisses,
+    deliveries: { agents: [...agentLaunches.values()],
     // M33 P repair: each synchronous hand-off with its receipt (its own single result row). M33 P second repair: a
     // hand-off is synchronous when its one result is not the launch stub, whatever its input records. L2: and records a
     // typed status that says so; a hand-off with no result keeps its place here, with no receipt, as before.
@@ -1439,6 +1522,51 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     observationCapture: { missing: awaitingObservation.size, missingByAdapter },
     marks,
   };
+}
+
+/**
+ * D99 (F1 guard). Every background run whose end the slicer did not read, each `{ kind, taskId, row, linked, index?,
+ * entry? }`: the run's own task id, the row of its launch's own result (`{source, record}`, where the verbatim search
+ * starts) and the count of notifications the labeller linked to it. Three kinds, each read by its own typed launch:
+ *   bash      a Claude Bash result that records a background task id (`recorded.backgroundTaskId`, what the evidence's
+ *             typed outcome reads) with no typed end: no completion or failure joined (`statusSource`), not typed
+ *             stopped (`backgroundEnd`), and no denial, interrupt, error flag or exit code (each its own end);
+ *   workflow  a registered Workflow launch (its typed task id) with no receipt, whose own notification typed neither a
+ *             stop nor a kill (a stopped run recorded its end: no completion, so "no receipt of its completion" is
+ *             true of it);
+ *   agent     a registered background Agent launch (its agentId) with no receipt and no stop or kill typed, `entry` its
+ *             entry of the delivery side channel.
+ * Structure only: the slicer's own typed fields, never a word of a result.
+ */
+function backgroundRunsOf({ events, resultRows, notified, notificationLaunches, workflowCalls, agentLaunches }) {
+  const runs = [];
+  for (const [index, row] of resultRows) {
+    const ev = events[index];
+    const id = ev?.recorded?.backgroundTaskId;
+    if (typeof id !== 'string' || !id || ev.backgroundEnd !== undefined || ev.statusSource !== undefined
+      || ev.recorded.denial !== undefined || ev.interrupted === true || ev.isError === true
+      || Number.isFinite(ev.exitCode)) continue;
+    runs.push({ kind: 'bash', index, taskId: id, row: { source: row.source, record: row.record },
+      version: row.version, linked: notified.get(index) ?? 0 });
+  }
+  const stoppedOnly = (launch) => launch.statuses.size === 1 && STOPPED_NOTIFICATION_STATUSES.includes([...launch.statuses][0]);
+  for (const launch of notificationLaunches.values()) {
+    if (launch.kind === 'workflow') {
+      const ev = events[launch.index];
+      if (!workflowCalls.has(launch.index) || workflowCalls.get(launch.index).receipt
+        || ev.workflowResultRepeated === true || ev.workflowIdentityConflict === true || stoppedOnly(launch)) continue;
+      runs.push({ kind: 'workflow', index: launch.index, taskId: launch.taskId,
+        row: { source: launch.at.source, record: launch.at.record }, version: launch.version,
+        linked: notified.get(launch.index) ?? 0 });
+    } else if (launch.kind === 'agent') {
+      const entry = agentLaunches.get(launch.agent);
+      if (!entry || launch.agent.receipt || !launch.agent.launchRow || stoppedOnly(launch)) continue;
+      runs.push({ kind: 'agent', entry, taskId: launch.taskId,
+        row: { source: launch.agent.launchRow.source, record: launch.agent.launchRow.record },
+        version: launch.agent.launchRow.version, linked: launch.agent.notified ?? 0 });
+    }
+  }
+  return runs;
 }
 
 /**
@@ -2909,7 +3037,9 @@ import { textOf as text, toolUsesOf as toolUses,
   toolResultsOf as toolResults, visibleToolContent, QUEUED_PROMPT_RECORD, ATTACHED_RECORD, PROJECT_INSTRUCTIONS_RECORD,
   humanWordsOf, humanNonTextOf, NONTEXT_BLOCK_TYPES, ensureClaudeLabels,
   recordedVersionOrder, claudeSessionType, SESSION_TYPES } from './records.js';
-import { LABELS, LABEL_BASIS, MARKERS, POSITIONED_GAPS, opensTurn, humanPart, partsOf } from './labels.js';
+import { LABELS, LABEL_BASIS, MARKERS, POSITIONED_GAPS, RECORDER_CENSUS_REASONS, opensTurn, humanPart, partsOf }
+  from './labels.js';
+import { claudeNotificationCarrier } from './harness-context.js';
 import { rowIdentity, callIdentity, derivedIdentity, IDENTITY_SUBS } from './event-identity.js';
 // L1 session type: moved to records.js with the M34 labels (the Claude labeller reads it); re-exported here.
 export { claudeSessionType, SESSION_TYPES, CLAUDE_SESSION_TYPE, CLAUDE_HOST_ORIGIN_RECORDER } from './records.js';

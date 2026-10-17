@@ -1495,6 +1495,66 @@ export const REPORT_READER_VERSIONS = Object.freeze({
 export const REPORT_MD_READER_VERSIONS = Object.freeze({
   story: Object.freeze({ before: 'sonah.session-story/31', after: 'sonah.session-story/32' }),
 });
+/**
+ * D98 (2026-10-17, one reading per recorder fact): the instrument version it moved, once. Every reader that asks whether
+ * an action could have changed something reads one effect rule (session.js `effectOf`); the code step's change list and
+ * its outside count hold a path only for a change that could have happened (`sonah.code-snapshot/11`). Rendered back
+ * (`profileBeforeOneReading`), the beta.2 release check's member. The session run profile moved by this string alone. No
+ * request template, brief, contract or closed list moved: a session's requests move only where its ledger does (a
+ * background run's notice the slicer now reads, a refused write's body no longer a file's earlier state).
+ */
+export const ONE_READING_VERSIONS = Object.freeze({
+  snapshot: Object.freeze({ before: 'sonah.code-snapshot/10', after: 'sonah.code-snapshot/11' }),
+});
+/** D98: the readers it moved, once each, one link after D97's: the page and the report .md read the one effect rule
+ *  (their rows, their runs and the gaps they name). */
+export const ONE_READING_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/37', after: 'sonah.session-page/38' }),
+  story: Object.freeze({ before: 'sonah.session-story/32', after: 'sonah.session-story/33' }),
+});
+/** D99 (2026-10-17, F1 guard: an absence only where code proves it): the readers it moved, once each, one link after
+ *  D98's: the page and the report .md say a background run's end as the slicer read it (absent only where proved, unread
+ *  under what Sonah could not check, stopped as stopped) and a run stopped before it finished as stopped. No instrument
+ *  version moved: no request template, brief, contract, profile or closed list a profile holds moved, and a request
+ *  moves only where its ledger does (a run the slicer marks unread or stopped). */
+export const ABSENCE_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/38', after: 'sonah.session-page/39' }),
+  story: Object.freeze({ before: 'sonah.session-story/33', after: 'sonah.session-story/34' }),
+});
+/** D100 (2026-10-17, the audit of absence sentences): the readers it moved, once each, one link after D99's: the page and
+ *  the report .md say an absence only where code proves it, and elsewhere what Sonah found, holds or could not read; a
+ *  run Sonah read no result of is counted apart. No instrument version moved: no request byte moved (a model request
+ *  carries none of the rewritten words; the words a request carries are held for the owner). */
+export const ABSENCE_AUDIT_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/39', after: 'sonah.session-page/40' }),
+  story: Object.freeze({ before: 'sonah.session-story/34', after: 'sonah.session-story/35' }),
+});
+/** A run profile with D98's version rendered back to the beta.2 release check's (`ONE_READING_VERSIONS`); anything else
+ *  untouched. `profileBeforeRepairUnchecked` applies it first; D101: it applies `profileBeforeGroundingCauses` first. */
+export function profileBeforeOneReading(profile) {
+  const copy = profileBeforeGroundingCauses(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.snapshot === ONE_READING_VERSIONS.snapshot.after)
+    member.snapshot = ONE_READING_VERSIONS.snapshot.before;
+  return copy;
+}
+/** D101 (owner decision 2026-10-17): an ask the quote gate lowered says which grounding test refused its quote, with the
+ *  numbers code measured — the readers moved once each, one link after D100's: the page (/41), the report .md (/36) and
+ *  the report model they render (/2). No instrument version moved: no request byte moved. */
+export const GROUNDING_CAUSE_READER_VERSIONS = Object.freeze({
+  page: Object.freeze({ before: 'sonah.session-page/40', after: 'sonah.session-page/41' }),
+  story: Object.freeze({ before: 'sonah.session-story/35', after: 'sonah.session-story/36' }),
+  model: Object.freeze({ before: 'sonah.report-model/1', after: 'sonah.report-model/2' }),
+});
+/** D104 (F5 part 4, the mark): the report model, the page and the story move once each, one link after D101's: an item,
+ *  an ask, a claim, a run and a decision you settled show the mark of each recorded result their rows cite that Sonah
+ *  first showed the session review only in part, and What Sonah could not check counts those results. No instrument
+ *  version moved: no request byte moved. */
+export const SEEN_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/2', after: 'sonah.report-model/3' }),
+  page: Object.freeze({ before: 'sonah.session-page/41', after: 'sonah.session-page/42' }),
+  story: Object.freeze({ before: 'sonah.session-story/36', after: 'sonah.session-story/37' }),
+});
 /** A run profile with the cleanup's versions rendered back to a file changed since the session, shown's
  *  (`CLEANUP_VERSIONS`, `CLEANUP_CODE_PASS_MEMBERS`); anything else untouched. `profileBeforeChangedSinceShown` applies
  *  it first. */
@@ -1561,12 +1621,121 @@ export function profileBeforeTiedTier(profile) {
  * checked no repaired version of it, when it checked none (`withheld[].repair`, ledger.js CODE_REPAIR_UNCHECKED), so no
  * reader says it failed "even after one repair". No version moved (`sonah.code-pass/10` is unreleased); the session run
  * profile's code-pass member gained the closed list (`repairUnchecked`). Rendered back (`profileBeforeRepairUnchecked`:
- * the list taken out), the tied tier's member. No request byte moved. `profileBeforeTiedTier` applies it first.
+ * the list taken out), the tied tier's member. No request byte moved. `profileBeforeTiedTier` applies it first. D98: it
+ * applies `profileBeforeOneReading` first.
  */
 export function profileBeforeRepairUnchecked(profile) {
-  const copy = structuredClone(profile);
+  const copy = profileBeforeOneReading(profile);
   const member = copy?.codePass;
   if (member && typeof member === 'object') delete member.repairUnchecked;
+  return copy;
+}
+/**
+ * D101 (owner decision 2026-10-17): the checklist's quote gate names the grounding test that refused a quote. No version
+ * moved; the session run profile gained the gate's member (`grounding`: the closed reasons of a lowered requirement or
+ * failure row, the causes in their order, the length causes, the places of a refused quote and the quote bounds per
+ * field). Rendered back (`profileBeforeGroundingCauses`: the member taken out), D98's (one reading per recorder fact).
+ * No request byte moved. `profileBeforeOneReading` applies it first; D102: it applies `profileBeforeEvidenceMerge` first.
+ */
+export function profileBeforeGroundingCauses(profile) {
+  const copy = profileBeforeEvidenceMerge(profile);
+  if (copy && typeof copy === 'object') delete copy.grounding;
+  return copy;
+}
+/**
+ * D102, the evidence merge (F5 part 3; owner pick 2026-10-17): the session run profile binds by name the rule an evidence
+ * re-ask's answer is merged with the first by (`evidenceMerge`, run-review.js EVIDENCE_MERGE_RULE). No version moved, and
+ * no request byte: only which stored answers a window's record is computed from again. Rendered back
+ * (`profileBeforeEvidenceMerge`: the member taken out), D101's profile. `profileBeforeGroundingCauses` applies it first.
+ */
+export function profileBeforeEvidenceMerge(profile) {
+  const copy = profileBeforeSkim(profile);
+  if (copy && typeof copy === 'object') delete copy.evidenceMerge;
+  return copy;
+}
+/**
+ * D103, the skim keyed by the recording's harness (F5 part 1; owner pick 2026-10-17, "for D increase the limit from 3.6k
+ * to 12k"): the windowing version (a session-only window of a Claude Code recording shows each result up to 12,000 bytes
+ * at each end), the narrative version (its request bytes moved with it) and the dossier version (the evidence a
+ * session-only dossier shows moved as the narrative's) moved once each, and the windowing member
+ * names its skim in bytes a side (`skimSideBytes`) in place of `trimTokens`. A profile of no harness, or of one the table
+ * does not list, holds 3,600 bytes a side: 2,000 tokens, rendered back. `profileBeforeEvidenceMerge` applies it first.
+ */
+export const SKIM_VERSIONS = Object.freeze({
+  windows: Object.freeze({ before: 'sonah.windows/8', after: 'sonah.windows/9' }),
+  prompt: Object.freeze({ before: 'sonah.narrative/37', after: 'sonah.narrative/38' }),
+  dossier: Object.freeze({ before: 'sonah.challenge-dossier/13', after: 'sonah.challenge-dossier/14' }),
+});
+/**
+ * D103: the modules as they windowed before the skim was keyed by the recording's harness — every recording at 3,600 bytes
+ * a side. A session handed to `planWindowRequests` or `runReview` is read through a view that names no harness (its
+ * `adapter` undefined: the smallest skim, `SKIM_FALLBACK_BYTES`); nothing else reads a session's harness, so every
+ * request byte is the evidence merge's. A module render-back of a link before D103 applies it innermost.
+ */
+export function modulesBeforeSkim({ runReview, planWindowRequests, ...rest }) {
+  const unkeyed = (session) => (session !== null && typeof session === 'object'
+    ? Object.create(session, { adapter: { value: undefined, enumerable: true } }) : session);
+  return { ...rest,
+    ...(runReview ? { runReview: (options) => runReview({ ...options, session: unkeyed(options.session) }) } : {}),
+    ...(planWindowRequests ? { planWindowRequests: (options) => planWindowRequests({ ...options,
+      session: unkeyed(options.session) }) } : {}) };
+}
+/**
+ * D103, cited results shown whole to the challengers (F5 part 2; owner pick 2026-10-17): every session-only challenge
+ * request shows each result its items cite whole, over its bound by the skim with the gap `result_over_bound`. The
+ * challenge version moved (both run profiles) and the dossier version (the lean profile's challenge member). A batch that
+ * cites no result the skim cuts keeps its bytes, so no baseline case's request moved. Rendered back
+ * (`profileBeforeCitedWhole`), the skim's. `profileBeforeSkim` applies it first.
+ */
+export const CITED_WHOLE_VERSIONS = Object.freeze({
+  challenge: Object.freeze({ before: 'sonah.challenge/44', after: 'sonah.challenge/45' }),
+  dossier: Object.freeze({ before: 'sonah.challenge-dossier/14', after: 'sonah.challenge-dossier/15' }),
+});
+/** A run profile with D103 part 2's versions rendered back to the skim's (`CITED_WHOLE_VERSIONS`); anything else
+ *  untouched. The owner's answers of 2026-10-17: it applies `profileBeforeRefusedAfterEdit` first. */
+export function profileBeforeCitedWhole(profile) {
+  const copy = profileBeforeRefusedAfterEdit(profile);
+  const challenge = copy?.challenge;
+  if (challenge && typeof challenge === 'object') {
+    if (challenge.version === CITED_WHOLE_VERSIONS.challenge.after) challenge.version = CITED_WHOLE_VERSIONS.challenge.before;
+    if (challenge.dossier === CITED_WHOLE_VERSIONS.dossier.after) challenge.dossier = CITED_WHOLE_VERSIONS.dossier.before;
+  }
+  return copy;
+}
+/**
+ * The owner's answers of 2026-10-17 ("all as suggested", answer 1): the code step's dossier leaves out a command refused
+ * before it ran from the commands after a file's last edit (code-context.js `commandsAfterLastEdit`), so a file that only
+ * such commands follow is `never_ran`, as the page's Runs list says it. The review agent's request moved where such a
+ * command follows a file's last edit (`sonah.code-pass/11`; its brief, contract and closed lists did not move). Rendered
+ * back (`profileBeforeRefusedAfterEdit`), D103 part 2's. The session run profile moved by this string alone; the combined
+ * profile holds no code-pass member. No session request byte moved.
+ */
+export const REFUSED_AFTER_EDIT_VERSIONS = Object.freeze({
+  pass: Object.freeze({ before: 'sonah.code-pass/10', after: 'sonah.code-pass/11' }),
+});
+/** A run profile with the owner's answers' version rendered back to D103 part 2's (`REFUSED_AFTER_EDIT_VERSIONS`);
+ *  anything else untouched. `profileBeforeCitedWhole` applies it first. */
+export function profileBeforeRefusedAfterEdit(profile) {
+  const copy = structuredClone(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.pass === REFUSED_AFTER_EDIT_VERSIONS.pass.after)
+    member.pass = REFUSED_AFTER_EDIT_VERSIONS.pass.before;
+  return copy;
+}
+/** A run profile with D103's versions and skim rendered back to the evidence merge's (`SKIM_VERSIONS`; 3,600 bytes a side
+ *  is `trimTokens` 2,000); anything else untouched. Cited results whole: it applies `profileBeforeCitedWhole` first. */
+export function profileBeforeSkim(profile) {
+  const copy = profileBeforeCitedWhole(profile);
+  if (copy?.promptVersion === SKIM_VERSIONS.prompt.after) copy.promptVersion = SKIM_VERSIONS.prompt.before;
+  if (copy?.challenge?.dossier === SKIM_VERSIONS.dossier.after) copy.challenge.dossier = SKIM_VERSIONS.dossier.before;
+  const windowing = copy?.windowing;
+  if (windowing && typeof windowing === 'object') {
+    if (windowing.version === SKIM_VERSIONS.windows.after) windowing.version = SKIM_VERSIONS.windows.before;
+    if (windowing.skimSideBytes === 3_600) {
+      delete windowing.skimSideBytes;
+      windowing.trimTokens = 2_000;
+    }
+  }
   return copy;
 }
 /** A run profile with the second release review's versions rendered back to the release review's

@@ -2,7 +2,7 @@
 
 Claude Code recording · 5 files changed, +13 −2 · 6 commands · commit 1111111  
 After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The recording shows 3 commands after the agent's last edit as refused before they ran.  
-Sonah did not finish its review of this session. Sonah did not check: 1 ask · 1 ask that only the agent says is done · 3 claims · 1 statement that the agent wrote into a file
+Sonah did not finish its review of this session. Sonah did not check: 1 ask · 1 ask that rests only on the agent's words · 3 claims · 1 statement that the agent wrote into a file
 
 Must act 9 · Must know 12 · Good to know 9 (folded) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
 Must act: [ask 6](#item-1) · [ask 4](#item-2) · [src/limiter.js:5 (item 3)](#item-3) and 6 more
@@ -13,9 +13,9 @@ Must act: [ask 6](#item-1) · [ask 4](#item-2) · [src/limiter.js:5 (item 3)](#i
 |---|---|---|
 | Done | “Add rate limiting to the API” | The code review found a problem here. See item 7. |
 | Not done | “Return 429 with a Retry-After header in seconds” | See item 3. |
-| Done | “Keep the auth checks before the limiter” | Only the agent says so. Sonah found no recorded result or change for it. |
+| Done | “Keep the auth checks before the limiter” | The session review cited only the agent's words for it. Sonah found no recorded result or change for it. |
 | Partly done | “Do not change the CI config” | See item 2. |
-| Not checked | “Update the README” | Sonah did not find, word for word, the evidence that the session review cited for it. Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. The code review asks you about this ask. See item 23. |
+| Not checked | “Update the README” | The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it. Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. The code review asks you about this ask. See item 23. |
 | Not done | “Also add a test for the limiter” | See item 1. |
 
 Sonah checked only the parts of your prompt that the table above lists.
@@ -32,7 +32,7 @@ Sonah checked only the parts of your prompt that the table above lists.
 
 </details>
 
-<details><summary>1 more message holds no ask.</summary>
+<details><summary>Sonah found no ask in 1 more message.</summary>
 
 > Thanks, that is all.
 
@@ -298,7 +298,7 @@ Where: the claims list
 
 </details>
 
-<a name="item-20"></a>**20 Verify:** A claim of the agent's rests on a check that did not finish.  
+<a name="item-20"></a>**20 Verify:** A claim of the agent's rests on a check that Sonah did not see finish.  
 “I will use a token bucket.”  
 Impact on you: *The bucket may be untested.*  
 Action: *Run the limiter once by hand.*  
@@ -399,7 +399,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 <details><summary>Evidence · Why Good to know</summary>
 
-- The recording does not hold all your earlier messages in full, so Sonah could not check if one covered it.
+- Sonah does not hold all your earlier messages in full, so it could not check if one covered it.
 - Sonah puts a decision that Sonah could not tie to an ask in Good to know by default.
 - Item id: `444444444444`
 
@@ -492,7 +492,7 @@ The code review grouped these files by the ask that each one serves.
 
 - `README.md` · changed · +1 −1 · *says that limiting is on* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/README.md → item 18 → item 21
 
-**No ask of yours**
+**No ask that the code review named**
 
 - `.github/workflows/ci.yml` · changed · +1 −1 · *runs the tests silently* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml → item 2 → item 5 → item 6 → item 28 → item 29
 - `docs/limits.md` · new · +1 −0 · *documents the full answer* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/docs/limits.md → item 11
@@ -509,7 +509,7 @@ The code review grouped these files by the ask that each one serves.
 
 #### Claims
 
-- check did not finish → item 20 “I will use a token bucket.”
+- check not seen to finish → item 20 “I will use a token bucket.”
 - not checked → item 21 “Rate limiting is enabled by default.” · written into `README.md`
 - contradicted → item 11 “The limiter answers with 503 when it is full.” · written into `docs/limits.md`
 - not checked → item 19 “all tests pass”
@@ -559,7 +559,7 @@ Sonah could not read 1 ask of the session review.
 
 ---
 
-Sonah 0.9.0 · sonah.report-model/1 · commit 1111111  
+Sonah 0.9.0 · sonah.report-model/3 · commit 1111111  
 Text in quotation marks is word for word from the recording.  
 Titles, questions, labels and file notes in italics are the code review's words.  
 Words in italics inside Sonah's sentences are the session review's words.  

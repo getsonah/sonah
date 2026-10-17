@@ -8,8 +8,9 @@
 
 import { posix } from 'node:path';
 import { verifyReceipt, verifyReceipts, repairReceipt, decisionIdentity, findingIdentity, MIN_QUOTE_CHARS,
-  recordedFailure, atWordEdges, isRead, PROJECT_INSTRUCTIONS_ROLE } from './session.js';
-import { publishedReceipt, withoutRepairFields } from './receipt-repair.js';
+  recordedFailure, atWordEdges, isRead, PROJECT_INSTRUCTIONS_ROLE, effectOf, effectReader, ACTION_EFFECTS,
+  CHANGING_EFFECTS, STOPPED_DENIALS, GROUNDING_ROLES, eventRoles } from './session.js';
+import { publishedReceipt, withoutRepairFields, spansSyntheticMarker } from './receipt-repair.js';
 import { materialityOf } from './materiality.js';
 import { identityDigest } from '../contracts/canonical.js';
 import { INSTRUCTION_GAP_NOTES, PRIOR_STATE } from '../adapters/sonah-ledger.js';
@@ -706,8 +707,6 @@ export function shownProjectInstructions(session, bound = null) {
 
 /** The typed operations that change a file. */
 const FILE_CHANGES = Object.freeze(['write', 'edit', 'delete']);
-/** A write's outcomes (session.js `actionOutcomeOf`) that prove it left nothing behind: it failed, or was cancelled. */
-const UNDONE_WRITES = Object.freeze(['failed', 'cancelled']);
 /** Whether a path, slashes forward, is rooted: `/…` or a drive's `C:/…`. */
 const rootedPath = (path) => /^(?:\/|[A-Za-z]:\/)/.test(path);
 /** A recorded path as one file, whatever its spelling: slashes forward, `.` and `..` steps resolved by name. The slicer
@@ -729,10 +728,6 @@ const fileKey = (path, cwd = null) => {
 };
 /** The working directory the session's recording states (the adapter's non-enumerable `workingDirectory`), or null. */
 const workingDirectoryOf = (session) => (typeof session?.workingDirectory === 'string' ? session.workingDirectory : null);
-const outcomeOfWrite = (session, event) => {
-  try { return typeof session?.actionOutcomeOf === 'function' ? session.actionOutcomeOf(event) : 'unknown'; }
-  catch { return 'unknown'; }
-};
 
 /**
  * Whether a project instruction file's text is the person's words, by structure — the one rule every reader of a
@@ -759,15 +754,17 @@ export function writtenInSession(session, entry) {
 }
 
 /** The session's typed writes, edits and deletes of a project instruction file's path (`fileKey`), the agent's or a
- *  helper's, that the record does not prove failed or cancelled, in recorded order. Pure. */
+ *  helper's, that could have changed it (D98, F9: the one effect rule, `CHANGING_EFFECTS`: the record does not prove it
+ *  was refused before it ran, failed or was cancelled), in recorded order. Pure. */
 function writesOf(session, entry) {
   const cwd = workingDirectoryOf(session);
   const key = fileKey(entry?.path, cwd);
   if (key === null) return [];
   const events = Array.isArray(session?.events) ? session.events : [];
+  const effect = effectReader(session);
   return events.filter((event) => event?.kind === 'invocation' && FILE_CHANGES.includes(event.operation)
     && (Array.isArray(event.changes) ? event.changes : []).some((change) => fileKey(change?.path, cwd) === key)
-    && !UNDONE_WRITES.includes(outcomeOfWrite(session, event)));
+    && CHANGING_EFFECTS.includes(effect(event)));
 }
 
 /** The second release review (low): whether a session write of a project instruction file's path (`writesOf`) comes
@@ -950,8 +947,10 @@ export const VALUE_UNCHECKED_CAUSES = Object.freeze(['not_proposed', 'unquoted',
   'write_outcome_unknown', 'write_unsuccessful', 'value_paraphrased', UNRUN_WRITE_REASON]);
 const [NOT_PROPOSED, UNQUOTED, UNMATCHED, WRITE_OUTCOME_UNKNOWN, WRITE_UNSUCCESSFUL, VALUE_PARAPHRASED] =
   VALUE_UNCHECKED_CAUSES;
-/** Outcomes the record states as not having happened (session.js `actionOutcomeOf`). */
-const WRITE_NOT_DONE = Object.freeze(['failed', 'cancelled']);
+/** D98 (F9): the effects (session.js ACTION_EFFECTS) the record states as a write that did not happen — refused
+ *  before it ran, or failed or cancelled — and the one that proves it landed. */
+const [NO_EFFECT, UNDONE_EFFECT, LANDED_EFFECT] = ACTION_EFFECTS;
+const WRITE_NOT_DONE = Object.freeze([NO_EFFECT, UNDONE_EFFECT]);
 
 function groundValue(session, candidate, actionEvents, upTo = null) {
   const { value, valueReceipt } = candidate;
@@ -1006,11 +1005,11 @@ function groundValue(session, candidate, actionEvents, upTo = null) {
   // resulting code." A failed or denied write changed nothing, so its after-text is an attempt,
   // never an adopted value. D79: a paraphrased value on such a write stays `unmatched` (the cause it
   // had before the paraphrase was kept apart), never a published receipt.
-  const writes = ['write', 'edit', 'delete'];
-  const outcome = writes.includes(cited.operation) ? session.actionOutcomeOf(cited) : 'succeeded';
-  if (outcome !== 'succeeded') {
+  // D98 (F9): by the one effect rule: a write refused before it ran is no adopted value either.
+  const effect = FILE_CHANGES.includes(cited.operation) ? effectOf(session, cited) : LANDED_EFFECT;
+  if (effect !== LANDED_EFFECT) {
     if (!literal) return unchecked('value_unchecked', UNMATCHED);
-    return unchecked('value_unchecked', WRITE_NOT_DONE.includes(outcome) ? WRITE_UNSUCCESSFUL : WRITE_OUTCOME_UNKNOWN,
+    return unchecked('value_unchecked', WRITE_NOT_DONE.includes(effect) ? WRITE_UNSUCCESSFUL : WRITE_OUTCOME_UNKNOWN,
       cited.id);
   }
 
@@ -1050,14 +1049,14 @@ function relevanceOf(session, actionEvents, pr) {
     e.kind === 'invocation' && e.shellWriteOf === id);
 
   // A write that failed or was denied did not put anything in the PR, whatever its after-text
-  // says, so it must not be reported as surviving code.
-  const effective = actionEvents.filter((e) =>
-    !['write', 'edit', 'delete'].includes(e.operation) || session.actionOutcomeOf(e) === 'succeeded');
+  // says, so it must not be reported as surviving code. D98 (F9): by the one effect rule (landed).
+  const effect = effectReader(session);
+  const effective = actionEvents.filter((e) => !FILE_CHANGES.includes(e.operation) || effect(e) === LANDED_EFFECT);
   const paths = effective.flatMap((e) => [
     ...(e.paths ?? []).map((p) => p.path),
     // Only a command the record says SUCCEEDED establishes that its shell writes happened.
-    ...(e.operation === 'command' && session.succeeded(e.id)
-      ? siblingsOf(e.id).filter((s) => session.actionOutcomeOf(s) === 'succeeded')
+    ...(e.operation === 'command' && effect(e) === LANDED_EFFECT
+      ? siblingsOf(e.id).filter((s) => effect(s) === LANDED_EFFECT)
         .flatMap((s) => (s.paths ?? []).map((p) => p.path)) : []),
   ]).filter(Boolean);
 
@@ -1484,7 +1483,9 @@ export const WRITTEN_LABELS = Object.freeze(['unverified', 'contradicted']);
 //                          delete (its code is the file as found), a command, any other event, or none
 //   written_ungrounded     its quote is not in that action's written body as its window was shown it
 //   written_not_landed     the record says that write failed or was cancelled (C-02 outcome, as
-//                          `actionOutcomeOf` proves it): the text was never written into the file. A write
+//                          `actionOutcomeOf` proves it), or (D98, F9: its effect is `none`, session.js `effectOf`)
+//                          that it, or the command it was parsed from, was refused before it ran — judged after
+//                          UNRUN_WRITE_REASON for a parsed write: the text was never written into the file. A write
 //                          whose outcome is not recorded is not this: it is published, and the session's
 //                          own `write_outcome_unknown` gap says the outcome is missing.
 //   write_command_not_run_or_failed  (D80, UNRUN_WRITE_REASON) the write is one the slicer parsed from a command that
@@ -1631,6 +1632,13 @@ export const CHANGED_SINCE_LABEL = 'changed since:';
  *   failed-or-refused   recorded as failed by a recorder that types no refusal (the slicer's `refusalUntyped`)
  *   output-no-status    a result was recorded with no status typed for the tool: its output shown (a read that shows its
  *                       content), or none of it shown (`unread`)
+ *   end-unread          (D99, F1 guard) run in the background with no typed end, where the slicer could not prove the
+ *                       recording holds none (its launch's `backgroundEnd` is `unread`: a notification is linked to it, or
+ *                       its task id is in a later row the agent did not write, or in a row before its launch, or the
+ *                       search could not run): Sonah could not read whether or how it ended. Not a failure and no
+ *                       check that did not complete (neither FAILURE_OUTCOMES nor RESTS_ON_OUTCOMES): not checked. A
+ *                       background run with neither mark (no-terminal-status `background`) is one whose recording code
+ *                       proved holds no end of it; one typed stopped or killed reads no-terminal-status `interrupted`.
  * S7: `stopped` and `not-typed` left the table: an interrupted or cancelled
  * call is a form of no-terminal-status (every list held both, so no check moved), and the fallback is output-no-status
  * `unread` (no list held not-typed, so no check moved). And a result recorded with no status and no output read from it
@@ -1639,23 +1647,34 @@ export const CHANGED_SINCE_LABEL = 'changed since:';
  * so "no terminal status recorded" was not the recorder's fact; it no longer lists them as failures.
  */
 export const RESULT_OUTCOME_CLASSES = Object.freeze(['ran-exit-0', 'ran-completed', 'ran-failed', 'did-not-run',
-  'no-terminal-status', 'failed-or-refused', 'output-no-status']);
+  'no-terminal-status', 'failed-or-refused', 'output-no-status', 'end-unread']);
+/** D99 (F1 guard): the class of a background run whose end Sonah could not read (RESULT_OUTCOME_CLASSES). */
+export const END_UNREAD_CLASS = RESULT_OUTCOME_CLASSES[7];
+/** D99 (review of A1b): the form of that class for a run whose end Sonah could not read and could not check for (the
+ *  slicer's `backgroundEnd` `unchecked`: no later mention of it is established). Its readers say "Sonah could not check
+ *  whether the recording holds an end of this run", never that later records mention it; the run's other form
+ *  (`background`) is one a later record mentions. */
+export const END_UNCHECKED_FORM = 'unchecked';
 /** Owner decision D80 (2026-10-12): the members of the recorder's closed denial vocabulary (Claude Code's
  *  `toolDenialKind`, the slicer's `recorded.denial`; redact `RECORDED_FACTS.denial`) that mean the call was stopped,
  *  not refused: it started and did not finish. Such a call reads as `STOPPED_WORDS` everywhere (the class
  *  no-terminal-status in its `interrupted` form here; the story's and the page's "stopped before it finished"), never
- *  as did-not-run; every other kind means refused before it ran (did-not-run; the story's `REFUSED_DENIALS`). */
-export const STOPPED_DENIALS = Object.freeze(['interrupted', 'cancelled']);
+ *  as did-not-run; every other kind means refused before it ran (did-not-run; the story's `REFUSED_DENIALS`). D98: the
+ *  list is declared once, in session.js beside `REFUSED_DENIALS`, where the effect rule (`effectOf`) reads it too. */
+export { STOPPED_DENIALS };
 /** D80: the one phrase for a call that started and was stopped before it finished (typed as interrupted, or denied with
  *  a STOPPED_DENIALS kind): the evidence's words, the checklist's, and the story's and the page's alike. */
 export const STOPPED_WORDS = 'stopped before it finished';
 /** D80: what is said of a write parsed from a command (`shellWriteOf`) whose command failed or was stopped (`end`, a
  *  SHELL_WRITE_ENDS key): the record does not say whether the write happened (C-02), so it is never read as done. One
- *  phrase, after "its" (or "Its"): read by `RESULT_OUTCOME_WORDS` (the forms `command-failed`, `command-stopped`), the
- *  checklist's words, the story's and the page's. */
+ *  phrase, after "its" (or "Its"): read by `RESULT_OUTCOME_WORDS` (the forms `command-failed`, `command-stopped`) and the
+ *  checklist's words. D100 (review of A1c): the write has no result of its own and its command's typed end proves
+ *  neither way, but a later record (a read of the file) can show it, so the words say what Sonah could read, never that
+ *  the recording does not record it. No request carries them: `resultOutcome`, which a request's words come from, never
+ *  returns these forms (`actionOutcome` does). */
 export const SHELL_WRITE_ENDS = Object.freeze({ failed: 'failed', stopped: STOPPED_WORDS });
-export const shellWriteWords = (end) => `command ${SHELL_WRITE_ENDS[end]}, so whether this write happened is not `
-  + 'recorded';
+export const shellWriteWords = (end) => `command ${SHELL_WRITE_ENDS[end]}, so Sonah could not read whether this write `
+  + 'happened';
 /** The fixed words of each class's `outcome:` line, by class and, where a class has several, by what the
  *  recorder typed. `{n}` is a recorded exit code and `{kind}` a member of the recorder's closed denial vocabulary
  *  (redact `RECORDED_FACTS.denial`); nothing else is ever substituted. */
@@ -1677,6 +1696,12 @@ export const RESULT_OUTCOME_WORDS = Object.freeze({
   // HTTP status, shown on its "recorded:" line); what it lacks is a typed exit code or completion.
   'output-no-status': Object.freeze({ output: 'output recorded; no exit code or completion typed for it',
     unread: 'result recorded; none of its output is shown, and no exit code or completion is typed for it' }),
+  // D99 (F1 guard): words that state no absence; they never say "no terminal status", which the brief's failures and
+  // rests-on steps name. Nor do they presume an end, or a later mention: the run may still be running, and its id may be
+  // only in a row before its launch. Review of A1b: so the form of a run no later record is shown to mention
+  // (END_UNCHECKED_FORM) carries the same words, and no request byte moves for it.
+  'end-unread': Object.freeze({ background: 'run in the background; Sonah could not read whether or how it ended',
+    unchecked: 'run in the background; Sonah could not read whether or how it ended' }),
 });
 /** W3 F2 review (2026-10-14): the forms of the no-terminal-status class (RESULT_OUTCOME_WORDS) a RESULT takes when the
  *  recorder typed that its call started and did not run to its end: stopped before it finished (`interrupted`: a call
@@ -1684,19 +1709,28 @@ export const RESULT_OUTCOME_WORDS = Object.freeze({
  *  session route a support whose result has one of them is marked exactly as one whose result failed (claims.js
  *  `supportCheck`), and the readers say either as STOPPED_WORDS. */
 export const STOPPED_OUTCOME_FORMS = Object.freeze(['interrupted', 'cancelled']);
+/** D100 (the audit of absence sentences): the form of the no-terminal-status class an ACTION takes when Sonah read no
+ *  result of it (`actionOutcome`). It proves no absence: a result in a record Sonah could not read, or recorded after a
+ *  window's end, reads the same. A reader says it as what Sonah found, never as "no recorded end". */
+export const NO_RESULT_OUTCOME_FORM = 'none';
+/** D100: the form of the no-terminal-status class a background run takes when the slicer proved that its recording holds
+ *  no end of it (D99's verified absence: no `backgroundEnd` mark). The one form a reader may say as "no recorded end". */
+export const PROVED_NO_END_FORM = 'background';
 /** The classes whose RESULT shows no check that ran to an end — a deliverable citing one is refused
  *  (`check_not_completed`). */
-export const NOT_COMPLETED_OUTCOMES = Object.freeze(['did-not-run', 'no-terminal-status', 'failed-or-refused']);
+export const NOT_COMPLETED_OUTCOMES = Object.freeze(['did-not-run', 'no-terminal-status', 'failed-or-refused',
+  'end-unread']);
 /** The classes an action a row rests on (`restsOn`) must have: its check did not run or did not finish. */
 export const RESTS_ON_OUTCOMES = Object.freeze(['did-not-run', 'no-terminal-status']);
 /** The style linter's declarations (docs/STYLE.md, packages/render/test/style-lint.js) for the words of this file that a
- *  person reads. Every session-only review request carries them (prompt.js writes each result's `outcome:` line), so
- *  they are not rewritten in place: `request-bytes` lists their style errors and counts them, and none fails. */
+ *  person reads. Every session-only review request carries the outcome words of a result (prompt.js writes each
+ *  result's `outcome:` line from `resultOutcome`), so they are not rewritten in place: `request-bytes` lists their style
+ *  errors and counts them, and none fails. D100 (review of A1c): `shellWriteWords` is read only by forms that
+ *  `resultOutcome` never returns, so no request carries it, and it passes every rule as it is. */
 export const STYLE_KINDS = Object.freeze({ STOPPED_WORDS: 'fragment', RESULT_OUTCOME_WORDS: 'fragment',
   shellWriteWords: 'fragment' });
 export const STYLE_FIXTURES = Object.freeze({ shellWriteWords: [['failed'], ['stopped']] });
-export const STYLE_ALLOW = Object.freeze({ STOPPED_WORDS: ['request-bytes'], RESULT_OUTCOME_WORDS: ['request-bytes'],
-  shellWriteWords: ['request-bytes'] });
+export const STYLE_ALLOW = Object.freeze({ STOPPED_WORDS: ['request-bytes'], RESULT_OUTCOME_WORDS: ['request-bytes'] });
 
 
 const TYPED_RESULT_SOURCES = Object.freeze(['native', 'hook']);
@@ -1728,7 +1762,15 @@ export function resultOutcome(session, observation) {
   if (observation?.terminalStatusProven === true && exit === 0) return outcomeOf('ran-exit-0', 'exit');
   if (observation?.terminalStatusProven === true && (observation.result === 'succeeded'
       || observation.lastStatus?.verdict === 'completed')) return outcomeOf('ran-completed', 'typed');
-  if (typeof recorded.backgroundTaskId === 'string' && recorded.backgroundTaskId) return outcomeOf('no-terminal-status', 'background');
+  // D99 (F1 guard): a background run's end as the slicer read it (`backgroundEnd`): stopped or killed is stopped before it
+  // finished; an end it could not read, and could not prove absent, is end-unread; only a run with neither mark — one
+  // whose recording code proved holds no end of it — reads as having no recorded end.
+  if (typeof recorded.backgroundTaskId === 'string' && recorded.backgroundTaskId) {
+    if (call?.backgroundEnd === 'stopped') return outcomeOf('no-terminal-status', 'interrupted');
+    if (call?.backgroundEnd === 'unread') return outcomeOf('end-unread', 'background');
+    if (call?.backgroundEnd === 'unchecked') return outcomeOf('end-unread', END_UNCHECKED_FORM);
+    return outcomeOf('no-terminal-status', PROVED_NO_END_FORM);
+  }
   const output = Array.isArray(observation?.output) ? observation.output.length > 0
     : typeof observation?.output === 'string' && observation.output.length > 0;
   if (output || observation?.outputWithheld === true) return outcomeOf('output-no-status', 'output');
@@ -1759,7 +1801,7 @@ export function actionOutcome(session, action, { until = null } = {}) {
   const of = shell ?? action?.id;
   const results = events.filter((event) => event?.kind === 'observation' && event.invocation === of
     && event.phase === 'terminal' && (!bounded || (Number.isSafeInteger(event.sequence) && event.sequence <= until)));
-  const none = outcomeOf('no-terminal-status', 'none');
+  const none = outcomeOf('no-terminal-status', NO_RESULT_OUTCOME_FORM);
   if (!results.length) return none;
   const outcome = resultOutcome(session, results.at(-1));
   if (shell === null || outcome.class === 'did-not-run') return outcome;
@@ -1871,6 +1913,10 @@ export const LEGACY_REQUIREMENT_STATUSES = Object.freeze(['addressed', 'partly-a
  *   check_not_completed     its deliverable is a RESULT whose typed outcome is NOT_COMPLETED_OUTCOMES
  *   shortfall_ungrounded    a partly-done or not-done row's shortfall does not ground, or was not recorded after the
  *                           instruction, in its session
+ * D101 (owner decision 2026-10-17): a row lowered for its deliverable or shortfall at the quote gate (the three reasons
+ * that name one) also carries the cause of the grounding test that refused it (GROUNDING_CAUSES; the anchor's causes,
+ * GROUNDING_ANCHOR_CAUSES, for `deliverable_not_after`), the quote's place (QUOTE_PLACES, the report's only) and, for a
+ * length cause, `quoteLength`.
  *   ask_unreviewed          code's own row for a human message recorded in the window that no row cites (fixed words:
  *                           REQUIREMENT_UNREVIEWED_TEXT)
  *   challenge_refuted       its status's proposition was refuted by the challenge
@@ -1880,10 +1926,15 @@ export const LEGACY_REQUIREMENT_STATUSES = Object.freeze(['addressed', 'partly-a
  *                           slicer parsed from a command that did not run, failed or stopped before it finished
  *                           (`unrunEnd`, `quotesOnlyUnrunWrite`); checked after every check above it, so no row an
  *                           earlier reason lowers moves
+ *   check_end_unread        (D99, F1 guard) its deliverable is a RESULT or an ACTION whose typed outcome is end-unread:
+ *                           later records mention the run, and Sonah could not read whether or how it ended. Lowered
+ *                           where `check_not_completed` would be, with words that say no absence
+ *   check_end_unchecked     (D99, review of A1b) the same, in the form END_UNCHECKED_FORM: no later mention of the run
+ *                           is established, and Sonah could not check whether the recording holds an end of it
  */
 export const REQUIREMENT_UNCHECKED_REASONS = Object.freeze(['deliverable_ungrounded', 'deliverable_not_after',
   'check_not_completed', 'shortfall_ungrounded', 'ask_unreviewed', 'challenge_refuted', 'challenge_unsettled',
-  'challenge_unexecuted', UNRUN_WRITE_REASON]);
+  'challenge_unexecuted', UNRUN_WRITE_REASON, 'check_end_unread', 'check_end_unchecked']);
 /** The fixed words of code's own row for a human message no row cites (`ask_unreviewed`). */
 export const REQUIREMENT_UNREVIEWED_TEXT = 'the review named no ask from this message';
 /**
@@ -1987,7 +2038,8 @@ export const ASK_CODE_ATTENTION_LINKS = Object.freeze(ASK_CODE_LINKS.slice(0, 3)
  *   not_action    not an ACTION its window showed
  *   out_of_order  a requirement's: not recorded after its instruction; a claim's: not recorded before its statement
  *   cross_actor   not of the row's own session (a requirement's instruction, a claim's statement)
- *   completed     its typed outcome is not one of RESTS_ON_OUTCOMES: its check ran to an end
+ *   completed     its typed outcome is not one of RESTS_ON_OUTCOMES: its check ran to an end, or (D99) Sonah could not
+ *                 read whether or how it ended (end-unread; counted here until each refusal names a cause of its own)
  * W2 (owner decision 2026-10-13): a cited RESULT whose recorded `invocation` is an ACTION its window showed is checked as
  * that ACTION (checklist.js `restsOnCheck`), never refused `not_action`; each such move is counted in the closed counter
  * `restsOnRepaired` (requirements, claims) beside these reasons.
@@ -2033,6 +2085,8 @@ export const FAILURE_HANDLINGS = Object.freeze(['acted-on', 'told-human', 'passe
  *   response_ungrounded          its response is not one exact quote (at most 120 characters) of a source its window
  *                                showed, in a role its handling admits
  *   response_not_after           its response was not recorded after the RESULT
+ *                                (D101: a row lowered for one of these two also carries the cause of the grounding test
+ *                                that refused it, GROUNDING_CAUSES, as a requirement row does)
  *   response_other_agent         acted-on or passed-over: the response is not of the failed action's own session
  *   response_not_shown_to_human  told-human: the response is a helper's words, which the human is not shown
  *   turn_end_not_cited           passed-over: the response is not the first closing message of the failed action's session
@@ -2057,6 +2111,194 @@ export const FAILURE_UNCHECKED_REASONS = Object.freeze(['response_ungrounded', '
 export const FAILURE_REJECTIONS = Object.freeze(['malformed', 'not_listed', 'merged']);
 /** D71 (c): the challenge item type of a failure row (its own run, `challenge:<label>:failure:…`). */
 export const FAILURE_ITEM_TYPE = 'failure';
+
+// ---- D101 (owner decision 2026-10-17): which grounding test refused a quote ---------------------------------------------
+
+/**
+ * D101: the grounding tests a quote gate runs on one receipt, in this fixed order, each named by the one cause a refusal
+ * carries. The order decides only which cause is named: a receipt that fails any test is refused as before, and its row
+ * is lowered to the same status with the same closed reason (REQUIREMENT_UNCHECKED_REASONS, FAILURE_UNCHECKED_REASONS).
+ * Each test reads structure, provenance or the verbatim text only, never a word for its meaning.
+ *   receipt_malformed    no receipt, or not one of the field's shape: only `eventId`, `role` and `quote`, an event id that
+ *                        is a non-empty string, a role and a quote that are strings
+ *   role_not_allowed     its role is not one the field may cite, or not a grounding role (session.js GROUNDING_ROLES)
+ *   quote_too_short      its quote, trimmed, is shorter than the field's least length (QUOTE_LIMITS `min`)
+ *   quote_over_limit     its quote is longer than the field's greatest length (QUOTE_LIMITS `max`)
+ *   event_missing        the recording, as Sonah read it (the session's events), holds no event of its id
+ *   role_not_event_kind  its role is not one Sonah reads from the event's kind (session.js `eventRoles`, a rule by kind,
+ *                        never the event's words)
+ *   session_mismatch     it names a session other than the recording's
+ *   event_not_shown      the window was not shown that event in that role (its source map): another window may have
+ *                        shown it, and this one the event in another role
+ *   synthetic_marker     its quote holds a mark like those Sonah writes into a source (receipt-repair.js
+ *                        `spansSyntheticMarker`, which says yes when in doubt: the recording's own text may hold one)
+ *   not_found            every test above held, and its quote is not one exact substring of a source of that event and
+ *                        role (in a window, of a span the window showed: the caller's `shownSession` view): the literal
+ *                        search ran there and failed; the quote can be elsewhere in the window or in the recording
+ *   not_anchor_session   (a field whose anchor must share its session) code cannot place its event in the anchor's
+ *                        session (`oneSession`): a helper's event for a root anchor, or the reverse, an observation whose
+ *                        call another session recorded, or no anchor event
+ *   not_after            (a field that has an anchor) code cannot place its event after the anchor: both carry a
+ *                        recorded order (`sequence`) and its event's is not greater, or either carries none
+ * A refusal also records where the quote is (QUOTE_PLACES), found by the same literal search, for the report only: no
+ * reader shows it.
+ */
+export const GROUNDING_CAUSES = Object.freeze(['receipt_malformed', 'role_not_allowed', 'quote_too_short',
+  'quote_over_limit', 'event_missing', 'role_not_event_kind', 'session_mismatch', 'event_not_shown', 'synthetic_marker',
+  'not_found', 'not_anchor_session', 'not_after']);
+const [RECEIPT_MALFORMED, ROLE_NOT_ALLOWED, QUOTE_TOO_SHORT, QUOTE_OVER_LIMIT, EVENT_MISSING, ROLE_NOT_EVENT_KIND,
+  SESSION_MISMATCH, EVENT_NOT_SHOWN, SYNTHETIC_MARKER, NOT_FOUND, NOT_ANCHOR_SESSION, NOT_AFTER] = GROUNDING_CAUSES;
+/** D101: the two causes that are a length test; a refusal for one carries the lengths code measured and the limit. */
+export const GROUNDING_LENGTH_CAUSES = Object.freeze([QUOTE_TOO_SHORT, QUOTE_OVER_LIMIT]);
+/** D101: the two causes of the anchor's tests (its session, then its order), by name for every reader that maps them to
+ *  its own reason (`deliverable_not_after`, `response_not_after`): the test the beta.2 gate ran as one. */
+export const GROUNDING_ANCHOR_CAUSES = Object.freeze([NOT_ANCHOR_SESSION, NOT_AFTER]);
+/** D101: the reasons the checklist's quote gate lowers a row for, by name from their closed lists (a row lowered for one
+ *  carries a cause): a requirement's deliverable or shortfall, a failure row's response. */
+export const GROUNDING_GATE_REASONS = Object.freeze({
+  requirement: Object.freeze([REQUIREMENT_UNCHECKED_REASONS[0], REQUIREMENT_UNCHECKED_REASONS[1],
+    REQUIREMENT_UNCHECKED_REASONS[3]]),
+  failure: Object.freeze([FAILURE_UNCHECKED_REASONS[0], FAILURE_UNCHECKED_REASONS[1]]),
+});
+/**
+ * D101: where a refused receipt's quote is, by the literal search alone — for the report, never for a reader:
+ *   cited    in a source of the cited event, in the cited role, that the window showed
+ *   shown    elsewhere in what the window showed (another event, or another role)
+ *   nowhere  in nothing the window showed, or the receipt holds no quote
+ */
+export const QUOTE_PLACES = Object.freeze(['cited', 'shown', 'nowhere']);
+const [PLACE_CITED, PLACE_SHOWN, PLACE_NOWHERE] = QUOTE_PLACES;
+/**
+ * D101: the least and greatest length of a quote, per field that a grounding gate checks (`groundingCheck`). One table;
+ * every gate reads its bounds here. The least is of the trimmed quote (MIN_QUOTE_CHARS); the greatest is a project rule
+ * (EVIDENCE_QUOTE_MAX).
+ *   deliverable  a checklist requirement's deliverable (checklist.js `checkedRequirement`)
+ *   shortfall    a checklist requirement's shortfall
+ *   response     a failure row's response (checklist.js `checkedFailure`)
+ */
+export const QUOTE_LIMITS = Object.freeze({
+  deliverable: Object.freeze({ min: MIN_QUOTE_CHARS, max: EVIDENCE_QUOTE_MAX }),
+  shortfall: Object.freeze({ min: MIN_QUOTE_CHARS, max: EVIDENCE_QUOTE_MAX }),
+  response: Object.freeze({ min: MIN_QUOTE_CHARS, max: EVIDENCE_QUOTE_MAX }),
+});
+const RECEIPT_FIELDS = Object.freeze(['eventId', 'role', 'quote']);
+
+/** Was the window shown this event, in this role (its source map)? A source map lists exactly what it showed. */
+export const shownInRole = (sourceMap, eventId, role) => sourceMap != null && typeof eventId === 'string'
+  && Object.hasOwn(sourceMap, eventId) && Array.isArray(sourceMap[eventId])
+  && sourceMap[eventId].some((source) => source?.role === role);
+
+/** The event a receipt cites, or null (a session that cannot read its id holds none). */
+function citedEvent(session, eventId) {
+  try { return typeof session?.event === 'function' ? session.event(eventId) ?? null : null; } catch { return null; }
+}
+/** Is `quote` one exact substring of a source of `event` in `role` (the literal search: verifyReceipt's own)? */
+function literalIn(session, event, role, quote) {
+  try {
+    return event != null && session.sourcesFor(event)
+      .some((source) => source?.role === role && typeof source.text === 'string' && source.text.includes(quote));
+  } catch { return false; }
+}
+
+const recordedOrder = (event) => (Number.isSafeInteger(event?.sequence) ? event.sequence : null);
+
+/** D101: each grounding test as a predicate of one check `c` (`{ session, value, roles, limits, sourceMap, shown,
+ *  anchor, event }`), in GROUNDING_CAUSES order. A test is run only after every test before it held, so it may read what
+ *  they proved (a receipt of the shape, its event). */
+const GROUNDING_TESTS = Object.freeze({
+  [RECEIPT_MALFORMED]: ({ value }) => plainObject(value)
+    && Object.keys(value).every((key) => RECEIPT_FIELDS.includes(key)) && typeof value.eventId === 'string'
+    && value.eventId.length > 0 && typeof value.role === 'string' && typeof value.quote === 'string',
+  [ROLE_NOT_ALLOWED]: ({ value, roles }) => roles.includes(value.role) && GROUNDING_ROLES.includes(value.role),
+  [QUOTE_TOO_SHORT]: ({ value, limits }) => value.quote.trim().length >= limits.min,
+  [QUOTE_OVER_LIMIT]: ({ value, limits }) => value.quote.length <= limits.max,
+  [EVENT_MISSING]: ({ event }) => event !== null,
+  [ROLE_NOT_EVENT_KIND]: ({ value, event }) => eventRoles(event).includes(value.role),
+  [SESSION_MISMATCH]: ({ value, session }) => value.sessionKey == null || value.sessionKey === session.sessionKey,
+  [EVENT_NOT_SHOWN]: ({ value, sourceMap, shown }) => !shown || shownInRole(sourceMap, value.eventId, value.role),
+  [SYNTHETIC_MARKER]: ({ value }) => !spansSyntheticMarker(value.quote),
+  [NOT_FOUND]: ({ value, session, event }) => literalIn(session, event, value.role, value.quote),
+  [NOT_ANCHOR_SESSION]: ({ session, anchor, event }) => anchor === null || anchor.sameSession !== true
+    || oneSession(session, [anchor.event, event]),
+  [NOT_AFTER]: ({ anchor, event }) => anchor === null || (recordedOrder(anchor.event) !== null
+    && recordedOrder(event) !== null && recordedOrder(event) > recordedOrder(anchor.event)),
+});
+
+/** The one check object every grounding test reads. `anchor` is null (the field has none) or `{ event, sameSession }`:
+ *  the event the cited one must be recorded after (null when there is none to read) and whether it must share its
+ *  session. Throws (a caller's error, never the model's) on a field with no row in QUOTE_LIMITS. */
+function groundingContext(session, value, { field, roles = [], sourceMap = null, shown = true, anchor = null }) {
+  if (!Object.hasOwn(QUOTE_LIMITS, field)) throw new RangeError(`no quote limits for ${field}`);
+  const event = plainObject(value) && typeof value.eventId === 'string' ? citedEvent(session, value.eventId) : null;
+  return { session, value, roles: Array.isArray(roles) ? roles : [], limits: QUOTE_LIMITS[field], sourceMap, shown,
+    anchor: plainObject(anchor) ? { event: anchor.event ?? null, sameSession: anchor.sameSession === true } : null, event };
+}
+
+/** D101: the lengths a length test measured on a quote, for the reader's words: `chars`, its characters as given (code
+ *  points: an emoji is one); `counted`, the length the bound is tested on (JavaScript string length, where some
+ *  characters count as two, of the trimmed quote for the least); `limit`, the bound it broke. */
+function measuredLength(quote, cause, limits) {
+  const least = cause === QUOTE_TOO_SHORT;
+  return { chars: [...quote].length, counted: least ? quote.trim().length : quote.length,
+    limit: least ? limits.min : limits.max };
+}
+
+/** D101: where a refused receipt's quote is (QUOTE_PLACES), by the literal search alone. A gate with no window test
+ *  (`shown` false) places a quote in its cited event and role wherever the session holds it. */
+export function quotePlace(session, value, sourceMap, { shown = true } = {}) {
+  if (!plainObject(value) || typeof value.quote !== 'string' || !value.quote) return PLACE_NOWHERE;
+  const holds = (eventId, role) => literalIn(session, citedEvent(session, eventId), role, value.quote);
+  if ((!shown || shownInRole(sourceMap, value.eventId, value.role)) && holds(value.eventId, value.role))
+    return PLACE_CITED;
+  for (const [eventId, listed] of Object.entries(sourceMap ?? {})) {
+    if (!Array.isArray(listed)) continue;
+    for (const role of new Set(listed.map((source) => source?.role).filter((r) => typeof r === 'string')))
+      if (!(eventId === value.eventId && role === value.role) && holds(eventId, role)) return PLACE_SHOWN;
+  }
+  return PLACE_NOWHERE;
+}
+
+/**
+ * D101: one receipt through every grounding test, in GROUNDING_CAUSES order — the one quote gate the checklist's fields
+ * share. `field` names its bounds in QUOTE_LIMITS; `roles` the roles it may cite; `sourceMap` what its window showed
+ * (`shown` false: a gate with no window test); `anchor` the field's anchor, `{ event, sameSession }`, or null (none).
+ * Returns `{ ok: true, receipt }` (the receipt, its three fields copied) or `{ ok: false, cause, place, quoteLength? }`:
+ * the first test that failed, where the quote is (`quotePlace`, for the report only), and, for a length cause, `{ chars,
+ * counted, limit }` (`measuredLength`). Pure; never throws on model output.
+ */
+export function groundingCheck(session, value, options) {
+  const c = groundingContext(session, value, options);
+  for (const cause of GROUNDING_CAUSES) {
+    let held;
+    try { held = GROUNDING_TESTS[cause](c) === true; } catch { held = false; }
+    if (held) continue;
+    const quoteLength = GROUNDING_LENGTH_CAUSES.includes(cause) ? measuredLength(value.quote, cause, c.limits) : null;
+    return { ok: false, cause, place: quotePlace(session, value, c.sourceMap, { shown: c.shown }),
+      ...(quoteLength ? { quoteLength } : {}) };
+  }
+  return { ok: true, receipt: { eventId: value.eventId, role: value.role, quote: value.quote } };
+}
+
+/** D101: does the one grounding test `cause` hold for this receipt, run alone (`groundingCheck`'s options)? For a check
+ *  of a recorded cause: its test fails, and every test before it holds. False on a cause outside the list. */
+export function groundingTestHolds(session, value, cause, options) {
+  if (!GROUNDING_CAUSES.includes(cause)) return false;
+  try { return GROUNDING_TESTS[cause](groundingContext(session, value, options)) === true; } catch { return false; }
+}
+
+/** D101: the fields a row lowered at a quote gate carries beside its closed reason — its `cause`, the quote's place
+ *  (`quotePlace`, the report's only) and, for a length cause, `quoteLength` — from a `groundingCheck` refusal; none
+ *  from anything else. */
+export const groundingRefusalFields = (refusal) => (plainObject(refusal) && refusal.ok === false
+  && GROUNDING_CAUSES.includes(refusal.cause)
+  ? { cause: refusal.cause, quotePlace: refusal.place,
+    ...(GROUNDING_LENGTH_CAUSES.includes(refusal.cause) && plainObject(refusal.quoteLength)
+      ? { quoteLength: { chars: refusal.quoteLength.chars, counted: refusal.quoteLength.counted,
+        limit: refusal.quoteLength.limit } } : {}) }
+  : {});
+/** D101: the same fields, copied from a row (or a checked row) that already carries them; none from any other. */
+export const groundingFieldsOf = (row) => groundingRefusalFields(plainObject(row)
+  ? { ok: false, cause: row.cause, place: row.quotePlace, quoteLength: row.quoteLength } : null);
 
 /**
  * D71 (e), (g): what recorded evidence a contradicted claim's `contradictedBy` cites, set by code from the receipt's
@@ -2141,7 +2383,8 @@ export const FORBIDDEN_EDIT_ITEM_TYPE = 'forbidden-edit';
 //                           kept
 //   actor_unlinked          the action is a helper's that no verified child link attributes, or its actor cannot be
 //                           named
-//   violation_not_landed    the action's C-02 outcome (session.js `actionOutcomeOf`) is not `succeeded`: recorded as
+//   violation_not_landed    the action's effect (session.js `effectOf`, D98) is not `landed` — its C-02 outcome
+//                           (`actionOutcomeOf`) is not `succeeded`, or it was refused before it ran: recorded as
 //                           failed or cancelled, or (M33 N repair) unknown or never recorded — a Codex apply_patch
 //                           with no native typed status, a write with no result, a command with no result. What is
 //                           not proved to have happened is never published as done
@@ -2283,6 +2526,19 @@ export function actorKeyOf(session, event) {
   const call = event?.kind === 'observation' && typeof event.invocation === 'string' ? session.event(event.invocation) : null;
   if (call && (call.childId ?? null) !== own) return undefined;
   return own === null || (typeof own === 'string' && own.length > 0) ? own : undefined;
+}
+
+/**
+ * D102 (owner decision 2026-10-17): the one structural key for "the same place twice": two receipts that cite one
+ * event, where one quote holds the other (equal included). The evidence re-ask's merge drops a first-answer statement
+ * on it (run-review.js `servedAnswer`), and G2 refuses a re-anchor that names the refuted anchor again
+ * (`reanchoredChoices`). The role is not read, and no word is: event ids and string containment only. An empty quote
+ * is held by every quote of its event. Pure; false for anything that is not two such receipts.
+ */
+export function nestedReceipts(a, b) {
+  return plainObject(a) && plainObject(b) && typeof a.eventId === 'string' && a.eventId === b.eventId
+    && typeof a.quote === 'string' && typeof b.quote === 'string'
+    && (a.quote.includes(b.quote) || b.quote.includes(a.quote));
 }
 
 /**
@@ -2542,7 +2798,8 @@ function ownWrittenChanges(session, write, quote) {
 
 /**
  * W2 (owner decision 2026-10-13): was a change to one of `paths` recorded after `write` and before the sequence `before`,
- * by any action whose typed `changes` name it, that did not provably fail or get cancelled (`actionOutcomeOf`)? Typed
+ * by any action whose typed `changes` name it, that could have changed it (D98, F9: the one effect rule,
+ * `CHANGING_EFFECTS`: not refused before it ran, failed or cancelled)? Typed
  * changes only: a command the slicer parsed no write from is not read. Precision over recall: a path that is not a
  * string, a change whose path is not one, or such an action whose place in the order code cannot read, counts as one.
  * Shared by the `own_written` contradiction source (`ownWrittenCheck`) and an own write's support (claims.js).
@@ -2550,13 +2807,14 @@ function ownWrittenChanges(session, write, quote) {
 export function samePathChangedBetween(session, write, paths, before) {
   if (!Array.isArray(paths) || !paths.length || paths.some((path) => typeof path !== 'string')) return true;
   const named = new Set(paths);
+  const effect = effectReader(session);
   return (Array.isArray(session?.events) ? session.events : []).some((event) => {
     if (event === write || event?.kind !== 'invocation' || !Array.isArray(event.changes)) return false;
     if (!event.changes.some((change) => !plainObject(change) || typeof change.path !== 'string' || named.has(change.path)))
       return false;
     if (!Number.isSafeInteger(event.sequence)) return true;
     if (event.sequence <= write.sequence || event.sequence >= before) return false;
-    return !['failed', 'cancelled'].includes(session.actionOutcomeOf(event));
+    return CHANGING_EFFECTS.includes(effect(event));
   });
 }
 
@@ -3158,7 +3416,8 @@ export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pi
  *                             fit the ask and the contracts
  *   not_acting                a choice not to act: find what it leaves broken
  *   failure_passed_over       a failure passed over: look for the bug there; does the head still fail
- *   never_ran                 no command was recorded after the file's last edit: the final state never ran
+ *   never_ran                 no command that may have run was recorded after the file's last edit (one refused
+ *                             before it ran is none, code-pass/11): the final state never ran
  *   ask_short                 an ask partly done or not done: find the shortfall in the diff
  *   edit_against_instruction  an edit against an instruction: find what it broke
  *   ask_done                  (code-pass/7) an ask the session review shows done: check the change delivers every part
@@ -3388,9 +3647,18 @@ export function sessionCoverageFacts({ session, windows, perWindow, declaredCove
     // M33: the declared pair gaps, as a count or the declarations themselves; absent is none.
     pairGaps: Array.isArray(pairGaps) ? pairGaps.length : isCount(pairGaps) ? pairGaps : 0,
     ...(isCount(carryCapped) && carryCapped > 0 ? { carryCapped } : {}),
+    // D104 (F5 part 4): the results the session review saw only in part — each recorded on one window (`seenInPart`,
+    // seen-in-part.js `seenInPartOfWindows`), summed over the windows (present only when nonzero). A fact beside the
+    // coverage: it never caps it (`coverageFrom` reads it not), and review.js names it whatever the coverage
+    // (`uncappedCauses`).
+    ...(seenInPartTotal(perWindow) > 0 ? { resultsSeenInPart: seenInPartTotal(perWindow) } : {}),
     declared: declaredCoverage ?? null,
   };
 }
+
+/** D104: the results the windows' requests showed only in part, each window's record, summed. */
+const seenInPartTotal = (perWindow) => (Array.isArray(perWindow) ? perWindow : [])
+  .reduce((n, w) => n + (Array.isArray(w?.seenInPart) ? w.seenInPart.length : 0), 0);
 
 /**
  * How many hand-offs went unread, counted from every route a delegation gap can take (F100).

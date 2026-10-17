@@ -20,6 +20,7 @@ import { WORKFLOW_RUN_NOTES, WORKFLOW_LIMITS, WORKFLOW_AGENT_KIND, WORKFLOW_AGEN
 import { HELPER_DELIVERY_REASONS, planHelperSegments, helperRow, laterRequestTurn }
   from '../../slicer/src/helper-deliveries.js';
 import { IDENTITY_SUBS, validIdentity } from '../../slicer/src/event-identity.js';
+import { censusEntryOrder } from '../../slicer/src/recorder-census.js';
 
 /**
  * M33 P: each node's encrypted arrivals (the work its own recording received), kept in memory for its parent's
@@ -69,6 +70,13 @@ function helperPlacement({ deliveries, links, children }) {
       claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.launchUnknown });
     const receipt = launches.length === 1 && !calls.length && launches[0].agentId === delegation.childId
       ? helperRow(launches[0].receipt) : calls.length === 1 && !launches.length ? helperRow(calls[0].receipt) : null;
+    // D99 (F1 guard): a background run with no receipt whose end the slicer could not read (`endUnread`): the loss is
+    // declared as that, on its hand-off, and the adapter never says the parent recorded no receipt of it.
+    // Review of A1b: `endUnchecked` where no later mention of it is established.
+    if (receipt === null && launches.length === 1 && !calls.length && launches[0].endUnread === true)
+      claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.endUnread });
+    else if (receipt === null && launches.length === 1 && !calls.length && launches[0].endUnchecked === true)
+      claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.endUnchecked });
     segments.push({ child: delegation.link.source, segments: [{ delivery: { delegation: index },
       ...(receipt ? { receipt } : {}) }, ...(later !== null ? [{ delivery: { request: later } }] : [])] });
   }
@@ -116,6 +124,40 @@ const inside = (path, root) => { const r = relative(root, path); return r !== ''
 const canonical = path => realpath(path).catch(() => null);
 export const evidenceContext = () => ({ inventories: new Map() });
 
+/**
+ * D99 (F1 guard): the recorder census of a loaded session (slicer recorder-census.js `recorderCensusOf`), summed over
+ * the parent recording and every helper recording the load read: what a reader of a recorder fact met and another could
+ * not read, by closed reason and recorder version. Kept beside the ledger, never on it (no ledger byte moves for it), for
+ * the run record only. Null when the ledger was not loaded here or nothing was counted.
+ */
+const censusOf = new WeakMap();
+export function recorderCensusOf(ledger) {
+  const census = ledger !== null && typeof ledger === 'object' ? censusOf.get(ledger) : undefined;
+  return census && (census.notices.labelled || census.launches.background || census.entries.length) ? census : null;
+}
+const CENSUS_LAUNCH_KEYS = Object.freeze(['background', 'typed', 'stopped', 'unread', 'absent', 'other', 'linked',
+  'linkedOther']);
+function emptyCensus() {
+  return { notices: { labelled: 0, typed: 0 }, launches: Object.fromEntries(CENSUS_LAUNCH_KEYS.map((key) => [key, 0])),
+    entries: [] };
+}
+/** Adds one recording's census into `into`: counts summed, each entry by its reason, kind, carrier, key and version,
+ *  in the slicer's one entry order (`censusEntryOrder`). */
+function addCensus(into, census) {
+  if (census === null || typeof census !== 'object') return;
+  const n = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0);
+  for (const key of ['labelled', 'typed']) into.notices[key] += n(census.notices?.[key]);
+  for (const key of CENSUS_LAUNCH_KEYS) into.launches[key] += n(census.launches?.[key]);
+  for (const entry of Array.isArray(census.entries) ? census.entries : []) {
+    const same = into.entries.find((e) => e.reason === entry.reason && (e.kind ?? null) === (entry.kind ?? null)
+      && (e.carrier ?? null) === (entry.carrier ?? null) && (e.key ?? null) === (entry.key ?? null)
+      && e.version === entry.version);
+    if (same) same.count += n(entry.count);
+    else into.entries.push({ ...entry, count: n(entry.count) });
+  }
+  into.entries.sort(censusEntryOrder);
+}
+
 async function parentSources(files, sources, roots) {
   const codex = await canonical(roots.codex ?? join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions'));
   const claude = await canonical(roots.claude ?? claudeProjectsDir());
@@ -146,12 +188,12 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   // A cached inventory is checked once for this review unit; a changed store is rescanned.
   // M33 W: `claimedRuns` holds every canonical Workflow run directory a call of this review has claimed.
   const state = { inventories: context.inventories, checkedInventories: new Set(), staleInventories: new Map(),
-    visited: new Set(), children: 0, actionBytes: 0, claimedRuns: new Set() };
+    visited: new Set(), children: 0, actionBytes: 0, claimedRuns: new Set(), census: emptyCensus() };
   async function readNode(nodeFiles, depth, child = false, snapshot = null, verifiedChild = false) {
     let raw = snapshot ?? await sliceLineage(nodeFiles, { cwd: child ? undefined : cwd,
       outcomes: child ? await outcomesFor(nodeFiles) : outcomes ?? await outcomesFor(nodeFiles),
       includeSources: true, sidechainAsMain: child || undefined, childRecording: child, workflowLaunches: true,
-      claudeLocators: true, helperDeliveries: true });
+      claudeLocators: true, helperDeliveries: true, recorderCensus: true });
     // M34 labels (C-02 "Slice-time labels"): a helper's recording is known by its structure — the slicer's lineage role,
     // from `isSidechain` rows or a Codex subagent thread — never by its path. M34 labels review (F7): by that role alone,
     // never re-decided here: a main recording holding inline sidechain rows beside its own (`mixedHistory`, its first
@@ -161,7 +203,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       child = true;
       raw = await sliceLineage(nodeFiles, { outcomes: await outcomesFor(nodeFiles),
         includeSources: true, sidechainAsMain: true, childRecording: true, workflowLaunches: true,
-        claudeLocators: true, helperDeliveries: true });
+        claudeLocators: true, helperDeliveries: true, recorderCensus: true });
     }
     const ledger = redact(raw).ledger;
     // M33 W: the slicer's Workflow launch side channel is read below and never returned (no ledger keeps it).
@@ -170,6 +212,10 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     // M33 P: the delivery side channel likewise (tokens and paths in memory only), read below and never returned.
     const deliveries = ledger.helperDeliveries ?? null;
     delete ledger.helperDeliveries;
+    // D99 (F1 guard): the recorder census likewise: summed over every recording this review reads, kept for the run
+    // record (`recorderCensusOf`), never on a ledger.
+    addCensus(state.census, ledger.recorderCensus ?? null);
+    delete ledger.recorderCensus;
     if (child) {
       ledger.instructions = ledger.ask.map(a => ({ ...a, origin: 'agent-or-inherited' }));
       ledger.ask = [];
@@ -263,7 +309,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
         // recording's home from where the recorder wrote it, never from the private copy's temporary path.
         const sliced = await sliceLineage([snapshot.path], { outcomes: await outcomesFor([file]),
           includeSources: true, sidechainAsMain: true, childRecording: true, noForkChildProof, workflowLaunches: true,
-          claudeLocators: true, helperDeliveries: true, lineageFiles: [file] });
+          claudeLocators: true, helperDeliveries: true, recorderCensus: true, lineageFiles: [file] });
         sliced.lineage.files = [file];
         const cleaned = redact(sliced).ledger;
         const [verified] = resolveChildLinks([delegation], [{ ...cleaned.sources?.[0], namespace: parent.namespace,
@@ -496,7 +542,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       // declares the cut due on it; redaction bounds and validates it, masking nothing (M33 R, D90).
       // D69 (b): named by the recording it was read from, as an Agent/Task child's copy is (`lineageFiles`).
       const sliced = await sliceLineage([snapshot.path], { outcomes: await outcomesFor([file]), includeSources: true,
-        sidechainAsMain: true, childRecording: true, workflowLaunches: true, claudeLocators: true, helperDeliveries: true,
+        sidechainAsMain: true, childRecording: true, workflowLaunches: true, claudeLocators: true, helperDeliveries: true, recorderCensus: true,
         lineageFiles: [file] });
       sliced.lineage.files = [file];
       const cleaned = redact(sliced).ledger;
@@ -512,5 +558,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   }
 
   for (const file of files) { const path = await canonical(file); if (path) state.visited.add(path); }
-  return readNode(files, 0);
+  const root = await readNode(files, 0);
+  censusOf.set(root, state.census);
+  return root;
 }

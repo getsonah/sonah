@@ -15,7 +15,7 @@
 //   hook message) was read as the human's instruction. It is no longer read; its row stays a counted loss.
 //
 // Every row is synthetic (m33-u-unasked-fixture.js). The judge is a table, never a model.
-import { beforeRecordedFacts } from './stable-ids-fixture.js';
+import { beforeRecordedFacts, beforeStableIds } from './stable-ids-fixture.js';
 import { readingStableIds } from './m35-windows-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,6 +26,7 @@ import { runReview } from '../src/run-review.js';
 import { instructionReviewScope } from '../src/ledger.js';
 import { UNREAD_ANSWER_NOTE } from '../adapters/sonah-ledger.js';
 import { load, user as recordedUser, said, call, result, queued, compact, QUESTION, answeredText, codexRows, CODEX_NAME,
+  beforeEffectRule,
   sessionDigest, beforeHumanInteractionFlags, named, labelOf, sessionBeforeStableIds,
   promptDigestsBeforeStableIds, promptDigests } from './m33-u-unasked-fixture.js';
 import { beforeM36Labels, beforeM36Conversation, textBeforeD71Fix, textBeforeS7 } from './m33-integration-fixture.js';
@@ -318,6 +319,9 @@ const MOVED_BY_WINDOWING = { plainRejection: { prompts: ['1a502df6aba4ffa85707fb
 /** D68 (C-02 "M36 recorded facts"): each invocation carries the recorder's typed facts (`recorded`); each session moves
  *  by those alone (rendered back, `beforeRecordedFacts`, it is the pin before them). No request moved. */
 const MOVED_BY_RECORDED_FACTS = Object.freeze({ plainRejection: '107bae77537c48b2175c79ae16f5aa7dccd8c038cb573dde3cd46e6589361186', interrupted: '25e859d88835c7f8b8cbf8889bcddafbaeeec5bbdfb3095fd8251d40a514e24c' });
+/** D98 (F9, the one effect rule): the plain rejection's session moved by its gaps alone — its failed edit's body is no
+ *  unrecorded body. The interrupted session holds no such write and did not move. */
+const MOVED_BY_EFFECT_RULE = Object.freeze({ plainRejection: '66f106d388a57360bf07959e41a97e0443a2639975a0a01946c1f73ec26edfe2' });
 
 /** M36 phase 2, the window format (D68 L, H; C-07 "M36 window format"): each recording's narrative request
  *  moved by its labels alone — each RESULT's `recorded: …` line and an edit's replaced text headed as such: rendered back
@@ -352,9 +356,13 @@ test('U repair: recordings with none of the repaired shapes keep their session a
     edit('e2', 'const flags = [];', 'const flags = [\'--other\'];'), edited('e2'), said('Done.')]);
   // C-01 event identity (stable event ids): the events are named by their rows now; rendered back to the positional ids
   // (`beforeStableIds`), the session and every request are the pinned bytes: only the ids moved.
-  assert.equal(sessionDigest(sessionBeforeStableIds(plainRejection.session)), MOVED_BY_RECORDED_FACTS.plainRejection);
-  assert.equal(sessionDigest(beforeRecordedFacts(sessionBeforeStableIds(plainRejection.session))),
-    PINNED.plainRejection.session);
+  // D98 (F9): its failed edit did no work, so the recording lacks nothing of it: the unrecorded-body gap that named it is
+  // gone (MOVED_BY_EFFECT_RULE); rendered back (`beforeEffectRule`), the session is M36 phase 1's, byte for byte.
+  assert.equal(sessionDigest(sessionBeforeStableIds(plainRejection.session)), MOVED_BY_EFFECT_RULE.plainRejection);
+  const { events, blobs, adapterGaps, children } = beforeEffectRule(plainRejection.session);
+  const plainBefore = beforeStableIds(plainRejection.session, { events, blobs, adapterGaps, children });
+  assert.equal(sessionDigest(plainBefore), MOVED_BY_RECORDED_FACTS.plainRejection);
+  assert.equal(sessionDigest(beforeRecordedFacts(plainBefore)), PINNED.plainRejection.session);
   // M33 N (`sonah.narrative/14`): rendered back (`beforeForbiddenEdit`), every request is M33 H's above, byte for byte.
   // Status fact (`sonah.narrative/15`): its three task lines come out first (`beforeStatusFact`); the session holds no
   // command, so its bytes did not move.

@@ -7,7 +7,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, dirname } from 'node:path';
 import { lintText, lintModules, moduleEntries, reportLines, sentencesOf, passiveOf, actionFault, STYLE_RULES,
-  STYLE_KIND_NAMES, STYLE_ALLOW_NAMES, MAX_SENTENCE_WORDS } from './style-lint.js';
+  STYLE_KIND_NAMES, STYLE_ALLOW_NAMES, MAX_SENTENCE_WORDS, WORD_MODULE_DIRS, WORD_MODULES_NAMED } from './style-lint.js';
 import { steWordCount } from '../../evidence/src/ste-count.js';
 import * as ledger from '../../evidence/src/ledger.js';
 
@@ -138,8 +138,8 @@ test('style lint: an allow passes only its own rule, is counted, and request-byt
 // ---- the modules that must pass ---------------------------------------------------------------------------------------
 
 /** Every module the linter discovers, and the ones that must declare their tables. */
-const DISCOVERED = ['packages/render', 'packages/cli/src', 'packages/github'];
-const NAMED = ['packages/evidence/src/review.js', 'packages/evidence/src/code-report.js', 'packages/evidence/src/ledger.js'];
+const DISCOVERED = WORD_MODULE_DIRS;
+const NAMED = WORD_MODULES_NAMED;
 const MANDATORY = ['packages/evidence/src/review.js', 'packages/evidence/src/code-report.js',
   'packages/evidence/src/ledger.js', 'packages/cli/src/session-review-command.js', 'packages/cli/src/pr-sharing.js',
   'packages/cli/src/local-page.js', 'packages/github/publication.js',
@@ -213,12 +213,20 @@ test('style lint: no request builder reaches the word tables the rewrite moved, 
 });
 
 // The words a model request carries (every session-only request writes each result's `outcome:` line from these), so
-// they are pinned here as they are: changing one moves request bytes, and no stored answer would replay.
-test('style lint: the words a model request carries are not rewritten', () => {
+// they are pinned here as they are: changing one moves request bytes, and no stored answer would replay. D100 (review
+// of A1c): the two forms of a write whose command failed or stopped are an ACTION's (`actionOutcome`), which
+// `resultOutcome` never returns, so no request carries them; their words were rewritten to say what Sonah could read,
+// and no request byte moved.
+test('style lint: the words a model request carries are not rewritten', async () => {
   assert.equal(ledger.STOPPED_WORDS, 'stopped before it finished');
+  const source = await readFile(join(ROOT, 'packages/evidence/src/ledger.js'), 'utf8');
+  const start = source.indexOf('export function resultOutcome(');
+  const body = source.slice(start, source.indexOf('\n}\n', start));
+  assert.ok(start > 0 && body.includes('outcomeOf('));
+  for (const form of ['command-failed', 'command-stopped']) assert.equal(body.includes(form), false, form);
   assert.deepEqual(['failed', 'stopped'].map(ledger.shellWriteWords), [
-    'command failed, so whether this write happened is not recorded',
-    'command stopped before it finished, so whether this write happened is not recorded']);
+    'command failed, so Sonah could not read whether this write happened',
+    'command stopped before it finished, so Sonah could not read whether this write happened']);
   assert.deepEqual(JSON.parse(JSON.stringify(ledger.RESULT_OUTCOME_WORDS)), {
     'ran-exit-0': { exit: 'ran, exit 0' },
     'ran-completed': { typed: 'ran, completed' },
@@ -229,12 +237,17 @@ test('style lint: the words a model request carries are not rewritten', () => {
       none: 'no terminal status recorded (no result recorded)',
       interrupted: 'no terminal status recorded (stopped before it finished)',
       cancelled: 'no terminal status recorded (the recorder typed it as cancelled)',
-      'command-failed': 'no terminal status recorded (its command failed, so whether this write happened is not recorded)',
-      'command-stopped': 'no terminal status recorded (its command stopped before it finished, so whether this write '
-        + 'happened is not recorded)' },
+      'command-failed': 'no terminal status recorded (its command failed, so Sonah could not read whether this write '
+        + 'happened)',
+      'command-stopped': 'no terminal status recorded (its command stopped before it finished, so Sonah could not read '
+        + 'whether this write happened)' },
     'failed-or-refused': { untyped: 'failed or refused before it ran; the recorder does not type which' },
     'output-no-status': { output: 'output recorded; no exit code or completion typed for it',
       unread: 'result recorded; none of its output is shown, and no exit code or completion is typed for it' },
+    // D99 (F1 guard): a new class, added; no word above moved. Its review added a form with the same words, so no
+    // request byte moved for it.
+    'end-unread': { background: 'run in the background; Sonah could not read whether or how it ended',
+      unchecked: 'run in the background; Sonah could not read whether or how it ended' },
   });
 });
 

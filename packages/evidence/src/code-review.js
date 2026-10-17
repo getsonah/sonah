@@ -3,7 +3,7 @@
 // This module owns the frozen-diff boundary; the existing grounder remains unchanged.
 // Inputs must already be redacted. No disk, network, clock or transport is used here.
 
-import { Session, MIN_QUOTE_CHARS, repairReceipt, shownSession } from './session.js';
+import { Session, MIN_QUOTE_CHARS, repairReceipt, shownSession, effectReader, ACTION_EFFECTS } from './session.js';
 import { challengeItems, CHALLENGE_PROFILE, requestFits, reviewInputBytes, MAX_REVIEW_INPUT_BYTES,
   disclosureAsks, disclosureOutcomes, disclosureCounts } from './challenge.js';
 import { runReview, TRANSPORT_SHORTFALL, promisesBesideFindings, unverifiedBesideFindings, resultReceiptRepair,
@@ -477,10 +477,12 @@ function candidateReason(candidate, origin, snapshot) {
   return candidate.scope === 'current-code' && !frozenCode ? { reason: 'receipt_rejected', cause: 'no_frozen_code' } : null;
 }
 
-// W3d-4. Outcomes the record states as not having happened. Anything else short of `succeeded`
-// — `unknown`, no terminal observation at all (`none`), a value this code does not know — is an
-// outcome the record does not contain.
-const OUTCOME_FAILED = Object.freeze(['failed', 'cancelled']);
+// W3d-4. Effects the record states as not having happened (D98, F9: session.js `effectOf`; refused before it ran, or a
+// direct write that failed or was cancelled), and the one that proves it did. Anything else — `unknown` — is an outcome
+// the record does not contain: a command that failed or was cancelled among them, since it may have changed a file
+// before it ended (C-02, D80).
+const [NO_EFFECT, UNDONE_EFFECT, LANDED_EFFECT] = ACTION_EFFECTS;
+const OUTCOME_FAILED = Object.freeze([NO_EFFECT, UNDONE_EFFECT]);
 
 /**
  * One reviewer, one result: existing session narrative plus grounded code candidates.
@@ -612,12 +614,13 @@ export async function runCodeReview({ session = null, pr, diff = null, judge, ch
         // parser-proved single direct-write command with a unique typed zero exit proves it
         // succeeded. A nonzero or compound process can have changed the file before a later
         // failure, so it cannot suppress a finding as a proved failed write.
-        const outcome = (a) => original.actionOutcomeOf(a);
-        const unknown = actions.filter((a) => a && outcome(a) !== 'succeeded' && !OUTCOME_FAILED.includes(outcome(a)));
+        const effect = effectReader(original);
+        const outcome = (a) => effect(a);
+        const unknown = actions.filter((a) => a && outcome(a) !== LANDED_EFFECT && !OUTCOME_FAILED.includes(outcome(a)));
         if (!actions.length) result = { ok: false, reason: 'receipt_rejected', cause: 'role_missing' };
         else if (actions.some((a) => !a)) result = { ok: false, reason: 'receipt_rejected' };
         else if (unknown.length) result = { ok: false, reason: 'unreviewed_scope', outcomeUnknown: unknown.map((a) => a.id) };
-        else if (actions.some((a) => outcome(a) !== 'succeeded'))
+        else if (actions.some((a) => outcome(a) !== LANDED_EFFECT))
           result = { ok: false, reason: 'receipt_rejected', cause: 'action_failed' };
       }
       if (!result) {

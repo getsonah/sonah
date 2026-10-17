@@ -232,7 +232,7 @@ test('D87: a dry run reads the change, sends nothing, and the estimate includes 
   const { code, out, calls } = await review(t, { root, argv: ['--dry-run', '--code-pass'] });
   assert.equal(code, 0);
   assert.deepEqual(calls, []);
-  assert.match(out, /^Code review: the change holds 1 path that the session changed or that git shows as different\. Sonah can read 1 of them now\. Git does not show where the session started, so the change is the edits that the session recorded\. The code review can read any file of the repository\.$/m);
+  assert.match(out, /^Code review: the change holds 1 path that the session changed or that git shows as different\. Sonah can read 1 of them now\. Sonah could not read from git where the session started, so the change is the edits that the session recorded\. The code review can read any file of the repository\.$/m);
   assert.match(out, /^A review should take roughly [^\n]*\nCode review: on \(--code-pass\)\. It reviews the change/m);
   assert.match(plain.out, /^A review should take roughly [^\n]*\nCode review: off \(--no-code-pass\)\. /m);
   assert.notEqual(out.match(/A review should take roughly [^\n]*/)[0], plain.out.match(/A review should take roughly [^\n]*/)[0]);
@@ -313,7 +313,7 @@ test('D87 low: a pass over a session that changed no file says it had none, neve
   const base = { reviewScope: 'session-only', findings: [], sessionReview: 'complete', coverage: 'complete' };
   const line = (codePass) => runStateLine({ ...base, codePass });
   assert.match(line({ ran: true, coverage: 'complete', files: [] }),
-    /code review had no change to review, because the session changed no file here/);
+    /code review had no change to review, because Sonah found no changed file here/);
   assert.match(line({ ran: true, coverage: 'complete', files: [{ path: 'a.js', state: 'shown' }] }),
     /code review covered the whole change/);
   assert.match(line({ ran: false, coverage: 'missing', files: [] }), /code review did not run/);

@@ -368,9 +368,10 @@ test('M33 F a report cut before review carries Sonah\'s own marker and declarati
     'Sonah cut the middle out of 2 helper reports before its review, so it cannot quote that part');
   assert.ok(declaredNote(built, 'source_clipped', HELPER_REPORT_CLIPPED_NOTE), 'the cut is declared with its own note');
   assert.doesNotMatch(HELPER_REPORT_CLIPPED_NOTE, /recorder/);
-  // A tool output the recorder cut keeps its own words: only the helper report's cut is Sonah's.
+  // A tool output the recorder cut keeps its own cause: only the helper report's cut is named as Sonah's. D100: neither
+  // is credited to the recorder, which no code proves of an older ledger's cut: said as what Sonah holds.
   assert.equal(COVERAGE_SENTENCE.source_clipped({ n: 1 }),
-    'the recorder shortened 1 recorded text, so Sonah cannot quote what it left out');
+    'Sonah holds only part of 1 recorded text, so it cannot quote the rest');
 });
 
 test('M33 F a report never precedes its own hand-off: without a later recorded position it stays right after it', async (t) => {

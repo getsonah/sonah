@@ -18,7 +18,8 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { recordingIdentity } from './recording-identity.js';
 import { duplicateJsonKeys } from './strict-json.js';
-import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId } from './harness-context.js';
+import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId, claudeNotificationCarrier }
+  from './harness-context.js';
 import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, labelOf, applyLabel, humanPart } from './labels.js';
 
 // 2 (C-01 event identity, 2026-10-07): every ledger element that becomes a canonical event records where the recorder
@@ -352,12 +353,15 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   const identity = recordingIdentity('claude');
   const records = [];
   // M34 labels: every row is labelled once, in recorded order (`claudeLabeller`); a row that becomes a record carries its
-  // label, and one that is only counted (a harness attachment) is counted (`meta.labelled`: `{uuid, value}`, its recorded
-  // uuid kept so a lineage counts a copied row once — M34 labels review, F8).
+  // label, and one that is only counted (a harness attachment) is counted (`meta.labelled`: `{uuid, value, version}`, its
+  // recorded uuid kept so a lineage counts a copied row once — M34 labels review, F8 — and its recorder version, so the
+  // recorder census can count a row no reader kept by its version — D99).
   const labeller = claudeLabeller();
   const labelled = [];
   let label = null;
   const push = (rec) => { records.push(rec); labelled.push({ rec, value: label, uuid: null }); };
+  const countOnly = (d) => labelled.push({ rec: null, value: label, uuid: rowUuid(d),
+    version: typeof d.version === 'string' ? d.version : null });
   // M34 labels (C-02 "Slice-time labels"): whether this recording is a helper's is read from its structure, never its
   // path: the first row that records `isSidechain` says whose rows these are.
   let asMain = sidechainAsMain;
@@ -459,14 +463,24 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
         // Release fix 3b: an instructions-class row its label gives to the harness (no gap) is harness context.
         classify(attached.cls === I && label?.label === LABELS.harness && !Object.hasOwn(label, 'gap')
           ? { ...attached, cls: H } : attached);
-        // C-02 M33 D: a queued task notification is still a declared observation loss (its text is
-        // not read), but its typed status may close the launch it names (events.js).
-        if (d.attachment.type === 'queued_command' && d.attachment.commandMode === 'task-notification')
-          push({ kind: 'notification', line: lineNo, raw: d });
+      } else if ((!channels.length && !isOrdinaryScaffoldRow(d))
+        || (channels.length && Object.hasOwn(d, 'body'))) {
+        // A future row or separate body can carry any T/A/O channel. In a mixed file, the
+        // zero-record unknown-schema guard cannot see this one row; declare unknown scope.
+        unclassifiedRows++;
+      }
+      // C-02 M33 D: a queued task notification is still a declared loss (its text is not read; the classifier above
+      // counts it as an observation, or as unclassified when its key sets are not the ones it knows), but its typed
+      // status may close the launch it names (events.js). D98 (F1): which row is one is the one carrier rule
+      // every reader of the fact calls (harness-context.js `claudeNotificationCarrier`), alone. The classifier's
+      // closed key sets decide only how the row's loss is counted, never whether it is a notification: a recorder key
+      // added to the row or to its attachment no longer drops the notice here while the labeller still labels it.
+      if (claudeNotificationCarrier(d)) push({ kind: 'notification', line: lineNo, raw: d });
+      else if (attached) {
         // OWNER DECISION B (2026-10-01); M34 labels: a prompt labelled `human` + `queued` (a human's, or in a helper its
         // parent's) is read at its row too (events.js). It stays counted above: a reader of `ask` alone — every reader
         // but the evidence adapter — has still not read it, and keeps its declared loss.
-        else if (label?.label === LABELS.human && label.markers?.includes(MARKERS.queued))
+        if (label?.label === LABELS.human && label.markers?.includes(MARKERS.queued))
           push({ kind: QUEUED_PROMPT_RECORD, line: lineNo, raw: d });
         // M34 labels: a file, directory or PDF the human attached (an @-mention), labelled `human` + `attached`, is read
         // at its row (events.js) as the human's; it stays counted above for every reader of `ask` alone, as a queued
@@ -477,15 +491,10 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
         // own files only; it keeps its harness label (counted with its record, as a queued prompt's is with its own).
         else if (INSTRUCTION_ATTACHMENTS.includes(d.attachment.type))
           push({ kind: PROJECT_INSTRUCTIONS_RECORD, line: lineNo, raw: d });
-        else if (label) labelled.push({ rec: null, value: label, uuid: rowUuid(d) });
-      } else if ((!channels.length && !isOrdinaryScaffoldRow(d))
-        || (channels.length && Object.hasOwn(d, 'body'))) {
-        // A future row or separate body can carry any T/A/O channel. In a mixed file, the
-        // zero-record unknown-schema guard cannot see this one row; declare unknown scope.
-        unclassifiedRows++;
+        else if (label) countOnly(d);
       }
       // M34 labels: any other attachment row (one this reader does not classify included) is still counted by its label.
-      if (!attached && label && d.type === 'attachment') labelled.push({ rec: null, value: label, uuid: rowUuid(d) });
+      else if (label && d.type === 'attachment') countOnly(d);
       continue;
     }
 
@@ -511,13 +520,15 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   // M34 labels: settle the recording-wide labels, then put each on its record (with the row's own lineage).
   labeller.finish();
   const counted = [];
-  for (const { rec, value, uuid } of labelled) {
+  for (const { rec, value, uuid, version } of labelled) {
     if (value === null) continue;
     const lineage = (rec?.raw ?? null)?.isSidechain === true ? LINEAGE_ROLES.helper : LINEAGE_ROLES.root;
     if (rec) applyLabel(rec, value, lineage);
-    else counted.push({ uuid, value });
+    else counted.push({ uuid, value, version });
   }
   meta.labelled = counted;
+  // D99 (F1 guard): how many lines this read took, so a second read of the file (background-ends.js) reads the same.
+  meta.lines = lineNo;
   // M34 labels review (F7): a helper's recording by its rows (the first row that records `isSidechain` records true).
   if (firstSidechain === true) meta.helperRows = true;
   // C-03 M33 D: a classified row that carried an agentId is this recording's own only when that
@@ -878,7 +889,8 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  *   assistant  `text` → thought; `tool_use` → action; thinking → private (never used); a row the recorder wrote itself
  *              (`model: <synthetic>`, `isApiErrorMessage`) → harness.
  *   system     harness; `compact_boundary` also carries `compaction`.
- *   attachment `queued_command` of a human prompt → human + queued; a task notification → observation; an @-mentioned
+ *   attachment `queued_command` of a human prompt → human + queued; a task notification (`claudeNotificationCarrier`, the
+ *              rule every reader of the fact reads) → observation; an @-mentioned
  *              file, directory or PDF on the main thread whose recorded `parentUuid` chain (through attachment rows)
  *              reaches the human's own submission → human + attached; any other (a file the recorder restored after a
  *              compaction, one attached mid-turn) → harness.
@@ -976,10 +988,13 @@ export function claudeLabeller() {
     const content = d.message?.content;
     const text = textOf(d);
     const helperRow = d.isSidechain === true;
+    // D98 (F1): a notification by the one carrier rule (harness-context.js `claudeNotificationCarrier`), whatever
+    // recorder keys sit beside the origin's kind.
+    const carried = claudeNotificationCarrier(d);
+    if (carried) return notification(carried.text);
     if (own(d, 'origin')) {
       const kind = plain(d.origin) ? d.origin.kind : undefined;
       if (kind === 'human') return human(d, B.originHuman);
-      if (kind === 'task-notification') return notification(content);
       if (kind === 'peer') return value(L.peer, B.originPeer);
       if (kind === 'coordinator') return helperRow ? human(d, B.fromParentAgent) : value(L.peer, B.originPeer);
       return value(null, B.originOther, { gap: G.originUnknown });
@@ -1040,13 +1055,19 @@ export function claudeLabeller() {
     const item = d.attachment;
     if (!plain(item)) return value(null, B.attachmentRow, { gap: G.unknownRow });
     if (item.type === 'queued_command') {
-      if (item.commandMode === 'task-notification') return notification(item.prompt);
+      // D98 (F1): a notification by the one carrier rule (harness-context.js `claudeNotificationCarrier`): its mode is
+      // the kind, and an origin recorded beside it is of that kind too, whatever recorder keys sit beside the kind.
+      const carried = claudeNotificationCarrier(d);
+      if (carried) return notification(carried.text);
       if (flagged(item.isMeta)) return value(L.harness, B.recorderMeta);
       if (own(item, 'origin')) {
         const kind = plain(item.origin) ? item.origin.kind : undefined;
         if (kind === 'human') return item.commandMode === 'prompt'
           ? value(L.human, B.queuedPrompt, { markers: [M.queued] }) : value(L.harness, B.attachmentRow);
-        if (kind === 'task-notification') return notification(item.prompt);
+        // D98 (F1): a notification's origin beside a mode that is not one contradicts the recorder's kind field: no
+        // reader takes it as a notification, nor as a human's words. It stays unlabelled under its counted gap, so the
+        // row's declared loss stands.
+        if (kind === 'task-notification') return value(null, B.originOther, { gap: G.originUnknown });
         if (kind === 'peer') return value(L.peer, B.originPeer);
         if (kind === 'coordinator') return d.isSidechain === true
           ? value(L.human, B.fromParentAgent, { markers: [M.queued] }) : value(L.peer, B.originPeer);

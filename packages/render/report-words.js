@@ -27,11 +27,15 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   notCommitted: (n) => `${plural(n, 'changed file')} ${verb(n, 'differs', 'differ')} from the last commit.`,
   runsAfterEdit: (n) => `After its last edit, the agent ran ${plural(n, 'command')}.`,
   results: (parts) => `Results: ${parts}.`,
-  noRunAfterEdit: 'The agent ran no command after its last edit.',
+  // D100 (the audit of absence sentences): said as what Sonah found. A command in a record Sonah could not read is no
+  // command Sonah found, so these words never say that the agent ran none.
+  noRunAfterEdit: 'Sonah found no command that the agent ran after its last edit.',
   refusedAfterEdit: (n) => `The recording shows ${plural(n, 'command')} after the agent's last edit as refused before `
     + `${verb(n, 'it', 'they')} ran.`,
+  // D100: the recorder version types no refusal (slicer CLAUDE_UNTYPED_DENIAL_RECORDER), which is all that is proved:
+  // the result text that it records can still say which. So the words name the recorder, never the recording.
   unclearAfterEdit: (n) => `After the agent's last edit, ${plural(n, 'command')} failed or the harness refused `
-    + `${verb(n, 'it', 'them')}. The recording does not say which.`,
+    + `${verb(n, 'it', 'them')}. The recorder does not mark which.`,
   reviewIncomplete: 'Sonah did not finish its review of this session.',
   notCheckedLead: 'Sonah did not check:',
   noCodeStep: 'Sonah did not review the code, so the items show no impact and no action.',
@@ -39,29 +43,43 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   // True at any later time, also after you push (the flow the CLI suggests): said of when Sonah wrote the report. By
   // the side whose links are missing, each naming only those: `new` the code as the agent left it (HEAD), `old` the code
   // before the session (the start commit: an old-side place, a deleted file), `both` one commit that both sides need.
+  // D100 (the audit of absence sentences): said as what git showed Sonah (its remote-tracking branches), never as a
+  // fact about GitHub: git here may not know a push made from elsewhere.
   notOnGitHub: Object.freeze({
-    new: (short) => `When Sonah wrote this report, commit ${short} was not on GitHub. The report has no links to the `
-      + 'code as the agent left it.',
-    old: (short) => `When Sonah wrote this report, commit ${short} was not on GitHub. The report has no links to the `
-      + 'code as it was before the session.',
-    both: (short) => `When Sonah wrote this report, commit ${short} was not on GitHub, so the report has no code links.`,
+    new: (short) => `When Sonah wrote this report, git did not show commit ${short} on GitHub. The report has no links `
+      + 'to the code as the agent left it.',
+    old: (short) => `When Sonah wrote this report, git did not show commit ${short} on GitHub. The report has no links `
+      + 'to the code as it was before the session.',
+    both: (short) => `When Sonah wrote this report, git did not show commit ${short} on GitHub, so the report has no `
+      + 'code links.',
   }),
 });
 /** The parts of the header's results sentence, by RESULT_OUTCOME_CLASSES member, in the order the header names them.
  *  No part holds a comma: the sentence joins its parts with commas, so a comma inside one would split it in two. */
 export const REPORT_RESULT_PARTS = Object.freeze({
   'ran-exit-0': (n) => `${n} exited with code 0`,
-  'ran-completed': (n) => `${n} completed with no exit code recorded`,
+  // D100 (the audit of absence sentences): a completion typed by a task notice can name its exit code in the notice's
+  // own words, which Sonah does not read: said as what Sonah read, never that no exit code is recorded.
+  'ran-completed': (n) => `${n} completed with no exit code that Sonah read`,
   'ran-failed': (n) => `${n} failed`,
   'failed-or-refused': (n) => `${n} failed or the harness refused ${verb(n, 'it', 'them')}`,
   'did-not-run': (n) => `${n} did not run`,
+  // D100 (the audit of absence sentences): only a background run whose recording the slicer proved holds no end of it.
   'no-terminal-status': (n) => `${n} ${verb(n, 'has', 'have')} no recorded end`,
-  'output-no-status': (n) => `${n} ${verb(n, 'has', 'have')} no exit code recorded`,
+  // D99 (F1 guard): a run the record typed as stopped before it finished, or cancelled, has a recorded end.
+  stopped: (n) => `${n} stopped before ${verb(n, 'it', 'they')} finished`,
+  // D100: a run Sonah read no result of. Said as what Sonah found: the result may be in a record Sonah could not read.
+  'no-result': (n) => `for ${n} Sonah found no result`,
+  'output-no-status': (n) => `for ${n} Sonah read no exit code`,
+  // D99 (F1 guard): a background run whose end Sonah could not read, and could not prove absent. Words that presume no
+  // end: such a run may still be running (a later record that only polls it, or says it still runs).
+  'end-unread': (n) => `for ${n} Sonah could not read whether or how ${verb(n, 'it', 'they')} ended`,
 });
 /** The phrases of the header's "Sonah did not check:" line, in its order. */
 export const REPORT_NOT_CHECKED_PARTS = Object.freeze({
   asks: (n) => plural(n, 'ask'),
-  agentOnly: (n) => `${plural(n, 'ask')} that only the agent says ${verb(n, 'is', 'are')} done`,
+  // D100: what the session review cited (the agent's words only), never that nothing else says so.
+  agentOnly: (n) => `${plural(n, 'ask')} that ${verb(n, 'rests', 'rest')} only on the agent's words`,
   claims: (n) => plural(n, 'claim'),
   written: (n) => plural(n, 'statement that the agent wrote into a file', 'statements that the agent wrote into files'),
   unseenFiles: (n) => `${plural(n, 'changed file')} that the code review did not see`,
@@ -107,7 +125,8 @@ export const REPORT_SECTION_WORDS = Object.freeze({
   answer: 'Record your answer',
   withheld: (n) => `Proposals of the code review that Sonah withheld (${n})`,
   closingLines: (n) => `Lines of the closing messages that no claim covers (${n})`,
-  noAskMessages: (n) => `${plural(n, 'more message')} ${verb(n, 'holds', 'hold')} no ask.`,
+  // D100: what Sonah found. A message whose review did not finish holds no row either.
+  noAskMessages: (n) => `Sonah found no ask in ${plural(n, 'more message')}.`,
   wholeMessage: 'Show the whole message',
 });
 
@@ -156,10 +175,16 @@ export const REPORT_WHAT_WORDS = Object.freeze({
   failure: Object.freeze({
     'ran-failed': 'failed.',
     // A recorder that types no refusal records a person's "no" and a rule's alike as a failure: the words name no one.
-    'failed-or-refused': 'failed, or was refused before it ran. The recording does not say which.',
+    // D100: and they name the recorder, which marks neither, never the recording, whose result text can say which.
+    'failed-or-refused': 'failed, or was refused before it ran. The recorder does not mark which.',
     'did-not-run': 'did not run:',
     'no-terminal-status': 'has no recorded end.',
-    other: 'has no recorded result.',
+    // D99 (F1 guard): stopped or cancelled before it finished: a recorded end, never "no recorded end".
+    stopped: 'stopped before it finished.',
+    // D100 (the audit of absence sentences): Sonah read no result of it, which proves no absence.
+    'no-result': 'has no result that Sonah found.',
+    // Any other outcome (a stored failure row whose result Sonah now reads otherwise): what Sonah could not read.
+    other: 'has an outcome that Sonah could not read as a failure.',
   }),
   failureTail: 'The agent did not act on it or tell you.',
   notActing: 'The agent decided not to act:',
@@ -177,7 +202,9 @@ export const REPORT_WHAT_WORDS = Object.freeze({
   pivotTo: 'to',
   pivotUnnamed: 'The agent changed its approach.',
   claimNotChecked: "Sonah did not check a claim of the agent's.",
-  claimIncomplete: "A claim of the agent's rests on a check that did not finish.",
+  // D100: a check Sonah read no end of by its window's end reads the same as one that never finished: said as what
+  // Sonah saw.
+  claimIncomplete: "A claim of the agent's rests on a check that Sonah did not see finish.",
   writtenNotChecked: (path) => `Sonah did not check a statement that the agent wrote into ${path}.`,
   noTitle: 'The code review gave no title for this.',
   aFile: 'a file',
@@ -232,7 +259,7 @@ export const REPORT_KIND_WORDS = Object.freeze({
   decision_whether_asked: 'a decision that Sonah could not tie to an ask',
   code_question_finding: 'a question from a finding of the code review', claim_corrected: 'a corrected claim',
   edit_undone: 'an edit that the agent undid or told you about', claim_not_checked: 'a claim that Sonah did not check',
-  claim_incomplete: 'a claim that rests on an unfinished check',
+  claim_incomplete: 'a claim that rests on a check that Sonah did not see finish',
   written_not_checked: 'a statement that the agent wrote into a file and Sonah did not check',
   code_finding_legacy: 'a finding of an earlier code review',
 });
@@ -243,7 +270,8 @@ export const REPORT_LEVEL_WORDS = Object.freeze({ high: 'high', medium: 'medium'
 export const REPORT_PROMPT_WORDS = Object.freeze({
   status: Object.freeze({ done: 'Done', partly: 'Partly done', notDone: 'Not done', notChecked: 'Not checked' }),
   coverage: 'Sonah checked only the marked parts of your message.',
-  agentOnly: 'Only the agent says so. Sonah found no recorded result or change for it.',
+  // D100: what the session review cited, never that only the agent says so.
+  agentOnly: "The session review cited only the agent's words for it. Sonah found no recorded result or change for it.",
   codeFinding: (n) => `The code review found a problem here.${n === null ? '' : ` See item ${n}.`}`,
   withheldFinding: (why) => `Sonah withheld a finding of the code review about this ask: ${why}.`,
   withheldSee: 'See the section What Sonah could not check.',
@@ -255,7 +283,8 @@ export const REPORT_PROMPT_WORDS = Object.freeze({
   pasted: (images, others) => `You attached ${[images ? plural(images, 'image') : null,
     others ? plural(others, 'file that is not text', 'files that are not text') : null].filter(Boolean).join(' and ')} `
     + `to this message. Sonah does not show ${images + others === 1 ? 'it' : 'them'}.`,
-  withheldMessage: 'The recording holds no words of this message.',
+  // D100: what Sonah found. A message Sonah could not read, or one of images only, reads the same.
+  withheldMessage: 'Sonah found no words of this message.',
   askLine: (n) => `ask ${n}`,
 });
 
@@ -264,30 +293,35 @@ export const REPORT_DID_WORDS = Object.freeze({
   fileTypes: Object.freeze({ added: 'new', deleted: 'deleted', modified: 'changed' }),
   filesByAsk: 'The code review grouped these files by the ask that each one serves.',
   askGroup: (n) => `Ask ${n}`,
-  noAskGroup: 'No ask of yours',
+  // D100 (the audit of absence sentences): the code review's grouping (a note it wrote, or one Sonah dropped), never
+  // that a file serves no ask of yours.
+  noAskGroup: 'No ask that the code review named',
   moreFiles: (n) => `Sonah does not show ${plural(n, 'more file')}.`,
   outside: (n, names, more = 0) => `The agent also changed ${plural(n, 'file')} outside the repository${names
     ? `: ${names}${more ? `, and ${more} more` : ''}` : ''}.`,
-  unconfirmed: (n) => `The recording does not show whether ${plural(n, 'write')} of ${verb(n, 'a failed or stopped command',
-    'failed or stopped commands')} happened.`,
+  // D100 (review of A1c): what Sonah could read, never that the recording does not show it: a later record can show the
+  // file's content. D98: a direct write the recorder typed as stopped is listed here too.
+  unconfirmed: (n) => `Sonah could not read whether ${plural(n, 'write')} happened: ${verb(n, 'it', 'each')} stopped `
+    + 'before it finished, or its command failed or stopped.',
   moreRuns: (n) => `And ${plural(n, 'more command')} that exited with code 0.`,
   runsCut: (shown, m, parts) => `Sonah shows ${plural(shown, 'run')}. It does not show ${m} more: ${parts}.`,
-  neverRan: (paths) => `No command ran after the last edit of: ${paths}.`,
-  noRuns: 'The recording holds no command.',
+  // D100: what Sonah found, never that no command ran or that the recording holds none.
+  neverRan: (paths) => `Sonah found no command that ran after the last edit of: ${paths}.`,
+  noRuns: 'Sonah found no command in the recording.',
   uncoveredExit: 'exit code 0, which covers only the last command of its line',
   handling: Object.freeze({ 'acted-on': 'the agent acted on it', 'told-human': 'the agent told you',
     'passed-over': 'the agent passed over it', 'not-checked': 'not checked' }),
   claimStatus: Object.freeze({ checked: 'checked', contradicted: 'contradicted',
     contradictedByCode: 'contradicted by the code review', notChecked: 'not checked',
-    incomplete: 'check did not finish' }),
+    incomplete: 'check not seen to finish' }),
   moreClaims: (n) => `Sonah does not show ${plural(n, 'more claim')}.`,
   noClaims: 'The session review recorded no claim.',
   written: (path) => `written into ${path}`,
   // Said of what Sonah found, never of the agent: no quote that grounds is not silence.
   noLeftOut: "Sonah found no decision not to act in the agent's own words.",
-  noSettled: 'You settled no decision.',
-  noFiles: 'The agent changed no file in the repository.',
-  noLine: 'The recording does not keep the words of this line.',
+  // D100: what Sonah found among the session review's rows, never that you settled none.
+  noSettled: 'Sonah found no decision that you settled.',
+  noFiles: 'Sonah found no file in the repository that the agent changed.',
 });
 /** Who refused a call before it ran, by the recorder's denial kind (redact RECORDED_FACTS.denial), only as far as the
  *  recording types it (R15). The recorder gives `user-rejected` for a person's "no" at a prompt and for a prompt no
@@ -301,20 +335,34 @@ const refusalWords = (kind) => (Object.hasOwn(REPORT_REFUSAL_WORDS, kind) ? REPO
 /** A run's outcome in fixed words (D97), by RESULT_OUTCOME_WORDS class and form: the same key sets. */
 export const REPORT_OUTCOME_WORDS = Object.freeze({
   'ran-exit-0': Object.freeze({ exit: () => 'exit code 0' }),
-  'ran-completed': Object.freeze({ typed: () => 'completed, no exit code recorded' }),
+  // A completion typed by a status (slicer COMMAND_STATUS_SOURCES), or by a tool that has no exit code. D100: a task
+  // notice's own words can name the exit code (Claude Code writes "completed (exit code 0)"), and Sonah reads only its
+  // typed status, so these words say what Sonah read, never that no exit code is recorded.
+  'ran-completed': Object.freeze({ typed: () => 'completed, Sonah read no exit code' }),
+  // D100 (the audit of absence sentences): an error flag or a typed failure proves no absence of an exit code (the
+  // recorded text can name one): said as what Sonah read.
   'ran-failed': Object.freeze({ exit: (n) => `failed, exit code ${n}`,
-    flag: () => 'failed: the tool marked its result as an error, no exit code recorded',
-    typed: () => 'failed: the recorder typed it as failed, no exit code recorded' }),
+    flag: () => 'failed: the tool marked its result as an error, Sonah read no exit code',
+    typed: () => 'failed: the recorder typed it as failed, Sonah read no exit code' }),
   'did-not-run': Object.freeze({ denial: (n, kind) => `did not run: ${refusalWords(kind)}` }),
+  // D100: a run Sonah read no result of (`none`) is said as what Sonah found; "no end recorded" only where proved.
   'no-terminal-status': Object.freeze({ background: () => 'started in the background, no end recorded',
-    none: () => 'no result recorded', interrupted: () => 'stopped before it finished',
+    none: () => 'Sonah found no result of it', interrupted: () => 'stopped before it finished',
     cancelled: () => 'cancelled before it finished',
-    'command-failed': () => 'its command failed, so the recording does not show whether this write happened',
-    'command-stopped': () => 'its command stopped, so the recording does not show whether this write happened' }),
-  'failed-or-refused': Object.freeze({ untyped: () => 'failed, or refused before it ran. The recording does not say '
+    // D100 (review of A1c): the write has no result of its own and its command's typed end proves neither way, so the
+    // words say what Sonah could read, never that the recording does not show it.
+    'command-failed': () => 'its command failed, so Sonah could not read whether this write happened',
+    'command-stopped': () => 'its command stopped, so Sonah could not read whether this write happened' }),
+  // D100: the recorder marks neither (its version types no refusal); the result text that it records can say which.
+  'failed-or-refused': Object.freeze({ untyped: () => 'failed, or refused before it ran. The recorder does not mark '
     + 'which.' }),
-  'output-no-status': Object.freeze({ output: () => 'output recorded, no exit code recorded',
-    unread: () => 'result recorded, no output shown, no exit code recorded' }),
+  'output-no-status': Object.freeze({ output: () => 'output recorded, Sonah read no exit code',
+    unread: () => 'result recorded, no output shown, Sonah read no exit code' }),
+  // D99 (F1 guard): never "no end recorded": later records mention the run. Review of A1b: a run no later record is
+  // shown to mention (the form `unchecked`: its id only in rows before its launch, an id no search is sound for, or a
+  // file Sonah could not read again) is said as what Sonah could not check.
+  'end-unread': Object.freeze({ background: () => 'later records mention this run, but Sonah could not read whether '
+    + 'or how it ended', unchecked: () => 'Sonah could not check whether the recording holds an end of this run' }),
 });
 
 /** What Sonah could not check (D97). */
@@ -324,7 +372,6 @@ export const REPORT_NOT_CHECKED_WORDS = Object.freeze({
   complete: 'Sonah finished its review of this session.',
   incomplete: 'Sonah did not finish its review of this session. Read what it could not cover.',
   messagesNotReviewed: (n) => `Sonah did not review ${plural(n, 'message')} of yours in full.`,
-  nothingMissing: 'The recording declared nothing missing.',
   requirementsRejected: (n) => `The session review named ${plural(n, 'ask')} that Sonah did not keep. Sonah did not `
     + 'find the words, or its check did not hold.',
   claimsRejected: (n) => `The session review named ${plural(n, 'claim')} that Sonah did not keep. Sonah did not find `
@@ -364,6 +411,37 @@ export const REPORT_NOT_CHECKED_WORDS = Object.freeze({
     'statements that the agent wrote into files')}. The claims under `
     + `What the agent did list ${verb(n, 'it', 'them')}.`,
   notRunLines: 'The code review did not run.',
+});
+
+/** A count with its thousands grouped by commas, in the locale-independent spelling (no locale is read). */
+const grouped = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const linesOf = (from, through) => (from === through ? `line ${grouped(from)}` : `lines ${grouped(from)} to ${grouped(through)}`);
+/**
+ * D104 (F5 part 4): the mark beside an item, an ask, a claim, a run or a decision whose evidence cites a recorded result
+ * that Sonah first showed the session review only in part (the row's `seenInPart`): the lead, the result's place (the
+ * run that produced it, linked, when the Runs list shows that run; else its event in the recording, counted from 1),
+ * and what Sonah left out (`cut`, one entry of `seenInPartOf`): the facts the request's own omission line names — the
+ * lines and bytes, a line shown in part, and a numbered read's file lines. It says nothing of what those lines hold.
+ */
+export const REPORT_SEEN_WORDS = Object.freeze({
+  label: 'Seen in part:',
+  lead: 'Sonah first showed the session review only part of',
+  ofRun: (k) => `the result of run ${k}`,
+  atEvent: (n) => `the result at event ${grouped(n)} of the recording`,
+  aResult: 'a recorded result',
+  cut: ({ fromLine, throughLine, partFrom, partThrough, fileLines, bytes }) => {
+    const size = `${grouped(bytes)} ${bytes === 1 ? 'byte' : 'bytes'}`;
+    const one = fromLine === throughLine;
+    const left = one && (partFrom || partThrough) ? `It left out part of line ${grouped(fromLine)} (${size}).`
+      : `It left out ${linesOf(fromLine, throughLine)} (${size}).`;
+    const ends = one ? [] : [partFrom ? fromLine : null, partThrough ? throughLine : null].filter((n) => n !== null);
+    const shown = !ends.length ? '' : ends.length === 1 ? ` It showed part of line ${grouped(ends[0])}.`
+      : ` It showed part of lines ${grouped(ends[0])} and ${grouped(ends[1])}.`;
+    const file = !fileLines ? '' : fileLines.from === fileLines.through
+      ? ` In the file, this is line ${grouped(fileLines.from)}.`
+      : ` In the file, these are ${linesOf(fileLines.from, fileLines.through)}.`;
+    return `${left}${shown}${file}`;
+  },
 });
 
 /** The page's and the Markdown's size notices (D97). */
@@ -412,18 +490,21 @@ export const REPORT_CAUSE_WORDS = Object.freeze({
     + 'in separate parts',
   carry_capped: (counts = {}) => `the session review left out ${amount(counts)} earlier ${single(counts) ? 'item' : 'items'} `
     + 'for lack of room',
-  incomplete_inventory: (counts = {}) => `the recording says that ${nonzero(counts)} of its records `
-    + `${single(counts) ? 'is' : 'are'} incomplete, so Sonah cannot check what ${single(counts) ? 'it' : 'they'} held`,
-  observations_incomplete: (counts = {}) => `the recording does not show the result of ${nonzero(counts)} `
-    + `${single(counts) ? 'action' : 'actions'}, so Sonah cannot tell if ${single(counts) ? 'it' : 'they'} succeeded`,
+  // D100 (the audit of absence sentences): these causes count losses Sonah declared (its own cuts and the records it
+  // could not read among them), so each is said as what Sonah holds or could not read, never as the recording's word.
+  incomplete_inventory: (counts = {}) => `${nonzero(counts)} ${single(counts) ? 'part' : 'parts'} of the evidence that `
+    + `Sonah read ${single(counts) ? 'is' : 'are'} incomplete, so Sonah cannot check what ${single(counts) ? 'it' : 'they'} `
+    + 'held',
+  observations_incomplete: (counts = {}) => `Sonah could not read the result of ${nonzero(counts)} `
+    + `${single(counts) ? 'action' : 'actions'}, so it cannot tell if ${single(counts) ? 'it' : 'they'} succeeded`,
   unsupported_message: (counts = {}) => `${amount(counts)} ${single(counts) ? 'record has' : 'records have'} a form that `
     + `Sonah cannot read, so Sonah did not review ${single(counts) ? 'it' : 'them'}`,
-  write_outcome_unknown: (counts = {}) => `${amount(counts)} file ${single(counts) ? 'write has' : 'writes have'} no `
-    + `recorded result, so Sonah cannot tell if ${single(counts) ? 'it' : 'they'} happened`,
+  write_outcome_unknown: (counts = {}) => `Sonah could not read whether ${amount(counts)} file `
+    + `${single(counts) ? 'write' : 'writes'} happened`,
   // How the command ended is not proven (the adapter's `command_outcome_unknown`): the Runs list's "completed, no exit
   // code recorded" is a proven end, so these words never say "exit code" (R17).
-  command_outcome_unknown: (counts = {}) => `the recording does not show how ${amount(counts)} `
-    + `${single(counts) ? 'command' : 'commands'} ended, so Sonah cannot tell if ${single(counts) ? 'it' : 'they'} passed`,
+  command_outcome_unknown: (counts = {}) => `Sonah could not read whether or how ${amount(counts)} `
+    + `${single(counts) ? 'command' : 'commands'} ended, so it cannot tell if ${single(counts) ? 'it' : 'they'} passed`,
 });
 /** The words for each part reason that is a gap (ledger.js PART_REASONS but the two that are findings), said of the
  *  message whose turn the part is. The vocabulary stays closed in ledger.js. */
@@ -434,17 +515,19 @@ export const REPORT_GAP_WORDS = Object.freeze({
   reading_capped: 'a check on what the session review found could not run',
   review_unattributed: 'a check that could not run names no message, so Sonah shows its work as not checked',
   no_reviewable_event: 'it holds nothing that the session review could read',
-  gap_declared: 'the recording does not hold all of this work, so the session review did not see all of it',
+  // D100: a declared loss is Sonah's word (its own cuts, the records it could not read), never the recording's.
+  gap_declared: 'Sonah does not hold all of this work, so the session review did not see all of it',
   instruction_omitted: 'the recorder or Sonah cut short one of your messages here',
-  delegation_unlinked: 'a helper that the agent started has no linked recording, so Sonah did not review its work',
-  gap_unplaced: 'the recording says that something is missing, but not where',
+  delegation_unlinked: "Sonah found no recording of a helper that the agent started, so it did not review the helper's "
+    + 'work',
+  gap_unplaced: 'Sonah does not hold a part of the session, and cannot tell where that part was',
   limit_unattributed: 'the session has a coverage limit that no message explains',
 });
 /** Why Sonah could not check whether you asked for a decision: its column reason (ledger.js JUDGMENT_REASONS), in
  *  words. The vocabulary stays closed in ledger.js. */
 export const REPORT_COLUMN_REASON_WORDS = Object.freeze({
-  instructions_partial: 'The recording does not hold all your earlier messages in full, so Sonah could not check if '
-    + 'one covered it.',
+  // D100: Sonah's own cuts make a message partial too, so said as what Sonah holds.
+  instructions_partial: 'Sonah does not hold all your earlier messages in full, so it could not check if one covered it.',
   column_unchecked: "The session review's reading of whether you asked did not pass its checks.",
   ambiguous_authority: 'Sonah could not show that the words it cites are yours, or that they came first.',
   receipt_rejected: 'Sonah did not find the words of yours that it cites in the recording.',
@@ -491,6 +574,8 @@ export const STYLE_KINDS = Object.freeze({
   'REPORT_NOT_CHECKED_WORDS.codeReview': 'heading', 'REPORT_NOT_CHECKED_WORDS.checkSaid': 'label',
   'REPORT_NOT_CHECKED_WORDS.unreadRow': 'fragment', 'REPORT_NOT_CHECKED_WORDS.rowKinds': 'fragment',
   'REPORT_NOT_CHECKED_WORDS.noId': 'fragment',
+  REPORT_SEEN_WORDS: 'notice', 'REPORT_SEEN_WORDS.label': 'label', 'REPORT_SEEN_WORDS.lead': 'fragment',
+  'REPORT_SEEN_WORDS.ofRun': 'fragment', 'REPORT_SEEN_WORDS.atEvent': 'fragment', 'REPORT_SEEN_WORDS.aResult': 'fragment',
   REPORT_TRIM_WORDS: 'notice',
   REPORT_FOOTER_WORDS: 'notice', 'REPORT_FOOTER_WORDS.provenance': 'fragment',
   'REPORT_FOOTER_WORDS.answerCommand': 'fragment',
@@ -558,7 +643,17 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_NOT_CHECKED_WORDS.rowsNotShown': [[1], [5]],
   'REPORT_NOT_CHECKED_WORDS.asksThere': [[1], [3]], 'REPORT_NOT_CHECKED_WORDS.claimsThere': [[1], [3]],
   'REPORT_NOT_CHECKED_WORDS.writtenThere': [[1], [3]],
-  'REPORT_FOOTER_WORDS.provenance': [['1.0.0', 'sonah.report-model/1', '1a2b3c4'], ['1.0.0', 'sonah.report-model/1', null]],
+  'REPORT_SEEN_WORDS.ofRun': [[2]], 'REPORT_SEEN_WORDS.atEvent': [[7], [1_234]],
+  'REPORT_SEEN_WORDS.cut': [
+    [{ fromLine: 201, throughLine: 2_999, partFrom: false, partThrough: false, fileLines: null, bytes: 480_123 }],
+    [{ fromLine: 7, throughLine: 7, partFrom: false, partThrough: false, fileLines: null, bytes: 1 }],
+    [{ fromLine: 1, throughLine: 1, partFrom: true, partThrough: true, fileLines: null, bytes: 6_011 }],
+    [{ fromLine: 4, throughLine: 90, partFrom: true, partThrough: false, fileLines: null, bytes: 4_000 }],
+    [{ fromLine: 4, throughLine: 90, partFrom: true, partThrough: true, fileLines: { from: 103, through: 189 },
+      bytes: 4_000 }],
+    [{ fromLine: 5, throughLine: 5, partFrom: false, partThrough: false, fileLines: { from: 104, through: 104 },
+      bytes: 50 }]],
+  'REPORT_FOOTER_WORDS.provenance': [['1.0.0', 'sonah.report-model/2', '1a2b3c4'], ['1.0.0', 'sonah.report-model/2', null]],
   'REPORT_FOOTER_WORDS.answerCommand': [['0'.repeat(64)]],
   ...each('REPORT_CAUSE_WORDS', REPORT_CAUSE_WORDS, [[{ n: 1, m: 3 }], [{ n: 2, m: 5, atLeast: true }]]),
 });

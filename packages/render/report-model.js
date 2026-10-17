@@ -16,16 +16,19 @@
 // Every choice reads structure (a closed token, an index, an event's order, whether a quote is literally in the
 // recording); no word of a row is ever judged. A quote is shown only when it is found again, literally, in the session
 // this model is given. The links out (GitHub permalinks) are built only from validated facts the CLI passes in.
-import { verifyReceipt, PROJECT_INSTRUCTIONS_ROLE, referredPath } from '../evidence/src/session.js';
+import { verifyReceipt, PROJECT_INSTRUCTIONS_ROLE, referredPath, effectReader, CHANGING_EFFECTS }
+  from '../evidence/src/session.js';
 import { messageLines } from '../evidence/src/windows.js';
 import { honestStatuses, resultOutcome, actionOutcome, DECISION_COLUMNS, REQUIREMENT_STATUSES,
   LEGACY_REQUIREMENT_STATUSES, FAILURE_HANDLINGS, PROMISE_STATUSES, WRITTEN_LABELS, CONTRADICTION_SOURCES,
   CONTRADICTION_ROLES, OWN_WRITTEN_SOURCE, REPORT_TIERS, REPORT_ITEM_KINDS, TRIAGE_LEVELS, PART_REASONS,
-  windowRecordComplete, TRIAGE_ERRORS, UNRUN_WRITE_ENDS } from '../evidence/src/ledger.js';
+  windowRecordComplete, TRIAGE_ERRORS, STOPPED_OUTCOME_FORMS, PROVED_NO_END_FORM, NO_RESULT_OUTCOME_FORM }
+  from '../evidence/src/ledger.js';
 import { boundTier, itemKindOf, PERMISSION_DENIALS, ITEM_KIND_TABLE } from '../evidence/src/triage.js';
-import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, COVERAGE_SENTENCE,
-  CHECKLIST_REQUIREMENT_REASON_WORDS, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS }
+import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, uncappedCauses, COVERAGE_SENTENCE,
+  checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS }
   from '../evidence/src/review.js';
+import { seenInPartOf, SEEN_IN_PART_SOURCES } from '../evidence/src/seen-in-part.js';
 import { requirementRowId, failureRowId } from '../evidence/src/checklist.js';
 import { statusUncovered } from '../evidence/src/status-fact.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, TRIAGE_TEXT_FIELDS, TRACE_LIMITS }
@@ -39,10 +42,14 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
   REPORT_CONTRADICTION_SOURCES, REPORT_DISCLOSURE_WORDS, REPORT_KIND_LABELS, REPORT_TIER_WHY, REPORT_KIND_WORDS,
   REPORT_LEVEL_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_OUTCOME_WORDS, REPORT_NOT_CHECKED_WORDS,
   REPORT_FOOTER_WORDS, REPORT_ANSWER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS,
-  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS } from './report-words.js';
+  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS } from './report-words.js';
 
-/** The report model's version: reported in the page's generator meta and the footer. */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/1';
+/** The report model's version: reported in the page's generator meta and the footer. /2 (D101, owner decision
+ *  2026-10-17): an ask's line for why it is not checked reads the cause of the test that refused its quote
+ *  (review.js `checklistReasonWords`). /3 (D104, F5 part 4): an item, an ask, a claim, a run and a decision you settled
+ *  show the mark of each recorded result their rows cite that Sonah first showed the session review only in part
+ *  (`seen`, and an item's evidence), and What Sonah could not check counts those results whatever the coverage. */
+export const REPORT_MODEL_VERSION = 'sonah.report-model/3';
 
 /**
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
@@ -582,13 +589,14 @@ const triageKeyOf = (ref, row) => (ref.source === 'codePass.findings' && typeof 
 // ---- the runs (D97) -----------------------------------------------------------------------------------
 
 const WRITE_OPERATIONS = Object.freeze(['write', 'edit', 'delete']);
-/** A write that landed: a write invocation whose own typed end (`actionOutcome`) is not one of UNRUN_WRITE_ENDS
- *  (ledger.js: refused, failed, or failed or refused). An edit the tool rejected changed no file. One rule for the
- *  header's runs line and the Runs list. */
-const landedWrite = (session, event) => event?.kind === 'invocation' && WRITE_OPERATIONS.includes(event.operation)
-  && !UNRUN_WRITE_ENDS.includes(actionOutcome(session, event).class);
+/** A write that may have landed: a write invocation whose effect (`effect`, an evidence session.js `effectReader` over
+ *  the session) is one of CHANGING_EFFECTS. D98 (one reading per recorder fact): the rule every reader of a change
+ *  reads, so a write refused before it ran, or one the tool rejected, changed no file, and one the recorder typed as
+ *  stopped may have. One rule for the header's runs line and the Runs list. */
+const landedWrite = (effect, event) => event?.kind === 'invocation' && WRITE_OPERATIONS.includes(event.operation)
+  && CHANGING_EFFECTS.includes(effect(event));
 /** The command ends that do not show the command ran: refused before it ran (`did-not-run`), and failed or refused
- *  with the recording unable to say which (`failed-or-refused`). */
+ *  with the recorder marking neither (`failed-or-refused`). */
 const NOT_SHOWN_RUN = Object.freeze(['did-not-run', 'failed-or-refused']);
 /** A command that ran: one whose recorded end shows it ran (none of NOT_SHOWN_RUN). The header counts only these as
  *  run. */
@@ -612,7 +620,8 @@ function runsOf(ctx) {
     if (typeof call === 'string' && !failureOfCall.has(call)) failureOfCall.set(call, f);
     else if (typeof call !== 'string') failureOfCall.set(`result:${f.row.eventId}`, f);
   }
-  const lastEdit = events.reduce((at, event, i) => (landedWrite(session, event) ? i : at), -1);
+  const effect = effectReader(session);
+  const lastEdit = events.reduce((at, event, i) => (landedWrite(effect, event) ? i : at), -1);
   const runs = [];
   events.forEach((event, i) => {
     if (event?.kind !== 'invocation') return;
@@ -635,12 +644,48 @@ function runsOf(ctx) {
     const result = session?.event?.(f.row.eventId);
     runs.push({ event: null, at: ctx.orderOf.get(f.row.eventId) ?? Infinity, command: false, text: null,
       tool: typeof f.row.tool === 'string' ? f.row.tool : null,
-      outcome: result ? resultOutcome(session, result) : { class: 'no-terminal-status', form: 'none' }, failure: f,
-      afterEdit: false });
+      outcome: result ? resultOutcome(session, result) : { class: 'no-terminal-status', form: NO_RESULT_OUTCOME_FORM },
+      failure: f, afterEdit: false });
   }
   runs.sort((a, b) => a.at - b.at);
   runs.forEach((run, k) => { run.k = k + 1; });
-  return { runs, lastEdit };
+  // The runs the Runs list shows, by the call each answers for: the ones it names (every run but a quiet exit 0), the
+  // first `REPORT_LIMITS.runs` of them. A run link points only to one of these.
+  const showable = runs.filter(showableRun);
+  const shownByCall = new Map(showable.slice(0, REPORT_LIMITS.runs).filter((run) => run.event)
+    .map((run) => [run.event.id, run]));
+  return { runs, lastEdit, showable, shownByCall };
+}
+/** A run the Runs list names: any but one that exited 0, with a status that covers it, before the last edit, and
+ *  answered for by no failure row. */
+const showableRun = (run) => run.outcome.class !== 'ran-exit-0' || run.uncovered || run.afterEdit || run.failure;
+
+// ---- the shown-in-part mark (D104) ---------------------------------------------------------------------------------
+
+/**
+ * D104 (F5 part 4): the mark of rows, as lines of parts: one line for each recorded result any of `refs` cites that
+ * Sonah first showed the session review only in part (the row's `seenInPart`, read by `seenInPartOf`), in recorded
+ * order, each result once. A line names the result's place — the run that produced it, linked, when the Runs list shows
+ * that run; else its event in the recording, counted from 1 — and what Sonah left out (`REPORT_SEEN_WORDS.cut`). It
+ * claims nothing of what those lines hold, nor of what they would settle. `refs`: `[{ source, row }]`, read only for the
+ * session review's own sets (SEEN_IN_PART_SOURCES: a mark is code's, written there alone; the code step's rows carry
+ * none). Structure only.
+ */
+function seenOf(ctx, refs) {
+  const byEvent = new Map();
+  for (const ref of refs) {
+    if (!SEEN_IN_PART_SOURCES.includes(ref.source)) continue;
+    for (const seen of seenInPartOf(ref.row)) if (!byEvent.has(seen.eventId)) byEvent.set(seen.eventId, seen);
+  }
+  const order = (seen) => ctx.orderOf.get(seen.eventId) ?? seen.sequence ?? Infinity;
+  return [...byEvent.values()].sort((a, b) => order(a) - order(b)).map((seen) => {
+    const event = ctx.session?.event?.(seen.eventId) ?? null;
+    const run = typeof event?.invocation === 'string' ? ctx.runs.shownByCall.get(event.invocation) ?? null : null;
+    const at = ctx.orderOf.get(seen.eventId) ?? seen.sequence;
+    const place = run ? LINK(REPORT_SEEN_WORDS.ofRun(run.k), `run-${run.k}`)
+      : S(Number.isSafeInteger(at) ? REPORT_SEEN_WORDS.atEvent(at + 1) : REPORT_SEEN_WORDS.aResult);
+    return [S(`${REPORT_SEEN_WORDS.lead} `), place, S('. '), S(REPORT_SEEN_WORDS.cut(seen))];
+  });
 }
 
 // ---- the candidates: every row's item kind or list ---------------------------------------------------------------------
@@ -998,9 +1043,9 @@ function finishItem(ctx, item) {
     case 'failure_passed_over': {
       const f = row;
       const run = ctx.runs.runs.find((x) => x.failure?.row === f) ?? null;
-      const outcome = run?.outcome ?? { class: 'no-terminal-status', form: 'none' };
+      const outcome = run?.outcome ?? { class: 'no-terminal-status', form: NO_RESULT_OUTCOME_FORM };
       const tool = run?.tool ?? (typeof f.tool === 'string' ? f.tool : null);
-      const lead = Object.hasOwn(REPORT_WHAT_WORDS.failure, outcome.class) ? outcome.class : 'other';
+      const lead = Object.hasOwn(REPORT_WHAT_WORDS.failure, partOf(outcome)) ? partOf(outcome) : 'other';
       const kind = run?.event?.recorded?.denial ?? null;
       what = tool ? [S(`${REPORT_WHAT_WORDS.failureLead} `), CODE(tool), S(` ${REPORT_WHAT_WORDS.failureCall} `)]
         : [S(`${REPORT_WHAT_WORDS.aCallLead} `)];
@@ -1139,6 +1184,9 @@ function finishItem(ctx, item) {
   // A row's code check, when the code contradicts it.
   const checkLine = codeCheckLine(row);
   if (checkLine && !item.primary.source.startsWith('codePass.')) evidence(null, ONE(checkLine));
+  // D104: the mark of every row the item holds (its own, then those folded into it), one line a result.
+  for (const parts of seenOf(ctx, [item.primary, ...item.folded].map((c) => ({ source: c.source, row: c.row }))))
+    evidence(REPORT_SEEN_WORDS.label, parts);
   // The first ask a code finding names, for its item's evidence; a decision's related rows.
   item.related = relatedOf(ctx, item);
   // The triage `where`, when the code review named a different range than the item's first location.
@@ -1262,14 +1310,18 @@ function promptOf(ctx) {
     }
     if ((ask.state === 'partly' || ask.state === 'notDone') && itemN !== null) lines.push(ONE(REPORT_ITEM_WORDS.seeItem(itemN)));
     if (ask.state === 'notChecked' || ask.state === 'notCheckedCode') {
-      const reason = checked && Object.hasOwn(CHECKLIST_REQUIREMENT_REASON_WORDS, checked.reason)
-        ? sentence(CHECKLIST_REQUIREMENT_REASON_WORDS[checked.reason]) : null;
+      // D101: a row the quote gate lowered says which test refused its quote (its cause), with code's numbers.
+      const why = checked ? checklistReasonWords(checked, 'requirement') : null;
+      const reason = why ? sentence(why) : null;
       const fact = checked ? list(checked.facts).find((x) => Object.hasOwn(CHECKLIST_REQUIREMENT_FACT_WORDS, x)) : null;
       if (reason) lines.push(ONE(reason));
       else if (fact) lines.push(ONE(CHECKLIST_REQUIREMENT_FACT_WORDS[fact]));
     }
     const askCheck = codeCheckLine(checked);
     if (askCheck) lines.push(ONE(askCheck));
+    // D104: the mark of the ask's rows (its checklist row, or the rows an earlier report's ask stands for).
+    const askRows = [...new Set([...ask.rows.map((index) => list(report.requirements)[index]), checked].filter(plain))];
+    lines.push(...seenOf(ctx, askRows.map((row) => ({ source: 'requirements', row }))));
     for (const note of notes) {
       if (note.link === 'withheld_finding') {
         const w = list(report.codePass?.withheld)[note.withheld];
@@ -1379,8 +1431,7 @@ function didOf(ctx) {
   const outsideCut = cutTo([...facts.whole.outsidePaths], 3);
   const outside = facts.whole.outside ? { n: facts.whole.outside, paths: outsideCut.shown, more: outsideCut.more } : null;
   // Runs.
-  const { runs } = ctx.runs;
-  const showable = runs.filter((run) => run.outcome.class !== 'ran-exit-0' || run.uncovered || run.afterEdit || run.failure);
+  const { runs, showable } = ctx.runs;
   const quietExit0 = runs.filter((run) => !showable.includes(run));
   const shown = showable.slice(0, REPORT_LIMITS.runs);
   const cut = showable.slice(REPORT_LIMITS.runs);
@@ -1393,9 +1444,11 @@ function didOf(ctx) {
         : outcomeWords ? outcomeWords(exitOf(session, run.event), run.event?.recorded?.denial ?? '') : null,
       handling: handling && Object.hasOwn(REPORT_DID_WORDS.handling, handling) ? REPORT_DID_WORDS.handling[handling]
         : handling ? REPORT_DID_WORDS.handling[FAILURE_NOT_CHECKED] : null,
-      item: itemN, failureIndex: run.failure?.index ?? null };
+      item: itemN, failureIndex: run.failure?.index ?? null,
+      // D104: the mark of its failure row, the one row a run shows.
+      seen: run.failure ? seenOf(ctx, [{ source: 'failures', row: run.failure.row }]) : [] };
   };
-  const cutParts = RESULT_PART_ORDER.map((cls) => [cls, cut.filter((run) => run.outcome.class === cls).length])
+  const cutParts = RESULT_PART_ORDER.map((cls) => [cls, cut.filter((run) => partOf(run.outcome) === cls).length])
     .filter(([, n]) => n > 0).map(([cls, n]) => REPORT_RESULT_PARTS[cls](n));
   // Files no command ran after.
   const neverRan = neverRanPaths(ctx);
@@ -1430,7 +1483,9 @@ function didOf(ctx) {
         && x.role === 'observation')) : null,
       // Why a claim kept with its weakest status is not checked (S6, owner decision D71 b), in the closed reason's words.
       why: status === 'notChecked' && source === 'promises' && Object.hasOwn(CHECKLIST_CLAIM_REASON_WORDS, row.reason)
-        ? sentence(CHECKLIST_CLAIM_REASON_WORDS[row.reason]) : null };
+        ? sentence(CHECKLIST_CLAIM_REASON_WORDS[row.reason]) : null,
+      // D104: the mark of the claim's row.
+      seen: seenOf(ctx, [{ source, row }]) };
   });
   const shownClaims = claims.slice(0, REPORT_LIMITS.claims);
   // What Sonah did not check, counted from this list's own statuses: the header and What Sonah could not check say
@@ -1454,7 +1509,9 @@ function didOf(ctx) {
       youSaid: typeof d.constrainedBy?.settledValueQuote === 'string' && plain(d.constrainedBy?.instruction)
         ? quoteOf(session, { ...d.constrainedBy.instruction, quote: d.constrainedBy.settledValueQuote }) : null,
       youSaidLabel: yourLabel(session, d.constrainedBy?.instruction, REPORT_ITEM_WORDS.youSaid),
-      rowId: typeof d.id === 'string' ? d.id : null }));
+      rowId: typeof d.id === 'string' ? d.id : null,
+      // D104: the mark of the decision.
+      seen: seenOf(ctx, [{ source: 'decisions', row: d }]) }));
   return {
     files: { groups, grouped, total: files.length, shown: Math.min(files.length, shownFiles),
       more: Math.max(0, files.length - shownFiles), outside, unconfirmed: facts.whole.unconfirmed.length },
@@ -1468,17 +1525,26 @@ function didOf(ctx) {
   };
 }
 const RESULT_PART_ORDER = Object.freeze(['ran-exit-0', 'ran-completed', 'ran-failed', 'failed-or-refused', 'did-not-run',
-  'no-terminal-status', 'output-no-status']);
+  'no-terminal-status', 'stopped', 'no-result', 'end-unread', 'output-no-status']);
+/** D99 (F1 guard): the header part and the failure what line a run's outcome is said under: its class, but a run the
+ *  record typed as stopped before it finished, or cancelled (STOPPED_OUTCOME_FORMS of no-terminal-status) is said as
+ *  stopped, never as having no recorded end. D100 (the audit of absence sentences): "no recorded end" is said only of a
+ *  background run whose recording the slicer proved holds no end of it (PROVED_NO_END_FORM); a run Sonah read no result
+ *  of, and any other form, is said as what Sonah found (`no-result`). */
+const partOf = (outcome) => (outcome?.class !== 'no-terminal-status' ? outcome?.class
+  : STOPPED_OUTCOME_FORMS.includes(outcome.form) ? 'stopped' : outcome.form === PROVED_NO_END_FORM ? outcome.class
+    : 'no-result');
 
 /** The changed files no command ran after their last recorded edit, by the recording's order: the last write that
- *  landed (`landedWrite`), then no command that may have run (`mayHaveRunCommand`: a refused one did not run; one the
- *  recording cannot tell failed from refused may have). */
+ *  landed (`landedWrite`), then no command that may have run (`mayHaveRunCommand`: a refused one did not run; one that
+ *  failed or was refused, with the recorder marking neither, may have). */
 function neverRanPaths(ctx) {
   const { events, session } = ctx;
   const paths = ctx.facts.whole.files.map((f) => f.path);
   const lastEdit = new Map();
+  const effect = effectReader(session);
   events.forEach((event, i) => {
-    if (!landedWrite(session, event)) return;
+    if (!landedWrite(effect, event)) return;
     for (const change of list(event.changes)) if (typeof change?.path === 'string') lastEdit.set(change.path, i);
   });
   return paths.filter((path) => lastEdit.has(path) && !events.slice(lastEdit.get(path) + 1)
@@ -1546,6 +1612,9 @@ function notCheckedOf(ctx) {
       : Object.hasOwn(COVERAGE_SENTENCE, cause) ? COVERAGE_SENTENCE[cause](counts) : null;
     if (text) fact('session', ONE(sentence(text)));
   }
+  // D104: the causes that never cap the coverage (the results Sonah first showed the session review only in part),
+  // whatever the coverage.
+  for (const [cause, counts] of uncappedCauses(honest)) fact('session', ONE(sentence(COVERAGE_SENTENCE[cause](counts))));
   const gaps = gapsByMessage(ctx);
   for (const [k, reasons] of gaps.byAsk) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.gapsOfMessage(k,
     reasons.map((reason) => REPORT_GAP_WORDS[reason]).join(', and '))));
@@ -1654,11 +1723,11 @@ function headerOf(ctx, prompt) {
   const size = [kind, duration, files, REPORT_HEADER_WORDS.commands(facts.whole.commands.length),
     ...(commit?.short ? [REPORT_HEADER_WORDS.commit(commit.short)] : commit?.notCommitted ? [commit.notCommitted] : [])]
     .filter(Boolean);
-  // C. The runs after the last edit: the commands that ran, counted and by their results; the ones the recording
-  // cannot tell failed from refused, and the ones refused before they ran, each said apart (neither counts as one the
-  // agent ran, and "ran no command" stands only when none may have run). With no write that landed there is no last
-  // edit, and no line about one. The files that no command followed are named in the Runs list (`neverRanPaths`) only:
-  // a command that ran after the last edit of all follows every file's last edit.
+  // C. The runs after the last edit: the commands that ran, counted and by their results; the ones that failed or were
+  // refused with the recorder marking neither, and the ones refused before they ran, each said apart (neither counts as
+  // one the agent ran, and "ran no command" stands only when none may have run). With no write that landed there is no
+  // last edit, and no line about one. The files that no command followed are named in the Runs list (`neverRanPaths`)
+  // only: a command that ran after the last edit of all follows every file's last edit.
   const after = ctx.runs.runs.filter((run) => run.command && run.afterEdit);
   const ran = after.filter((run) => ranCommand(session, run.event));
   const unclear = after.filter((run) => run.outcome.class === 'failed-or-refused').length;
@@ -1666,7 +1735,7 @@ function headerOf(ctx, prompt) {
   const runs = [];
   if (ran.length) {
     runs.push(REPORT_HEADER_WORDS.runsAfterEdit(ran.length));
-    runs.push(REPORT_HEADER_WORDS.results(RESULT_PART_ORDER.map((cls) => [cls, ran.filter((run) => run.outcome.class === cls)
+    runs.push(REPORT_HEADER_WORDS.results(RESULT_PART_ORDER.map((cls) => [cls, ran.filter((run) => partOf(run.outcome) === cls)
       .length]).filter(([, n]) => n > 0).map(([cls, n]) => REPORT_RESULT_PARTS[cls](n)).join(', ')));
   } else if (!unclear && ctx.runs.lastEdit >= 0) runs.push(REPORT_HEADER_WORDS.noRunAfterEdit);
   if (unclear) runs.push(REPORT_HEADER_WORDS.unclearAfterEdit(unclear));

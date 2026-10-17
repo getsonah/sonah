@@ -8,7 +8,7 @@ import { load, humanAsk, said, call, result } from './m33-u-unasked-fixture.js';
 import { runReview, windowIncompleteReasons } from '../src/run-review.js';
 import { NOW_ANSWER, PROMPT_VERSION, RESTATUS_HEADING, RESTATUS_WORDS, RESTATUS_ROW, RESTATUS_CHECK,
   RESTATUS_NOW_ANSWER, restatusRequest } from '../src/prompt.js';
-import { REQUIREMENT_RESTATUS_WITHHELD, RESOLUTION_CHALLENGE_OUTCOMES } from '../src/ledger.js';
+import { REQUIREMENT_RESTATUS_WITHHELD, RESOLUTION_CHALLENGE_OUTCOMES, GROUNDING_CAUSES } from '../src/ledger.js';
 import { SESSION_DOSSIER_NOTE } from '../src/challenge.js';
 import { windowOfLabel } from '../../cli/src/session-review.js';
 
@@ -84,7 +84,8 @@ test('S3: the vocabularies and the version', () => {
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   assert.equal(windowOfLabel('narrative:w2:restatus:3'), 2, 'a re-ask belongs to its window (F226)');
 });
 
@@ -155,14 +156,17 @@ test('S3: precision — the refuted status is never published again, and a re-as
     ['same_status', () => narrative([{ text: 'x', instruction: n.fixAsk, status: 'partly-done',
       deliverable: n.deliverable, shortfall: otherShortfall }])],
     ['not_checked', () => narrative([{ text: 'x', instruction: n.fixAsk, status: 'not-checked' }])],
+    // D101: refused at the quote gate, its cause counted in the record (the private report) beside the count.
     ['ungrounded', () => narrative([{ text: 'x', instruction: n.fixAsk, status: 'done',
-      deliverable: quote(n.edit.id, 'code', 'words the edit never wrote') }])],
+      deliverable: quote(n.edit.id, 'code', 'words the edit never wrote') }]), 'not_found'],
+    ['ungrounded', () => narrative([{ text: 'x', instruction: n.fixAsk, status: 'done',
+      deliverable: quote(n.edit.id, 'code', `return name || "guest" ${'x'.repeat(120)}`) }]), 'quote_over_limit'],
     ['no_row', () => narrative([])],
     ['no_row', () => narrative([{ text: 'x', instruction: n.testAsk, status: 'done', deliverable: n.deliverable }])],
     ['no_answer', () => ({ requirements: 'not a list' })],
     ['no_answer', () => { throw Object.assign(new Error('model_unavailable'), { code: 'model_unavailable' }); }],
   ];
-  for (const [withheld, restatus] of cases) {
+  for (const [withheld, restatus, cause] of cases) {
     const seen = [];
     const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: judgeOf({ seen,
       first: () => narrative([partlyFix(n), notDoneTest(n)]), verdict: refuteFirstFix, restatus }) });
@@ -170,7 +174,8 @@ test('S3: precision — the refuted status is never published again, and a re-as
     assert.deepEqual([fix.status, fix.reason], ['not-checked', 'challenge_refuted'], withheld);
     assert.deepEqual(restatusRecord(report), { refuted: 1, asked: 1,
       withheld: counts(REQUIREMENT_RESTATUS_WITHHELD, { [withheld]: 1 }),
-      challenged: counts(RESOLUTION_CHALLENGE_OUTCOMES) }, withheld);
+      challenged: counts(RESOLUTION_CHALLENGE_OUTCOMES),
+      ...(cause ? { ungroundedCauses: counts(GROUNDING_CAUSES, { [cause]: 1 }) } : {}) }, withheld);
     assert.equal(report.windowResults[0].restatusChallenge, undefined, `${withheld}: nothing was checked again`);
     assert.ok(!seen.some((request) => request.challenge && request.label.includes(':restatus')), withheld);
     assert.deepEqual(windowIncompleteReasons(report.windowResults[0]), [], withheld);

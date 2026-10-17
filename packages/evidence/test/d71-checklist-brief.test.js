@@ -22,7 +22,8 @@ const ASK = 'Add a --json flag to the export command in src/export.js. Keep the 
   + 'src/config.js. Run the full test suite and tell me the result.';
 const SECOND = 'Also print the row count at the end.';
 const SIDECAR = (extra = {}) => ({ stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false, ...extra });
-const LONG = Array.from({ length: 400 }, (_, k) => `PASS test/case-${k}.test.js (row ${k} of the export suite)`).join('\n');
+// D103: a Claude Code recording's result is cut past twice its 12,000-byte skim: 1,000 rows of about 55 bytes.
+const LONG = Array.from({ length: 1_000 }, (_, k) => `PASS test/case-${k}.test.js (row ${k} of the export suite)`).join('\n');
 const CLOSING = 'Done. Summary:\n- Added --json.\n\n- All 24 tests pass.';
 
 /** One synthetic recording: the ask, a failing run, an edit, a long run, a background run, a closing message, a second
@@ -56,15 +57,17 @@ const ids = (session) => {
 };
 
 test('D71 S2: the closed vocabularies, each in one constants place, and the versions moved once', () => {
-  // S7: `stopped` and `not-typed` left the table.
+  // S7: `stopped` and `not-typed` left the table. D99 (F1 guard) adds `end-unread`, last, so no class moves.
   assert.deepEqual(RESULT_OUTCOME_CLASSES, ['ran-exit-0', 'ran-completed', 'ran-failed', 'did-not-run',
-    'no-terminal-status', 'failed-or-refused', 'output-no-status']);
+    'no-terminal-status', 'failed-or-refused', 'output-no-status', 'end-unread']);
   assert.deepEqual(Object.keys(RESULT_OUTCOME_WORDS), [...RESULT_OUTCOME_CLASSES]);
   assert.deepEqual(REQUIREMENT_STATUSES, ['done', 'partly-done', 'not-done', 'not-checked']);
-  // D80 adds one: a deliverable quoting only the body of a write whose command did not run or failed.
+  // D80 adds one: a deliverable quoting only the body of a write whose command did not run or failed. D99 (F1 guard)
+  // adds one more: a deliverable whose check's end Sonah could not read; and its review one more, where no later record
+  // is shown to mention that check.
   assert.deepEqual(REQUIREMENT_UNCHECKED_REASONS, ['deliverable_ungrounded', 'deliverable_not_after', 'check_not_completed',
     'shortfall_ungrounded', 'ask_unreviewed', 'challenge_refuted', 'challenge_unsettled', 'challenge_unexecuted',
-    'write_command_not_run_or_failed']);
+    'write_command_not_run_or_failed', 'check_end_unread', 'check_end_unchecked']);
   assert.deepEqual(RESTS_ON_REJECTIONS, ['malformed', 'not_action', 'out_of_order', 'cross_actor', 'completed']);
   assert.deepEqual(NOT_CLAIM_REJECTIONS, ['malformed', 'not_closing', 'line_out_of_range']);
   // `no_terminal_status` is removed: the typed outcome only marks a support.
@@ -80,7 +83,8 @@ test('D71 S2: the closed vocabularies, each in one constants place, and the vers
   // is left out of the window's project files. The second release review moved it once more
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/37');
+  // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
   // W1 B moved it once more (sonah.session-review-agent/10): an edit may go against a project instruction file.
@@ -106,8 +110,10 @@ test('D71 S2: the closed vocabularies, each in one constants place, and the vers
   // counted is asked again once, naming its cause; no first-round request byte moved.
   // Its withdrawal moved it once more (sonah.challenge/44): a vote a reply cast that could not be counted stands
   // again, as before /43; no first-round request byte moved.
-  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/44');
-  assert.equal(WINDOWING_VERSION, 'sonah.windows/8');
+  // D103 moved it once more (sonah.challenge/45): a session-only batch shows the results its items cite whole.
+  assert.equal(CHALLENGE_PROFILE.version, 'sonah.challenge/45');
+  // D103 moved it once more (sonah.windows/9): the skim keyed by the recording's harness, in bytes a side.
+  assert.equal(WINDOWING_VERSION, 'sonah.windows/9');
 });
 
 test('D71 S2: the brief opens with the purpose, gives the steps in order, and states each rule once', () => {
@@ -325,7 +331,7 @@ test('D71 S2: the evidence re-ask shows the served lines at their event, and the
   const seen = [];
   let asks = 0;
   const answer = () => (++asks === 1
-    ? { decisions: [], pivots: [], claims: [], requirements: [], evidenceRequests: [{ eventId: n.longResult.id, fromLine: 150, throughLine: 152 }] }
+    ? { decisions: [], pivots: [], claims: [], requirements: [], evidenceRequests: [{ eventId: n.longResult.id, fromLine: 500, throughLine: 502 }] }
     : { decisions: [], pivots: [], claims: [], requirements: [] });
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: judgeOf(answer, { seen }) });
   const narratives = seen.filter((r) => !r.challenge);
@@ -333,9 +339,9 @@ test('D71 S2: the evidence re-ask shows the served lines at their event, and the
   const [, reask] = narratives;
   assert.ok(reask.prompt.endsWith(NOW_ANSWER_AGAIN.join('\n')));
   assert.ok(!reask.prompt.includes('## Evidence served on your request'));
-  const served = reask.prompt.indexOf('lines 150–152 of this output, served after the first answer asked for them:');
+  const served = reask.prompt.indexOf('lines 500–502 of this output, served after the first answer asked for them:');
   assert.ok(served > reask.prompt.indexOf('## The session'), 'at its event, inside the session');
-  assert.ok(reask.prompt.includes('PASS test/case-149.test.js'));
+  assert.ok(reask.prompt.includes('PASS test/case-499.test.js'));
   assert.ok(!reask.prompt.includes("ask for them under step 5"), 'the re-ask offers no more requests');
   assert.equal(report.windowResults[0].evidence.served, 1);
   assert.deepEqual(Object.keys(report.windowResults[0].evidence.refused), [...EVIDENCE_REQUEST_REFUSALS]);

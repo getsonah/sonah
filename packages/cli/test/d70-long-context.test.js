@@ -218,7 +218,7 @@ test('D70 (a) the run record states the window the model selected and the window
     loadSession: async () => manyWindowSession(2),
     createJudge: (args) => createReviewJudge({ ...args, env: { PATH: '/bin' }, spawnProcess: fake.spawnProcess }) });
   assert.equal(run.exitCode, 0, JSON.stringify(run.summary));
-  assert.equal(run.summary.schema, 'sonah.session-review-harness/17');
+  assert.equal(run.summary.schema, 'sonah.session-review-harness/19');
   assert.equal(run.summary.servedModel, 'attested');
   assert.deepEqual(run.summary.model, { asked: LONG, source: 'named' });
   assert.deepEqual(run.summary.contextWindow, { requested: 1_000_000, reported: { 1000000: fake.capture.calls } });

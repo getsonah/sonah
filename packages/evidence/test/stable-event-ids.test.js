@@ -33,8 +33,9 @@ import { PRELAUNCH_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W1_READER_
   W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS, CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_READER_VERSIONS,
   CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CODE_STEP_REVIEW_READER_VERSIONS,
   JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
-  CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS, REPORT_MD_READER_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS }
+  CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS, REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS,
+  ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, CITED_WHOLE_VERSIONS, SEEN_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 let n = 0;
@@ -336,9 +337,17 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // Its withdrawal moved it once more (CLEANUP_VERSIONS: challenge): a vote a reply cast that could not be counted
   // stands again, as before /43.
   assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
+  // D103 moved the prompt and the window format once more (SKIM_VERSIONS): the skim keyed by the recording's harness.
+  assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
+  assert.equal(SKIM_VERSIONS.windows.before, D71_BRIEF_VERSIONS.windows.after);
+  // And the dossier (SKIM_VERSIONS: dossier): the evidence a session-only dossier shows moved as the narrative's.
+  assert.equal(SKIM_VERSIONS.dossier.before, D80_VERSIONS.dossier.after);
   assert.deepEqual([PROMPT_VERSION, CHALLENGE_PROFILE.version, CHALLENGE_DOSSIER_VERSION, CODE_REVIEW_VERSION,
-    WINDOWING_VERSION], [CHOICE_REANCHOR_VERSIONS.prompt.after, CLEANUP_VERSIONS.challenge.after,
-    D80_VERSIONS.dossier.after, ...['codeReview', 'windows'].map((k) => D71_BRIEF_VERSIONS[k].after)]);
+    WINDOWING_VERSION], [SKIM_VERSIONS.prompt.after, CITED_WHOLE_VERSIONS.challenge.after,
+    CITED_WHOLE_VERSIONS.dossier.after, D71_BRIEF_VERSIONS.codeReview.after, SKIM_VERSIONS.windows.after]);
+  // D103 moved the challenge and the dossier once more (CITED_WHOLE_VERSIONS): cited results shown whole.
+  assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
+  assert.equal(CITED_WHOLE_VERSIONS.dossier.before, SKIM_VERSIONS.dossier.after);
   for (const k of ['prompt', 'challenge', 'dossier', 'codeReview', 'windows'])
     assert.equal(D69_VERSIONS[k].before, CONVERSATION_VERSIONS[k].after, k);
   // (And all five once more by the D69 review: D69_REVIEW_VERSIONS.)
@@ -450,6 +459,22 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // story, now the report .md: REPORT_MD_READER_VERSIONS, one link after the cleanup's.)
   assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [REPORT_MD_READER_VERSIONS.story.after, REPORT_READER_VERSIONS.page.after]);
+  // (And both once more by D98, ONE_READING_READER_VERSIONS: one link after D97's, one effect rule.)
+  assert.deepEqual([ONE_READING_READER_VERSIONS.story.before, ONE_READING_READER_VERSIONS.page.before],
+    [REPORT_MD_READER_VERSIONS.story.after, REPORT_READER_VERSIONS.page.after]);
+  // (And both once more by D99, ABSENCE_READER_VERSIONS: one link after D98's, an absence only where code proves it.)
+  assert.deepEqual([ABSENCE_READER_VERSIONS.story.before, ABSENCE_READER_VERSIONS.page.before],
+    [ONE_READING_READER_VERSIONS.story.after, ONE_READING_READER_VERSIONS.page.after]);
+  // (And both once more by D100, ABSENCE_AUDIT_READER_VERSIONS: one link after D99's, the audit of absence sentences.)
+  assert.deepEqual([ABSENCE_AUDIT_READER_VERSIONS.story.before, ABSENCE_AUDIT_READER_VERSIONS.page.before],
+    [ABSENCE_READER_VERSIONS.story.after, ABSENCE_READER_VERSIONS.page.after]);
+  // (And both once more by D101, GROUNDING_CAUSE_READER_VERSIONS: one link after D100's, an ask says which test refused
+  // its quote.)
+  assert.deepEqual([GROUNDING_CAUSE_READER_VERSIONS.story.before, GROUNDING_CAUSE_READER_VERSIONS.page.before],
+    [ABSENCE_AUDIT_READER_VERSIONS.story.after, ABSENCE_AUDIT_READER_VERSIONS.page.after]);
+  // (And both once more by the shown-in-part mark, D104: SEEN_READER_VERSIONS, one link after D101's.)
+  assert.deepEqual([SEEN_READER_VERSIONS.story.before, SEEN_READER_VERSIONS.page.before],
+    [GROUNDING_CAUSE_READER_VERSIONS.story.after, GROUNDING_CAUSE_READER_VERSIONS.page.after]);
+  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [SEEN_READER_VERSIONS.story.after, SEEN_READER_VERSIONS.page.after]);
   for (const k of ['story', 'page']) assert.equal(DISCLOSURE_WORDS_VERSIONS[k].before, INTEGRATION_VERSIONS[k].after);
 });

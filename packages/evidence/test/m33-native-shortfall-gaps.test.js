@@ -105,8 +105,8 @@ test('C-02 native-first: a completed review names each shortfall with its count'
   // The inventory shortfall (5) alone: the generic declaration is not made beside it (M33 refreeze).
   assert.equal(causes.incomplete_inventory.n, 5, JSON.stringify(causes.incomplete_inventory));
   const header = causeLine(report);
-  assert.match(header, /the recording does not show the exit status of 3 commands/);
-  assert.match(header, /the recording does not show whether 2 writes succeeded/);
+  assert.match(header, /Sonah could not read the exit status of 3 commands/);
+  assert.match(header, /Sonah could not read whether 2 writes succeeded/);
 });
 
 // ---- M33 refreeze: the generic gap beside a sole native shortfall ------------------------------

@@ -82,9 +82,14 @@ test('status fact readers: versions moved with the bytes', () => {
   // session), and the code step's new report.
   // The cleanup moved it once more (sonah.session-story/31): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
+  // D98 moved it once more (sonah.session-story/33): its rows, runs and gaps read one effect rule.
   // D97 moved it once more (sonah.session-story/32): the story is the report .md, the report model rendered for a pull
   // request comment.
-  assert.equal(STORY_VERSION, 'sonah.session-story/32');
+  // D99 moved it once more (sonah.session-story/34): a background run's end, and a stopped run, in the page's words.
+  // D100 moved it once more (sonah.session-story/35): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
+  assert.equal(STORY_VERSION, 'sonah.session-story/37');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -121,7 +126,12 @@ test('status fact readers: versions moved with the bytes', () => {
   // The cleanup moved it once more (sonah.session-page/36): no statement found to hold, no row shown in the code, no
   // claim found false and no all-clear footer.
   // The report model moved it once more (sonah.session-page/37, D97): the page renders the report's tiers.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/37');
+  // D98 moved it once more (sonah.session-page/38): what the agent did and what Sonah could not check read one effect rule.
+  // D99 moved it once more (sonah.session-page/39): a background run's end is said absent only where it is proved.
+  // D100 moved it once more (sonah.session-page/40): an absence only where code proves it.
+  // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/42');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {
