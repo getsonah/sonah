@@ -26,7 +26,7 @@ const TITLE = 'SYNTHETIC parse("") returns [""] instead of []';
  * The fake `claude`. A tool-free request (the session review) gets an empty review in the answer's text; an agent
  * request (`--tools Read,Grep,Glob` with `--json-schema`) is answered by the schema it carries: the review agent finds
  * one bug on parse.js line 2 and one statement that holds on line 1; a finding's checking agent upholds the finding it
- * is shown, quoting its trace; the batch checking agent upholds every statement. Each call is logged by kind.
+ * is shown, quoting its trace (its one premise a line of the repository, D110); the batch checking agent upholds every statement. Each call is logged by kind.
  */
 const FAKE = (log) => `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path');
@@ -56,7 +56,7 @@ process.stdin.on('end', () => {
   const step = { step: 'An empty string splits into one empty part.', path: 'src/parse.js', side: 'new', startLine: 2,
     endLine: 2, quote: ${JSON.stringify(PARSE_LINE.trim())} };
   let kind, answer;
-  if (required.includes('findings')) {
+  if (required.includes('findings') && !required.includes('entries')) {
     kind = 'review';
     answer = { findings: [{ kind: 'bug', lens: 'behaviour', title: ${JSON.stringify(TITLE)},
       claims: ['Empty input splits into one empty part.'], input: 'parse("")', trace: [step],
@@ -68,9 +68,20 @@ process.stdin.on('end', () => {
   } else if (required.includes('verdict')) {
     kind = 'verify';
     const shown = JSON.parse(input.split('# The finding to check — untrusted\\n\\n')[1].split('\\n')[0]);
+    // D110 (code-verify/3): its one premise, a line of the repository that the trace quotes.
+    const receipts = shown.trace.filter((t) => t.side !== 'session').map(({ path, side, startLine, endLine, quote }) => ({
+      path, side, startLine, endLine, quote }));
     answer = { verdict: 'holds', reason: null, claims: shown.claims.map(({ claim }) => ({ claim, verdict: 'holds' })),
-      receipts: shown.trace.filter((t) => t.side !== 'session').map(({ path, side, startLine, endLine, quote }) => ({ path,
-        side, startLine, endLine, quote })), explanation: 'SYNTHETIC: traced and found to hold.' };
+      premises: [{ premise: 'SYNTHETIC: the traced line shows it.', source: 'repository', receipts }],
+      receipts, explanation: 'SYNTHETIC: traced and found to hold.' };
+  } else if (required.includes('entries')) {
+    // F3b (D111): an accounting agent: every item it was shown holds, quoting the changed line.
+    kind = 'account';
+    const items = input.split('# The items to account for — built by Sonah from its report — untrusted evidence\\n\\n')[1]
+      .split('\\n\\n')[0].split('\\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line).key);
+    const receipt = { path: step.path, side: step.side, startLine: step.startLine, endLine: step.endLine, quote: step.quote };
+    answer = { entries: items.map((key) => ({ key, outcome: 'holds', receipts: [receipt], by: null, finding: null })),
+      findings: [] };
   } else {
     kind = 'batch';
     const keys = input.split('\\n').filter((line) => /^\\{"key":"Q\\d+"/.test(line)).map((line) => JSON.parse(line).key);
@@ -140,10 +151,10 @@ test('agentic code step end to end: the review agent and its checking agents thr
   assert.equal(first.code, 0, `${first.out}\n${first.err}`);
   const asked = await calls(p);
   // The session review's own requests, then the review agent, then — side by side — one checking agent for its one
-  // finding and the batch checking agent for its one question.
+  // finding, the batch checking agent for its one question and (F3b, D111) one accounting agent for its one ask.
   const agents = (kinds) => { const [first, ...rest] = kinds; return [first, ...rest.sort()]; };
   assert.ok(asked.includes('session'));
-  assert.deepEqual(agents(asked.filter((kind) => kind !== 'session')), ['review', 'batch', 'verify']);
+  assert.deepEqual(agents(asked.filter((kind) => kind !== 'session')), ['review', 'account', 'batch', 'verify']);
   const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
   assert.deepEqual(report.codePass.findings.map((f) => [f.title, f.anchor.path, f.check.verdict]),
     [[TITLE, 'src/parse.js', 'holds']]);
@@ -169,5 +180,5 @@ test('agentic code step end to end: the review agent and its checking agents thr
   await writeFile(join(p.repo, 'src', 'util.js'), 'export const SEPARATOR = ";";\n');
   const third = await review(p, ['--code-pass', '--state-dir', state, '--format', 'html', '--output', page(3), '--no-open']);
   assert.equal(third.code, 0, `${third.out}\n${third.err}`);
-  assert.deepEqual(agents((await calls(p)).slice(asked.length)), ['review', 'batch', 'verify']);
+  assert.deepEqual(agents((await calls(p)).slice(asked.length)), ['review', 'account', 'batch', 'verify']);
 });

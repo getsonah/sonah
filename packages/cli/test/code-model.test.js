@@ -16,7 +16,8 @@ import { writeCodePass } from '../src/settings.js';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
 import { codeSession, codeJudge, gitRepoWith, repoWith, sha256 } from './code-pass-fixture.js';
 
-const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
+// F3b (D111): the accounting's calls are the code step's too.
+const CODE_LABEL = /^code-(?:review|verify|account)(?::|$)/;
 const SESSION_MODEL = SESSION_REVIEW_CLAUDE_CLI_MODEL;
 const OPUS = 'claude-opus-5-5[1m]';
 const OTHER = 'claude-opus-5-1[1m]';
@@ -126,8 +127,8 @@ test('--code-model: every code-step request reaches the code model\'s judge, eve
   assert.ok(session.length > 0 && code.length > 0);
   assert.deepEqual([...new Set(session.map(({ model }) => model))], [SESSION_MODEL]);
   assert.deepEqual([...new Set(code.map(({ model }) => model))], [OPUS]);
-  // The review agent and the checking agent of its finding both went to it.
-  assert.deepEqual(code.map(({ request }) => request.label), ['code-review:agent', 'code-verify:F1']);
+  // The review agent, the checking agent of its finding and (F3b, D111) the accounting agent all went to it.
+  assert.deepEqual(code.map(({ request }) => request.label), ['code-review:agent', 'code-verify:F1', 'code-account:1']);
   // The report records the code step's model; the usage line names it, with its share of the calls.
   assert.equal(run.report.codePass.model, OPUS);
   const usage = new RegExp(`^Review usage: ${run.calls.length} calls; .* Code step on ${OPUS.replace(/[[\]]/g, '\\$&')} `
@@ -202,7 +203,7 @@ test('--code-model: the session\'s requests are byte-identical, and an existing 
   assert.deepEqual(dry.calls, []);
   assert.deepEqual(dry.judges, [], 'a dry run makes no judge');
   assert.match(dry.out, /^Stored session answers: the store answers (\d+) of \1 session calls, with no new call\.$/m);
-  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\) to claude-opus-5-5\[1m\]\. Then it would send one check for each finding and one for its questions\.$/m);
+  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\) to claude-opus-5-5\[1m\]\. Then it would send one check for each finding and one for its questions\. Each 30 items would add one more call, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\.$/m);
   assert.deepEqual(await listing(dryState), before2, 'the dry run wrote nothing');
   // A code model that could not be attested: the dry run says the settings could not be read, and sends nothing.
   const refused = await review(t, { root, state: dryState, argv: ['--dry-run', '--code-pass', '--code-model', 'opus'] });
@@ -238,8 +239,10 @@ test('--code-model default: no flag and no SONAH_CODE_MODEL is the session\'s mo
   assert.doesNotMatch(noPass.out, /Code review: on/);
   // The dry run's code-step line names no model without one.
   const lines = replayLines({ answers: { calls: 0, reused: 3 }, codeRequests: [{ label: 'code-review:agent', bytes: 2048 }] });
+  // F3b (D111): and the accounting's calls, counted by the items in scope, each kind named (its review).
   assert.equal(lines[1], 'Code review: it would first send 1 call (code-review:agent 2 KB). Then it would send one check '
-    + 'for each finding and one for its questions.');
+    + 'for each finding and one for its questions. Each 30 items would add one more call, at most 4. The items are asks, '
+    + 'statements that the agent wrote into a file and the agent\'s decisions not to act.');
 });
 
 test('--code-model: a stored code-step answer is never replayed for another model, and is for the same one', async (t) => {

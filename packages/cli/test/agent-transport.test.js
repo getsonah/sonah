@@ -1,4 +1,4 @@
-// The claude-cli agent transport (`sonah.review-agent-transport/1`): a request that carries `agent` runs Claude Code with
+// The claude-cli agent transport (`sonah.review-agent-transport/2`): a request that carries `agent` runs Claude Code with
 // Read, Grep and Glob over a repository and answers through the CLI's structured output tool. Every byte here is
 // synthetic: invented repositories, prompts, answers and streams. No model is called, no real ~/.claude or ~/.sonah is
 // read: each test gets its own temporary HOME, and the `claude` it starts is a fake executable on a temporary PATH.
@@ -9,8 +9,8 @@ import { PassThrough } from 'node:stream';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AGENT_MAX_OUTPUT_BYTES, AGENT_RESULT_FAILURES, AGENT_TOOL_NAMES, REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_EFFORT,
-  REVIEW_TRANSPORT_VERSION, agentRequestOf, createReviewJudge, isAgentRequest, reviewAgentKeyArgs, reviewCliArgs,
-  reviewTransportArguments, withTransportRetry } from '../src/review-judge.js';
+  REVIEW_TRANSPORT_VERSION, agentRequestOf, agentRunRecord, createReviewJudge, isAgentRequest, reviewAgentKeyArgs,
+  reviewCliArgs, reviewTransportArguments, withTransportRetry } from '../src/review-judge.js';
 import { JUDGE_FAILURE_CODES, RETRYABLE_JUDGE_CODES } from '../../evidence/src/ledger.js';
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { ANSWER, MODEL, PROMPT, SCHEMA, SYSTEM, agentEvents, fakeClaude, judgeOf, repository } from './agent-transport-fixture.js';
@@ -55,7 +55,8 @@ test('agent transport: a session request\'s argv and environment are byte for by
   assert.deepEqual(reviewTransportArguments({ backend: 'claude-cli', model: 'sonnet', system: 'S' }),
     { argv: reviewCliArgs({ system: 'S', model: 'sonnet' }) });
   assert.equal(REVIEW_TRANSPORT_VERSION, 'sonah.review-transport/3');
-  assert.equal(REVIEW_AGENT_TRANSPORT_VERSION, 'sonah.review-agent-transport/1');
+  // D105: /2, the run record holds each Read's lines.
+  assert.equal(REVIEW_AGENT_TRANSPORT_VERSION, 'sonah.review-agent-transport/2');
   const { root } = await repository(t);
   const fake = await fakeClaude(t, { events: agentEvents(root, { tools: [] }) });
   await judgeOf(fake)({ system: SYSTEM, prompt: PROMPT });
@@ -76,6 +77,9 @@ test('agent transport: a real-shaped stream (Read, then StructuredOutput) is acc
   assert.deepEqual(Object.keys(answer), ['exports']);
   assert.equal(JSON.stringify(answer), JSON.stringify(ANSWER), 'a stored answer never holds it');
   const run = { numTurns: 3, toolCalls: { Read: 1, Grep: 0, Glob: 0, StructuredOutput: 1 }, reads: [join(root, 'a.js')],
+    readRanges: [{ path: join(root, 'a.js'), startLine: 1, numLines: 1, totalLines: 1 }], readsUnranged: 0,
+    readsUnrangedPaths: [], readsFailed: [],
+    // The result's one denial names no Read of this run: no Read is counted refused for it.
     permissionDenials: 1, durationMs: 4321, costUsd: 0.0125,
     usage: { input_tokens: 4, cache_creation_input_tokens: 400, cache_read_input_tokens: 900, output_tokens: 60 } };
   assert.deepEqual(answer.agentRun, run);
@@ -88,6 +92,60 @@ test('agent transport: a real-shaped stream (Read, then StructuredOutput) is acc
   // The structured output is the answer even when the result's text is not JSON.
   const prose = await fakeClaude(t, { events: agentEvents(root, { result: { result: 'Done: the answer was submitted.' } }) });
   assert.deepEqual(await judgeOf(prose)(request), ANSWER);
+});
+
+test('agent transport /2 (D105): each Read\'s path, start line, line count and total lines come from its typed result, '
+  + 'by structure, with no text; a result of another shape, another tool\'s, or one shared by two results gives none',
+async (t) => {
+  const { root, request } = await repository(t);
+  const FILE = join(root, 'a.js');
+  const typed = (id, file) => ({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [
+    { tool_use_id: id, type: 'tool_result', content: 'SYNTHETIC_FILE_TEXT' }] }, tool_use_result: { type: 'text', file } });
+  const use = (id, name, input) => ({ type: 'assistant', parent_tool_use_id: null, message: { model: MODEL,
+    role: 'assistant', content: [{ type: 'tool_use', id, name, input }] } });
+  const HOSTS = '/etc/hosts';
+  const base = agentEvents(root, { tools: ['StructuredOutput'], result: { permission_denials: [
+    { tool_name: 'Read', tool_use_id: 'r6', tool_input: { file_path: HOSTS } }] } });
+  const at = base.findIndex((e) => e.type === 'assistant' && e.message.content.some((b) => b.name === 'StructuredOutput'));
+  const events = [...base.slice(0, at),
+    use('r1', 'Read', { file_path: FILE, offset: 125, limit: 80 }),
+    typed('r1', { filePath: FILE, content: 'SYNTHETIC_FILE_TEXT', startLine: 125, numLines: 80, totalLines: 423 }),
+    // The same id's result again counts once.
+    typed('r1', { filePath: FILE, content: 'SYNTHETIC_FILE_TEXT', startLine: 1, numLines: 9, totalLines: 423 }),
+    use('g1', 'Grep', { pattern: 'export' }),
+    typed('g1', { filePath: FILE, content: 'SYNTHETIC_FILE_TEXT', startLine: 1, numLines: 1, totalLines: 1 }),
+    use('r2', 'Read', { file_path: join(root, 'missing.js') }),
+    { type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ tool_use_id: 'r2', type: 'tool_result',
+      is_error: true, content: 'File does not exist.' }] } },
+    use('r3', 'Read', { file_path: FILE }), use('r4', 'Read', { file_path: FILE }),
+    { type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [
+      { tool_use_id: 'r3', type: 'tool_result', content: 'x' }, { tool_use_id: 'r4', type: 'tool_result', content: 'y' }] },
+    tool_use_result: { type: 'text', file: { filePath: FILE, content: 'x', startLine: 1, numLines: 1, totalLines: 1 } } },
+    use('r5', 'Read', { file_path: FILE }),
+    typed('r5', { filePath: FILE, content: 'SYNTHETIC_FILE_TEXT', startLine: 0, numLines: 1, totalLines: 1 }),
+    // A Read the CLI refused: its result typed as an error, and the result event lists it among the refused uses.
+    use('r6', 'Read', { file_path: HOSTS }),
+    { type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ tool_use_id: 'r6', type: 'tool_result',
+      is_error: true, content: 'SYNTHETIC refusal' }] } },
+    // A tool result typed as an error is a failed Read, whatever typed range rides beside it.
+    use('r7', 'Read', { file_path: FILE }),
+    { ...typed('r7', { filePath: FILE, content: 'SYNTHETIC_FILE_TEXT', startLine: 1, numLines: 423, totalLines: 423 }),
+      message: { role: 'user', content: [{ tool_use_id: 'r7', type: 'tool_result', is_error: true,
+        content: 'SYNTHETIC_FILE_TEXT' }] } },
+    ...base.slice(at)];
+  const fake = await fakeClaude(t, { events });
+  const answer = await judgeOf(fake)(request);
+  assert.deepEqual(answer.agentRun.readRanges, [{ path: FILE, startLine: 125, numLines: 80, totalLines: 423 }]);
+  assert.equal(answer.agentRun.toolCalls.Read, 7);
+  assert.equal(answer.agentRun.readsUnranged, 3, 'a shared result and a malformed one have no range');
+  // The paths those Reads asked for are kept, each once, so no reader calls a file read this way unseen.
+  assert.deepEqual(answer.agentRun.readsUnrangedPaths, [FILE]);
+  // A Read that failed read nothing: apart, by its path and its closed reason, never ranged or unranged.
+  assert.deepEqual(answer.agentRun.readsFailed, [{ path: join(root, 'missing.js'), reason: 'failed' },
+    { path: HOSTS, reason: 'refused' }, { path: FILE, reason: 'failed' }]);
+  assert.deepEqual(agentRunRecord(answer.agentRun).readsFailed, answer.agentRun.readsFailed, 'the store keeps them');
+  assert.doesNotMatch(JSON.stringify(answer.agentRun), /SYNTHETIC_FILE_TEXT|SYNTHETIC refusal|does not exist/,
+    'no text of a file or of a failure is kept');
 });
 
 test('agent transport: the same stream on a session request fails model_tool_use, as any tool use does', async (t) => {

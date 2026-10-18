@@ -10,16 +10,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { CODE_REVIEW_SYSTEM, CODE_REVIEW_SCHEMA, CODE_PASS_PROFILE, TRIAGE_ERROR_WORDS, codeSnapshotPlan,
-  freezeCodeSnapshot, runCodePass, triageShape, triageFieldFaults } from '../src/code-pass.js';
+import { CODE_REVIEW_SYSTEM, CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_REVIEW_SCHEMA, CODE_PASS_PROFILE, TRIAGE_ERROR_WORDS,
+  codeSnapshotPlan, freezeCodeSnapshot, runCodePass, triageShape, triageFieldFaults } from '../src/code-pass.js';
 import { TRIAGE_ERRORS, CODE_ITEM_ERRORS, REPORT_ITEM_KINDS, CODE_DOSSIER_MOVES } from '../src/ledger.js';
 import { ITEM_KIND_TABLE, TIER_TABLE_VERSION, TRIAGE_LIMITS } from '../src/triage.js';
 import { steWordCount } from '../src/ste-count.js';
 import { reviewInputBytes } from '../src/challenge.js';
 import { runProfile } from '../src/run-review.js';
 import { canonicalJson } from '../contracts/canonical.js';
+import { withheldWhy } from '../src/code-report.js';
 import { CODE_FILES, codeSession, dossierItems, reviewFinding, holds, allSound, verifiedFinding, batchItems,
-  itemsEnded, PARSE_QUOTE } from '../../cli/test/code-pass-fixture.js';
+  itemsEnded, fatesOf, sameFindingTwice, PARSE_QUOTE, repositoryPremise, accountsHold } from '../../cli/test/code-pass-fixture.js';
+import { verifyBriefBeforePremises } from './m33-integration-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -76,6 +78,9 @@ const ASK = 'S1', CLAIM = 'S2', CONFIRMED = 'S3', UNASKED = 'S4', SETTLED = 'S5'
  *  the review's answer again); a finding's checker `verify(finding)`; the batch checker `batch(items)`. */
 function agents({ review, repair = null, verify = holds, batch = allSound, seen = [] }) {
   return async (request) => {
+    // F3b (D111): an accounting agent's request answers every item as holding, and stays out of `seen`: this file
+    // reads the review's requests and its checks' (d111-accounting.test.js reads the accounting's).
+    if (/^code-account:\d+(:reask)?$/.test(request.label ?? '')) return accountsHold(request.prompt);
     seen.push(request);
     if (request.label === 'code-review:agent') return review(request.prompt, request);
     if (request.label === 'code-review:repair') return repair ? repair(request) : review(request.prompt, request);
@@ -84,8 +89,10 @@ function agents({ review, repair = null, verify = holds, batch = allSound, seen 
     throw new Error(`unexpected request ${request.label}`);
   };
 }
-const run = (judge, { report = sessionReport(), session = codeSession(), bound = 1_620_000 } = {}) => runCodePass({
-  report, session, snapshot: snapshotOf(session), repo, bound, judge, base: GIT, root: ROOT });
+/** The code step's run, by default with the frozen setting (D108: part B on); `wholeFiles: false` runs part A. */
+const run = (judge, { report = sessionReport(), session = codeSession(), bound = 1_620_000, wholeFiles } = {}) =>
+  runCodePass({ report, session, snapshot: snapshotOf(session), repo, bound, judge, base: GIT, root: ROOT,
+    ...(wholeFiles === undefined ? {} : { wholeFiles }) });
 const labels = (seen) => seen.map((r) => r.label);
 const entry = (key, over = {}) => ({ key, level: 'high', impact: 'An empty input gives you one empty part.',
   action: 'Return an empty list for empty input.', label: 'fix empty input', where: null, ...over });
@@ -160,21 +167,23 @@ test('triage contract: `triage` and `files` are optional and hold types only; th
   const mutated = structuredClone(CODE_REVIEW_SCHEMA);
   mutated.properties.triage.items.properties.label.maxLength = TRIAGE_LIMITS.labelChars;
   assert.deepEqual(limitsIn(mutated.properties.triage), ['.items.properties.label.maxLength']);
-  const flat = CODE_REVIEW_SYSTEM.replace(/\s+/g, ' ');
-  for (const words of ['Importance, impact and action ("triage").', 'You may propose a level: "high" (must act), "medium" '
+  // Both briefs alike: part B's, which the code step sends since D108, and part A's.
+  const WORDS = ['Importance, impact and action ("triage").', 'You may propose a level: "high" (must act), "medium" '
     + '(must know) or "low" (good to know).', 'Code keeps your level only inside the item\'s floor and ceiling.',
   'Each dossier line shows the item\'s kind ("item").', 'Each entry is {key, level, impact, action, label, where}',
   'label: the item\'s name in at most 6 words', '"files": for each file of the change, {path, what, asks}',
   'at most 20 words a sentence, the active voice, no semicolons, no idioms', 'Do not hedge.',
   'Give no rating, score, rank or confidence, and no approval or verdict on the change as a whole. The level in "triage" '
-    + 'is the only importance you give.'])
-    assert.ok(flat.includes(words), words);
-  // It names no tier per kind: the default would anchor the proposal. Of the item kinds it names only the listed ones,
-  // for what they need to become items, beside the dossier's moves it named before.
-  assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => flat.includes(kind) && !CODE_DOSSIER_MOVES.includes(kind)),
-    ['claim_not_checked', 'claim_incomplete', 'written_not_checked']);
-  assert.doesNotMatch(flat, /must_act|must_know|good_to_know|default tier/);
-  assert.ok(flat.endsWith('The level in "triage" is the only importance you give.'));
+    + 'is the only importance you give.'];
+  for (const flat of [CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_REVIEW_SYSTEM].map((brief) => brief.replace(/\s+/g, ' '))) {
+    for (const words of WORDS) assert.ok(flat.includes(words), words);
+    // It names no tier per kind: the default would anchor the proposal. Of the item kinds it names only the listed
+    // ones, for what they need to become items, beside the dossier's moves it named before.
+    assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => flat.includes(kind) && !CODE_DOSSIER_MOVES.includes(kind)),
+      ['claim_not_checked', 'claim_incomplete', 'written_not_checked']);
+    assert.doesNotMatch(flat, /must_act|must_know|good_to_know|default tier/);
+    assert.ok(flat.endsWith('The level in "triage" is the only importance you give.'));
+  }
   // The profile binds the tier table: a change of one entry is a new profile digest, so no old answer replays.
   assert.deepEqual(CODE_PASS_PROFILE.triage, { levels: ['high', 'medium', 'low'], limits: TRIAGE_LIMITS,
     errors: TRIAGE_ERRORS, table: TIER_TABLE_VERSION, kinds: ITEM_KIND_TABLE });
@@ -435,9 +444,9 @@ test('triage: a withheld finding or question drops its entry (`item_withheld`); 
   const second = reviewFinding({ title: 'SYNTHETIC trailing spaces are kept' });
   const verify = (finding) => (finding.title === second.title
     ? { verdict: 'refuted', reason: 'not_against_goal', claims: finding.claims.map(({ claim }) => ({ claim, verdict: 'holds' })),
-      receipts: [], explanation: 'SYNTHETIC as stated.' }
+      premises: [repositoryPremise(finding)], receipts: [], explanation: 'SYNTHETIC as stated.' }
     : { verdict: 'refuted', reason: 'step_unsupported', claims: finding.claims.map(({ claim }) => ({ claim,
-      verdict: 'holds' })), receipts: [], explanation: 'SYNTHETIC refuted.' });
+      verdict: 'holds' })), premises: [repositoryPremise(finding)], receipts: [], explanation: 'SYNTHETIC refuted.' });
   const batch = (items) => ({ questions: items.map(({ key }) => ({ key, verdict: 'false_premise', receipts: [{
     path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2, quote: PARSE_QUOTE }], explanation: 'SYNTHETIC.' })) });
   // F1's place does not ground either: its entry is still one record, `item_withheld`.
@@ -546,17 +555,47 @@ test('triage (a paid run, 2026-10-16): a valid entry whose label has one word to
 test('triage: keeping a field apart moves no request byte — a repair names a triage entry by its whole shape\'s first error, as before', async () => {
   // The requests a run with triage slips sends (the review agent's, its repair and the checks), as a digest of each
   // request's label, system prompt and prompt: the same bytes as before the text fields were kept apart (computed with
-  // the code of 6430357, where a failing field dropped the whole entry).
+  // the code of 6430357, where a failing field dropped the whole entry). D105 (code-pass/12) moved every code-step
+  // request (the brief, the commands block): the digest is that of 6430357 with D105's requests (`sonah.code-pass/12`).
+  // D108 turned part B on (D106): run off, the requests are D105's, byte for byte; by default, the review's and its
+  // repair's are D105's with part B's brief and its two blocks before the dossier, and the checks' did not move. D110
+  // moved the finding's checking request alone (its brief: code-verify/3); rendered back (`verifyBriefBeforePremises`),
+  // every request is bucket B's, byte for byte, run off or by default.
   const slips = { triage: [entry('F1', { label: 'fix the empty input case right now' }), entry(UNASKED, { where: OFF_PLACE }),
     entry(CLAIM, { impact: 'x'.repeat(TRIAGE_LIMITS.impactChars + 1), level: 'medium' })],
   files: [{ path: 'src/other.js', what: 'SYNTHETIC', asks: [] }] };
-  const seen = [];
-  await run(agents({ seen, review: repairing(slips), repair: refuse }));
-  const digest = sha(enc(JSON.stringify(seen.map((r) => [r.label, r.system ?? null, r.prompt ?? null]))));
-  assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:batch']);
-  assert.equal(digest, REQUESTS_BEFORE_FIELDS_APART);
+  const requestsOf = async (wholeFiles) => {
+    const seen = [];
+    await run(agents({ seen, review: repairing(slips), repair: refuse }), { wholeFiles });
+    assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:batch']);
+    return seen;
+  };
+  const [byDefault, off] = [await requestsOf(undefined), await requestsOf(false)];
+  assert.equal(digestOf(off), REQUESTS_NOW);
+  assert.equal(digestOf(premisesBack(off)), REQUESTS_BEFORE_FIELDS_APART);
+  assert.equal(digestOf(byDefault), REQUESTS_NOW_WITH_WHOLE_FILES);
+  assert.equal(digestOf(premisesBack(byDefault)), REQUESTS_WITH_WHOLE_FILES);
+  assert.deepEqual(byDefault.map((r, at) => [r.system === (at < 2 ? CODE_REVIEW_SYSTEM_WHOLE_FILES : off[at].system),
+    withoutPartB(r.prompt) === off[at].prompt, r.prompt === off[at].prompt]),
+  [[true, true, false], [true, true, false], [true, true, true], [true, true, true]]);
 });
-const REQUESTS_BEFORE_FIELDS_APART = '59f931bb090d8686e2d07cfa185160c7cb235ee390a969d4ebc4be9795db62b0';
+const REQUESTS_BEFORE_FIELDS_APART = 'e8e5da724429cbe502561d9fcfa85f18861deebbebfb2a67fd86c1f924edd807';
+/** D110: the same requests, the finding's checking agent's brief at code-verify/3. */
+const REQUESTS_NOW = '0544afb79a5c72cad53596287fe6c5ad1329de78aec4eb15105038314be0f722';
+/** The same requests with part B on (D108): D105's, with part B's brief and blocks in the review's and the repair's. */
+const REQUESTS_WITH_WHOLE_FILES = '9ead345acdf83d1302f48f4f26bf53846f4c05b7907581ed9848540f0deab1a7';
+/** D110: those, the finding's checking agent's brief at code-verify/3. */
+const REQUESTS_NOW_WITH_WHOLE_FILES = '9a5832dd5c01bbcc406664e59bfbbb770b93b36ecab8c7a168ba8af69ac86332';
+/** A digest of requests: each one's label, system prompt and prompt. */
+const digestOf = (requests) => sha(enc(JSON.stringify(requests.map((r) => [r.label, r.system ?? null, r.prompt ?? null]))));
+/** D110: requests with each finding's checking agent's brief rendered back to bucket B's (`verifyBriefBeforePremises`). */
+const premisesBack = (requests) => requests.map((r) => (r.label.startsWith('code-verify:F')
+  ? { ...r, system: verifyBriefBeforePremises(r.system) } : r));
+/** A review request's prompt without part B's two blocks (D106): from the whole files' heading to the dossier's. */
+const withoutPartB = (prompt) => {
+  const from = prompt.indexOf('# The changed files whole, as they are now');
+  return from < 0 ? prompt : prompt.slice(0, from) + prompt.slice(prompt.indexOf('# Sonah\'s review of the session'));
+};
 
 // ---- the one repair: the same item at its place ----------------------------------------------------------------------
 
@@ -589,23 +628,32 @@ function s3Shape() {
   return { tests, ask, claim, answer, reordered };
 }
 
-test('triage (a paid run, 2026-10-16): a repair that puts another finding at the failing finding\'s place gives nothing for it — withheld with its cause, and its entry lands on no other finding', async () => {
+test('triage (a paid run, 2026-10-16; F3a): a repair that reorders its answer loses nothing — its unmet ask on lines apart from the failing one is a new finding, checked; the failing one is withheld with its cause, and its entry lands on no other finding', async () => {
   const { tests, ask, claim, answer, reordered } = s3Shape();
   const seen = [];
   const result = await run(agents({ seen, review: () => answer, repair: () => reordered }));
-  assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:F2',
-    'code-verify:batch']);
   assert.match(seen[1].prompt, /^- findings\[1\]: anchor_off_quote /m);
+  // The repair's unmet ask anchors on line 2, the failing one on line 3: lines apart, so not the same finding by identity
+  // (F3a: never by index). It is a repair-only finding, added and checked; its near-copy of F1 is folded into F1.
+  assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:F2',
+    'code-verify:F3', 'code-verify:batch']);
   const { codePass } = result;
-  // Nothing of the repair is published: the answer's F1 and F3, its two questions; F2 withheld with its own cause.
-  assert.deepEqual(codePass.findings.map((f) => f.title), [tests.title, claim.title]);
+  assert.deepEqual(codePass.findings.map((f) => f.title), [tests.title, claim.title, reordered.findings[0].title]);
   assert.deepEqual(codePass.questions.map((q) => q.question), [QUESTION.question, answer.questions[1].question]);
-  // Its record says that Sonah checked no repaired version of it: at its place the repair returned a weak test, not an
-  // unmet ask.
+  assert.deepEqual(fatesOf(result, answer, reordered), { findings: { answer: ['kept', 'withheld', 'kept'],
+    repair: ['added', 'folded'] }, questions: { answer: ['kept', 'kept'], repair: ['folded'] } });
+  assert.deepEqual(sameFindingTwice(result), { pairs: [], ids: [] });
+  // F2's record says that no finding of the repair matched it: none of its kind on lines of its file that overlap its
+  // lines. Its words say only that. The repair's unmet ask, a correction of F2's anchor, is checked and published as a
+  // new finding, so no sentence says that Sonah checked no repaired version of F2.
   assert.deepEqual(codePass.withheld.map(({ what, reason, cause, repair, text, kind }) => ({ what, reason, cause, repair,
     text, kind })), [{ what: 'finding', reason: 'evidence_grounding_failed', cause: 'anchor_off_quote',
-    repair: 'different', text: ask.title, kind: 'ask_not_met' }]);
-  // F2's level, impact and action stay with F2: dropped with it, never on another finding.
+    repair: 'unmatched', text: ask.title, kind: 'ask_not_met' }]);
+  assert.equal(withheldWhy(codePass.withheld[0]), 'Sonah did not find, word for word, a quote that it rests on (the '
+    + 'lines that it names do not hold the code that it quotes, or no step of its trace quotes the lines that it is '
+    + 'about), and no finding of the repair matched it by kind, file version and lines');
+  // F2's level, impact and action stay with F2: dropped with it, never on another finding. The added finding holds no
+  // place of the answer, so no entry binds to it, the repair's included.
   const [t1, t3] = codePass.findings;
   assert.deepEqual(codePass.triage.map((t) => [t.ref, t.level, t.label]), [[{ finding: t1.id }, 'medium',
     'tests skipped in CI'], [{ finding: t3.id }, 'medium', 'discard the claim'], [{ question: 'Q1' }, 'medium', 'decide'],
@@ -613,22 +661,50 @@ test('triage (a paid run, 2026-10-16): a repair that puts another finding at the
   assert.deepEqual(codePass.triageDropped, [{ key: 'F2', index: 1, cause: 'item_withheld' }]);
   assert.ok(!codePass.triage.some((t) => t.level === 'high'));
   assert.equal(codePass.files.find((f) => f.path === 'src/parse.js').what, 'SYNTHETIC splits the input on commas');
-  // What the record shows is what a repair that corrected nothing gives: no call more, the coverage and footer the same.
-  // Only the withheld record differs: of a repair that corrected nothing, Sonah checked F2's repaired version.
+  // A repair that corrected nothing: F2 takes its own place (its value) and fails again; the answer's other items and
+  // notes are as in the reordered repair, which adds one finding and its check.
   const none = await run(agents({ review: () => answer, repair: () => answer }));
-  const pick = ({ codePass: p }) => [p.findings, p.questions, p.withheld.map(({ repair: _repair, ...w }) => w), p.triage,
-    p.triageDropped, p.filesDropped, p.coverage, p.footer, p.calls];
+  assert.deepEqual(none.codePass.findings.map((f) => f.title), [tests.title, claim.title]);
+  assert.deepEqual(none.codePass.withheld.map((w) => [w.text, Object.hasOwn(w, 'repair')]), [[ask.title, false]]);
+  const pick = ({ codePass: p }) => [p.questions, p.triage, p.triageDropped, p.filesDropped, p.coverage, p.footer];
   assert.deepEqual(pick(result), pick(none));
-  assert.deepEqual(none.codePass.withheld.map((w) => Object.hasOwn(w, 'repair')), [false]);
-  // The same repair with the unmet ask at its place mends F2, and F2's entry stays with it.
-  const aligned = { ...answer, findings: [tests, reordered.findings[0], claim] };
+  // The repair with the unmet ask on lines that overlap the failing one's (2 to 3: its line 3, and the changed line its
+  // trace quotes) mends F2 in its place, and F2's entry stays with it.
+  const onItsLines = { ...reordered.findings[0], anchor: { ...ask.anchor, startLine: 2 } };
+  const aligned = { ...answer, findings: [tests, onItsLines, claim] };
   const mended = await run(agents({ review: () => answer, repair: () => aligned }));
-  assert.deepEqual(mended.codePass.findings.map((f) => f.title), [tests.title, reordered.findings[0].title, claim.title]);
+  assert.deepEqual(mended.codePass.findings.map((f) => f.title), [tests.title, onItsLines.title, claim.title]);
+  assert.deepEqual(fatesOf(mended, answer, aligned).findings, { answer: ['kept', 'replaced', 'kept'],
+    repair: ['folded', 'kept', 'folded'] });
   // Each run: every item of the answer ends published, or withheld with its own record.
-  for (const ran of [result, none, mended]) assert.deepEqual(itemsEnded(ran), [3, 2]);
+  for (const ran of [none, mended]) assert.deepEqual(itemsEnded(ran), [3, 2]);
   assert.deepEqual(mended.codePass.withheld, []);
   assert.deepEqual(mended.codePass.triage.map((t) => [t.ref, t.level]), mended.codePass.findings.map((f, at) => [
     { finding: f.id }, at === 1 ? 'high' : 'medium']).concat([[{ question: 'Q1' }, 'medium'], [{ question: 'Q2' }, 'low']]));
+});
+
+test('triage (F3a, its review): a repair that fixes a failing finding\'s missing anchor adds the fix as a new item — published with no entry, so in its kind\'s default section; neither entry written for it binds (D107 judgment call 3: beta.2 took the fix at its index with the repair\'s entry)', async () => {
+  const good = reviewFinding({ kind: 'weak_test', lens: 'tests', title: 'SYNTHETIC the tests never run in CI' });
+  const fix = reviewFinding({ kind: 'ask_not_met', lens: 'ask', title: 'SYNTHETIC the empty-input ask is not met',
+    leadsFrom: [ASK] });
+  const noAnchor = { ...fix };
+  delete noAnchor.anchor;
+  const answer = { findings: [good, noAnchor], questions: [], triage: [entry('F1', { level: 'medium',
+    label: 'tests skipped in CI' }), entry('F2', { level: 'high', label: 'the ask note' })] };
+  const reply = { findings: [good, fix], questions: [], triage: [entry('F1', { level: 'medium',
+    label: 'tests skipped in CI' }), entry('F2', { level: 'high', label: 'the fix note' })] };
+  const result = await run(agents({ review: () => answer, repair: () => reply }));
+  const { codePass } = result;
+  assert.deepEqual(codePass.findings.map((f) => f.title), [good.title, fix.title]);
+  assert.deepEqual(fatesOf(result, answer, reply).findings, { answer: ['kept', 'withheld'], repair: ['folded', 'added'] });
+  assert.deepEqual(codePass.withheld.map((w) => [w.text, w.cause, w.repair]), [[noAnchor.title, 'key_missing',
+    'unnamed']]);
+  // The fix holds no place of the answer: no entry names it, so no proposed level reaches it. The answer's entry for F2
+  // goes with the withheld F2.
+  const [g] = codePass.findings;
+  assert.deepEqual(codePass.triage.map((t) => [t.ref, t.level, t.label]), [[{ finding: g.id }, 'medium',
+    'tests skipped in CI']]);
+  assert.deepEqual(codePass.triageDropped, [{ key: 'F2', index: 1, cause: 'item_withheld' }]);
 });
 
 /** The paid p4, r1 and u06 cases' shape (2026-10-16), in synthetic words: the answer's F1 fails its shape for one
@@ -658,22 +734,28 @@ function p4Shape() {
   return { rule, missed, fixed, answer, reply };
 }
 
-test('triage (a paid run, 2026-10-16): a repair that returns the failing finding at its place mends it, though it rewrote the rest — every other item and note keeps the answer\'s version', async () => {
+test('triage (a paid run, 2026-10-16; F3a): a repair that returns the failing finding mends it, though it rewrote the rest — every other item and note keeps the answer\'s version, and the repair\'s new items are added and checked', async () => {
   const { rule, missed, fixed, answer, reply } = p4Shape();
   const seen = [];
   const result = await run(agents({ seen, review: () => answer, repair: () => reply }));
-  assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:F2',
-    'code-verify:batch']);
   assert.match(seen[1].prompt, /^- findings\[0\]: value_outside_list .* at findings\[0\]\.trace\[0\]\.path$/m);
   assert.doesNotMatch(seen[1].prompt.slice(seen[0].prompt.length), /^- (findings\[1\]|questions|triage|files)/m);
+  // F1 is the repair's version, in F1's place; F2 and both questions are the answer's, whatever the repair did with them
+  // (their copies are folded into them). The repair's new finding and its rewritten question are new items, added and
+  // checked (F3a: a question with other words is another question).
+  assert.deepEqual(labels(seen), ['code-review:agent', 'code-review:repair', 'code-verify:F1', 'code-verify:F2',
+    'code-verify:F3', 'code-verify:batch']);
   const { codePass } = result;
-  // F1 is the repair's version; F2 and both questions are the answer's, whatever the repair did with them.
   assert.deepEqual(codePass.findings.map((f) => [f.kind, f.title]), [['rule_break', fixed.title],
-    ['missed_case', missed.title]]);
-  assert.deepEqual(codePass.questions.map((q) => q.question), answer.questions.map((q) => q.question));
+    ['missed_case', missed.title], ['contract_break', reply.findings[1].title]]);
+  assert.deepEqual(codePass.questions.map((q) => q.question), [...answer.questions.map((q) => q.question),
+    reply.questions[0].question]);
   assert.deepEqual(codePass.withheld, []);
+  assert.deepEqual(fatesOf(result, answer, reply), { findings: { answer: ['replaced', 'kept'],
+    repair: ['kept', 'added', 'folded'] }, questions: { answer: ['kept', 'kept'], repair: ['added'] } });
   // F1's entry is the repair's, written for the finding now published; every other entry and the file note are the
-  // answer's. The repair's entry for a key the answer gave no entry for is not taken.
+  // answer's. The repair's entry for a key the answer gave no entry for is not taken, nor its entries for the items it
+  // added: they hold no place of the answer.
   const [f1, f2] = codePass.findings;
   assert.deepEqual(codePass.triage.map((t) => [t.ref, t.level, t.impact, t.label]), [
     [{ finding: f1.id }, 'high', 'SYNTHETIC the impact the repair wrote.', 'avoid the new argument'],
@@ -681,28 +763,34 @@ test('triage (a paid run, 2026-10-16): a repair that returns the failing finding
     [{ question: 'Q1' }, 'medium', entry('Q1').impact, 'decide']]);
   assert.deepEqual([codePass.triageDropped, codePass.filesDropped], [[], []]);
   assert.equal(codePass.files.find((f) => f.path === 'src/parse.js').what, answer.files[0].what);
-  // Without the repair's entry for F1, the answer's stays with F1: the same finding, by its kind, file and side.
+  // Without the repair's entry for F1, the answer's stays with F1: the same finding, by its kind, file and lines.
   const kept = await run(agents({ review: () => answer, repair: () => ({ ...reply, triage: reply.triage.slice(1) }) }));
   assert.deepEqual(kept.codePass.triage[0].label, 'signature rule broken');
   // Its entry for F1 fails whole: the answer's stays.
   const failed = await run(agents({ review: () => answer, repair: () => ({ ...reply,
     triage: [entry('F1', { level: 'urgent' }), ...reply.triage.slice(1)] }) }));
   assert.deepEqual([failed.codePass.triage[0].label, failed.codePass.triageDropped], ['signature rule broken', []]);
-  // The step's outcome is the same as a repair that returned only F1 corrected and every other item as it was.
+  // The step's outcome is the same as a repair that returned F1 corrected, every other item as it was, and the new
+  // items.
   const exact = await run(agents({ review: () => answer, repair: () => ({ ...answer,
-    findings: [fixed, missed], triage: [reply.triage[0], ...answer.triage.slice(1)] }) }));
+    findings: [fixed, missed, reply.findings[1]], questions: [...answer.questions, reply.questions[0]],
+    triage: [reply.triage[0], ...answer.triage.slice(1)] }) }));
   const pick = ({ codePass: p }) => [p.findings, p.questions, p.withheld, p.triage, p.triageDropped, p.files,
     p.filesDropped, p.coverage, p.footer, p.calls];
   assert.deepEqual(pick(result), pick(exact));
-  // F1's own words would have stayed withheld with its cause had the repair returned another finding at its place.
-  const other = await run(agents({ review: () => answer, repair: () => ({ ...reply,
-    findings: [reply.findings[1], fixed, missed] }) }));
-  assert.deepEqual(other.codePass.withheld.map(({ text, cause, repair }) => [text, cause, repair]),
-    [[rule.title, 'value_outside_list', 'different']]);
-  assert.deepEqual(other.codePass.findings.map((f) => f.title), [missed.title]);
-  assert.deepEqual(other.codePass.triageDropped, [{ key: 'F1', index: 0, cause: 'item_withheld' }]);
-  // Each run: every item of the answer ends published, or withheld with its own record.
-  for (const ran of [result, kept, failed, exact, other]) assert.deepEqual(itemsEnded(ran), [2, 2]);
+  // F1's repaired version at another index is still F1 (F3a): it takes F1's place, with the entry the repair wrote for
+  // it under its own key there.
+  const moved = { ...reply, findings: [reply.findings[1], fixed, reply.findings[2]],
+    triage: [entry('F1', { level: 'medium', label: 'fix the README claim' }), { ...reply.triage[0], key: 'F2' },
+      ...reply.triage.slice(2)] };
+  const other = await run(agents({ review: () => answer, repair: () => moved }));
+  assert.deepEqual(other.codePass.findings.map((f) => f.title), [fixed.title, missed.title, reply.findings[1].title]);
+  assert.deepEqual(other.codePass.withheld, []);
+  assert.deepEqual(other.codePass.triage.map((t) => t.label), ['avoid the new argument', 'test other values', 'decide']);
+  // Each run: every item of either answer has one fate.
+  for (const [ran, repair] of [[kept, { ...reply, triage: reply.triage.slice(1) }], [other, moved]])
+    fatesOf(ran, answer, repair);
+  assert.deepEqual([rule.kind, itemsEnded(kept)], ['rule_break', [3, 3]]);
 });
 
 test('triage: of the repair\'s notes, only the triage entry for an item taken from it is used, whatever the repair did with the others', async () => {
@@ -777,9 +865,18 @@ test('triage: an entry that fails whole is named once in the repair, by its whol
   assert.deepEqual(note.map((line) => line.split(' (')[0]), ['- triage[0]: text_over_limit',
     '- triage[1]: quote_ungrounded']);
   assert.match(note[0], / at triage\[0\]\.label$/);
-  // The requests' digest, computed with the code of 6430357 (before the text fields were kept apart).
-  const digest = sha(enc(JSON.stringify(seen.map((r) => [r.label, r.system ?? null, r.prompt ?? null]))));
-  assert.equal(digest, 'e88705a78311b62a1d52c2e1ee8df133c650ba91755e63d05e55f862cd505e9a');
+  // The requests' digest, computed with the code of 6430357 (before the text fields were kept apart), with D105's
+  // requests (`sonah.code-pass/12`: every code-step request moved), run off; by default (D108: part B on), D105's with
+  // part B's brief and blocks in the review's and the repair's. D110 moved the finding's checking request alone (its
+  // brief, code-verify/3), and rendered back (`verifyBriefBeforePremises`) every request is bucket B's.
+  assert.equal(digestOf(seen), 'f440a5cbef483e34b7610ca08197ffc356aa4596d21c8816660fc1ca7fc00e61');
+  assert.equal(digestOf(premisesBack(seen)), '97eb6a6feecf29555d8ea2d74c9c164dceaa1f71e0b1b3cf850750cfd619a90c');
+  const off = [];
+  await run(agents({ seen: off, review: repairing({ triage: [entry('F1', { label: 'fix the empty input case right now',
+    where: OFF_PLACE }), entry(UNASKED, { where: OFF_PLACE })] }), repair: refuse }), { wholeFiles: false });
+  assert.equal(digestOf(off), '58c1c4c3267a9b2a25135a3b5b55f5942d37e2540cf9b342d5c9deb2a4829dbf');
+  assert.equal(digestOf(premisesBack(off)), '74ff8405c5f9f69f56da61df396cc11fafee7b7fdd1c98acfbf87b772c8230be');
+  assert.deepEqual(seen.map((r, at) => withoutPartB(r.prompt) === off[at].prompt), seen.map(() => true));
 });
 
 test('triage: a repair\'s entry kept without a field, in place of a dropped one, has its place grounded and its key checked', async () => {

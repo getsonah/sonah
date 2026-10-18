@@ -21,7 +21,12 @@ export const REPORT_RECORDING_KINDS = Object.freeze({ claude: 'Claude Code recor
 /** The header (D97). */
 export const REPORT_HEADER_WORDS = Object.freeze({
   review: 'Sonah review',
+  // The files the recording's own writes changed (the session review's facts), with their lines.
   filesChanged: (n, counts) => `${plural(n, 'file')} changed, ${counts}`,
+  // D109 (its review): the files of the change that the code step reviews (code-pass.js `codeChangeTally`, or an earlier
+  // report's list), the count the coverage line says. Never "changed" by the recording: with git the change runs from the
+  // start commit to the files as they are now, so it can hold work done before or after the session.
+  change: (n, counts = null) => `a change of ${plural(n, 'file')}${counts ? `, ${counts}` : ''}`,
   commands: (n) => plural(n, 'command'),
   commit: (short) => `commit ${short}`,
   notCommitted: (n) => `${plural(n, 'changed file')} ${verb(n, 'differs', 'differ')} from the last commit.`,
@@ -82,7 +87,10 @@ export const REPORT_NOT_CHECKED_PARTS = Object.freeze({
   agentOnly: (n) => `${plural(n, 'ask')} that ${verb(n, 'rests', 'rest')} only on the agent's words`,
   claims: (n) => plural(n, 'claim'),
   written: (n) => plural(n, 'statement that the agent wrote into a file', 'statements that the agent wrote into files'),
-  unseenFiles: (n) => `${plural(n, 'changed file')} that the code review did not see`,
+  // D109 (its review): of the change that the header's size line counts (`REPORT_HEADER_WORDS.change`). D109 amended
+  // (2026-10-18): and how many of them its checks read (code-report.js `codeUnseenReadByChecks`, the one tally's).
+  unseenFiles: (n, read = 0) => `${plural(n, 'file')} of the change that the code review did not see${read > 0
+    ? ` (its checks read ${read < n ? `${read} of them` : n === 1 ? 'it' : n === 2 ? 'both' : `all ${n}`})` : ''}`,
   messages: (n) => `${plural(n, 'message')} of yours in full`,
   more: (n) => `and ${n} more`,
 });
@@ -138,6 +146,9 @@ export const REPORT_ITEM_WORDS = Object.freeze({
   evidence: 'Evidence', why: (tier) => `Why ${tier}`, forExample: 'For example:',
   codeNow: 'The code now:', codeBefore: 'The code before the session:', trace: 'How the code gets there:',
   check: 'Its check:', rowId: 'Item id:', yourAnswer: 'Your answer:', codeWritten: 'Code written:',
+  // D110: a premise of a code finding's check, and the visible line of an item to verify for each premise that Sonah
+  // could not check.
+  restsOn: 'It rests on:', restsOutside: 'It rests on what Sonah could not check:',
   recordedResult: 'A recorded result shows:', changeShows: 'The change shows:', whatDoes: 'What does it:',
   whatMissing: 'What is missing:', otherSites: 'Other places:',
   checkedAgainst: (n, files = []) => `The session review checked it against ${[...(n ? [plural(n, 'earlier message')] : []),
@@ -161,6 +172,8 @@ export const REPORT_ITEM_WORDS = Object.freeze({
   unchangedLines: (n) => `Sonah does not show ${plural(n, 'more line')} here.`,
   morePlaces: (n) => `${plural(n, 'more place')}`,
   onGitHub: 'on GitHub',
+  // D112 (one point, one item): the line before an item's members.
+  members: (n) => `This item holds ${plural(n, 'more point')}.`,
 });
 
 /** An item's what line, by REPORT_ITEM_KINDS member (D97). `{…}` slots carry their source's words. */
@@ -245,19 +258,26 @@ export const REPORT_TIER_WHY = Object.freeze({
   bounded: (level, kind, tier) => `The code review proposed ${level}. Sonah never puts ${kind} in ${tier}.`,
   refused: 'A permission rule or auto mode refused a call that this item cites. Sonah never puts such an item in '
     + 'Must act.',
+  // D112: an item that a member places in a higher tier than its own row has alone; a tie by a question inside the
+  // same item; a failure whose call is a refused read by the recorder's types.
+  held: (kind, tier) => `It holds ${kind} in ${tier}. So Sonah puts the item in ${tier}.`,
+  tiedHere: (tier) => `A question of the code review in this item concerns it, so Sonah puts it in ${tier}.`,
+  refusedRead: (tier) => `The recording marks this read as refused before it ran. Sonah puts such a read in ${tier} `
+    + 'by default.',
 });
 /** Each item kind in words, for the tier sentences. */
 export const REPORT_KIND_WORDS = Object.freeze({
   ask_not_done: 'an ask that the agent did not do', ask_partly_done: 'an ask that the agent did only in part',
   code_ask_not_met: 'an ask that the code does not meet', claim_contradicted: 'a contradicted claim',
   code_claim_false: 'a claim that the code contradicts', edit_against_instruction: 'an edit against your words',
-  code_bug: 'a bug that a second reviewer found', code_contract: 'a broken contract or rule',
+  code_bug: 'a bug that Sonah checked', code_contract: 'a broken contract or rule',
   written_contradicted: 'a contradicted statement that the agent wrote into a file', code_weak_test: 'a weak test',
   failure_passed_over: 'a failure that the agent passed over', decision_not_acting: 'a decision not to act',
   decision_unasked: 'a decision that you did not ask for', code_question: 'a question of the code review',
   decision_chose: 'a decision on how to do your ask', pivot: 'a change of approach',
   decision_whether_asked: 'a decision that Sonah could not tie to an ask',
-  code_question_finding: 'a question from a finding of the code review', claim_corrected: 'a corrected claim',
+  code_question_finding: 'a question from a finding of the code review',
+  code_finding_unconfirmed: 'a finding with a premise that Sonah could not check', claim_corrected: 'a corrected claim',
   edit_undone: 'an edit that the agent undid or told you about', claim_not_checked: 'a claim that Sonah did not check',
   claim_incomplete: 'a claim that rests on a check that Sonah did not see finish',
   written_not_checked: 'a statement that the agent wrote into a file and Sonah did not check',
@@ -276,6 +296,11 @@ export const REPORT_PROMPT_WORDS = Object.freeze({
   withheldFinding: (why) => `Sonah withheld a finding of the code review about this ask: ${why}.`,
   withheldSee: 'See the section What Sonah could not check.',
   codeQuestion: (n) => `The code review asks you about this ask.${n === null ? '' : ` See item ${n}.`}`,
+  // D110: a finding of the code review about this ask with a premise that Sonah could not check: a line beside the ask,
+  // and an item to verify, never a problem that Sonah checked. Its review: the finding names the ask in its `leadsFrom`
+  // alone, so it may be a bug or a weak test that concerns the ask; said "here", as `codeFinding` says it.
+  unconfirmedFinding: (n) => `The code review found a problem here. Sonah could not check all of its premises.${n
+    === null ? '' : ` See item ${n}.`}`,
   unlocated: "Sonah could not find these words in your message. These are the session review's words.",
   overlaps: (m) => `Overlaps ask ${m}.`,
   attached: (n) => `You attached ${plural(n, 'file')}.`,
@@ -299,6 +324,10 @@ export const REPORT_DID_WORDS = Object.freeze({
   moreFiles: (n) => `Sonah does not show ${plural(n, 'more file')}.`,
   outside: (n, names, more = 0) => `The agent also changed ${plural(n, 'file')} outside the repository${names
     ? `: ${names}${more ? `, and ${more} more` : ''}` : ''}.`,
+  // D109 (its review): with the code step's one tally, the writes it counts and that are no file of the change (the
+  // code review's footer says where they lie): the rest of what the agent changed is the list above.
+  notInChange: (n, names, more = 0) => `The agent also changed ${plural(n, 'file')} that Sonah counts but did not `
+    + `review${names ? `: ${names}${more ? `, and ${more} more` : ''}` : ''}.`,
   // D100 (review of A1c): what Sonah could read, never that the recording does not show it: a later record can show the
   // file's content. D98: a direct write the recorder typed as stopped is listed here too.
   unconfirmed: (n) => `Sonah could not read whether ${plural(n, 'write')} happened: ${verb(n, 'it', 'each')} stopped `
@@ -393,7 +422,7 @@ export const REPORT_NOT_CHECKED_WORDS = Object.freeze({
   rowKinds: Object.freeze({ requirements: 'ask', decisions: 'decision', pivots: 'change of approach',
     writtenClaims: 'written claim', findings: 'finding', failures: 'failure', promises: 'claim',
     'codePass.findings': 'code review finding', 'codePass.questions': 'code review question',
-    'codePass.withheld': 'withheld proposal' }),
+    'codePass.withheld': 'withheld proposal', 'codePass.unconfirmed': 'code review finding to verify' }),
   encryptedBriefs: (n) => `The recorder encrypted ${plural(n, 'helper brief')}, so Sonah cannot show `
     + `${verb(n, 'it', 'them')}.`,
   encryptedMessages: (n, atLeast) => `The recorder encrypted ${atLeast ? 'at least ' : ''}${plural(n, 'message')} `
@@ -543,6 +572,7 @@ export const REPORT_COLUMN_REASON_WORDS = Object.freeze({
 export const STYLE_KINDS = Object.freeze({
   REPORT_TIER_WORDS: 'heading', REPORT_TYPE_WORDS: 'label', REPORT_RECORDING_KINDS: 'fragment',
   REPORT_HEADER_WORDS: 'notice', 'REPORT_HEADER_WORDS.review': 'heading', 'REPORT_HEADER_WORDS.filesChanged': 'fragment',
+  'REPORT_HEADER_WORDS.change': 'fragment',
   'REPORT_HEADER_WORDS.commands': 'fragment', 'REPORT_HEADER_WORDS.commit': 'fragment',
   'REPORT_HEADER_WORDS.notCheckedLead': 'label',
   REPORT_RESULT_PARTS: 'fragment', REPORT_NOT_CHECKED_PARTS: 'fragment',
@@ -551,7 +581,7 @@ export const STYLE_KINDS = Object.freeze({
   REPORT_ITEM_WORDS: 'label', 'REPORT_ITEM_WORDS.notAsked': 'notice', 'REPORT_ITEM_WORDS.askedUnknown': 'notice',
   'REPORT_ITEM_WORDS.quoteMissing': 'notice', 'REPORT_ITEM_WORDS.seeItem': 'notice',
   'REPORT_ITEM_WORDS.noFinding': 'notice', 'REPORT_ITEM_WORDS.noFindingRest': 'notice',
-  'REPORT_ITEM_WORDS.noLinkUncommitted': 'notice',
+  'REPORT_ITEM_WORDS.noLinkUncommitted': 'notice', 'REPORT_ITEM_WORDS.members': 'notice',
   'REPORT_ITEM_WORDS.unchangedLines': 'notice',
   'REPORT_ITEM_WORDS.checkedAgainst': 'notice',
   'REPORT_ITEM_WORDS.asked': 'fragment', 'REPORT_ITEM_WORDS.claimsList': 'fragment', 'REPORT_ITEM_WORDS.run': 'fragment',
@@ -590,6 +620,7 @@ const each = (path, table, args) => Object.fromEntries(Object.entries(table).fla
 /** The arguments each function entry is rendered with for the linter: one and many. */
 export const STYLE_FIXTURES = Object.freeze({
   'REPORT_HEADER_WORDS.filesChanged': [[1, '+3 −1'], [4, '+30 −12']], 'REPORT_HEADER_WORDS.commands': [[1], [5]],
+  'REPORT_HEADER_WORDS.change': [[1, '+3 −1'], [110, null]],
   'REPORT_HEADER_WORDS.commit': [['1a2b3c4']], 'REPORT_HEADER_WORDS.notCommitted': [[1], [3]],
   'REPORT_HEADER_WORDS.runsAfterEdit': [[1], [3]], 'REPORT_HEADER_WORDS.results': [['2 exited with code 0, 1 failed']],
   'REPORT_HEADER_WORDS.refusedAfterEdit': [[1], [3]],
@@ -597,6 +628,8 @@ export const STYLE_FIXTURES = Object.freeze({
   ...each('REPORT_HEADER_WORDS.notOnGitHub', REPORT_HEADER_WORDS.notOnGitHub, [['1a2b3c4']]),
   ...each('REPORT_RESULT_PARTS', REPORT_RESULT_PARTS, [[1], [3]]),
   ...each('REPORT_NOT_CHECKED_PARTS', REPORT_NOT_CHECKED_PARTS, [[1], [3]]),
+  // D109 amended: the files the code review did not see, with how many of them its checks read.
+  'REPORT_NOT_CHECKED_PARTS.unseenFiles': [[1], [3], [56, 8], [1, 1], [2, 2], [3, 3]],
   ...each('REPORT_PROMPT_PARTS', REPORT_PROMPT_PARTS, [[1], [3]]),
   'REPORT_COUNT_WORDS.tier': [['Must act', 2]], 'REPORT_COUNT_WORDS.prompt': [['3 done, 1 not checked']],
   'REPORT_COUNT_WORDS.more': [[2]],
@@ -607,7 +640,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_ITEM_WORDS.why': [['Must act']],
   'REPORT_ITEM_WORDS.checkedAgainst': [[1], [3, ['AGENTS.md']]], 'REPORT_ITEM_WORDS.referredFrom': [['AGENTS.md']],
   'REPORT_ITEM_WORDS.asked': [[3]], 'REPORT_ITEM_WORDS.run': [[2]], 'REPORT_ITEM_WORDS.item': [[4]], 'REPORT_ITEM_WORDS.seeItem': [[4]], 'REPORT_ITEM_WORDS.unchangedLines': [[1], [4]],
-  'REPORT_ITEM_WORDS.morePlaces': [[2], [5]],
+  'REPORT_ITEM_WORDS.morePlaces': [[2], [5]], 'REPORT_ITEM_WORDS.members': [[1], [3]],
   'REPORT_WHAT_WORDS.ask_not_done': [[2]], 'REPORT_WHAT_WORDS.ask_partly_done': [[2]],
   'REPORT_WHAT_WORDS.contradicts': [['A recorded result']],
   'REPORT_WHAT_WORDS.contradictsWritten': [['A recorded result', 'README.md']],
@@ -617,13 +650,19 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_KIND_LABELS.item': [[5]], 'REPORT_KIND_LABELS.ofItem': [[5]],
   'REPORT_TIER_WHY.byDefault': [['a weak test', 'Must know']],
   'REPORT_TIER_WHY.tied': [[4, 'Must know']], 'REPORT_TIER_WHY.kept': [['high']],
-  'REPORT_TIER_WHY.bounded': [['low', 'a bug that a second reviewer found', 'Good to know']],
+  'REPORT_TIER_WHY.bounded': [['low', 'a bug that Sonah checked', 'Good to know'],
+    ['high', 'a finding with a premise that Sonah could not check', 'Must act']],
+  'REPORT_TIER_WHY.held': [['a question of the code review', 'Must know'], ['a decision that Sonah could not tie to an ask',
+    'Must act']],
+  'REPORT_TIER_WHY.tiedHere': [['Must know']], 'REPORT_TIER_WHY.refusedRead': [['Good to know']],
   'REPORT_PROMPT_WORDS.codeFinding': [[null], [4]], 'REPORT_PROMPT_WORDS.withheldFinding': [['its check refuted it']],
   'REPORT_PROMPT_WORDS.codeQuestion': [[null], [6]], 'REPORT_PROMPT_WORDS.overlaps': [[1]],
+  'REPORT_PROMPT_WORDS.unconfirmedFinding': [[null], [5]],
   'REPORT_PROMPT_WORDS.attached': [[1], [2]], 'REPORT_PROMPT_WORDS.pasted': [[1, 0], [2, 1]],
   'REPORT_PROMPT_WORDS.askLine': [[3]],
   'REPORT_DID_WORDS.askGroup': [[1]], 'REPORT_DID_WORDS.moreFiles': [[1], [4]],
   'REPORT_DID_WORDS.outside': [[1, ''], [2, 'a.md, b.md'], [5, 'a.md, b.md, c.md', 2]], 'REPORT_DID_WORDS.unconfirmed': [[1], [2]],
+  'REPORT_DID_WORDS.notInChange': [[1, ''], [2, 'a.md, b.md'], [8, 'a.md, b.md, c.md', 5]],
   'REPORT_DID_WORDS.moreRuns': [[1], [9]], 'REPORT_DID_WORDS.runsCut': [[40, 3, '2 exited with code 0, 1 failed'],
     [1, 1, '1 failed']],
   'REPORT_DID_WORDS.neverRan': [['src/a.js, src/b.js']], 'REPORT_DID_WORDS.moreClaims': [[1], [7]],

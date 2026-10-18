@@ -23,7 +23,8 @@ import { codeJudge, codeSession, contradictClaim, findEmptyInput, repoWith, sha2
 
 const exec = promisify(execFile);
 const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
-const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
+// F3b (D111): the accounting's calls are the code step's too.
+const CODE_LABEL = /^code-(?:review|verify|account)(?::|$)/;
 
 /** A scratch home with its own SONAH_HOME (not created yet). */
 async function scratch(t) {

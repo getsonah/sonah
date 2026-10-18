@@ -17,11 +17,11 @@ import * as review from '../src/review.js';
 import { steWordCount } from '../src/ste-count.js';
 import { verifyReceipt } from '../src/session.js';
 import { codeDossier } from '../src/code-context.js';
-import { codePassFindings, codePassQuestions, codePassWithheld } from '../src/code-pass.js';
+import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed } from '../src/code-pass.js';
 import { codeReceiptFound } from '../src/code-report.js';
 import { RECORDED_FACTS } from '../../redact/index.js';
 import { triageSession, triageReport, codePass9Report, sessionOnlyReport, codePass3Report, codePass8Report,
-  codePass1Report, TRIAGE_REPORTS, ROWS } from './report-triage-fixture.js';
+  codePass1Report, premiseReport, TRIAGE_REPORTS, ROWS } from './report-triage-fixture.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -34,11 +34,18 @@ test('the report\'s vocabularies are closed, frozen and in their order', () => {
   assert.deepEqual(REPORT_ITEM_KINDS, ['ask_not_done', 'ask_partly_done', 'code_ask_not_met', 'claim_contradicted',
     'code_claim_false', 'edit_against_instruction', 'code_bug', 'code_contract', 'written_contradicted', 'code_weak_test',
     'failure_passed_over', 'decision_not_acting', 'decision_unasked', 'code_question', 'decision_chose', 'pivot',
-    'decision_whether_asked', 'code_question_finding', 'claim_corrected', 'edit_undone', 'claim_not_checked',
-    'claim_incomplete', 'written_not_checked', 'code_finding_legacy']);
+    'decision_whether_asked', 'code_question_finding', 'code_finding_unconfirmed', 'claim_corrected', 'edit_undone',
+    'claim_not_checked', 'claim_incomplete', 'written_not_checked', 'code_finding_legacy']);
   assert.deepEqual(TIER_BOUND_REASONS, ['kind_floor', 'kind_ceiling', 'refused_call_ceiling']);
   assert.deepEqual(TRIAGE_ERRORS, ['triage_key_unknown', 'triage_key_repeated', 'triage_not_item', 'file_not_in_change',
     'where_ungrounded', 'item_withheld']);
+  // E1-F8 (D112): the checked ties that make a row a member of another row's item, and which row places an item.
+  assert.deepEqual(ledger.REPORT_GROUP_TIES, ['concerns', 'nested']);
+  assert.deepEqual(ledger.REPORT_TIER_SOURCES, ['lead', 'member']);
+  for (const list of [ledger.REPORT_GROUP_TIES, ledger.REPORT_TIER_SOURCES]) {
+    assert.ok(Object.isFrozen(list));
+    for (const token of list) assert.match(token, /^[a-z][a-z_]*$/, 'a bare closed token');
+  }
   for (const list of [REPORT_TIERS, TRIAGE_LEVELS, REPORT_ITEM_TYPES, REPORT_ITEM_KINDS, TIER_BOUND_REASONS, TRIAGE_ERRORS,
     ITEM_SOURCES, PERMISSION_DENIALS]) {
     assert.ok(Object.isFrozen(list));
@@ -53,21 +60,25 @@ test('the report\'s vocabularies are closed, frozen and in their order', () => {
 });
 
 test('the tier table: every kind once, in display order, with its type and bounds as frozen literals', () => {
-  assert.equal(TIER_TABLE_VERSION, 'sonah.tiers/1');
+  // D110 (the premise contract): /2, a code finding with a premise that Sonah could not check; in the same move (D112,
+  // E1-F8), every kind's `refusedReadTier`.
+  assert.equal(TIER_TABLE_VERSION, 'sonah.tiers/2');
   assert.deepEqual(Object.keys(ITEM_KIND_TABLE), [...REPORT_ITEM_KINDS]);
   assert.ok(Object.isFrozen(ITEM_KIND_TABLE));
   const tiers = [...REPORT_TIERS, null];
   for (const [kind, k] of Object.entries(ITEM_KIND_TABLE)) {
     assert.ok(Object.isFrozen(k), kind);
-    assert.deepEqual(Object.keys(k), ['type', 'tier', 'floor', 'ceiling', 'listed', 'uncheckedTier', 'tiedTier'], kind);
+    assert.deepEqual(Object.keys(k), ['type', 'tier', 'floor', 'ceiling', 'listed', 'uncheckedTier', 'tiedTier',
+      'refusedReadTier'], kind);
     assert.ok(REPORT_ITEM_TYPES.includes(k.type), kind);
-    for (const field of ['tier', 'floor', 'ceiling', 'uncheckedTier', 'tiedTier'])
+    for (const field of ['tier', 'floor', 'ceiling', 'uncheckedTier', 'tiedTier', 'refusedReadTier'])
       assert.ok(tiers.includes(k[field]), `${kind}.${field}`);
     // A listed kind has no default tier; every other kind has one.
     assert.equal(k.tier === null, k.listed, kind);
   }
   const table = Object.fromEntries(Object.entries(ITEM_KIND_TABLE).map(([kind, k]) => [kind,
-    [k.type, k.tier, k.floor, k.ceiling, k.listed, k.uncheckedTier, ...(k.tiedTier === null ? [] : [k.tiedTier])]]));
+    [k.type, k.tier, k.floor, k.ceiling, k.listed, k.uncheckedTier, ...(k.tiedTier === null ? [] : [k.tiedTier]),
+      ...(k.refusedReadTier === null ? [] : [{ refusedRead: k.refusedReadTier }])]]));
   const A = 'must_act', K = 'must_know', G = 'good_to_know';
   assert.deepEqual(table, {
     ask_not_done: ['fix', A, K, null, false, null], ask_partly_done: ['fix', A, K, null, false, null],
@@ -75,11 +86,15 @@ test('the tier table: every kind once, in display order, with its type and bound
     code_claim_false: ['fix', A, K, null, false, null], edit_against_instruction: ['fix', A, K, null, false, null],
     code_bug: ['fix', A, K, null, false, null], code_contract: ['fix', A, K, null, false, null],
     written_contradicted: ['fix', K, K, null, false, null], code_weak_test: ['fix', K, null, null, false, null],
-    failure_passed_over: ['verify', K, null, null, false, null], decision_not_acting: ['decide', K, null, null, false, null],
+    // E1-F8 (D112): Good to know when its call is a refused read by the recorder's types; a decision not to act stays.
+    failure_passed_over: ['verify', K, null, null, false, null, { refusedRead: G }],
+    decision_not_acting: ['decide', K, null, null, false, null],
     decision_unasked: ['decide', K, null, null, false, null], code_question: ['decide', K, null, null, false, G],
     // Owner decision 2026-10-16 (D96 amended): Good to know, Must know when the code review is tied to it.
     decision_chose: ['decide', G, null, null, false, null, K], pivot: ['decide', G, null, null, false, null],
     decision_whether_asked: ['read', G, null, null, false, null], code_question_finding: ['decide', G, null, null, false, null],
+    // D110: an item to verify, Good to know by default, never Must act: it rests on what Sonah could not check.
+    code_finding_unconfirmed: ['verify', G, null, K, false, null],
     claim_corrected: ['verify', G, null, K, false, null], edit_undone: ['fix', G, null, K, false, null],
     claim_not_checked: ['verify', null, null, K, true, null], claim_incomplete: ['verify', null, null, K, true, null],
     written_not_checked: ['verify', null, null, K, true, null], code_finding_legacy: ['read', G, null, K, false, null],
@@ -125,6 +140,23 @@ test('boundTier: no proposal gives each kind its default tier, unbounded', () =>
   assert.equal(boundTier('decision_unasked').final, 'must_know');
   assert.equal(boundTier('decision_not_acting').final, 'must_know');
   assert.deepEqual(boundTier('pivot'), { default: 'good_to_know', proposed: null, final: 'good_to_know', bound: null });
+});
+
+test('E1-F8 (D112): a failure passed over whose call is a refused read defaults to Good to know; nothing else moves', () => {
+  assert.deepEqual(boundTier('failure_passed_over'), { default: 'must_know', proposed: null, final: 'must_know',
+    bound: null });
+  assert.deepEqual(boundTier('failure_passed_over', null, { refusedRead: true }), { default: 'good_to_know',
+    proposed: null, final: 'good_to_know', bound: null });
+  // The code review's proposal still moves it, inside the kind's bounds (it has none), and the refused-call ceiling still
+  // holds.
+  assert.deepEqual(boundTier('failure_passed_over', 'medium', { refusedRead: true }), { default: 'good_to_know',
+    proposed: 'must_know', final: 'must_know', bound: null });
+  assert.deepEqual(boundTier('failure_passed_over', 'high', { refusedRead: true, refused: true }),
+    { default: 'good_to_know', proposed: 'must_act', final: 'must_know', bound: 'refused_call_ceiling' });
+  // The flag moves no other kind: a decision not to act and a decision made without asking stay Must know.
+  for (const kind of Object.keys(ITEM_KIND_TABLE).filter((x) => x !== 'failure_passed_over'))
+    assert.deepEqual(boundTier(kind, null, { refusedRead: true }), boundTier(kind), kind);
+  assert.equal(boundTier('decision_not_acting', null, { refusedRead: true }).final, 'must_know');
 });
 
 test('boundTier: a floor keeps an unmet ask, a confirmed bug and a contradicted claim out of Good to know', () => {
@@ -251,6 +283,9 @@ test('itemKindOf reads one row of each source shape by its closed tokens', () =>
   assert.equal(kind('codePass.questions', { question: 'q', from: 'review' }), 'code_question');
   assert.equal(kind('codePass.questions', { question: 'q' }), 'code_question', 'code-pass/3: no from');
   assert.equal(kind('codePass.questions', { question: 'q', from: 'finding' }), 'code_question_finding');
+  // D110: a finding Sonah could not confirm is an item to verify, whatever its kind.
+  for (const k of ['bug', 'ask_not_met', 'claim_false', 'code_issue'])
+    assert.equal(kind('codePass.unconfirmed', { kind: k, title: 't' }), 'code_finding_unconfirmed', k);
   // Not a row, or not a source.
   for (const row of [null, undefined, 'done', 3, []]) assert.equal(kind('requirements', row), null);
   assert.equal(kind('codePass.withheld', { what: 'finding' }), null);
@@ -262,7 +297,8 @@ test('the fixture\'s code-step report holds every item kind; each older report r
     const kinds = new Map();
     for (const source of ITEM_SOURCES) {
       const rows = source === 'codePass.findings' ? codePassFindings(report)
-        : source === 'codePass.questions' ? codePassQuestions(report) : report[source] ?? [];
+        : source === 'codePass.questions' ? codePassQuestions(report)
+          : source === 'codePass.unconfirmed' ? codePassUnconfirmed(report) : report[source] ?? [];
       for (const row of rows) {
         const k = itemKindOf(source, row);
         if (k) kinds.set(k, (kinds.get(k) ?? 0) + 1);
@@ -272,7 +308,12 @@ test('the fixture\'s code-step report holds every item kind; each older report r
   };
   const session = triageSession();
   const a = kindsOf(triageReport(session));
-  assert.deepEqual([...REPORT_ITEM_KINDS].filter((k) => !a.has(k)), [], 'every kind in (a)');
+  // (a) is a code step of code-pass/10, before the premise contract (D110): every kind but a finding to verify; (g),
+  // the same review under the premise contract, holds that one too.
+  assert.deepEqual([...REPORT_ITEM_KINDS].filter((k) => !a.has(k)), ['code_finding_unconfirmed'], 'every kind in (a)');
+  const g = kindsOf(premiseReport(session));
+  assert.deepEqual([...REPORT_ITEM_KINDS].filter((k) => !g.has(k)), [], 'every kind in (g)');
+  assert.equal(g.get('code_finding_unconfirmed'), 1);
   assert.equal(a.get('failure_passed_over'), 2, 'a command and a refused Read');
   // (b) and (e) are the same rows with an older code step; (c) has no code step.
   const c = kindsOf(sessionOnlyReport());

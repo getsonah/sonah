@@ -45,8 +45,9 @@ function report({ findings = [], withheld = undefined, questions = [], held = un
 
 test('the closed list of links, and the ones that make an ask an attention row', () => {
   // The cleanup: no `shown_in_code` — the code step marks no row shown in the code.
+  // D110: a finding Sonah could not confirm links an ask as a line beside it, never as an attention link.
   assert.deepEqual(ASK_CODE_LINKS, ['leads_from', 'trace_quotes_ask', 'contradicted_by_code', 'withheld_finding',
-    'question_concerns']);
+    'question_concerns', 'unconfirmed_finding']);
   assert.deepEqual(ASK_CODE_ATTENTION_LINKS, ['leads_from', 'trace_quotes_ask', 'contradicted_by_code']);
   assert.ok(Object.isFrozen(ASK_CODE_LINKS) && Object.isFrozen(ASK_CODE_ATTENTION_LINKS));
 });

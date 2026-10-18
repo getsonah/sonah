@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { displayPath, parseHunks, linesOf, hunksMatch, extendHunks, addedHunk, recordedHunks, changedSpans, hunkRanges,
-  renderChange, sectionBytes, codeDossier, renderDossier, dossierWords, commandsAfterLastEdit, HUNK_CONTEXT,
+  renderChange, sectionBytes, codeDossier, renderDossier, renderCommands, dossierWords, commandsAfterLastEdit, HUNK_CONTEXT,
   rebuilds, diffLines, recordedNewRows, mapRecordedRows, underRoot } from '../src/code-context.js';
 import * as codeContext from '../src/code-context.js';
 import { codeSnapshotPlan, freezeCodeSnapshot } from '../src/code-pass.js';
@@ -194,13 +194,14 @@ test('code step: the dossier is built by code from the saved report — keyed, q
   assert.ok(items[0].sources.some((s) => s.eventId === 'I1' && s.role === 'instruction' && s.actor === 'person'));
   assert.deepEqual(items[0].sources.map((s) => s.actor), ['person', 'agent']);
   assert.deepEqual(items[8].sources.map((s) => [s.role, s.actor]), [['action', 'agent'], ['observation', 'recorded']]);
-  // Commands after each changed file's last edit: parse.js was followed by `npm test` (exit 0); b.js by none.
+  // The commands after a changed file's last edit (code-pass/12, D105): each once, numbered from the earliest such
+  // edit; parse.js names the first of them after its own last edit (`npm test`, exit 0), b.js none (never_ran); a path
+  // with no recorded edit is not listed.
   const commands = commandsAfterLastEdit(session, ['src/parse.js', 'src/b.js', 'never.js']);
-  assert.deepEqual(commands, [{ path: 'src/parse.js', after: [{ ran: 'npm test', exit: 0 }] },
-    { path: 'src/b.js', after: [] }, { path: 'never.js', after: null }]);
-  const text = renderDossier(items, commands);
-  // D90: every path is named; nothing of an item or of the commands is left out.
-  assert.deepEqual(renderDossier(items, commands, { named: () => false }), text);
+  assert.deepEqual(commands.commands.map(({ at: _at, ...c }) => c), [{ n: 1, text: 'npm test', exit: 0 }]);
+  assert.deepEqual(commands.files, [{ path: 'src/parse.js', first: 1 }, { path: 'src/b.js', first: null }]);
+  const text = renderDossier(items);
+  const ran = renderCommands(commands);
   assert.match(text,
     /^\{"key":"S1","kind":"ask","actor":"person","move":"ask_short","item":"ask_partly_done","status":"partly-done"/m);
   // code-pass/10 (D96): an item the code review may triage names its report item kind, by its row's closed tokens
@@ -211,9 +212,10 @@ test('code step: the dossier is built by code from the saved report — keyed, q
     'edit_against_instruction']);
   assert.doesNotMatch(text, /"tier"|must_act|must_know|good_to_know/);
   assert.match(text, /^\{"key":"S2","kind":"ask","actor":"person","move":"ask_done","status":"done"/m);
-  assert.match(text, /^\{"path":"src\/b\.js","commandsAfterLastEdit":"none","move":"never_ran"\}$/m);
-  assert.match(text, /^\{"path":"src\/parse\.js","commandsAfterLastEdit":\[\{"ran":"npm test","exit":0\}\]\}$/m);
-  assert.equal(renderDossier(codeDossier({ report, session }), commands), text, 'the same report, the same bytes');
+  assert.match(ran, /^\{"path":"src\/b\.js","commandsAfterLastEdit":"none","move":"never_ran"\}$/m);
+  assert.match(ran, /^\{"path":"src\/parse\.js","firstCommandAfterLastEdit":"C1"\}$/m);
+  assert.match(ran, /^\{"command":"C1","ran":"npm test","exit":0\}$/m);
+  assert.equal(renderDossier(codeDossier({ report, session })), text, 'the same report, the same bytes');
   // The words each line shows, as values (what a question's quote may be copied from): the item's own word fields, every
   // { actor, quote }'s quote and a list's members too; a flag, a null and Sonah's closed labels (a status, a column, an
   // outcome) are no words. A decision with no

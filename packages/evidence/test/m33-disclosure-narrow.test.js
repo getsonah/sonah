@@ -37,7 +37,9 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
   CLEANUP_READER_VERSIONS, REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS,
   ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS }
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS,
+  ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
+  ONE_ITEM_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -377,7 +379,17 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.equal(GROUNDING_CAUSE_READER_VERSIONS.story.before, ABSENCE_AUDIT_READER_VERSIONS.story.after);
   // D104 moved it once more (SEEN_READER_VERSIONS: story): the shown-in-part mark.
   assert.equal(SEEN_READER_VERSIONS.story.before, GROUNDING_CAUSE_READER_VERSIONS.story.after);
-  assert.equal(story.STORY_VERSION, SEEN_READER_VERSIONS.story.after);
+  // Bucket B moved it once more, D105 and D107 in one move (ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS:
+  // story): what the code review saw short of whole, and why no repaired version was checked, by identity.
+  assert.deepEqual(REPAIR_MERGE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.equal(ONE_BOUND_READER_VERSIONS.story.before, SEEN_READER_VERSIONS.story.after);
+  // D110 (PREMISE_READER_VERSIONS: story; the premise contract, a finding to verify), D111 (ACCOUNT_READER_VERSIONS:
+  // story; the accounting's footer counts) and D112 (ONE_ITEM_READER_VERSIONS: story; an item's members, and the order
+  // by final level) ride the same move: 0.3.0-beta.4 moves each reader once.
+  assert.deepEqual(PREMISE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual(ACCOUNT_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.equal(story.STORY_VERSION, ONE_BOUND_READER_VERSIONS.story.after);
   // Readers: the report .md and the page say what the challengers upheld, with the agent's own words.
   // D71 (a): said as what it is, never "shown for information".
   // D97: the page and the report .md: an edit against what you said that the agent told you about, and its words.

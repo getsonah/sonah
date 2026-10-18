@@ -402,13 +402,15 @@ review) also reviews the code, the way a reviewer reviews a pull request, with t
 with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: every file that
 differs from the commit the session started from (read with git, which it never writes to; with no git history to start
 from, the session's own recorded edits), each file's lines before and after, and a file git shows changed that no
-recorded edit wrote is marked so. It gives that change, your words, the project instruction and skill files the session
-loaded and its review of the session to a review agent: Claude Code with three read-only tools (Read, Grep and Glob)
-over the repository as it is now, for as many turns as it needs (up to 150). It cannot run or write anything. It reads
-the changed files whole, their callers, tests and docs and the project's rules, and checks the change, your asks and the
-agent's claims and decisions against the code. Each finding names the input that shows it and quotes every step from
-that input to the line (of the session, a step may quote only your words or a recorded result, never the agent's: a
-helper's report, and a `CLAUDE.md` the agent wrote, edited or deleted in the session, count as the agent's). Every quote
+recorded edit wrote is marked so. It gives that change, each changed file whole, the lines the session read of files it
+left unchanged, your words, the project instruction and skill files the session loaded and its review of the session to
+a review agent: Claude Code with three read-only tools (Read, Grep and Glob) over the repository as it is now, for as
+many turns as it needs (up to 150). It cannot run or write anything. It opens any changed file it was not given whole
+(the whole files fill up to about 400 KB, and a file that does not fit is named), reads the callers, tests and docs and
+the project's rules, and checks the change, your asks and the agent's claims and decisions against the code. Each
+finding names the input that shows it and quotes every step from that input to the line (of the session, a step may
+quote only your words or a recorded result, never the agent's: a helper's report, and a `CLAUDE.md` the agent wrote,
+edited or deleted in the session, count as the agent's). Every quote
 is checked word for word by code against the file it names; an answer that breaks the contract goes back to the agent
 once, naming what is wrong. Then a checking agent with the same tools tries to refute each finding, never shown the
 agent's words from the session, and one more checks the questions it asks. A finding is published only when its
@@ -469,7 +471,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.3`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.4`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

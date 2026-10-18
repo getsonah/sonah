@@ -20,13 +20,15 @@ import { CODE_REPORT_WORDS, codeNoFindingLine, codeStepWithheld, withheldWhy } f
 import { honestStatuses, CODE_FINDING_KINDS, CODE_PASS_LENSES, CODE_REFUTATION_REASONS, CODE_WITHHELD_REASONS,
   CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES, CODE_STEP_PARTS, CODE_FOOTER_KINDS, CODE_FILE_STATES,
   CODE_CHECK_OUTCOMES, CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS, CODE_QUESTION_VERDICTS, GAP_CODES, DECISION_COLUMNS,
-  CODE_REPAIR_UNCHECKED } from '../../evidence/src/ledger.js';
+  CODE_REPAIR_UNCHECKED, CODE_ACCOUNT_SCOPE } from '../../evidence/src/ledger.js';
 import { countLines } from '../../cli/src/report-output.js';
 import { publicCommentText } from '../../github/index.js';
 import { codeSession } from '../../cli/test/code-pass-fixture.js';
 import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS,
   REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS,
-  GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS }
+  GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
+  ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
+  ONE_ITEM_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
@@ -191,7 +193,8 @@ test('agentic code step page (D97): each published finding is an item, with its 
   assert.equal(page.split('SYNTHETIC not against your goal').length, 2, 'its title once, not again as the question');
   // The footer's kinds, under What Sonah could not check.
   const section = page.slice(page.indexOf('id="not-checked"'));
-  assert.match(section, /1 file whose change was too large for the code review to read: big\.js/);
+  // D109: hunks left out for room are said so, never "too large".
+  assert.match(section, /1 file whose change Sonah left out of the code review&#39;s input for room: big\.js/);
   assert.match(section, /1 file whose change the code review did not see \(1 binary\): logo\.png/);
   assert.match(section, /1 call that did not answer: a finding&#39;s check/);
   assert.match(section, /The repository changed while the code review ran, so a file that it quotes can differ now/);
@@ -215,7 +218,8 @@ test('agentic code step page: what its check withheld is folded under What Sonah
   assert.ok(fold.includes('its check could not settle it from the repository.'));
   assert.ok(fold.includes('<span class="label">An open question</span>'));
   assert.ok(fold.includes('it rests on a premise that the code shows is false.'));
-  assert.ok(fold.includes('it broke the answer&#39;s contract, even after one repair (a text is over its length limit).'));
+  assert.ok(fold.includes('it broke the answer&#39;s contract, even after one repair (a text or a list is over its length '
+    + 'limit).'));
   assert.ok(fold.includes('The code review gave no text for it.'), 'an item with no text, in fixed words');
   assert.ok(fold.includes('(a member that it needs is not there)'));
   // Nothing withheld is anywhere else on the page.
@@ -227,55 +231,103 @@ test('agentic code step page: what its check withheld is folded under What Sonah
   assert.ok(mdOf(bare).includes('- An open question The code review gave no text for it.'), mdOf(bare));
 });
 
-test('agentic code step: an item of which Sonah checked no repaired version never reads "even after one repair"; it says why, on every reader', () => {
+test('agentic code step: an item in whose place no item of the repair stood never reads "even after one repair"; it says why, saying only what code compared, on every reader', () => {
   const W = CODE_REPORT_WORDS;
-  assert.deepEqual(Object.keys(W.unrepaired), [...CODE_REPAIR_UNCHECKED]);
-  // What the one repair returned at the item's place is said by what the item is: a finding or a question.
-  for (const repair of ['different', 'absent', 'repeated']) assert.deepEqual(Object.keys(W.unrepaired[repair]),
-    [...CODE_WITHHELD_ITEMS]);
+  // The members a report writes now, then an earlier report's (code-pass/10, read at the item's index), kept with the
+  // words it was written with.
+  const EARLIER = ['different', 'absent', 'repeated'];
+  assert.deepEqual(Object.keys(W.unrepaired), [...CODE_REPAIR_UNCHECKED, ...EARLIER]);
+  assert.ok(EARLIER.every((repair) => !CODE_REPAIR_UNCHECKED.includes(repair)));
+  // What code compared is said by what the item is: a finding or a question (D107, F3a: which item of the repair
+  // matched it, by identity). `unplaced` is a finding's alone (a question has no anchor), so a question that came with
+  // it would get no words of why, and never a finding's.
+  for (const repair of ['unmatched', 'uncompared', 'ambiguous', 'matched_past_limit', 'unnamed', ...EARLIER])
+    assert.deepEqual(Object.keys(W.unrepaired[repair]), [...CODE_WITHHELD_ITEMS]);
+  assert.deepEqual(Object.keys(W.unrepaired.unplaced), ['finding']);
   const item = (reason, cause, repair, what = 'finding') => ({ what, reason, cause, ...(repair ? { repair } : {}),
     text: `SYNTHETIC ${reason} ${repair ?? 'checked'}`, kind: 'bug' });
-  // A repair that was checked (the same item at its place, which failed again): the words as they were.
+  // A repair that was checked (the same item, which failed again): the words as they were.
   assert.equal(withheldWhy(item('malformed', 'value_outside_list')),
     'it broke the answer\'s contract, even after one repair (a value is outside its closed list)');
   assert.equal(withheldWhy(item('evidence_grounding_failed', 'anchor_off_quote')), 'Sonah did not find, word for word, '
     + 'a quote that it rests on, even after one repair (the lines that it names do not hold the code that it quotes, or '
     + 'no step of its trace quotes the lines that it is about)');
-  // None checked: the reason without the repair, its cause, then why no repaired version was checked.
+  // None stood in its place: the reason without the repair, its cause, then what code compared. No sentence says that
+  // Sonah checked no repaired version, or that a copy repeats another item: a repair that corrects the very part an
+  // identity reads (an anchor's lines, a missing anchor, a question's words) matches nothing, and is checked as a new
+  // item.
+  const contract = 'it broke the answer\'s contract (a value is outside its closed list), and ';
   assert.deepEqual(CODE_REPAIR_UNCHECKED.map((repair) => withheldWhy(item('malformed', 'value_outside_list', repair))), [
-    'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not use the repair\'s finding at '
-      + 'its place, because that finding differs in kind, file or file version',
-    'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not check a repaired version of '
-      + 'it, because the one repair returned no finding at its place',
-    'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not use the repair\'s finding at '
-      + 'its place, because that finding repeats another finding of the code review',
-    'it broke the answer\'s contract (a value is outside its closed list), and the call that would repair it failed',
-    'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not ask for its repair, because '
-      + 'the one repair asked again for the whole answer',
-    'it broke the answer\'s contract (a value is outside its closed list), and Sonah did not check it or ask for its '
-      + 'repair, because it is past the most items that its list may hold']);
-  assert.deepEqual(['different', 'absent', 'repeated'].map((repair) => withheldWhy(item('evidence_grounding_failed',
-    'quote_ungrounded', repair, 'question'))), ['Sonah did not find, word for word, a quote that it rests on (Sonah found '
-    + 'nothing in what it names that matches the quote word for word), and Sonah did not use the repair\'s question at its '
-    + 'place, because that question differs in the item that it concerns', 'Sonah did not find, word for word, a quote '
-    + 'that it rests on (Sonah found nothing in what it names that matches the quote word for word), and Sonah did not '
-    + 'check a repaired version of it, because the one repair returned no question at its place', 'Sonah did not find, '
-    + 'word for word, a quote that it rests on (Sonah found nothing in what it names that matches the quote word for '
-    + 'word), and Sonah did not use the repair\'s question at its place, because that question repeats another question '
-    + 'of the code review']);
+    `${contract}no finding of the repair matched it by kind, file version and lines`,
+    `${contract}Sonah could not compare it by kind, file version and lines with every finding of the repair, and none `
+      + 'that it could compare that way matched it: the anchor of each other one is missing, is not in the shape of the '
+      + 'answer\'s contract, names lines that are not all lines of a file version that Sonah could read, or ends before '
+      + 'it starts',
+    `${contract}a finding of the repair matched it, but Sonah put none in its place, because more than one finding of `
+      + 'the repair matched it, or the one that matched it also matched another finding of the code review',
+    `${contract}a finding of the repair matched it, but Sonah did not check that finding, because it is past the most `
+      + 'items that its list may hold',
+    `${contract}no finding of the repair could match it by kind, file version and lines, because its anchor is missing `
+      + 'or is not in the shape of the answer\'s contract',
+    `${contract}no finding of the repair could match it by kind, file version and lines, because the lines that its `
+      + 'anchor names are not all lines of a file version that Sonah could read, or its last line is before its first',
+    `${contract}Sonah did not ask for its repair, because it came in the one repair`,
+    `${contract}the call that would repair it failed`,
+    `${contract}Sonah did not ask for its repair, because the one repair asked again for the whole answer`,
+    `${contract}Sonah did not check it or ask for its repair, because it is past the most items that its list may hold`,
+    // D105: a repair too large to send is never said as a call that failed.
+    `${contract}Sonah did not ask for its repair, because the repair's input was too large to send`,
+    // F3b (D111): a finding of the accounting, for which no repair is asked.
+    `${contract}Sonah did not ask for its repair, because it came with the code review's item-by-item check of the `
+      + 'session review\'s asks, of the statements that the agent wrote into a file and of the agent\'s decisions not to '
+      + 'act']);
+  for (const repair of CODE_REPAIR_UNCHECKED)
+    assert.doesNotMatch(withheldWhy(item('malformed', 'value_outside_list', repair)),
+      /checked no repaired version|repeats another/, repair);
+  const grounding = 'Sonah did not find, word for word, a quote that it rests on (Sonah found nothing in what it names '
+    + 'that matches the quote word for word), and ';
+  assert.deepEqual(['unmatched', 'uncompared', 'ambiguous', 'matched_past_limit', 'unnamed', 'unplaced'].map((repair) =>
+    withheldWhy(item('evidence_grounding_failed', 'quote_ungrounded', repair, 'question'))), [
+    `${grounding}no question of the repair matched it by its words and its item`,
+    `${grounding}Sonah could not compare it by its words and its item with every question of the repair, and none that `
+      + 'it could compare that way matched it: each other one gives no text of a question',
+    `${grounding}a question of the repair matched it, but Sonah put none in its place, because more than one question `
+      + 'of the repair matched it, or the one that matched it also matched another question of the code review',
+    `${grounding}a question of the repair matched it, but Sonah did not check that question, because it is past the most `
+      + 'items that its list may hold',
+    `${grounding}no question of the repair could match it by its words and its item, because it gives no text of a `
+      + 'question',
+    // A question never comes with `unplaced`; were one to, it reads the reason and its cause alone, never "even after
+    // one repair".
+    'Sonah did not find, word for word, a quote that it rests on (Sonah found nothing in what it names that matches the '
+      + 'quote word for word)']);
+  // An earlier report's member keeps the words it was written with (what the repair returned at the item's index),
+  // never "even after one repair": that report checked no repaired version of it.
+  assert.deepEqual(EARLIER.flatMap((repair) => CODE_WITHHELD_ITEMS.map((what) => withheldWhy(item('malformed',
+    'value_outside_list', repair, what)))), [
+    `${contract}Sonah did not use the repair's finding at its place, because that finding differs in kind, file or file `
+      + 'version',
+    `${contract}Sonah did not use the repair's question at its place, because that question differs in the item that `
+      + 'it concerns',
+    `${contract}Sonah did not check a repaired version of it, because the one repair returned no finding at its place`,
+    `${contract}Sonah did not check a repaired version of it, because the one repair returned no question at its place`,
+    `${contract}Sonah did not use the repair's finding at its place, because that finding repeats another finding of `
+      + 'the code review',
+    `${contract}Sonah did not use the repair's question at its place, because that question repeats another question `
+      + 'of the code review']);
   // A reason that says nothing of a repair is said as it is, its cause once.
   assert.equal(withheldWhy(item('out_of_scope', 'out_of_scope', 'failed')),
     'it is not about lines that the change touched, and the call that would repair it failed');
-  assert.equal(withheldWhy(item('out_of_scope', 'out_of_scope', 'absent')), 'it is not about lines that the change '
-    + 'touched, and Sonah did not check a repaired version of it, because the one repair returned no finding at its place');
+  assert.equal(withheldWhy(item('out_of_scope', 'out_of_scope', 'unmatched')), 'it is not about lines that the change '
+    + 'touched, and no finding of the repair matched it by kind, file version and lines');
   // A value outside the list is no word at all: the record reads as one whose repair was checked.
   assert.equal(withheldWhy(item('malformed', 'key_missing', 'SYNTHETIC')),
     'it broke the answer\'s contract, even after one repair (a member that it needs is not there)');
-  // An item that is neither a finding nor a question: no words of what the repair returned, and never "even after".
-  assert.equal(withheldWhy(item('malformed', 'key_missing', 'different', 'SYNTHETIC')),
+  // An item that is neither a finding nor a question: no words of what code compared, and never "even after".
+  assert.equal(withheldWhy(item('malformed', 'key_missing', 'unmatched', 'SYNTHETIC')),
     'it broke the answer\'s contract (a member that it needs is not there)');
   // The page and the report .md say it in the fold of what Sonah withheld, and in the ask's row the finding is about.
-  for (const repair of CODE_REPAIR_UNCHECKED) {
+  for (const repair of [...CODE_REPAIR_UNCHECKED, ...EARLIER]) {
     const w = { ...item('malformed', 'value_outside_list', repair), leadsFrom: [ASK] };
     const r = report({ withheldList: [w] });
     const why = withheldWhy(w);
@@ -357,18 +409,22 @@ test('agentic code step: a review question with no session receipt shows its que
     quote: null, check: { verdict: 'sound', explanation: 'SYNTHETIC the split is on commas.' } };
   const r = report({ questionList: [q] });
   const model = reportModel(codeSession(), r, {});
+  // D112 amended (2026-10-18): a question that names no recorded place (quote null, no anchor) shares no place with the
+  // decision's item, so it is an item of its own, never a member of the decision it concerns.
   const asked = itemByTitle(model, 'SYNTHETIC should the input be split on commas?');
+  assert.equal(asked.kind, 'code_question');
   const decision = itemsOf(model).find((item) => item.rows[0].source === 'decisions');
-  assert.deepEqual(asked.where.map((w) => w.anchor), [`item-${decision.n}`], 'it concerns the decision\'s item');
+  assert.deepEqual(decision.members, [], 'the decision holds no member');
   assert.equal(asked.quote, null);
   const pageItem = itemHtml(renderSessionPage(codeSession(), r), asked.n);
+  assert.ok(pageItem.includes('SYNTHETIC should the input be split on commas?'), pageItem);
   assert.ok(!pageItem.includes('<q class="said">') && !/null|undefined/.test(pageItem), pageItem);
   const story = mdOf(r);
-  const mdItem = story.slice(story.indexOf(`<a name="item-${asked.n}"></a>`), story.indexOf('</details>',
-    story.indexOf(`<a name="item-${asked.n}"></a>`)));
-  assert.ok(mdItem.includes(`*SYNTHETIC should the input be split on commas?*`) && mdItem.includes(`Where: item ${decision.n}`),
-    mdItem);
-  assert.ok(!mdItem.includes('“') && !/null|undefined/.test(mdItem), mdItem);
+  const at = story.indexOf(`<a name="item-${asked.n}"></a>`);
+  const block = story.slice(at, story.indexOf('<a name="item-', at + 1) === -1 ? undefined
+    : story.indexOf('<a name="item-', at + 1));
+  assert.ok(block.includes('*SYNTHETIC should the input be split on commas?*'), block);
+  assert.ok(!block.includes('“') && !/null|undefined/.test(block), block);
 });
 
 // An earlier report, as the code step wrote it before the cleanup: its statements found to hold, its withheld statement
@@ -458,9 +514,12 @@ test('agentic code step: the reading order is code\'s — beside the first of it
 test('agentic code step: the footer and coverage lines, shared by every reader', () => {
   const r = report();
   // A path too large for the request is named once, there; another path whose change was not shown, with its state.
-  assert.deepEqual(codeFooterLines(r), ['1 file whose change was too large for the code review to read: big.js',
+  // D109: hunks left out for room are said so, never "too large"; a write is counted only outside every folder the code
+  // review could read.
+  assert.deepEqual(codeFooterLines(r), ['1 file whose change Sonah left out of the code review\'s input for room: big.js',
     '1 file whose change the code review did not see (1 binary): logo.png', '1 call that did not answer: a finding\'s check',
-    '2 paths outside the repository that the session wrote to, which Sonah counts but did not review',
+    '2 paths that the session wrote to outside the folders that the code review could read, which Sonah counts but did '
+      + 'not review',
     'The repository changed while the code review ran, so a file that it quotes can differ now']);
   const failed = report({ footer: [{ kind: 'failed', part: 'review', count: 1 }, { kind: 'failed', part: 'batch', count: 2 },
     { kind: 'failed', count: 2 }] });
@@ -518,8 +577,8 @@ test('agentic code step: the footer and coverage lines, shared by every reader',
     { path: 'src/parse.js', type: 'modified', state: 'shown', sha256: SHA, hunks: 1 },
     { path: '/tmp/scratch/out.txt', state: 'outside_root' }] });
   assert.deepEqual(codeCoverageLines(scratch.codePass), ['The change covers 1 file, and the code review saw the change of 1.']);
-  assert.deepEqual(codeFooterLines(scratch), ['1 path outside the repository that the session wrote to, which Sonah '
-    + 'counts but did not review']);
+  assert.deepEqual(codeFooterLines(scratch), ['1 path that the session wrote to outside the folders that the code review '
+    + 'could read, which Sonah counts but did not review']);
   for (const [r, line] of [[sibling, 'The change covers 2 files'], [scratch, 'The change covers 1 file,']]) {
     assert.ok(codeSectionOf(renderSessionPage(codeSession(), r)).includes(line), line);
     assert.ok(mdOf(r).includes(line), line);
@@ -721,7 +780,9 @@ test('agentic code step: one word table — every closed token of the report has
   covered(CODE_WITHHELD_ITEMS, W.withheldWhat, 'withheld items');
   covered([...CODE_ITEM_ERRORS, ...CODE_VOID_CAUSES], W.causes, 'causes');
   covered([...CODE_STEP_PARTS, 'review', 'repair', 'verify', 'batch'], W.parts, 'parts');
-  covered(CODE_FOOTER_KINDS, W.footerKinds, 'footer kinds');
+  // F3b (D111): the accounting's footer kind has its words by scope, one line each.
+  covered(CODE_FOOTER_KINDS.filter((kind) => kind !== 'unaccounted'), W.footerKinds, 'footer kinds');
+  covered(CODE_ACCOUNT_SCOPE, W.unaccounted, 'unaccounted scopes');
   covered(CODE_FILE_STATES.slice(1), W.states, 'file states');
   // A row's code check has words only when the code contradicts it; nothing says the code shows a row or that a
   // statement holds, and nothing marks a claim found false.
@@ -732,7 +793,9 @@ test('agentic code step: one word table — every closed token of the report has
     assert.equal(Object.hasOwn(W, key), false, key);
   assert.deepEqual(Object.keys(W.withheldWhat), ['finding', 'question']);
   assert.equal(W.parts.batch, 'the check of its questions');
-  assert.equal(W.checkHolds, 'A second reviewer traced it and found the same problem.');
+  // D110: no word says that a second or independent reviewer checked a finding (one model reviews and checks); a
+  // report made before the premise contract keeps a check line that claims no second reviewer.
+  assert.equal(W.checkHolds, 'It traced the finding and found the same problem.');
   for (const text of [W.how, ...Object.values(W).filter((v) => typeof v === 'string')])
     assert.doesNotMatch(text, /found it holds|found to hold|statement the review/);
   // The members code-report.js names by value, not by index, are members of their lists.
@@ -741,7 +804,8 @@ test('agentic code step: one word table — every closed token of the report has
   assert.deepEqual([CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS, CODE_QUESTION_VERDICTS, CODE_WITHHELD_REASONS,
     CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES], [['holds', 'refuted', 'cannot_tell'], ['holds', 'false'],
     ['sound', 'false_premise'], ['malformed', 'evidence_grounding_failed', 'out_of_scope', 'verify_refuted',
-      'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed'], ['finding', 'question'],
+      'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed', 'request_too_large'],
+    ['finding', 'question'],
     ['key_missing', 'key_outside_contract', 'value_outside_list', 'text_over_limit', 'dossier_key_unknown',
       'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote', 'file_not_readable', 'out_of_scope'],
     ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace', 'refutation_uncited']]);
@@ -780,7 +844,19 @@ test('agentic code step: the page and the story moved once, one link after the r
   // D104: both once more by the shown-in-part mark, one link after D101's (SEEN_READER_VERSIONS).
   assert.deepEqual([SEEN_READER_VERSIONS.page.before, SEEN_READER_VERSIONS.story.before],
     [GROUNDING_CAUSE_READER_VERSIONS.page.after, GROUNDING_CAUSE_READER_VERSIONS.story.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [SEEN_READER_VERSIONS.page.after, SEEN_READER_VERSIONS.story.after]);
+  // Bucket B: both once more, one link after D104's, in one move: D105's (ONE_BOUND_READER_VERSIONS), what the code
+  // review saw short of whole, and D107's (REPAIR_MERGE_READER_VERSIONS), the repair kept by identity.
+  assert.deepEqual(REPAIR_MERGE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual([ONE_BOUND_READER_VERSIONS.page.before, ONE_BOUND_READER_VERSIONS.story.before],
+    [SEEN_READER_VERSIONS.page.after, SEEN_READER_VERSIONS.story.after]);
+  // Bucket C and E1-F8, in the same move (0.3.0-beta.4 moves each reader once): D110's, the premise contract
+  // (PREMISE_READER_VERSIONS), D111's, the accounting (ACCOUNT_READER_VERSIONS), and D112's, an item's members and the
+  // order by final level (ONE_ITEM_READER_VERSIONS).
+  assert.deepEqual(PREMISE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual(ACCOUNT_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [ONE_BOUND_READER_VERSIONS.page.after,
+    ONE_BOUND_READER_VERSIONS.story.after]);
   assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
   assert.deepEqual(CLEANUP_READER_VERSIONS, { page: { before: AGENTIC_READER_VERSIONS.page, after: 'sonah.session-page/36' },

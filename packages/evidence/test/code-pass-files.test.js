@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { codeSnapshotPlan, freezeCodeSnapshot, runCodePass, fileNoteShape, ANCHOR_SPAN_LIMITS } from '../src/code-pass.js';
 import { TRIAGE_LIMITS } from '../src/triage.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, reviewFinding, holds, allSound, verifiedFinding,
-  batchItems } from '../../cli/test/code-pass-fixture.js';
+  batchItems, accountsHold } from '../../cli/test/code-pass-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -62,6 +62,9 @@ const report = () => ({ repo: { host: 'github.com', id: '0' }, reviewScope: 'ses
 
 function agents({ review, repair = null, seen = [] }) {
   return async (request) => {
+    // F3b (D111): an accounting agent's request answers every item as holding, and stays out of `seen`: this file
+    // reads the review's requests and its checks' (d111-accounting.test.js reads the accounting's).
+    if (/^code-account:\d+(:reask)?$/.test(request.label ?? '')) return accountsHold(request.prompt);
     seen.push(request);
     if (request.label === 'code-review:agent') return review(request.prompt, request);
     if (request.label === 'code-review:repair') return repair ? repair(request) : review(request.prompt, request);

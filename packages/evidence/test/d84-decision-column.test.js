@@ -112,8 +112,11 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D99 moved it once more (sonah.session-page/39): a background run's end is said absent only where it is proved.
   // D100 moved it once more (sonah.session-page/40): an absence only where code proves it.
   // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/42', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark. Bucket B once more (sonah.session-page/43):
+  // what the code review saw short of whole (D105), and why no repaired version was checked, by identity (D107). In
+  // the same move (D110): the premise contract, a finding to verify, no second reviewer; (D111) the accounting's footer
+  // counts; and (D112) an item's members, and the order by final level.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/43', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -135,8 +138,11 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D99 moved it once more (sonah.session-story/34): a background run's end, and a stopped run, in the page's words.
   // D100 moved it once more (sonah.session-story/35): an absence only where code proves it.
   // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
-  assert.equal(STORY_VERSION, 'sonah.session-story/37', 'renumbered later: /18 is D84\'s masking');
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark. Bucket B once more
+  // (sonah.session-story/38): what the code review saw short of whole (D105), and why no repaired version was checked,
+  // by identity (D107). In the same move (D110): the premise contract, a finding to verify, no second reviewer;
+  // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level.
+  assert.equal(STORY_VERSION, 'sonah.session-story/38', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote

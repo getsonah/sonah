@@ -55,12 +55,54 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   const count = (cls) => census.filter(([c]) => c === cls).length;
   // D101's cause and anchor words, read when D100 and D101 were joined: 11 sonah, 3 other. D104's mark and count words,
   // read when D100 and D104 were joined: 3 sonah, 4 other. The words for a working folder that the system refuses: 1
-  // sonah, 1 other.
-  assert.deepEqual(AUDIT_CLASSES.map(count), [71, 330, 362]);
+  // sonah, 1 other. D105's words of what the code review saw and what Sonah did not send it: 9 sonah, 1 other; none
+  // states an absence. Its review's: a file read with lines Sonah could not tell, and the terminal's words for a
+  // request too large to send: 2 sonah. Its second review's: a file seen whole but not as it was before: 1 sonah.
+  // D107's words of a repair that no item stood in place of: 12 sonah in (`unmatched`, `uncompared`, `ambiguous`,
+  // `matched_past_limit` and `unnamed` twice each, `unplaced` for a finding, `brought`); the members read at an index
+  // (`different`, `absent`, `repeated`: 6 sonah) kept for earlier reports, byte for byte; 1 other read again (a list
+  // past its limit). D109's words of the one tally, read: 9 sonah in (`questionsChecked`, `rulesLinesUnknown`, the seen
+  // groups but whole, `shownFiles` for an earlier report, `states.left_out`, `unseenShown`), 3 other (`seenGroups.whole`,
+  // `states.other_repository`, `states.outside_writer_root`); `how`, `base`, `files`, `linesUnknown` and two footer kinds
+  // read again in their classes; none states an absence ("Sonah found no recorded edit" says what Sonah found). D109's
+  // review: 2 sonah in (`noAnswer`, a review whose call did not answer; `notInChange`, the writes Sonah counts and did not
+  // review), 1 other (`change`, the size line's count of the change); `questionsChecked`, `footerKinds.outside_root` and
+  // `unseenFiles` read again in their classes; none states an absence. D110's words of the premise contract: 6 sonah in
+  // (a premise that Sonah could not check, the item to verify, its kind, its line beside an ask, its note, and the check
+  // that holds on such a premise), 6 other (how
+  // code computes the label, a check that it confirms, a premise in the repository or the language, the premise label,
+  // the source of a finding to verify); none states an absence. Read again with new words: the code review's method and
+  // its check (`how`, `checkHolds`: no second reviewer), a question from a finding, the line with no finding published,
+  // a checked bug's kind and its bound, and the ask's status line. D110's review read four again, each in its class: how
+  // code computes the label, a check that it confirms and a premise in the repository (what the check quotes or names,
+  // never what Sonah says settles a premise: 3 other), and the line beside an ask (1 sonah); no count moved. D111's words
+  // of the accounting: 4 sonah in (the asks, the statements written into a file and the decisions not to act left
+  // without a check Sonah could use, and a finding of the accounting with no repair asked), 1 other (its part, as a
+  // call that did not answer names it); none states an absence. The code step's line read again with the accounting's
+  // calls, and the dry run's line of the code review's calls (2 other); no count moved. D111's review read seven again,
+  // each in its class: the three counts by kind, now of what the item-by-item check did not examine in a way that Sonah
+  // could use, never of the code review as a whole, and the finding with no repair asked (4 sonah); the part, and the two
+  // terminal lines with the items named by the kinds in scope (3 other); no count moved. D111's second review: 1 sonah
+  // in (the terminal's code review that covered the whole change but whose item-by-item check did not examine every
+  // item in a way that Sonah could use), and the coverage line read again with no list named (sonah); none states an
+  // absence.
+  // The join of buckets B and C (0.3.0-beta.4): each side's count added to the other's; the code review's method read
+  // again in its class with both sides' words (D109: what Sonah sent it; D110: the same model checks, never a second
+  // reviewer; `how` other), and the open questions' checks the same way (`questionsChecked` sonah); no count moved.
+  // E1-F8's (D112): an item's members line and two tier sentences, 3 other; a refused read's default tier, 1 absence
+  // proved by the recorder's typed denial. Joined after bucket C: its count added; no sentence of either read again.
+  // D111 amended (2026-10-18): the asks the item-by-item check did not examine, counted by whose words each rests on: 2
+  // sonah in (an ask an agent wrote into a helper's brief; one Sonah could not trace to your own words), the person's
+  // line read again under its new key (sonah), and the scope words that named every ask yours read again with the session
+  // review's asks (`unrepaired.accounted` sonah; the code step's line and the dry run's, other). D109 amended: the
+  // coverage line and the header's count of files the code review did not see, read again with how many of them its
+  // checks read and whose reading Sonah counts (sonah). None states an absence.
+  assert.deepEqual(AUDIT_CLASSES.map(count), [72, 378, 377]);
   // The absence keys: proved, or held for the owner.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
   const held = Object.values(ABSENCE_HELD).reduce((n, m) => n + Object.keys(m).length, 0);
-  assert.deepEqual([proved, held], [68, 3]);
+  // E1-F8 (D112): one more proved, a refused read's default tier (the recorder's typed denial).
+  assert.deepEqual([proved, held], [69, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

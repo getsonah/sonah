@@ -171,7 +171,7 @@ test('code step git: through the CLI, the review agent\'s request carries git\'s
   assert.deepEqual(dry.calls, []);
   const reused = /^Stored session answers: the store answers (\d+) of (\d+) session calls, with no new call\.$/m.exec(dry.out);
   assert.ok(reused && Number(reused[1]) > 0 && reused[1] === reused[2], dry.out);
-  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\)\. Then it would send one check for each finding and one for its questions\.$/m);
+  assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\)\. Then it would send one check for each finding and one for its questions\. Each 30 items would add one more call, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\.$/m);
   assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 2 paths differ, and Sonah found no recorded edit that wrote 1 of them\./);
   assert.deepEqual(await listing(state), before, 'the dry run wrote nothing, and touched no stored answer');
   // A state with no stored answers: they are counted as asked live, still with no call.
@@ -761,7 +761,8 @@ test('a file changed after the session\'s last recorded edit: its hunks are in t
   assert.deepEqual([report.codePass.footer, report.codePass.coverage, code], [[], 'complete', 0]);
   assert.ok(written.includes('1 file changed after the session\'s last recorded edit, so Sonah cannot tell whether all '
     + 'of its lines are the agent\'s: src/parse.js'), written);
-  assert.ok(written.includes('The change covers 2 files, and the code review saw the change of 2.'), written);
+  // D109: the one tally: both files seen whole (the file now, and the deleted file's removed lines).
+  assert.ok(written.includes('The change covers 2 files. The code review saw 2 of them whole.'), written);
   // The deleted file keeps its treatment: not there, its change its removed lines only, no note of its own.
   const gone = report.codePass.files.find((f) => f.path === 'src/gone.js');
   assert.deepEqual(gone, { path: 'src/gone.js', type: 'deleted', state: 'deleted', hunks: 1, added: 0, removed: 1 });
@@ -785,4 +786,37 @@ test('a file the session deleted that is there again is still not shown: listed 
     state: 'changed_since_session', hunks: 0 });
   assert.deepEqual([report.codePass.footer, report.codePass.coverage], [[{ kind: 'withheld', path: 'src/gone.js' }],
     'partial']);
+});
+
+test('D108 review: one repository reader serves the code pass and reads each path once — a file the session read is read '
+  + 'while the review request is planned, and the grounding checks a quote in it against that text, even when the file '
+  + 'changes while the review agent runs', async (t) => {
+  const { root } = await repository(t);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const UTIL_LINE = 'export function trimAll(list) { return list.map((x) => x.trim()); }';
+  const CHANGED = CODE_FILES['src/util.js'].replace('trimAll(list)', 'trimAll(items)');
+  // A finding whose trace quotes line 3 of util.js, which the session read and did not change: as it was when the request
+  // was planned, not as it is once the review agent has run.
+  const finding = reviewFinding({ kind: 'contract_break', lens: 'contracts', trace: [reviewFinding().trace[0],
+    { step: 'A caller trims each part again.', path: 'src/util.js', side: 'new', startLine: 3, endLine: 3,
+      quote: UTIL_LINE }] });
+  let rewrites = 0;
+  const judge = codeJudge({ review: async () => {
+    // The file changes while the review agent runs, after its request was planned and sent.
+    if (rewrites++ === 0) await writeFile(join(root, 'src', 'util.js'), CHANGED);
+    return { findings: [finding], questions: [] };
+  } });
+  const run = await reviewIn(t, { root, recording, state: null, judge });
+  const review = run.calls.find((r) => r.label === 'code-review:agent');
+  // Planned before the change: the reads block shows util.js as the session left it.
+  assert.ok(review.prompt.includes(`${String(3).padStart(6, ' ')}\t${UTIL_LINE}`), 'the reads block, as planned');
+  assert.equal(await readFile(join(root, 'src', 'util.js'), 'utf8'), CHANGED, 'the file changed during the review');
+  // The grounding read util.js through the same reader: the text read while planning, so the quote grounds and the
+  // finding is published, on the file as it was then.
+  assert.equal(run.report.codePass.findings.length, 1, JSON.stringify(run.report.codePass.withheld));
+  const step = run.report.codePass.findings[0].trace.find((s) => s.path === 'src/util.js');
+  assert.deepEqual([step.sha256, step.span], [sha256(CODE_FILES['src/util.js']), UTIL_LINE]);
+  // And the record says the repository changed during the review.
+  assert.ok(run.report.codePass.footer.some((f) => f.kind === 'source_changed'));
+  assert.equal(run.report.codePass.coverage, 'partial');
 });

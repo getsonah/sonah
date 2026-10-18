@@ -35,7 +35,8 @@ test('D97 (8): the terminal\'s count line has the D93 split and no "(folded)"; t
     + `${model.tiers.good_to_know.length} · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, `
     + '1 not checked');
   assert.equal(count.includes('(folded)'), false);
-  assert.match(labels, /^Must act: ask 6 · ask 4 · src\/limiter\.js:5 \(item 3\) and \d+ more$/);
+  // D112: the Must act items the code review rated high come first, so their labels lead.
+  assert.match(labels, /^Must act: fix the refill order · check the forced push · ask 6 and \d+ more$/);
   // Two findings with no label of the code review's on one line: each label names its item, so they differ.
   const base = untriagedReport(session);
   const [first] = base.codePass.findings;

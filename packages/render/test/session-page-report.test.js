@@ -31,6 +31,7 @@ const modelOf = (shape = triagedReport, options = repoFacts()) => {
 };
 
 test('D97: the synthetic report page renders exactly its snapshot', () => {
+  // D112 amended (2026-10-18, unreleased, no version move): the fixture's Q1 names no place, so it is an item of its own.
   assert.equal(page(), readFileSync(SNAPSHOT, 'utf8'));
 });
 
@@ -62,8 +63,11 @@ test('D97: the page is the report model in its order — header, count line, pro
   // The generator meta names both versions.
   assert.match(html, new RegExp(`<meta name="generator" content="${PAGE_VERSION} ${REPORT_MODEL_VERSION}">`));
   // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/42');
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark. Bucket B once more (sonah.session-page/43):
+  // what the code review saw short of whole (D105), and why no repaired version was checked, by identity (D107). In
+  // the same move (D110): the premise contract, a finding to verify, no second reviewer; (D111) the accounting's footer
+  // counts; and (D112) an item's members, and the order by final level.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/43');
 });
 
 test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {

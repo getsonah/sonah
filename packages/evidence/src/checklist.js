@@ -387,8 +387,10 @@ export function failureRowId(row) {
  */
 export function answerableRowIds(report) {
   const rows = (key) => (Array.isArray(report?.[key]) ? report[key].filter(plain) : []);
-  // D87: and the findings a code pass published (`report.codePass.findings`), by the ledger id each carries.
-  const codePass = Array.isArray(report?.codePass?.findings) ? report.codePass.findings.filter(plain) : [];
+  // D87: and the findings a code pass published (`report.codePass.findings`), by the ledger id each carries; D110: and
+  // those it could not confirm (`report.codePass.unconfirmed`), which a person can confirm or overrule too.
+  const codePass = ['findings', 'unconfirmed'].flatMap((key) => (Array.isArray(report?.codePass?.[key])
+    ? report.codePass[key].filter(plain) : []));
   const ids = [...['decisions', 'findings', 'promises', 'writtenClaims'].flatMap((key) => rows(key).map((row) => row.id)),
     ...rows('requirements').map(requirementRowId), ...rows('failures').map(failureRowId), ...codePass.map((f) => f.id)];
   return [...new Set(ids.filter((id) => typeof id === 'string' && ROW_ID.test(id)))];

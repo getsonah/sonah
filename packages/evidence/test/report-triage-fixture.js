@@ -446,6 +446,47 @@ export function triageReport(session = triageSession()) {
   return joined(rows, codePass, claimFalseCheck(findings), session);
 }
 
+/** D110's id of the finding of (g) that code's label does not confirm. */
+export const UNCONFIRMED_ID = idOf('u');
+/** The premise of (g)'s finding to verify that Sonah could not check (source `outside`), as its check wrote it. */
+export const OUTSIDE_PREMISE = 'SYNTHETIC the client library ignores timeoutMs, so a call that hangs never rejects.';
+/**
+ * (g) The same review with the code step of the premise contract (code-verify/3, D110): every published finding's check
+ * names its premises — a line of the repository each (its receipts, which ground in their stored spans), and for the bug
+ * documented behaviour of the language too — so code's label confirms each; and one more finding, which follows from an
+ * ask the session review marked done, whose check rests on a premise outside the repository and the language: an item to
+ * verify (`codePass.unconfirmed`).
+ */
+export function premiseReport(session = triageSession()) {
+  const base = triageReport(session);
+  const rows = sessionRows({ legacy: true });
+  const ref = refsOf(rows, session);
+  const S = (source, index) => { const { source: s, index: i, id } = ref(source, index); return { source: s, index: i, id }; };
+  const repository = (f) => ({ premise: `SYNTHETIC the traced lines show it: ${f.title}`, source: 'repository',
+    receipts: f.receipts });
+  const language = { premise: 'SYNTHETIC in JavaScript, a number set as a header value is sent as its decimal digits.',
+    source: 'language', receipts: [] };
+  const findings = codeFindings(ref, { anchors: true }).map((f) => ({ ...f, check: { ...f.check,
+    premises: f.id === FINDING_IDS.bug ? [repository(f), language] : [repository(f)] } }));
+  const hang = codeReceipt('src/retry.js', 5, 'return await call({ timeoutMs });');
+  const unconfirmed = [{ origin: 'code-review', status: 'DECIDE', scope: 'current-code', kind: 'bug', lens: 'behaviour',
+    foundByLenses: ['behaviour'], title: 'A call that hangs is never retried', claims: [],
+    input: 'SYNTHETIC a call that never settles',
+    trace: [{ step: 'The call is awaited with the timeout passed in.', source: 'file', ...hang }],
+    anchor: { path: 'src/retry.js', side: 'new', startLine: 5, endLine: 5 },
+    ...anchorFields({ path: 'src/retry.js', side: 'new', startLine: 5, endLine: 5 }, [5]),
+    leadsFrom: [S('requirements', ROWS.askAdd)], receipts: [hang], id: UNCONFIRMED_ID,
+    check: { verdict: 'holds', explanation: 'SYNTHETIC the call is awaited, and nothing here times it out.', receipts: [],
+      premises: [{ premise: 'SYNTHETIC line 5 awaits the call with the timeout passed in.', source: 'repository',
+        receipts: [hang] }, { premise: OUTSIDE_PREMISE, source: 'outside', receipts: [] }] } }];
+  const codePass = { ...base.codePass,
+    version: { snapshot: 'sonah.code-snapshot/11', pass: 'sonah.code-pass/12', verify: 'sonah.code-verify/3',
+      triage: { table: 'sonah.tiers/2' }, premises: { sources: ['repository', 'language', 'outside'],
+        confirm: 'holds-and-every-premise-repository-or-language' } },
+    findings, unconfirmed, calls: { ...base.codePass.calls, verify: 7 } };
+  return joined(rows, codePass, claimFalseCheck(findings), session);
+}
+
 /** (b) The same review with the code step of code-pass/9: no triage, no file notes or counts, no anchor span. */
 export function codePass9Report(session = triageSession()) {
   const rows = sessionRows();
@@ -552,4 +593,4 @@ export function codePass1Report(session = triageSession()) {
 
 /** Every report of this fixture by its letter, each built anew. */
 export const TRIAGE_REPORTS = Object.freeze({ a: triageReport, b: codePass9Report, c: sessionOnlyReport,
-  d: codePass3Report, e: codePass8Report, f: codePass1Report });
+  d: codePass3Report, e: codePass8Report, f: codePass1Report, g: premiseReport });

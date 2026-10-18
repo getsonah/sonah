@@ -17,10 +17,12 @@
 
 import { ASK_CODE_LINKS, CODE_CHECK_OUTCOMES } from './ledger.js';
 import { verifyReceipt } from './session.js';
+import { codePassFindings, codePassUnconfirmed, codeRowCheck } from './code-pass.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
-const [LEADS_FROM, TRACE_QUOTES_ASK, CONTRADICTED_BY_CODE, WITHHELD_FINDING, QUESTION_CONCERNS] = ASK_CODE_LINKS;
+const [LEADS_FROM, TRACE_QUOTES_ASK, CONTRADICTED_BY_CODE, WITHHELD_FINDING, QUESTION_CONCERNS, UNCONFIRMED_FINDING] =
+  ASK_CODE_LINKS;
 const [CONTRADICTED] = CODE_CHECK_OUTCOMES;
 const ASK_SOURCE = 'requirements';
 const INSTRUCTION_ROLE = 'instruction';
@@ -83,12 +85,17 @@ function placed(session, receipt, cache) {
  *   { link: 'contradicted_by_code', finding?: <id> }   (the finding the code check names, when it names a published one)
  *   { link: 'withheld_finding', withheld: <index in codePass.withheld> }
  *   { link: 'question_concerns', question: <index in codePass.questions> }
- * `trace_quotes_ask` needs `session` (the loaded recording the quotes ground in); with none, that link is never made.
+ *   { link: 'unconfirmed_finding', unconfirmed: <the id of a finding Sonah could not confirm> }   (D110)
+ * The published findings are those code's label confirms, and the findings to verify those it does not, each computed
+ * again from its stored check (code-pass.js `codePassFindings`, `codePassUnconfirmed`): a finding to verify links an
+ * ask by its `leadsFrom` alone, and never as an attention link. `trace_quotes_ask` needs `session` (the loaded
+ * recording the quotes ground in); with none, that link is never made.
  * A row that is not an object, or that the code step joined nothing to, gets an empty list. Pure.
  */
 export function askCodeLinks(report, session = null) {
   const pass = plain(report?.codePass) ? report.codePass : null;
-  const findings = list(pass?.findings).filter((f) => plain(f) && typeof f.title === 'string' && typeof f.id === 'string');
+  const findings = codePassFindings(report).filter((f) => typeof f.id === 'string');
+  const unconfirmed = codePassUnconfirmed(report).filter((f) => typeof f.id === 'string');
   const ids = new Set(findings.map((f) => f.id));
   const withheld = list(pass?.withheld);
   const questions = list(pass?.questions);
@@ -110,7 +117,8 @@ export function askCodeLinks(report, session = null) {
         if (quoting) links.push({ link: TRACE_QUOTES_ASK, finding: f.id });
       }
     }
-    const check = plain(row.codeCheck) ? row.codeCheck : null;
+    // D110's review: the row's check as every reader reads it (a contradiction stands only beside a checked finding).
+    const check = codeRowCheck(report, row);
     if (check?.outcome === CONTRADICTED)
       links.push({ link: CONTRADICTED_BY_CODE, ...(ids.has(check.finding) ? { finding: check.finding } : {}) });
     withheld.forEach((w, k) => {
@@ -120,6 +128,8 @@ export function askCodeLinks(report, session = null) {
     questions.forEach((q, k) => {
       if (plain(q) && typeof q.question === 'string' && namesAsk(q.concerns, index)) links.push({ link: QUESTION_CONCERNS, question: k });
     });
+    for (const f of unconfirmed)
+      if (list(f.leadsFrom).some((ref) => namesAsk(ref, index))) links.push({ link: UNCONFIRMED_FINDING, unconfirmed: f.id });
     return links;
   });
 }

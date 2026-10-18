@@ -29,8 +29,10 @@ const one = (model, kind) => { const found = byKind(model, kind); assert.ok(foun
 test('D97 (1): every item kind of fixture (a) is an item of its type, tier and fields', () => {
   const model = modelOf(triagedReport);
   const items = itemsOf(model);
-  assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => !items.some((item) => item.kind === kind)), [],
-    'every kind at least once');
+  // Fixture (a) is a code step of code-pass/10, before the premise contract (D110), so it holds no finding to verify
+  // (d110-premise-render.test.js shows one).
+  assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => !items.some((item) => item.kind === kind)),
+    ['code_finding_unconfirmed'], 'every kind at least once');
   assert.deepEqual(items.map((item) => item.n), items.map((_, i) => i + 1), 'numbered once across the three tiers');
   for (const item of items) {
     assert.equal(item.type, ITEM_TYPES[item.kind], item.kind);
@@ -170,7 +172,7 @@ test('D97 (7): impact, action and label lines appear only for triaged items; a b
   assert.equal(textOf(bug.action), 'Refill the bucket after the first request.');
   assert.equal(bug.why, 'The code review proposed high, and Sonah kept it.');
   const floored = itemsOf(model).find((item) => textOf(item.what.parts) === 'A rate of zero lets every request through');
-  assert.equal(floored.why, 'The code review proposed low. Sonah never puts a bug that a second reviewer found in Good to know.');
+  assert.equal(floored.why, 'The code review proposed low. Sonah never puts a bug that Sonah checked in Good to know.');
   const refused = itemsOf(model).find((item) => item.tier.bound === 'refused_call_ceiling');
   assert.equal(refused.why, words.REPORT_TIER_WHY.refused);
   assert.equal(one(model, 'pivot').why, 'Sonah puts a change of approach in Good to know by default.');
@@ -346,35 +348,38 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
   // The text, as a reader sees it (the words the count is pinned to, read and counted by hand).
   assert.equal(screen, [
     '“Add rate limiting to the public API.”',
-    'Claude Code recording · 1 file changed, +2 −0 · 1 command',
+    // D109 (its review): the code step's counts are the change's, never what the recording changed.
+    'Claude Code recording · a change of 1 file, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
     'Sonah did not check: 1 ask · 1 ask that rests only on the agent\'s words',
     'Must act 2 · Must know 0 · Good to know 0 (folded) · Your prompt: 4 done, 1 partly done, 1 not checked',
-    'Must act: ask 2 · fix the Retry-After unit',
+    'Must act: fix the Retry-After unit · ask 2',
     'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
     'Done Add rate limiting to the public API. Partly done 100 requests per minute per API key. Done Return 429 with a '
       + 'Retry-After header. Done Add tests and Not checked make sure nothing else breaks. Done Don\'t touch the billing '
       + 'service.',
     'Sonah checked only the marked parts of your message.',
-    'ask 2 · Partly done · See item 1.',
+    'ask 2 · Partly done · See item 2.',
     'ask 5 · Not checked · Sonah did not find, word for word, the evidence that the session review cited for it.',
     'ask 6 · Done · The session review cited only the agent\'s words for it. Sonah found no recorded result or change '
       + 'for it.',
-    // Item 1 is the partly done ask: an ask comes before a bug in a tier (D97).
-    '1 Fix: The agent did only part of ask 2.',
-    '“100 requests per minute per API key”',
-    'Where: ask 2 · src/middleware/rateLimit.ts',
-  ].join('\n'));
-  // 7 + 12 + 15 + 16 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 24 + 10 + 7 + 5 words, line by line, by `wc -w` (D100: the line
-  // of an ask that rests only on the agent's words says what the session review cited, five words more).
-  assert.equal(firstScreenWords(model), 222);
-  assert.equal(firstScreenExcerptLines(model), 0);
-  // The bug, item 2, carries the code review's impact and action, and one excerpt of at most 8 lines.
-  assert.equal(itemVisibleText(model.tiers.must_act[1]), ['2 Fix: Retry-After gives the wait in milliseconds',
+    // Item 1 is the bug that the code review rated high: inside a section, by final level first (D112), then by kind.
+    '1 Fix: Retry-After gives the wait in milliseconds',
     'Impact on you: A client that obeys the header can stop calling your API for up to 17 hours.',
     'Action: Send the wait time in whole seconds.',
-    'Where: src/middleware/rateLimit.ts:2 · ask 3'].join('\n'));
-  assert.equal(model.tiers.must_act[1].where[0].excerpt.lines.length, 1);
+    'Where: src/middleware/rateLimit.ts:2 · ask 3',
+  ].join('\n'));
+  // 7 + 14 + 15 + 16 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 24 + 8 + 19 + 8 + 5 words, line by line, by `wc -w` (D100: the
+  // line of an ask that rests only on the agent's words says what the session review cited, five words more; D109's
+  // review: "a change of 1 file", two words more; D112: the first item is the bug with its impact and action, 18 words
+  // more than the partly done ask).
+  assert.equal(firstScreenWords(model), 242);
+  assert.equal(firstScreenExcerptLines(model), 1);
+  // The bug carries the code review's impact and action, and one excerpt of at most 8 lines.
+  assert.equal(model.tiers.must_act[0].where[0].excerpt.lines.length, 1);
+  // The partly done ask, item 2, has no level: it follows.
+  assert.equal(itemVisibleText(model.tiers.must_act[1]), ['2 Fix: The agent did only part of ask 2.',
+    '“100 requests per minute per API key”', 'Where: ask 2 · src/middleware/rateLimit.ts'].join('\n'));
 });
 
 test('D97 (16): the marked prompt wraps exactly the located spans; an overlap and an unlocated ask are said', () => {
@@ -426,7 +431,7 @@ test('D97 (17): the refused-call ceiling reads the recorder\'s denial kind; your
   assert.equal(refusedCall(session, { eventId: 'R1-r', action: 'R1', handling: 'passed-over' }), false);
 });
 
-test('D97 (18): an undone or disclosed edit says which; a refused Read names its tool and class, never "a command"', () => {
+test('D97 (18): an undone or disclosed edit says which; a refused read names its tool and class, never "a command"', () => {
   const model = modelOf(triagedReport);
   const undone = byKind(model, 'edit_undone').map((item) => textOf(item.what.parts));
   assert.deepEqual(undone, ['The agent acted against something that you said. The agent told you about it.',
@@ -435,10 +440,10 @@ test('D97 (18): an undone or disclosed edit says which; a refused Read names its
   assert.ok(disclosed.evidence.some((e) => e.label === 'The agent told you:'
     && textOf(e.parts) === '“I told you that I changed the CI file.”'));
   const failures = byKind(model, 'failure_passed_over');
-  const read = failures.find((item) => item.what.parts.some((p) => p.code && p.text === 'Read'));
+  const read = failures.find((item) => item.what.parts.some((p) => p.code && p.text === 'read'));
   // R15: who refused it in words, only as far as the recording types it; never the raw denial token.
   assert.equal(textOf(read.what.parts),
-    'A Read call did not run: a permission rule refused it. The agent did not act on it or tell you.');
+    'A read call did not run: a permission rule refused it. The agent did not act on it or tell you.');
   assert.equal(read.what.parts.some((p) => p.text === 'permission-rule'), false);
   for (const item of failures) assert.equal(/command failed/i.test(textOf(item.what.parts)), false);
   const bash = failures.find((item) => item !== read);
@@ -554,10 +559,12 @@ test('D97 (22): header line B — a deleted file HEAD lacks is committed, outsid
   unknown.codePass.files[0] = { ...unknown.codePass.files[0] };
   delete unknown.codePass.files[0].sha256;
   assert.equal(reportModel(session, unknown, facts).header.size.some((part) => /commit/.test(part)), false);
-  // Line B's counts: the code step's +/- counts when every counted file has both, else the recorded edits'.
+  // Line B's counts: the code step's +/- counts when every counted file has both, said as the change's (D109's review:
+  // with git it runs from the start commit to the files as they are now, so never what the recording changed), else the
+  // recorded edits'.
   const counted = triagedReport(session);
   counted.codePass.files[0] = { ...counted.codePass.files[0], added: 20 };
-  assert.equal(reportModel(session, counted, facts).header.size[1], '5 files changed, +24 −2', 'the code step\'s counts');
+  assert.equal(reportModel(session, counted, facts).header.size[1], 'a change of 5 files, +24 −2', 'the code step\'s counts');
   const partial = triagedReport(session);
   partial.codePass.files[0] = { ...partial.codePass.files[0], added: 20 };
   delete partial.codePass.files[1].removed;
@@ -569,7 +576,9 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const bug = itemsOf(model).find((item) => textOf(item.what.parts) === 'The bucket refills before the first request');
   assert.deepEqual(bug.what.parts.map((p) => p.by), ['code-review']);
   assert.deepEqual(bug.label.map((p) => [p.text, p.by]), [['fix the refill order', 'code-review']]);
-  assert.deepEqual(model.countLine.labels[0].parts.map((p) => [p.text, p.by]), [['ask 6', 'sonah']]);
+  // D112: the Must act items the code review rated come first, so the count line shows their labels first.
+  assert.deepEqual(model.countLine.labels.map((l) => l.parts.map((p) => [p.text, p.by])), [
+    [['fix the refill order', 'code-review']], [['check the forced push', 'code-review']], [['ask 6', 'sonah']]]);
   const question = one(model, 'code_question');
   assert.equal(question.what.parts[0].by, 'code-review');
   const file = model.did.files.groups.flatMap((g) => g.files).find((f) => f.path === 'src/limiter.js');
@@ -594,7 +603,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/3 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/4 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -603,8 +612,9 @@ test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two 
   const model = reportModel(session, triageReport(session), {});
   const items = itemsOf(model);
   // Every kind is an item but the listed ones the code review did not raise, which stay in the claims list.
+  // And (D110) a finding to verify: fixture (a) is a code step before the premise contract.
   assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => !items.some((item) => item.kind === kind)),
-    ['claim_incomplete', 'written_not_checked']);
+    ['code_finding_unconfirmed', 'claim_incomplete', 'written_not_checked']);
   assert.ok(items.some((item) => item.kind === 'claim_not_checked'), 'the listed claim proposed high is an item');
   assert.ok(Object.values(model.placement.rows).filter((p) => p.list === 'claims').length >= 2);
   const bounds = new Set(items.map((item) => item.tier.bound).filter(Boolean));
@@ -713,15 +723,24 @@ test('D97: a question of the code review shows whose words its quote is, by the 
   const session = reportSession();
   const report = triagedReport(session);
   const said = { role: 'commentary', eventId: 'F1', quote: 'all tests pass', sessionKey: STORY_KEY };
-  report.codePass.questions[0] = { ...report.codePass.questions[0], quote: said };
-  const question = itemsOf(reportModel(session, report, repoFacts())).find((item) => item.kind === 'code_question'
-    && item.quote);
-  assert.equal(question.quoteLabel, words.REPORT_ITEM_WORDS.agentSaid);
-  assert.ok(itemVisibleText(question).includes('The agent said: “all tests pass”'));
-  report.codePass.questions[0] = { ...report.codePass.questions[0], quote: { ...said, role: 'instruction', eventId: 'I1',
-    quote: 'Update the README' } };
-  assert.equal(itemsOf(reportModel(session, report, repoFacts())).find((item) => item.kind === 'code_question'
-    && item.quote).quoteLabel, words.REPORT_ITEM_WORDS.youSaid);
+  // Q3 (on an ask) is an item of its own; Q1 (on a decision) is a member of the decision's item (D112), here where the
+  // decision states the words it quotes (D112 amended: a place both name): both label it.
+  for (const at of [2, 0]) {
+    const asked = triagedReport(session);
+    asked.codePass.questions[at] = { ...asked.codePass.questions[at], quote: said };
+    if (at === 0) asked.decisions[3] = { ...asked.decisions[3], stated: said };
+    const model = reportModel(session, asked, repoFacts());
+    const holder = itemsOf(model).find((item) => [item, ...item.members].some((x) => x.kind === 'code_question' && x.quote));
+    const question = [holder, ...holder.members].find((x) => x.kind === 'code_question' && x.quote);
+    assert.equal(question === holder, at === 2, 'a question on an ask is its own item; one on a decision is a member');
+    assert.equal(question.quoteLabel, words.REPORT_ITEM_WORDS.agentSaid);
+    assert.ok(itemVisibleText(holder).includes('The agent said: “all tests pass”'));
+    asked.codePass.questions[at] = { ...asked.codePass.questions[at], quote: { ...said, role: 'instruction', eventId: 'I1',
+      quote: 'Update the README' } };
+    const again = itemsOf(reportModel(session, asked, repoFacts())).flatMap((item) => [item, ...item.members])
+      .find((x) => x.kind === 'code_question' && x.quote);
+    assert.equal(again.quoteLabel, words.REPORT_ITEM_WORDS.youSaid);
+  }
 });
 
 test('D97: a part of the session review with no id is named in words, never by an internal key', () => {
@@ -751,8 +770,8 @@ test('D97: a part of the session review with no id is named in words, never by a
     'its finding 1');
   // Every source set has its word.
   assert.deepEqual(Object.keys(words.REPORT_NOT_CHECKED_WORDS.rowKinds).sort(),
-    ['codePass.findings', 'codePass.questions', 'codePass.withheld', 'decisions', 'failures', 'findings', 'pivots',
-      'promises', 'requirements', 'writtenClaims']);
+    ['codePass.findings', 'codePass.questions', 'codePass.unconfirmed', 'codePass.withheld', 'decisions', 'failures',
+      'findings', 'pivots', 'promises', 'requirements', 'writtenClaims']);
 });
 
 test('D97: count-dependent words agree with their count', () => {
@@ -829,13 +848,24 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
   const asked = triagedReport(session);
   asked.codePass.questions[0] = { ...asked.codePass.questions[0], concerns: { key: 'S11', kind: 'decision',
     source: 'decisions', index: 2, id: asked.decisions[2].id } };
-  assert.equal(chose(reportModel(session, asked, repoFacts())).tier.final, 'must_know');
+  const askedModel = reportModel(session, asked, repoFacts());
+  assert.equal(chose(askedModel).tier.final, 'must_know');
+  // D112 amended: that question names no place (quote null), so it is an item of its own, and the why names it.
+  const question = byKind(askedModel, 'code_question').find((item) => item.rows[0].index === 0);
+  assert.deepEqual(chose(askedModel).members, []);
+  assert.equal(chose(askedModel).why, `Item ${question.n} of the code review concerns it, so Sonah puts it in Must know.`);
+  // D112: a question that quotes the decision's own statement shares its place, so it is inside the decision's item,
+  // and the why names no item number.
+  asked.codePass.questions[0] = { ...asked.codePass.questions[0], quote: asked.decisions[2].stated };
+  const insideModel = reportModel(session, asked, repoFacts());
+  assert.equal(chose(insideModel).members[0].kind, 'code_question');
+  assert.equal(chose(insideModel).why, words.REPORT_TIER_WHY.tiedHere('Must know'));
   // The code review's level still moves it, inside its bounds.
   const leveled = triagedReport(session);
   leveled.codePass.triage.push({ ref: { source: 'decisions', index: 2, id: leveled.decisions[2].id }, level: 'high',
     impact: 'The header unit may be wrong.', action: 'Check the header unit.', label: 'check the unit', where: null });
   assert.deepEqual(Object.values(chose(reportModel(session, leveled, repoFacts())).tier),
-    ['good_to_know', 'must_act', 'must_act', null]);
+    ['good_to_know', 'must_act', 'must_act', null, 'lead']);
   // A decision made without asking and one not to act stay in Must know, tied or not.
   for (const kind of ['decision_unasked', 'decision_not_acting'])
     assert.ok(plainModel.tiers.must_know.some((item) => item.kind === kind), kind);
@@ -880,8 +910,10 @@ test('D97: a question of the code review shows its whole text as its what line, 
   const session = reportSession();
   const report = triagedReport(session);
   const asked = 'The agent says the limiter is global. I did not check this. Do you want one limit per client?';
-  report.codePass.questions[0] = { ...report.codePass.questions[0], question: asked };
-  const question = one(reportModel(session, report, repoFacts()), 'code_question');
+  // Q3, on an ask, is an item of its own (D112 amended: so is Q1, which names no place).
+  report.codePass.questions[2] = { ...report.codePass.questions[2], question: asked };
+  const question = byKind(reportModel(session, report, repoFacts()), 'code_question')
+    .find((item) => item.rows[0].index === 2);
   assert.equal(textOf(question.what.parts), asked);
   assert.deepEqual(question.what.parts.map((p) => p.by), ['code-review']);
   assert.equal(question.evidence.some((e) => textOf(e.parts) === asked), false, 'the fold does not repeat it');

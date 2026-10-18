@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES } from '../../evidence/src/ledger.js';
+import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES, CODE_READ_FAILURES } from '../../evidence/src/ledger.js';
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { codexExecutable, codexJudgeArgs } from './codex-model.js';
 import { IMAGE_BACKENDS, REQUEST_IMAGE_LIMITS } from '../../evidence/src/images.js';
@@ -496,8 +496,10 @@ export function reviewCliArgs({ system, model, images = false }) {
 
 /** Its version, bound in the answer key of agent requests only (answer-cache.js); REVIEW_TRANSPORT_VERSION stays the
  *  version of every other request. A change to the agent argv, its environment or how its answer is read is a new
- *  version. */
-export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/1';
+ *  version. /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the file's
+ *  total lines, from the CLI's typed tool results (`readRanges`, `readsUnranged`), and each Read that read nothing apart
+ *  (`readsFailed`), and the answer store keeps it beside the answer; no stored agent answer of /1 replays. */
+export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/2';
 /** The tools an agent request is given (`--tools`, `--allowedTools`): it can read and search, never write or run. */
 export const AGENT_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
 /** The tool through which the CLI returns a `--json-schema` answer (2.1.296: a `tool_use` of this name in the stream,
@@ -797,15 +799,20 @@ async function callCodexLocal(request, config, { env, spawnProcess, timeoutMs, m
  * events only. No text field (content, result, errors, error details, cwd) is kept: the counts,
  * the enum values, the status values and the model values below are all that leave this function
  * (D70 review: and the init's CLI version, kept by its caller only as a SemVer normal version).
- * The agent transport: and the paths an agent asked its Read tool for (`reads`), what it read.
+ * The agent transport: and the paths an agent asked its Read tool for (`reads`); since /2, each Read's lines from the
+ * CLI's typed tool result (`readRanges`: `readRange`), and the Reads whose tool result the CLI typed as an error
+ * (`readErrors`).
  */
 function readClaudeStream(output) {
   // The agent transport: `toolNames` counts tool uses by name, for AGENT_TOOL_NAMES members only (an unnamed tool use,
   // or one of another name, is counted in `toolUse` alone, so it is never allowed); `reads` holds the distinct paths the
-  // Read tool was asked for, in the order first asked.
+  // Read tool was asked for, in the order first asked; `readUses` the ids of those Read uses, each with the path it asked
+  // for (or null), `readRanges` the range of each, by id, once, in the order its result came, and `readErrors` the ids
+  // of those whose tool result the CLI typed `is_error: true` (a Read that failed: it read nothing).
   const stream = { inits: 0, initModels: [], initVersions: [], topLevelModels: [], nestedModels: [], toolUse: 0, syntheticMessages: 0,
     apiErrorMarkers: 0, errorValues: [], errorStatuses: [], fallbacks: 0, apiRetries: 0, results: [],
-    reportedModels: new Set(), rateLimit: null, toolNames: new Map(), reads: new Set() };
+    reportedModels: new Set(), rateLimit: null, toolNames: new Map(), reads: new Set(), readUses: new Map(),
+    readRanges: new Map(), readErrors: new Set() };
   const present = (event, field) => Object.hasOwn(event, field) && event[field] !== null;
   for (const line of output.split('\n')) {
     let event;
@@ -826,6 +833,8 @@ function readClaudeStream(output) {
         stream.toolUse++;
         if (!AGENT_TOOL_NAMES.includes(block.name)) continue;
         stream.toolNames.set(block.name, (stream.toolNames.get(block.name) ?? 0) + 1);
+        if (block.name === 'Read' && typeof block.id === 'string') stream.readUses.set(block.id, isRecord(block.input)
+          && typeof block.input.file_path === 'string' ? block.input.file_path : null);
         if (block.name === 'Read' && isRecord(block.input) && typeof block.input.file_path === 'string')
           stream.reads.add(block.input.file_path);
       }
@@ -841,12 +850,41 @@ function readClaudeStream(output) {
       // The agent transport's tools start no agent of their own (no Task tool), so the same holds there.
       if (event.parent_tool_use_id === null) stream.topLevelModels.push(message.model);
       else stream.nestedModels.push(message.model);
+    } else if (event.type === 'user') {
+      // /2: a Read's lines, from the typed result the CLI prints beside its tool result (`readRange`); and each tool
+      // result of a Read use of this run that the CLI typed as an error, by its own block, whatever else the message holds.
+      const range = readRange(event, stream.readUses);
+      if (range && !stream.readRanges.has(range.id)) stream.readRanges.set(range.id, range.range);
+      for (const block of isRecord(event.message) && Array.isArray(event.message.content) ? event.message.content : [])
+        if (isRecord(block) && block.type === 'tool_result' && block.is_error === true
+          && stream.readUses.has(block.tool_use_id)) stream.readErrors.add(block.tool_use_id);
     } else if (event.type === 'result') {
       stream.results.push(event);
       if (present(event, API_ERROR_STATUS_FIELD)) stream.errorStatuses.push(event[API_ERROR_STATUS_FIELD]);
     } else if (event.type === RATE_LIMIT_EVENT) stream.rateLimit = rateLimitOf(event);
   }
   return stream;
+}
+
+/**
+ * The agent transport /2 (D105): the lines one Read returned, from a user event of the stream, by the CLI's typed
+ * fields only (Claude Code 2.1.296: `tool_use_result.file` with `filePath`, `startLine`, `numLines` and `totalLines`
+ * beside the tool result): `{ id, range: { path, startLine, numLines, totalLines } }`, or null. Only an event whose
+ * message holds exactly one tool result, for a Read use of this run (`readUses`), is read: the typed result then
+ * belongs to it by structure. A result of any other shape (an image, a format change) gives none, and that Read counts
+ * as unranged; a Read that failed (`readErrors`, or refused) is apart, whatever range its result gives (`agentRunOf`).
+ * No text of the file is kept.
+ */
+function readRange(event, readUses) {
+  const content = isRecord(event.message) && Array.isArray(event.message.content) ? event.message.content : [];
+  const results = content.filter((block) => isRecord(block) && block.type === 'tool_result');
+  if (results.length !== 1 || !readUses.has(results[0].tool_use_id)) return null;
+  const file = isRecord(event.tool_use_result) && isRecord(event.tool_use_result.file) ? event.tool_use_result.file : null;
+  const count = (n) => Number.isSafeInteger(n) && n >= 0;
+  if (!file || typeof file.filePath !== 'string' || !file.filePath || !Number.isSafeInteger(file.startLine)
+    || file.startLine < 1 || !count(file.numLines) || !count(file.totalLines)) return null;
+  return { id: results[0].tool_use_id, range: { path: file.filePath, startLine: file.startLine, numLines: file.numLines,
+    totalLines: file.totalLines } };
 }
 
 /** A utilization: a finite non-negative number, else null (a string is never parsed). One above 1 is kept: the CLI's
@@ -1118,16 +1156,68 @@ function providerClassOf(stream, failedIdentity) {
 
 /** The agent transport: what one agent call did, as counts and the paths it read (never any other text of the stream):
  *  the turns the result states (`num_turns`), the tool uses by AGENT_TOOL_NAMES name, the distinct paths the Read tool
- *  was asked for, in the order first asked, how many tool uses the CLI refused (`permission_denials`; `--restricted`
- *  refuses a path outside the working directory and its `--add-dir`s), and the result's duration, cost and usage. */
+ *  was asked for, in the order first asked, each Read's lines from its typed result (/2: `readRanges`, in the order the
+ *  results came; `readsUnranged`, the Reads with none that did not fail, and `readsUnrangedPaths`, the distinct paths
+ *  those Reads asked for, in the order first asked; `readsFailed`, each distinct path and CODE_READ_FAILURES reason of
+ *  a Read that read nothing, in the order first asked: one the result lists among its refused tool uses (by its id),
+ *  `refused`, else one whose tool result the CLI typed as an error, `failed` — never ranged, never unranged), how many
+ *  tool uses the CLI refused (`permission_denials`; `--restricted` refuses a path outside the working directory and its
+ *  `--add-dir`s), and the result's duration, cost and usage. */
 function agentRunOf(stream, result) {
+  const [REFUSED_READ, FAILED_READ] = CODE_READ_FAILURES;
+  const denied = new Set((Array.isArray(result?.permission_denials) ? result.permission_denials : [])
+    .filter((d) => isRecord(d) && stream.readUses.has(d.tool_use_id)).map((d) => d.tool_use_id));
+  const failed = new Set([...stream.readUses.keys()].filter((id) => denied.has(id) || stream.readErrors.has(id)));
+  const ranged = [...stream.readRanges].filter(([id]) => !failed.has(id));
+  const readsFailed = [];
+  for (const [id, path] of stream.readUses) {
+    const reason = denied.has(id) ? REFUSED_READ : FAILED_READ;
+    if (failed.has(id) && path !== null && !readsFailed.some((r) => r.path === path && r.reason === reason))
+      readsFailed.push({ path, reason });
+  }
   return { numTurns: countOf(result?.num_turns),
     toolCalls: Object.fromEntries(AGENT_TOOL_NAMES.map((name) => [name, stream.toolNames.get(name) ?? 0])),
     reads: [...stream.reads],
+    readRanges: ranged.map(([, range]) => range),
+    readsUnranged: Math.max(0, (stream.toolNames.get('Read') ?? 0) - ranged.length - failed.size),
+    readsUnrangedPaths: [...new Set([...stream.readUses].filter(([id, path]) => path !== null && !failed.has(id)
+      && !stream.readRanges.has(id)).map(([, path]) => path))],
+    readsFailed,
     permissionDenials: Array.isArray(result?.permission_denials) ? result.permission_denials.length : null,
     durationMs: durationOf(result?.duration_ms),
     costUsd: Number.isFinite(result?.total_cost_usd) ? result.total_cost_usd : null,
     usage: isRecord(result?.usage) ? result.usage : null };
+}
+
+/**
+ * The agent transport /2 (D105, F2 part A3): one agent run as the answer store keeps it beside the answer and sets it again
+ * on replay — `{ numTurns, toolCalls, reads, readRanges, readsUnranged, readsUnrangedPaths, readsFailed }`: the turns,
+ * the tool uses by AGENT_TOOL_NAMES name, the paths the Read tool was asked for, each Read's `{ path, startLine,
+ * numLines, totalLines }`, the Reads with no range that did not fail and the paths they asked for, and each `{ path,
+ * reason }` of a Read that read nothing (CODE_READ_FAILURES). Paths, counts and closed reasons only, never text: the
+ * duration, the cost and the usage are not kept. Null when `run` is not a run record of this version (one of /1 has no
+ * `readRanges`, an earlier one of /2 no `readsFailed`): such an answer is never stored, and a stored one is a miss.
+ */
+export function agentRunRecord(run) {
+  if (!isRecord(run)) return null;
+  const count = (n) => Number.isSafeInteger(n) && n >= 0;
+  const tools = run.toolCalls;
+  if (!(run.numTurns === null || count(run.numTurns)) || !isRecord(tools)
+    || Object.keys(tools).some((name) => !AGENT_TOOL_NAMES.includes(name)) || !Object.values(tools).every(count)
+    || !Array.isArray(run.reads) || !run.reads.every((path) => typeof path === 'string')
+    || !Array.isArray(run.readRanges) || !count(run.readsUnranged) || !Array.isArray(run.readsUnrangedPaths)
+    || !run.readsUnrangedPaths.every((path) => typeof path === 'string') || !Array.isArray(run.readsFailed)
+    || !run.readsFailed.every((r) => isRecord(r) && Object.keys(r).length === 2 && typeof r.path === 'string'
+      && r.path !== '' && CODE_READ_FAILURES.includes(r.reason))) return null;
+  const RANGE = ['path', 'startLine', 'numLines', 'totalLines'];
+  const ranges = run.readRanges.map((r) => (isRecord(r) && Object.keys(r).length === RANGE.length
+    && RANGE.every((key) => Object.hasOwn(r, key)) && typeof r.path === 'string' && r.path !== ''
+    && Number.isSafeInteger(r.startLine) && r.startLine >= 1 && count(r.numLines) && count(r.totalLines)
+    ? { path: r.path, startLine: r.startLine, numLines: r.numLines, totalLines: r.totalLines } : null));
+  if (ranges.includes(null)) return null;
+  return { numTurns: run.numTurns, toolCalls: Object.fromEntries(Object.entries(tools)), reads: [...run.reads],
+    readRanges: ranges, readsUnranged: run.readsUnranged, readsUnrangedPaths: [...run.readsUnrangedPaths],
+    readsFailed: run.readsFailed.map((r) => ({ path: r.path, reason: r.reason })) };
 }
 
 /** `agent` (the agent transport): an agent request's checked `agent` and `schema` (agentRequestOf), or null. An agent

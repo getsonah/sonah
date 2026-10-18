@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel, reportPlacement, REPORT_LIMITS } from '../report-model.js';
-import { codePassFindings, codePassQuestions, codePassWithheld } from '../../evidence/src/code-pass.js';
+import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed } from '../../evidence/src/code-pass.js';
 import { renderSessionPage } from '../session-page.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { STORY_KEY } from './session-story-fixture.js';
@@ -19,10 +19,12 @@ function sourceKeys(report) {
     });
   codePassFindings(report).forEach((_, index) => keys.push(`codePass.findings:${index}`));
   codePassQuestions(report).forEach((_, index) => keys.push(`codePass.questions:${index}`));
+  // D110: the findings code's label does not confirm, each an item to verify.
+  codePassUnconfirmed(report).forEach((_, index) => keys.push(`codePass.unconfirmed:${index}`));
   codePassWithheld(report).forEach((_, index) => keys.push(`codePass.withheld:${index}`));
   return keys.sort();
 }
-const PLACES = Object.freeze(['item', 'foldedInto', 'ask', 'list', 'notChecked']);
+const PLACES = Object.freeze(['item', 'foldedInto', 'memberOf', 'ask', 'list', 'notChecked']);
 const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 
@@ -40,6 +42,17 @@ function assertPlaced(model, report, label) {
       assert.ok(item.rows.some((r) => r.source === source && r.index === index), `${label} ${key}: the item holds it`);
       assert.equal(place.item !== undefined, item.rows[0].source === source && item.rows[0].index === index,
         `${label} ${key}: an item's primary row is placed as the item, every other as folded into it`);
+      assert.equal(item.members.some((m) => m.rows.some((r) => r.source === source && r.index === index)), false,
+        `${label} ${key}: a row folded into an item is no member's`);
+    }
+    if (place.memberOf) {
+      // D112: a member of an item is the first row of exactly one member of that item, and the item holds it.
+      const item = items.find((x) => x.n === place.memberOf);
+      assert.ok(item, `${label} ${key}: its item exists`);
+      const [source, index] = [key.slice(0, key.lastIndexOf(':')), Number(key.slice(key.lastIndexOf(':') + 1))];
+      assert.ok(item.rows.some((r) => r.source === source && r.index === index), `${label} ${key}: the item holds it`);
+      assert.equal(item.members.filter((m) => m.rows[0].source === source && m.rows[0].index === index).length, 1,
+        `${label} ${key}: one member leads with it`);
     }
     if (place.ask) assert.ok(model.prompt.asks.some((a) => a.n === place.ask), `${label} ${key}: its ask exists`);
   }
@@ -128,7 +141,7 @@ test('D97 (3): a row a display bound cuts is still placed, and its list counts i
   assertPlaced(model, report, 'many claims');
 });
 
-test('D97 (3): every row is placed exactly once on the triage contract\'s fixtures (a) to (f) too', async () => {
+test('D97 (3): every row is placed exactly once on the triage contract\'s fixtures (a) to (g) too', async () => {
   const { TRIAGE_REPORTS, triageSession } = await import('../../evidence/test/report-triage-fixture.js');
   for (const [letter, shape] of Object.entries(TRIAGE_REPORTS)) {
     const session = triageSession();

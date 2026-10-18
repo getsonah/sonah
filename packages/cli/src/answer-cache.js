@@ -14,7 +14,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, rename, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_TRANSPORT_VERSION, agentRequestOf, isAgentRequest,
+import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_TRANSPORT_VERSION, agentRequestOf, agentRunRecord, isAgentRequest,
   reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf } from './review-judge.js';
 
 /** The record format and the key's own shape. A change to either is a new version, never read as this one.
@@ -157,7 +157,10 @@ async function readOwnerOnly(path) {
 
 /**
  * `SONAH_HOME/answers/<session digest>/`: one file per (key, occurrence), `{ key, occurrence,
- * response }` and nothing else. Mode 0700 for the directory, 0600 for every file, written to a
+ * response }` and nothing else — and, for an agent request (the agent transport /2, D105), `run`: what the agent read
+ * (review-judge.js `agentRunRecord`: its turns, its tool uses and each Read's path and lines; paths and counts only).
+ * An agent answer with no such run is never stored, and a stored one without it is a miss; a hit sets it again on the
+ * answer, not enumerable, as the transport does (`agentRun`). Mode 0700 for the directory, 0600 for every file, written to a
  * private temp file and renamed into place. A file that cannot be read or parsed, or whose key or
  * occurrence is not the one asked for, or whose response is not storable, is a miss — never an
  * error: the request is simply asked live, and its answer replaces the file.
@@ -198,6 +201,11 @@ export function createAnswerCache(directory, { backend, model, transportArgument
       try { record = JSON.parse(bytes); } catch { return null; }
       if (!plain(record) || record.key !== key || record.occurrence !== occurrence
         || !answerStorable(request, record.response)) return null;
+      // D105: an agent answer replays only with its reading record, set on it again as the transport sets it.
+      const run = isAgentRequest(request) ? agentRunRecord(record.run) : null;
+      if (isAgentRequest(request) && run === null) return null;
+      if (run !== null) Object.defineProperty(record.response, 'agentRun', { value: run, enumerable: false,
+        configurable: true, writable: true });
       // F228: a hit is a use. Its modification time moves to now, so `prune` removes the answers
       // no review has asked for longest, never one the last review read.
       if (readOnly) return record.response;
@@ -210,8 +218,11 @@ export function createAnswerCache(directory, { backend, model, transportArgument
       if (readOnly) return false;
       const key = keyOf(request);
       if (key === null || !isOccurrence(occurrence) || !answerStorable(request, response)) return false;
+      // D105: an agent answer is kept with its reading record, or not at all (a stored one without it is a miss).
+      const run = isAgentRequest(request) ? agentRunRecord(response.agentRun) : null;
+      if (isAgentRequest(request) && run === null) return false;
       let bytes;
-      try { bytes = JSON.stringify({ key, occurrence, response }); } catch { return false; }
+      try { bytes = JSON.stringify({ key, occurrence, response, ...(run !== null ? { run } : {}) }); } catch { return false; }
       const temp = join(directory, `.${randomUUID()}.tmp`);
       let handle = null;
       try {

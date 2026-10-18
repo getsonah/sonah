@@ -17,8 +17,8 @@
 
 import { isAbsolute, relative, resolve, sep, win32 } from 'node:path';
 import { CODE_DIFF_STATES, CODE_CHANGE_TYPES, CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES, PROMISE_STATUSES,
-  REQUIREMENT_STATUSES, FAILURE_HANDLINGS, DECISION_COLUMNS, WRITTEN_LABELS, FORBIDDEN_EDIT_BREACHES, personsProjectFile }
-  from './ledger.js';
+  REQUIREMENT_STATUSES, FAILURE_HANDLINGS, DECISION_COLUMNS, WRITTEN_LABELS, FORBIDDEN_EDIT_BREACHES, personsProjectFile,
+  CODE_ACCOUNT_ASK_SOURCES } from './ledger.js';
 import { isRead, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS } from './session.js';
 import { itemKindOf } from './triage.js';
 
@@ -447,6 +447,8 @@ export const CHANGE_ROW_WORDS = Object.freeze({
   changed_since_session: 'it no longer holds what the session last wrote to it: no hunk shown',
   unreadable: 'could not be read: no hunk shown',
   clipped: 'not shown here: its hunks are over this block\'s bound; read the file yourself',
+  // code-pass/12 (D105): its hunks fit this block, but not beside the rest of the request.
+  request_bound: 'not shown here: its hunks did not fit in this request; read the file yourself',
   drifted: 'changed after the session\'s last recorded edit, so its lines now may not all be the agent\'s',
 });
 /** What the table of contents says, by count only, of the paths git shows differing from the start commit outside the
@@ -529,13 +531,38 @@ const quoteOf = (receipt) => (plain(receipt) && typeof receipt.quote === 'string
 const textOf = (session, event, field) => {
   try { return event ? session.textRegionsOf(event, field).text : ''; } catch { return ''; }
 };
-const SHOWN_OUTPUT_CHARS = 2000;
-/** The head and the tail of a long recorded text, the middle named. */
-export function headTail(value, chars = SHOWN_OUTPUT_CHARS) {
-  const all = String(value ?? '');
-  if (all.length <= 2 * chars) return all;
-  return `${all.slice(0, chars)}\n[… ${all.length - 2 * chars} characters not shown …]\n${all.slice(-chars)}`;
+/** The most bytes of a session text's start, and of its end, the code step's review request shows when it does not
+ *  show the text whole (a command, a failure's command and its output): the literal the request showed 2,000 characters
+ *  a side by before code-pass/12, now in bytes and in whole lines. A frozen literal. */
+export const SHOWN_SIDE_BYTES = 2_000;
+
+/**
+ * What the code step's review request shows of one session text (code-pass/12, D105: nothing is shortened inside a
+ * line). Whole when it is at most twice `side` bytes; else its first whole lines while they stay within `side` bytes,
+ * and its last whole lines within `side` bytes, each part named by its line numbers (`linesOf`: a final line end opens
+ * no line). A line longer than `side` bytes is shown in no part, never cut. `{ whole: true, text, lines }`, or
+ * `{ whole: false, lines, bytes, parts: [{ from, through, text }] }` — each part's text literally in the text, so a
+ * quote copied from one part grounds in it. Pure.
+ */
+export function shownLines(value, side = SHOWN_SIDE_BYTES) {
+  const text = String(value ?? '');
+  const lines = diffLines(text);
+  if (bytesOf(text) <= 2 * side) return { whole: true, text, lines: lines.length };
+  const size = lines.map((line) => bytesOf(line) + 1);
+  let head = 0, used = 0;
+  while (head < lines.length && used + size[head] <= side) used += size[head++];
+  let tail = lines.length; used = 0;
+  while (tail > head && used + size[tail - 1] <= side) used += size[--tail];
+  const parts = [...(head > 0 ? [{ from: 1, through: head, text: lines.slice(0, head).join('\n') }] : []),
+    ...(tail < lines.length ? [{ from: tail + 1, through: lines.length, text: lines.slice(tail).join('\n') }] : [])];
+  return { whole: false, lines: lines.length, bytes: bytesOf(text), parts };
 }
+/** A text shown in part (`shownLines`) as a request shows it: its lines and its parts, each with its line numbers. */
+const partsShown = (shown) => ({ lines: shown.lines, parts: shown.parts.map((p) => ({ lines: [p.from, p.through],
+  text: p.text })) });
+/** The line ranges a text shown in part shows, `[[from, through], …]`. */
+export const shownRanges = (shown) => (shown.whole ? (shown.lines ? [[1, shown.lines]] : [])
+  : shown.parts.map((p) => [p.from, p.through]));
 
 /** The paths a row's receipts' events and its actions named, in order, as the code step names them. */
 export function eventPaths(session, ids, root = null) {
@@ -590,6 +617,26 @@ export function actorOf(session, eventId) {
       ? RECORDED_RESULT : AGENT;
   }
   return AGENT;
+}
+
+const [ASKED_BY_PERSON, ASKED_IN_BRIEF, ASKED_BY_OTHER] = CODE_ACCOUNT_ASK_SOURCES;
+/**
+ * D111 amended (2026-10-18): whose words an ask of the session review rests on (ledger.js CODE_ACCOUNT_ASK_SOURCES), from
+ * the recorded event its instruction receipt `receipt` cites, never from its words: `person` when that text is yours by
+ * `actorOf` (a root instruction recorded with human authority, or a project file you wrote that the main agent was
+ * given); `helper_brief` when it is an instruction of a helper's session recorded with its parent agent's authority (the
+ * adapter's lineage: sonah-ledger.js `lineageAuthority`), a brief an agent wrote; else `other` (fails closed: no receipt,
+ * an event the session does not hold or cannot read, another agent's message, a file not yours). Pure.
+ */
+export function askSourceOf(session, receipt) {
+  const eventId = plain(receipt) && typeof receipt.eventId === 'string' ? receipt.eventId : null;
+  if (eventId === null) return ASKED_BY_OTHER;
+  let event = null;
+  try { event = session?.event?.(eventId) ?? null; } catch { event = null; }
+  if (event === null || typeof event !== 'object') return ASKED_BY_OTHER;
+  if (actorOf(session, eventId) === PERSON) return ASKED_BY_PERSON;
+  return event.kind === 'instruction' && event.authority === 'agent' && typeof event.childId === 'string'
+    && event.childId !== '' ? ASKED_IN_BRIEF : ASKED_BY_OTHER;
 }
 
 /**
@@ -677,17 +724,25 @@ export function codeDossier({ report, session, root = null }) {
     if (!plain(row) || row.handling !== PASSED_OVER || typeof row.eventId !== 'string') return;
     const result = session?.event?.(row.eventId);
     const action = result?.invocation ? session.event(result.invocation) : null;
-    const ran = action ? headTail(textOf(session, action, 'command'), 300) : '';
-    const output = result ? headTail(textOf(session, result, 'output')) : '';
+    // code-pass/12 (D105): the command and its output whole, or their first and last whole lines, each part named.
+    const ran = action ? shownLines(textOf(session, action, 'command')) : null;
+    const output = result ? shownLines(textOf(session, result, 'output')) : null;
     const outputActor = result ? actorOf(session, result.id) : AGENT;
+    const texts = (shown) => (shown.whole ? [shown.text] : shown.parts.map((p) => p.text));
+    const field = (actor, shown, own) => (shown.whole ? (actor === own ? shown.text : { actor, quote: shown.text })
+      : { ...(actor === own ? {} : { actor }), ...partsShown(shown) });
     add(FAILURE, RECORDED_RESULT, FAILURE_PASSED_OVER, 'failures', i, null, { outcome: row.outcome ?? null,
-      ...(ran ? { ran: { actor: AGENT, quote: ran } } : {}),
-      ...(result ? { output: outputActor === RECORDED_RESULT ? output : { actor: outputActor, quote: output } } : {}),
+      ...(ran && (!ran.whole || ran.text) ? { ran: field(AGENT, ran, null) } : {}),
+      ...(output ? { output: field(outputActor, output, RECORDED_RESULT) } : {}),
       ...(quoteOf(row.response) ? { response: as(RECORDED_RESULT, row.response) } : {}) },
     [...ids([row.response]), ...(action ? [action.id] : [])],
-    [...(action ? [{ eventId: action.id, role: 'action', text: ran, actor: AGENT }] : []),
-      ...(result ? [{ eventId: result.id, role: 'observation', text: output, actor: outputActor }] : []),
+    [...(action && ran ? texts(ran).map((text) => ({ eventId: action.id, role: 'action', text, actor: AGENT })) : []),
+      ...(result ? texts(output).map((text) => ({ eventId: result.id, role: 'observation', text, actor: outputActor }))
+        : []),
       ...src([row.response])]);
+    // What the request shows of each of them in part, by its line numbers (the request manifest's session texts).
+    items.at(-1).inPart = [['ran', ran], ['output', output]].filter(([, shown]) => shown && !shown.whole)
+      .map(([name, shown]) => ({ field: name, shown: shownRanges(shown), lines: shown.lines, bytes: shown.bytes }));
   });
   list(report?.findings).forEach((f, i) => {
     if (!plain(f) || f.kind !== 'edit_under_negative_requirement' || !FORBIDDEN_EDIT_BREACHES.includes(f.breach)) return;
@@ -707,15 +762,21 @@ const EDITS = Object.freeze(['write', 'edit', 'delete']);
 const [NO_EFFECT] = ACTION_EFFECTS;
 
 /**
- * Per changed path (`paths`, as the code step names them), the commands recorded after its last recorded edit, each
- * with its exit code (or its recorded outcome when no exit code is typed), or none. Ordering only: whether a command
- * reached the file is the reviewer's to judge. A path's last edit is its last change that could have happened (D98,
- * one reading per recorder fact: session.js `effectOf` is landed or unknown), as the change list (code-pass.js
- * `codeSnapshotPlan`) and the page's Runs list read it: a write refused before it ran, failed or cancelled changed
- * nothing, so commands recorded after an earlier change are not hidden behind it. A command whose effect is `none`
- * (refused before it ran) ran nothing, so it is not listed (the owner's answer of 2026-10-17, "all as suggested",
- * code-pass/11): a file that only such commands follow is `never_ran`, as the page's Runs list says it
- * (report-model.js `neverRanPaths`). The run list still shows the refused command. Pure.
+ * The commands recorded after a changed file's last recorded edit, each once and numbered (code-pass/12, D105: before,
+ * the list repeated after every changed file, so its size grew with files times commands), and per changed path (`paths`,
+ * as the code step names them) the first of them after its own last edit. `{ commands: [{ n, at, text, exit | outcome,
+ * helper? }], files: [{ path, first }] }`: `commands` are every command recorded after the earliest last edit of a
+ * listed path, in recorded order, numbered from 1 (`at` its place in the session's events), each with its exit code (or
+ * its recorded outcome when no exit code is typed); `files` the paths with a recorded edit, in the order given, `first`
+ * the number of the first command after the path's last edit, so every command from it on came after that edit, or null
+ * when none did (`never_ran`). A path with no recorded edit is not listed. Ordering only: whether a command reached the
+ * file is the reviewer's to judge. A path's last edit is its last change that could have happened (D98, one reading per
+ * recorder fact: session.js `effectOf` is landed or unknown), as the change list (code-pass.js `codeSnapshotPlan`) and
+ * the page's Runs list read it: a write refused before it ran, failed or cancelled changed nothing, so commands recorded
+ * after an earlier change are not hidden behind it. A command whose effect is `none` (refused before it ran) ran nothing,
+ * so it is not listed (the owner's answer of 2026-10-17, "all as suggested", code-pass/11): a file that only such
+ * commands follow is `never_ran`, as the page's Runs list says it (report-model.js `neverRanPaths`). The run list still
+ * shows the refused command. Pure.
  */
 export function commandsAfterLastEdit(session, paths, root = null) {
   const events = list(session?.events);
@@ -729,32 +790,64 @@ export function commandsAfterLastEdit(session, paths, root = null) {
       if (typeof named === 'string') lastEdit.set(named, at);
     }
   });
+  const listed = list(paths).filter((path) => lastEdit.has(path));
+  if (!listed.length) return { commands: [], files: [] };
+  const from = Math.min(...listed.map((path) => lastEdit.get(path))) + 1;
   const mayHaveRun = (event) => isCommand(event) && effect(event) !== NO_EFFECT;
-  return list(paths).map((path) => {
-    if (!lastEdit.has(path)) return { path, after: null };
-    const after = events.slice(lastEdit.get(path) + 1).filter(mayHaveRun).map((event) => {
-      const result = session.observationFor?.(event.id) ?? null;
-      const exit = Number.isSafeInteger(result?.exitCode) ? result.exitCode : null;
-      return { ran: headTail(textOf(session, event, 'command'), 150), ...(exit !== null ? { exit }
-        : { outcome: typeof result?.result === 'string' ? result.result : 'no result recorded' }),
-      ...(event.childId ? { helper: true } : {}) };
-    });
-    return { path, after };
+  const commands = [];
+  events.forEach((event, at) => {
+    if (at < from || !mayHaveRun(event)) return;
+    const result = session.observationFor?.(event.id) ?? null;
+    const exit = Number.isSafeInteger(result?.exitCode) ? result.exitCode : null;
+    commands.push({ n: commands.length + 1, at, text: textOf(session, event, 'command'), ...(exit !== null ? { exit }
+      : { outcome: typeof result?.result === 'string' ? result.result : 'no result recorded' }),
+    ...(event.childId ? { helper: true } : {}) });
   });
+  return { commands, files: listed.map((path) => ({ path,
+    first: commands.find((c) => c.at > lastEdit.get(path))?.n ?? null })) };
 }
 
-/** The dossier as a request shows it: one JSON line per item, then the commands after each changed file's last edit
- *  (`never_ran` when none that may have run). Every path is named (D90). An item the code review may triage names its
- *  report item kind (`item`, code-pass/10), never its tier: a tier shown would anchor the proposal. Pure. */
-export function renderDossier(items, commands) {
+/** The dossier's items as a request shows them: one JSON line per item. Every path is named (D90). An item the code
+ *  review may triage names its report item kind (`item`, code-pass/10), never its tier: a tier shown would anchor the
+ *  proposal. Pure. */
+export function renderDossier(items) {
   const line = (item) => JSON.stringify({ key: item.key, kind: item.kind, actor: item.actor,
     ...(item.move ? { move: item.move } : {}), ...(item.itemKind ? { item: item.itemKind } : {}), ...item.shown,
     ...(item.paths.length ? { paths: item.paths } : {}) });
-  const ran = list(commands).filter((c) => c.after !== null).map((c) => JSON.stringify({ path: c.path,
-    ...(c.after.length ? { commandsAfterLastEdit: c.after } : { commandsAfterLastEdit: 'none', move: NEVER_RAN }) }));
-  return [...(items.length ? items.map(line) : ['(the review recorded no ask, claim, decision or failure)']), '',
-    '## Commands recorded after each changed file\'s last recorded edit', '',
-    ...(ran.length ? ran : ['(no file was changed by a recorded edit)'])].join('\n');
+  return (items.length ? items.map(line) : ['(the review recorded no ask, claim, decision or failure)']).join('\n');
+}
+
+/** The commands block's headings and fixed words (code-pass/12). */
+export const COMMANDS_HEADING = '## The commands recorded after a changed file\'s last recorded edit, each once, in order';
+export const FIRST_COMMANDS_HEADING = '## Each changed file\'s first command after its last recorded edit';
+/** One command as the commands block shows it: its number, its text (whole, or its first and last whole lines, each
+ *  part named: `shownLines`), its exit code or recorded outcome, and whether a helper agent ran it. Pure. */
+export function commandLine(command) {
+  const shown = shownLines(command.text);
+  const { n, at: _at, text: _text, ...rest } = command;
+  return JSON.stringify({ command: `C${n}`, ran: shown.whole ? shown.text : partsShown(shown), ...rest });
+}
+/** What the commands block says of the commands it leaves out for room (C`from` to C`through`). Fixed words. */
+export const commandsLeftOutLine = (from, through) => `(${from === through ? `C${from} is` : `C${from} to C${through} are`} `
+  + 'not shown here: they did not fit in this request)';
+/**
+ * The commands block (code-pass/12, D105): each command once, numbered — those before C`from` left out for room, named
+ * by number in fixed words (`commandsLeftOutLine`); the latest are kept, as each file's commands run to the last — then
+ * each changed file with a recorded edit and the first command after its last edit (`never_ran` when none). `lines`, a
+ * Map the caller keeps to render each command's line once over several calls. Pure.
+ */
+export function renderCommands({ commands, files } = {}, { from = 1, lines = new Map() } = {}) {
+  const rows = list(files).map((f) => JSON.stringify({ path: f.path, ...(f.first !== null
+    ? { firstCommandAfterLastEdit: `C${f.first}` } : { commandsAfterLastEdit: 'none', move: NEVER_RAN }) }));
+  const cmds = list(commands);
+  const lineOf = (c) => {
+    if (!lines.has(c.n)) lines.set(c.n, commandLine(c));
+    return lines.get(c.n);
+  };
+  return [COMMANDS_HEADING, '',
+    ...(cmds.length ? [...(from > 1 ? [commandsLeftOutLine(1, Math.min(from - 1, cmds.length))] : []),
+      ...cmds.filter((c) => c.n >= from).map(lineOf)] : ['(no command was recorded after a changed file\'s last edit)']),
+    '', FIRST_COMMANDS_HEADING, '', ...(rows.length ? rows : ['(no file was changed by a recorded edit)'])].join('\n');
 }
 
 /** The words an item's dossier line shows (`renderDossier`), as values: each string of its `shown` fields and the quote
@@ -765,6 +858,9 @@ export function dossierWords(item) {
   const add = (value) => {
     if (typeof value === 'string') words.push(value);
     else if (plain(value) && typeof value.actor === 'string' && typeof value.quote === 'string') words.push(value.quote);
+    // code-pass/12: a text shown in part (`shownLines`): each part's words, apart.
+    else if (plain(value) && Array.isArray(value.parts))
+      for (const part of value.parts) if (plain(part) && typeof part.text === 'string') words.push(part.text);
   };
   const shown = plain(item?.shown) ? item.shown : {};
   // Only the fields that hold an item's own words: never Sonah's closed labels (a status, a column, an outcome, a

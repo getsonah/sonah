@@ -1,5 +1,260 @@
 # Changelog
 
+## 0.3.0-beta.4
+
+The code review now runs on long sessions too, and the page says exactly what it saw. It gets the changed files
+whole. Its one repair loses no finding. A code finding shows what it rests on, the code review accounts for each ask,
+and one point is one item. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, Sonah asks the code review again for a session that an earlier version reviewed. The session review's stored
+answers stay.
+
+### The code review fits its input, and says what it saw
+
+- Sonah now builds the code review's input within one size bound. Before, Sonah dropped the review when a long
+  session's input was too large.
+- Sonah lists each command once, numbered. Before, it repeated every command for each changed file.
+- Each changed file names the first command after its last edit.
+- Sonah shows rule and skill files whole. It no longer cuts out their middle.
+- Sonah cuts no text inside a line. A long command or output shows its first and last lines, with their numbers.
+- When the input is still too large, Sonah leaves out whole parts. It leaves out the lines the session read first,
+  then the whole files.
+- Then it leaves out early commands, then large file changes, then large rule files.
+- The input names each part that Sonah leaves out. The code review can read a file that Sonah left out.
+- Sonah skips the code review only when even the smallest input is too large. The page then says that its input was
+  too large to send.
+- The page never says that the code review saw a file when Sonah did not send it the input.
+- Sonah now keeps which lines of which files the code review read. It keeps paths and numbers, never text.
+- Saved answers keep this record, so a review that Sonah reuses shows it too.
+- The page names each file that the code review saw only in part, with its lines. It also names each file that the
+  code review saw only where the change touched it.
+- The page lists a file that the code review read whole nowhere. Seeing a file does not mean that the file is fine.
+- The page names rule and skill files that the code review saw only in part or did not see.
+- Sonah marks the code review complete only when the review saw every changed line, on both sides of the change.
+  A read shows a file as it is now, never as it was before. So a changed file whose changes Sonah left out keeps the
+  review short of complete, even when the review reads it whole. A new file counts once the review reads its lines.
+- When the code review read a changed file whole, but Sonah did not show it how the file was before, the page says
+  so. It does not count that file's change as seen.
+- Sonah keeps the path of every file that the code review read. When Sonah cannot tell which lines it read, the page
+  says so. It never calls that file unseen.
+- A read that failed or that Claude Code refused read nothing. Sonah keeps it apart, with its path and why. The page
+  counts its file as one that the code review did not see, and never says that the review read it.
+- Sonah counts where the code review's quotes sit: in lines that it saw, or outside them. Sonah counts a quote apart
+  when it cannot tell which lines of that file the code review read. The count goes to the private record, not to
+  the page.
+- The terminal says that a code review too large to send did not run.
+- Every saved code review asks again, because its input changed.
+
+### The code review sees the code around the change
+
+- Sonah now shows the code review each changed file whole, and the lines the session read in unchanged files.
+- It names each changed file that does not fit, with its line count.
+- It shows a changed file whole when the whole file fits, even if its changes do not fit.
+- When Sonah shows no line that the session read, it says why. It never says that the session read nothing.
+- The code review's instructions say which changed files it must open itself.
+- A rule file that the session read from a parent folder does not show twice.
+- When the input is too large, the whole files and the session's reads give way first. Then the code review gets the
+  same input as with this off.
+- So they never cost the code review a part that it gets with this off. They never make it too large to send.
+- This is on by default. The code review's input is larger, so a review costs more.
+- On one long session, the code step made 13 calls with 3.4 MB of input. With this off, it made 6 calls with 1.2 MB.
+- A measure on new sessions will still decide whether it stays on.
+
+### The code review's repair loses nothing
+
+- The code review gets one repair of its answer. Sonah now matches each item of the repair by what it is, not by its
+  place or its order.
+- Two findings match when they have the same kind and file, and their lines overlap. Two questions match when they
+  have the same words about the same item.
+- An item of the repair takes the place of a failed item only when each matches only the other. Otherwise Sonah does
+  not choose one.
+- Each item of either answer now ends in one place. It stays, the repair replaces it, it folds into an item that it
+  matches, or Sonah withholds it.
+- A finding or question that only the repair found now goes to its checker like any other. Before, Sonah dropped it
+  unchecked.
+- The repair's copy of an item of the first answer that stands folds into that item. Sonah never publishes the copy
+  beside it.
+- Two failed findings of one kind can have lines that overlap. When the repair fixes both, Sonah checks both fixes. It
+  can publish both, as for a first answer. Before, it published one.
+- A note of the repair applies only to the item that the repair wrote it for. The note of a failed item applies to a
+  fix only when each of the two matches only the other.
+- A finding that only the repair found goes to the default section of its kind.
+- A question in other words is a new question. The report can then show both questions.
+- When Sonah withholds an item, it says whether an item of the repair matched it. The words say only what Sonah
+  compared.
+- Sometimes Sonah cannot compare an item, because its lines are not all lines of the file. Then the words say so.
+- A report that an earlier version wrote keeps its words about the repair.
+- The cause for an item past its list's limit now names the list, not only a text.
+- This closes a known limit of 0.3.0-beta.2. A repair that dropped a failed item no longer loses that item. The next
+  item no longer shows twice.
+- This rule alone changes no request to the code review.
+- The checks of the items that only the repair found are new calls. A new run pays for them.
+
+### The code review's coverage lines add up
+
+- Every count about the files of the change now comes from one tally. The coverage line, the footer, the header's
+  count and the record all read it, so the parts add up to the whole.
+- The coverage line now says how many files the code review saw whole, in part, or only where the change touched
+  them, and how many it did not see. Before, a deleted file could be counted twice, and some files in no group.
+- A file that the session wrote whole, and that Sonah showed only where a later edit touched it, is now seen in part,
+  with its lines. Before, the page said that the review saw it only where the change touched it.
+- Sonah sometimes shows the review an edit that it cannot place in the file now. Such a file now reads as seen in
+  lines that Sonah could not number. Before, the page said that the review did not see it.
+- A file that the session wrote in another repository is now named so. A helper can work in another folder and write
+  into your working folder. Such a file is now named and counted too. Before, the page said that both lay outside the
+  repository and did not count them as files that the code review did not see.
+- Only writes outside every folder that the code review can read are now only counted.
+- Sonah names files that it left out of the input for room as left out for room. It no longer says that they were too
+  large. A file that is too large on its own keeps its own words.
+- With git, when Sonah finds no recorded edit of the session that wrote some files of the change, the page says so,
+  and that the change can hold work done after the session.
+- The page no longer says that the change is the one the session made.
+- The page says how many of the open questions were checked. It no longer says "each" when one was not checked.
+- The private record now gives each file the state that the input shows. Its count of files that the code review
+  could not read is the tally's.
+- The code review's checks can read files that the code review did not see. The coverage line now says how many, and
+  that Sonah counts as seen only what it sent the code review and what the code review read itself. The first lines
+  say it too: "56 files of the change that the code review did not see (its checks read 8 of them)". Before, one long
+  session's page said only that the code review did not see 56 files, though its checks had read 8 of them.
+- The page's first lines now count the same files as the coverage line. They say "a change of 110 files" and "56 files
+  of the change that the code review did not see". Before, one long session's page said "56 files changed". It also
+  said that the code review did not see 56 changed files, of 110.
+- With git, the first lines no longer say that the recording changed the files of the change. The change runs from
+  the commit where the session started, so it can hold other work.
+- The first lines give the lines of the change only when Sonah holds the lines of every file.
+- The list of files that the agent changed is now the same list. The page says apart the writes that Sonah counts but
+  did not review. Before, the page said that the agent changed them outside the repository, though some lay in your
+  working folder.
+- The page no longer says that a write in an agent's home folder lies outside what the code review reads. That
+  folder can be in your working folder.
+- When the code review's call did not answer, the page no longer says that it saw any file. It says that Sonah counts
+  none of them as seen.
+- A file whose change is too large for the input on its own is now said to be too large. Before, the page said that
+  Sonah left it out for room.
+- When the records show no check of the open questions, the page now says that Sonah publishes them unchecked.
+  Before, it said "checked 0 of the 1 open questions".
+- The page says how the code review works only when the code review read what Sonah sent it. Before, the page said
+  that the code review read the change, even beside the line that says that it did not answer, or that its input was
+  too large to send.
+- The page no longer says that the code review read the change, or that Sonah reviewed it. It says that the code
+  review read what Sonah sent it. The coverage line says how much of the change it saw.
+- A report from 0.3.0-beta.1 or earlier no longer says how the code review works. That code review worked another way.
+- This changes no request to the model. Stored answers still replay.
+
+### A code finding shows what it rests on
+
+- The check of a code finding now lists what the finding rests on, with up to six premises.
+- For each premise, the check names where its evidence is: lines of the repository, documented language behaviour, or
+  neither.
+- Sonah shows a finding as checked only when its check quotes lines or names language behaviour for each premise.
+- For a premise that names lines, the check quotes at least one. Sonah must find each quote word for word.
+- When the check names anything else for a premise, the finding is now an item to verify. Sonah never shows it as
+  checked.
+- Its item names each premise that Sonah could not check, in the check's own words.
+- An item to verify goes to Good to know. The code review can raise it to Must know, never to Must act.
+- An item to verify never changes the status of your ask. Your ask shows a line that names the item.
+- Sonah asks once more when a check leaves out its premises, or quotes a line that Sonah cannot find.
+- Every reader works out the label again from the saved check. A finding never shows as checked without its premises.
+- A finding that no longer shows as checked also stops contradicting a claim or counting against an ask.
+- The page shows each premise of a checked finding beside the lines that its check quotes.
+- The page no longer says that a second reviewer checked a finding. The same model reviews the code and checks it.
+- Every saved check of a code finding asks again, because its request changed.
+
+### The code review accounts for each ask
+
+- After the code review, Sonah asks it for an item-by-item check of each ask of the session review. These are your
+  asks, and the asks that an agent wrote into a helper's brief.
+- This check also covers each statement that the agent wrote into a file, and each decision not to act. It covers
+  no other claim or decision.
+- For each item, the code review answers breaks, holds, outside the repository, or not examined.
+- Each answer except not examined must quote the code. Sonah finds each quote word for word, or does not count it.
+- A break names a finding or question of the code review, or brings a finding of its own.
+- Sonah checks such a new finding like any other finding.
+- When this check repeats a finding that Sonah withheld, Sonah withholds it once, not again.
+- Sonah sends at most 30 items in one call, and at most 4 calls in one review. The asks go first.
+- The page counts the items that this check did not examine in a way that Sonah could use.
+- It counts these asks by whose words each one rests on. Sonah reads that from the recorded message that the ask
+  cites, never from its words.
+- It calls an ask yours only when it rests on your own words: your message, or a project file that you wrote.
+- An ask that an agent wrote into a helper's brief is counted as such. Sonah counts any other ask, or one whose source
+  it cannot read, as one that it could not trace to your own words. Before, one long session's page said "3 of your
+  asks" of three asks that the agent wrote into a helper's brief.
+- The count says nothing about the code review's findings. A published finding can still concern a counted item.
+- The page counts the items past the limit of 4 calls too, so the limit hides nothing.
+- The page never lists or counts the items that the code review examined. Those stay in the private report.
+- While any item is counted, the code review shows as not complete.
+- Sometimes only counted items keep the code review from being complete. Then the page does not say that the code
+  review did not finish its work, because every call can have answered. The terminal says that the code review
+  covered the whole change, but that its item-by-item check did not examine every item in a way that Sonah could use.
+- When the code review did not finish every part of its work, the page now says only that. It no longer says that
+  the list below shows what the code review did not cover, because that list can also hold these counts.
+- With --code-pass on the command line, a counted item keeps the review incomplete. Sonah then exits with code 1.
+- A review with more than 120 items always ends this way, because of the limit of 4 calls.
+- By default, and with the setting, the code review never changes the exit code.
+- Sometimes an answer says that an ask holds, but a published finding breaks it. Then Sonah drops that answer and
+  keeps the finding.
+- These calls are new, so a new run pays for them.
+- The terminal says how many calls this check adds. It names the three kinds of items.
+
+### One point, one item
+
+- A question of the code review about an item, such as a decision of the agent's, now shows inside that item when
+  the two name one place. Before, it was an item of its own.
+- One place is a recorded message or edit, or a file, that both name. When both name lines of one file, the lines
+  must overlap.
+- A question whose quote Sonah found only in the session review's words about the item names no place. It stays an
+  item of its own. Before this rule, one long session's page folded a question about one file inside a decision about
+  another file.
+- The item that a question joins is never in a lower section than the question.
+- It keeps its own lines there: its question, its impact, its action and its check.
+- The item goes to the higher section of the two. A question in a lower section shows folded, with its own section's
+  name.
+- A question about an ask stays its own item, as before. Your prompt still points to it.
+- Two decisions that quote the same message, one quote inside the other, are now one item. The longer quote leads.
+- The shorter one shows folded inside that item. Sonah drops neither.
+- Inside each section, the items that the code review rated come first, highest first. Then come the items with no
+  rating, by kind as before.
+- The agent may pass over a read that the recording marks as refused before it ran. Sonah now puts such a read in Good
+  to know.
+- A refused shell command and a refused write stay in Must know. A decision not to act stays in Must know.
+- The code review can still move each of these items, as before.
+- None of this changes a request to a model.
+
+### Known limits
+
+- The known limits of 0.3.0-beta.3 below still hold, except the first. This version fixes it. On a long session, the
+  code review now runs, unless even its smallest input is too large. The page names a file of the change as seen only
+  when the code review saw it. This version also fixes the repair limit of 0.3.0-beta.2: a repair no longer drops a
+  failed item from the report.
+- Sometimes the repair fixes the lines, the file or the words that Sonah matches items by. Then Sonah cannot match
+  the fix to the item that failed.
+- Sometimes one fix of the repair matches two failed items, or two fixes match one failed item. Then Sonah matches
+  none of them.
+- In both cases, Sonah publishes the fix as a new item and withholds the item that failed. The report shows both.
+- The fix gets no note from the review, so it goes to the default section of its kind.
+- The repair's copy of an item that already stands can move to lines apart. Then Sonah checks that copy as a new item.
+  The report can show both.
+- A file that a helper wrote in your working folder while it worked in another folder is named and counted, but Sonah
+  does not give it to the code review.
+- With git, the list of files that the agent changed still holds every file of the change. It can hold files that no
+  recorded edit of the session wrote. The code review's section says how many.
+- A check can leave out a premise, or quote a line that does not show its premise. Sonah cannot tell.
+- A check can call a compiler's behaviour documented behaviour of the language. Sonah cannot check that either.
+- A finding that rested on the compiler was folded before. Now it shows as an item to verify.
+- The code review can say that an item holds after a short look. Sonah cannot tell.
+- Sonah does not yet ask the code review to trace the run that an ask rests on. So the item-by-item check can say
+  that such an ask holds without a trace of its run.
+- A quote from a path over 300 characters fails that call's whole answer. Its items then count as unchecked.
+- The code review can write one point as a finding and as a question. The report still shows both as items.
+
+### Versions
+
+- These versions move: `sonah.session-page/43`, `sonah.session-story/38`, `sonah.report-model/4`,
+  `sonah.code-snapshot/12`, `sonah.code-pass/12`, `sonah.code-verify/3`, `sonah.review-agent-transport/2` and
+  `sonah.tiers/2`.
+- This version adds `sonah.code-account/1`.
+
 ## 0.3.0-beta.3
 
 Sonah states fewer false things about a recording, and it reads more of each long output. A finished background run

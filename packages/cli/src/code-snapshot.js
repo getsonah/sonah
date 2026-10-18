@@ -2,7 +2,7 @@
 // 2026-10-15: privacy is not a design constraint; the code step may see everything): what `sonah review` reads from
 // disk for the code step, by structure, before its first call.
 //
-// The snapshot (`sonah.code-snapshot/11`): the change under review, the review agent's starting map — the paths the
+// The snapshot (`sonah.code-snapshot/12`): the change under review, the review agent's starting map — the paths the
 // recorded session changed (evidence/src/code-pass.js `codeSnapshotPlan`), then every path that differs from the session's
 // start commit (git's own list, and the untracked files a recorded edit wrote or that changed after the session began),
 // each one's file now, its file at that commit and git's own patch of it. The start commit is the one the recording
@@ -10,7 +10,10 @@
 // HEAD made by then; with none (no repository, no start commit), the diff is the recorded edits (code-pass.js). Git's
 // lists stop at the working directory (a literal pathspec of it); how many paths differ outside it is counted
 // (`outside`). A recorded write outside the working directory — by its name, the slicer's write scope, or where a link
-// leads — is counted (`outside_root`), never part of the change reviewed. Only a regular file is read, never through a
+// leads — is never part of the change reviewed; D109 (code-snapshot/12) classes it by where it really lies: in a folder
+// the review can read, in another git repository (`other_repository`), under the working directory but outside the
+// working directory of the agent that wrote it (`outside_writer_root`), or in the repository outside the working
+// directory (`outside_root`, in the repository); elsewhere it is only counted (`outside_root`). Only a regular file is read, never through a
 // link at the last part of its real path, at most `maxBytes` (a larger one is `oversize`, never clipped). Every state is
 // a closed one (evidence/src/ledger.js CODE_FILE_STATES); nothing here reads a file's words to decide anything. Nothing
 // is withheld for privacy's sake: a harness home, a credential-shaped path and the home folder as the repository are no
@@ -57,7 +60,7 @@ import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES, CODE_CHAN
 const [GIT_BASE, RECORDED_EDITS_BASE] = CODE_DIFF_BASES;
 const [FROM_RECORDING, FROM_REFLOG, FROM_COMMIT_DATE] = CODE_START_COMMIT_SOURCES;
 const [ADDED, MODIFIED, DELETED_TYPE] = CODE_CHANGE_TYPES;
-const [, , OVERSIZE, , DELETED, OUTSIDE_ROOT, UNREADABLE] = CODE_FILE_STATES;
+const [, , OVERSIZE, , DELETED, OUTSIDE_ROOT, UNREADABLE, , OTHER_REPOSITORY, OUTSIDE_WRITER_ROOT] = CODE_FILE_STATES;
 
 /** How a file is opened: read only; never through a link at the last part of its real path (one there now was put
  *  there after the path was resolved); never waiting on a FIFO or a device, whose type is refused once it is open. */
@@ -117,21 +120,59 @@ export async function placeHolds(place, path) {
 }
 
 /**
+ * D109 (code-snapshot/12): the real top folder of the git repository that holds `real` (an absolute real place; a path
+ * not there is asked at its nearest folder that is), as git says it (`rev-parse --show-toplevel`), or null when none does.
+ * One git call per folder (`cache`). A fact code holds, never a guess from the path's spelling.
+ */
+async function repositoryOf(real, { git, cache }) {
+  let folder = dirname(real);
+  for (;;) {
+    let info = null;
+    try { info = await stat(folder); } catch { info = null; }
+    if (info?.isDirectory()) break;
+    const up = dirname(folder);
+    if (up === folder) return null;
+    folder = up;
+  }
+  if (!cache.has(folder)) cache.set(folder, (async () => {
+    const said = out(await git(['rev-parse', '--show-toplevel'], { cwd: folder }));
+    if (!said) return null;
+    return realpath(said.endsWith('\n') ? said.slice(0, -1) : said).catch(() => null);
+  })());
+  return cache.get(folder);
+}
+
+/**
  * What one plan entry is at review time: a closed state, a directory, or its bytes. Never throws. A recorded write
  * outside the working directory (`outside`: the slicer's write scope, a home-spelled name, a name or a real path outside
- * it) is `outside_root` — and `repository: true` when it really lies in the repository's top folder (`realTop`): a part of
- * the repository's change the review does not cover, so its coverage stays partial (a scratchpad file outside the
- * repository is only counted); a path not there is `deleted`; only a regular file of at most `maxBytes` is read, at its
- * real path, never through a link at the last part.
+ * it) is classed by where it really lies (D109), by facts code holds — whether the review can read it (it lies in the
+ * working directory `realRoot` or the repository's top folder `realTop`, the agents' folders) and which repository holds
+ * it (`repositoryOf`): in a git repository other than the review's, `other_repository`; in the review's repository (or in
+ * none, as the working directory) under the working directory — the slicer's write scope marked it outside the working
+ * directory of the agent that wrote it — `outside_writer_root`; in the repository's top folder outside the working
+ * directory, `outside_root` with `repository: true`: each a part of the change the review does not cover, so its coverage
+ * stays partial. In a harness home folder (`homes`, real places: never project work, D69 b), outside every folder the
+ * review can read, or named with a home-spelled name, `outside_root` alone: only counted; the first and the last also
+ * `home: true` (D109 review), since they can lie in a folder the review can read. A path not there is `deleted`;
+ * only a regular file of at most `maxBytes` is read, at its real path, never through a link at the last part.
  */
-async function readEntry(entry, { root, realRoot, realTop = null, maxBytes }) {
+async function readEntry(entry, { root, realRoot, realTop = null, maxBytes, homes = [], git = runGit,
+  repositories = new Map() }) {
   const at = { path: entry.path };
   const recorded = typeof entry.recordedPath === 'string' ? entry.recordedPath : entry.path;
-  if (HOME_SPELLED.test(recorded) || HOME_SPELLED.test(entry.path)) return { ...at, state: OUTSIDE_ROOT };
+  // D109 (its review): a write named from the home folder, or in a harness home folder, is marked `home`: it can lie in a
+  // folder the review can read (the agent ran in the home folder), so no reader says it lies outside them.
+  if (HOME_SPELLED.test(recorded) || HOME_SPELLED.test(entry.path)) return { ...at, state: OUTSIDE_ROOT, home: true };
   const absolute = resolve(root, entry.path);
   const outsideRoot = async (place) => {
-    const real = typeof realTop === 'string' ? await realPlace(place) : null;
-    return { ...at, state: OUTSIDE_ROOT, ...(real !== null && inside(real, realTop) ? { repository: true } : {}) };
+    const real = await realPlace(place);
+    const inTop = real !== null && typeof realTop === 'string' && inside(real, realTop);
+    const inRoot = real !== null && inside(real, realRoot);
+    if (real !== null && homes.some((home) => inside(real, home))) return { ...at, state: OUTSIDE_ROOT, home: true };
+    if (!inTop && !inRoot) return { ...at, state: OUTSIDE_ROOT };
+    const own = await repositoryOf(real, { git, cache: repositories });
+    if (own !== null && own !== realTop) return { ...at, state: OTHER_REPOSITORY };
+    return inRoot ? { ...at, state: OUTSIDE_WRITER_ROOT } : { ...at, state: OUTSIDE_ROOT, repository: true };
   };
   if (entry.outside === true || !inside(absolute, root)) return outsideRoot(absolute);
   let real;
@@ -542,9 +583,24 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
     if (!recorded.has(change.path)) plan.push({ path: change.path, recordedPath: join(gitBase.top, change.gitPath),
       changed: true, recorded: false, outside: false, last: null, edits: [] });
   const reads = [];
+  // D109: the harness home folders by their real places (a recorded write there is never project work), and one git call
+  // per folder for which repository holds a recorded write.
+  const homes = [];
+  for (const place of harnessHomes) {
+    const real = typeof place === 'string' && isAbsolute(place) ? await realPlace(resolve(place)) : null;
+    if (real !== null) homes.push(real);
+  }
+  const repositories = new Map();
   for (const entry of plan) {
-    const head = await readEntry(entry, { root: dir, realRoot, realTop: repository, maxBytes });
+    let head = await readEntry(entry, { root: dir, realRoot, realTop: repository, maxBytes, homes, git, repositories });
     const change = types.get(entry.path);
+    // D109: a recorded write under the working directory that git's list does not name, in a repository other than the
+    // review's (one nested in it): a part of the change the review does not cover, named so, never dropped unnamed.
+    if (!change && gitBase && entry.recorded === true && typeof head.state !== 'string') {
+      const real = await realPlace(resolve(dir, entry.path));
+      const own = real === null ? null : await repositoryOf(real, { git, cache: repositories });
+      if (own !== null && own !== repository) head = { path: entry.path, state: OTHER_REPOSITORY };
+    }
     if (!change) { reads.push(head); continue; }
     const side = await readGitSide(change, head, { top: gitBase.top, commit: gitBase.commit, maxBytes, git });
     reads.push({ ...head, type: change.type, ...side });

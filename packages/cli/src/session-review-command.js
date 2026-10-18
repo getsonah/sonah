@@ -32,6 +32,8 @@ import { discoverSessions } from './session-discovery.js';
 import { createSessionReviewStore, dryRunReplay, reviewCodePass, reviewSession } from './session-review.js';
 import { placeHolds, readCodeSnapshot } from './code-snapshot.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES } from '../../evidence/src/ledger.js';
+import { CODE_ACCOUNT_LIMITS, CODE_OUTSIDE_STATES } from '../../evidence/src/code-pass.js';
+import { codeReviewCoverage } from '../../evidence/src/code-report.js';
 import { CODE_STEP_PART, CODE_STEP_ESTIMATE_MINUTES, createReviewBudget, normalizeReviewBudget, estimateLine }
   from './review-budget.js';
 import { resolveCodePass } from './settings.js';
@@ -706,9 +708,17 @@ export const RUN_STATE_WORDS = Object.freeze({
   session: Object.freeze({ complete: 'complete', incomplete: 'did not finish' }),
   codePass: Object.freeze({ complete: 'covered the whole change', partial: 'did not cover all of the change and its checks',
     missing: 'did not run', incomplete: 'did not finish',
+    // D105: a review request too large to send was never sent, so no call started, as the page says.
+    tooLarge: 'did not run, because its input was too large to send',
     // D100 (the audit of absence sentences): what Sonah found, never that the session changed no file.
     noFile: 'had no change to review, because Sonah found no changed file here',
-    backend: 'did not run, because it runs only on the claude-cli backend' }),
+    backend: 'did not run, because it runs only on the claude-cli backend',
+    // F3b (D111's second review): short of complete only by the items that its item-by-item check did not examine in a
+    // way that Sonah could use (evidence code-report.js `codeReviewCoverage`): every call can have answered, and a
+    // published finding can follow from such an item, so never "did not cover". The items are the ones the code step's
+    // line names before the review (`CODE_STEP_WORDS.on`).
+    unaccounted: 'covered the whole change, but its item-by-item check did not examine every item in a way that Sonah '
+      + 'could use' }),
   // The release review: after a code pass short of complete that the person did not require on the command line.
   codePassApart: ', which does not change the exit code (add --code-pass to make it count)',
   // The line's parts: the session review, a pull request's code review (an earlier route), and the code step.
@@ -740,8 +750,13 @@ export function runStateLine(report, mode) {
     // The second release review (low): a pass that ran and has no complete answer is one that did not complete, as the
     // page and the story say (`ran`), never one that was not run.
     const gated = Array.isArray(report.codePass?.gaps) && report.codePass.gaps.some((g) => g?.code === CODE_STEP_BACKEND_GAP);
-    const pass = gated ? 'backend' : none ? 'noFile' : coverage === 'missing' && report.codePass?.ran === true ? 'incomplete'
-      : coverage;
+    // D105: a review request too large to send was not sent: the review did not run, never "did not finish".
+    const unsent = report.codePass?.manifest?.review?.sent === false;
+    // F3b (D111's second review): a coverage short of complete only by the accounting is said as that, never as a review
+    // that did not cover the change and its checks (`codeReviewCoverage`).
+    const pass = gated ? 'backend' : none ? 'noFile' : unsent && coverage === 'missing' ? 'tooLarge'
+      : coverage === 'missing' && report.codePass?.ran === true ? 'incomplete'
+        : coverage === 'partial' && codeReviewCoverage(report.codePass) === 'complete' ? 'unaccounted' : coverage;
     // The release review (owner, 2026-10-14): a code step that ran by default or by the setting, short of complete, is
     // said plainly, with why the review still reads complete (only --code-pass makes its coverage count).
     const apart = report.codePass?.required === false && !['complete', 'noFile'].includes(pass);
@@ -761,7 +776,7 @@ async function sonahVersionOf() {
 }
 /** The change's files whose commit Sonah can tell (D97): in the repository, with a hash, or deleted. */
 const linkedFiles = (codePass) => (Array.isArray(codePass?.files) ? codePass.files : []).filter((f) => f && typeof f === 'object'
-  && typeof f.path === 'string' && f.state !== 'outside_root' && (typeof f.sha256 === 'string' || f.type === 'deleted'
+  && typeof f.path === 'string' && !CODE_OUTSIDE_STATES.includes(f.state) && (typeof f.sha256 === 'string' || f.type === 'deleted'
   || f.state === 'deleted')).map((f) => f.path);
 
 /**
@@ -845,9 +860,15 @@ const codeStepAsks = (snapshot) => codeStepReads(snapshot) && (Array.isArray(sna
  * Owner decision 2026-10-14: the line beside the time estimate (and in a dry run) that says whether the code step runs in
  * this review, why (the flag, the setting or the default), and what it does: the agentic code step (D90) adds one review
  * agent with read-only access to the whole repository and one checking agent per finding it gives (and one for its
- * questions); with no change to review (or no working directory here) it adds no call; on another
+ * questions), and (F3b, D111) one accounting agent per batch of the items in scope, at most CODE_ACCOUNT_LIMITS.calls;
+ * with no change to review (or no working directory here) it adds no call; on another
  * backend than claude-cli it does not run. Fixed words only.
  */
+/** F3b (D111): the items the accounting's calls are counted by, the kinds of ledger.js CODE_ACCOUNT_SCOPE in its order,
+ *  as the code step's line and the dry run's say them. D111 amended (2026-10-18): every ask of the session review, an ask
+ *  an agent wrote into a helper's brief among them (CODE_ACCOUNT_ASK_SOURCES), so never "your asks". */
+const ACCOUNT_ITEMS_WORDS = 'The items are asks, statements that the agent wrote into a file and the agent\'s decisions '
+  + 'not to act.';
 /** The words of the code step's line (`codeStepLine`), by whether it runs; `why` is CODE_STEP_SOURCE_WORDS. */
 export const CODE_STEP_WORDS = Object.freeze({
   off: (why) => `Code review: off (${why}). Sonah reviews only the session, and reads or sends no file. Turn it on `
@@ -857,8 +878,11 @@ export const CODE_STEP_WORDS = Object.freeze({
     + 'can read the repository.',
   noChange: (why) => `Code review: on (${why}). It reviews the change with read-only access to the whole repository. `
     + 'It found no change to review here, so it adds no call.',
+  // F3b (D111): and the accounting's calls, one per batch of its items in scope (ledger.js CODE_ACCOUNT_SCOPE, named by
+  // those kinds alone), at most CODE_ACCOUNT_LIMITS.calls.
   on: (why) => `Code review: on (${why}). It reviews the change with read-only access to the whole repository (Read, `
-    + 'Grep, Glob). It adds one review call, and one check call for each finding.',
+    + 'Grep, Glob). It adds one review call, and one check call for each finding. It adds one more call for each '
+    + `${CODE_ACCOUNT_LIMITS.keys} items, at most ${CODE_ACCOUNT_LIMITS.calls}. ${ACCOUNT_ITEMS_WORDS}`,
 });
 export function codeStepLine({ on, source } = {}, snapshot = null) {
   const words = CODE_STEP_SOURCE_WORDS[source] ?? CODE_STEP_SOURCE_WORDS.default;
@@ -920,8 +944,12 @@ export const REPLAY_WORDS = Object.freeze({
   stored: (reused, total, missing) => `Stored session answers: the store answers ${reused} of ${total} session calls, `
     + `with no new call.${missing ? ` A review would make at least ${missing} new ${missing === 1 ? 'call' : 'calls'}.`
       : ''}`,
+  // F3b (D111): and the accounting's calls, one per batch of its items in scope (ledger.js CODE_ACCOUNT_SCOPE, named by
+  // those kinds alone), at most CODE_ACCOUNT_LIMITS.calls.
   code: (n, list, model) => `Code review: it would first send ${n} ${n === 1 ? 'call' : 'calls'} (${list})${model
-    ? ` to ${model}` : ''}. Then it would send one check for each finding and one for its questions.`,
+    ? ` to ${model}` : ''}. Then it would send one check for each finding and one for its questions. Each `
+    + `${CODE_ACCOUNT_LIMITS.keys} items would add one more call, at most ${CODE_ACCOUNT_LIMITS.calls}. `
+    + ACCOUNT_ITEMS_WORDS,
   noCode: 'Code review: it would send no call, because Sonah found no change to review.',
 });
 /** The reuse dry run's lines: the stored session answers a review would reuse, and the code step's first

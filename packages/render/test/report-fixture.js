@@ -4,7 +4,7 @@
 //   (a) `triagedReport`   a code step like code-pass/10: triage entries, files with +/- counts, notes and asks, a
 //                         finding's anchor span, a dropped note, every item kind of D97 at least once,
 //                         a promise folded into a contradiction finding, a confirmed promise a `claim_false` contradicts,
-//                         a disclosed edit, a passed-over refusal of a tool that is no command, and a call refused by
+//                         a disclosed edit, a passed-over refusal of a read (a tool that is no command), and a call refused by
 //                         each of `user-rejected`, `permission-rule` and `automode-blocked`;
 //   (b) `untriagedReport` the same as code-pass/9 wrote it: no triage, no counts, no notes;
 //   (c) `sessionOnlyReport` the same with no code step;
@@ -76,7 +76,8 @@ export function reportSession() {
   b.change('W5', 'docs/limits.md', { after: T.docs });
   b.say('C3', T.readmeClaim);
   b.run('R1', 'npm test', 'failed', T.testsFailed);
-  call(b, 'X1', { tool: 'Read', paths: ['secrets/.env'], recorded: { denial: 'permission-rule' }, result: 'failed' });
+  // A Read as the adapter spells it (evidence session.js READ_TOOLS: `tool: 'read'`, `operation: 'other'`).
+  call(b, 'X1', { tool: 'read', paths: ['secrets/.env'], recorded: { denial: 'permission-rule' }, result: 'failed' });
   call(b, 'X2', { tool: 'Bash', operation: 'command', command: 'rm -rf dist', recorded: { denial: 'automode-blocked' },
     result: 'failed' });
   call(b, 'X3', { tool: 'Bash', operation: 'command', command: 'git push --force', recorded: { denial: 'user-rejected' },
@@ -190,7 +191,7 @@ function sessionRows(session) {
     failures: [
       { eventId: 'R1-r', action: 'R1', outcome: 'ran-failed', form: 'exit', tool: 'bash', handling: 'passed-over',
         response: receipt('commentary', 'F1', 'all tests pass') },
-      { eventId: 'X1-r', action: 'X1', outcome: 'did-not-run', form: 'denial', tool: 'Read', handling: 'passed-over' },
+      { eventId: 'X1-r', action: 'X1', outcome: 'did-not-run', form: 'denial', tool: 'read', handling: 'passed-over' },
       { eventId: 'X3-r', action: 'X3', outcome: 'did-not-run', form: 'denial', tool: 'Bash', handling: 'told-human',
         response: receipt('commentary', 'F1', 'I told you that I changed the CI file.') },
       { eventId: 'R0-r', action: 'R0', outcome: 'ran-failed', form: 'exit', tool: 'bash', handling: 'acted-on' },
@@ -283,6 +284,8 @@ export function triagedReport(session = reportSession()) {
     finding: id('r') } };
   return { ...base, codeCoverage: 'complete', codePass: {
     version: { pass: 'sonah.code-pass/10' }, ran: true, required: false,
+    // The review agent's record, as every code step since code-pass/7 keeps it: its request answered.
+    agent: { turns: 9, tools: { Read: 6, Grep: 2, Glob: 1 }, reads: 4, terminal: 'answered' },
     base: { kind: 'git', commit: START }, gaps: [], coverage: 'complete', files: filesOf(true),
     findings, questions: codeQuestions(), withheld: codeWithheld(), footer: [],
     triage: [

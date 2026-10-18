@@ -214,7 +214,7 @@ test('the words are chosen by structure: an ask_not_met names the ask only throu
     [`${ASK_CODE_WORDS.withheld} (${withheldWhy(later.codePass.withheld[2])})`, 'SYNTHETIC over']]);
   assert.equal(withheldWhy(later.codePass.withheld[0]), 'its check refuted it: it misreads the code');
   assert.equal(withheldWhy(later.codePass.withheld[2]),
-    'it broke the answer\'s contract, even after one repair (a text is over its length limit)');
+    'it broke the answer\'s contract, even after one repair (a text or a list is over its length limit)');
   for (const key of [...REQUIREMENT_STATUSES, 'addressed', 'partly-addressed', 'open'])
     assert.equal(typeof ASK_CODE_WORDS.status[key], 'string', key);
   assert.equal(Object.hasOwn(ASK_CODE_WORDS, 'held'), false, 'no words say the code review found a statement holds');

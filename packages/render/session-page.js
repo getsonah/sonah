@@ -52,8 +52,23 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  place cited and of what that answer was shown there. /42 (D104, F5 part 4): a claim, a run and a decision you
  *  settled show their rows' shown-in-part mark under its label, as an item's evidence and an ask's lines show it; and the
  *  page never links to a place it does not hold (`heldLinks`): a link to a run, a claim or an item that a trim or a
- *  list's bound left out keeps its words, unlinked. */
-export const PAGE_VERSION = 'sonah.session-page/42';
+ *  list's bound left out keeps its words, unlinked. /43 (D105, F2 part A): what the code review saw of each file short
+ *  of whole (in part, with its lines; only where the change touched it; a rule or skill file in part or not at all), a
+ *  review request too large to send said so and never as a call that did not answer, and the commands left out of it
+ *  for room, as the report model gives them. And in the same move (D107, F3a): a finding or question of the code review
+ *  that Sonah withheld says whether an item of the repair matched it (by identity, never by its place), saying only
+ *  what code compared: none matched, one matched but went to another item or past its list's limit, it names no lines
+ *  or words to match, or it came in the repair. An earlier report's words stay. And (D110, the premise contract): a
+ *  code finding shows as confirmed only when code's label confirms it, with each premise beside where its evidence is;
+ *  a finding Sonah could not confirm is an item to verify, with each premise that Sonah could not check on a visible line
+ *  (`restsOutside`); and no sentence says that a second reviewer checked a finding. And (D111, F3b, the accounting):
+ *  What Sonah could not check counts, by kind, the items of the session review that the code review's item-by-item
+ *  check (the accounting) did not examine in a way that Sonah could use, as the report model gives them; never the ones it examined;
+ *  and the code review's coverage line by its own coverage (D111's second review), as the report model gives it. And (E1-F8, D112: one
+ *  point, one item): an item shows its members after its own lines — the line that counts them, then each member's type
+ *  word, what it is, its own tier word and its lines, folded when the report model folds it — and the items of a section
+ *  come in the report model's order (by final level, then kind). */
+export const PAGE_VERSION = 'sonah.session-page/43';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -232,8 +247,10 @@ function whereHtml(item) {
   const places = [...item.where.map((w) => (w.anchor ? (ANCHOR.test(w.anchor) ? `<a href="#${w.anchor}">${esc(w.text)}</a>`
     : esc(w.text)) : `<code>${esc(placeText(w))}</code>${gitHubLink(w.url)}`)),
   ...(item.whereMore ? [esc(REPORT_ITEM_WORDS.morePlaces(item.whereMore))] : [])];
-  const marker = item.scope.asks.length && !item.where.some((w) => w.anchor === `ask-${item.scope.asks[0]}`)
-    ? [`<a href="#ask-${item.scope.asks[0]}">${esc(REPORT_ITEM_WORDS.asked(item.scope.asks[0]))}</a>`] : [];
+  // A member (D112) has no scope of its own: its item's marker says whether you asked.
+  const asks = item.scope?.asks ?? [];
+  const marker = asks.length && !item.where.some((w) => w.anchor === `ask-${asks[0]}`)
+    ? [`<a href="#ask-${asks[0]}">${esc(REPORT_ITEM_WORDS.asked(asks[0]))}</a>`] : [];
   return places.length || marker.length ? labelled(REPORT_ITEM_WORDS.where, [...places, ...marker].join(' · '), 'line where')
     : '';
 }
@@ -249,14 +266,15 @@ function evidenceHtml(item, trimmed) {
   return `<details class="evidence"><summary>${summary}</summary>${lines.join('')}${noLink.join('')}`
     + `<p class="note why">${esc(item.why)}</p>${id}${answer}</details>`;
 }
-/** The visible lines of an item (D97), in order, then its evidence fold. */
-function itemBody(item, trimmed) {
-  const scope = item.scope.notAsked ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.notAsked)}</span>`
-    : item.scope.askedUnknown ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.askedUnknown)}</span>` : '';
+/** The lines of an item or a member (D97, D112), in order, then its evidence fold. */
+function linesHtml(item, trimmed) {
   const out = [];
   if (item.quote) out.push(`<blockquote class="item-quote">${item.quoteLabel ? `<span class="label">${esc(item.quoteLabel)}</span> `
     : ''}${partHtml(item.quote)}</blockquote>`);
   else if (item.quoteMissing) out.push(`<p class="note">${esc(REPORT_ITEM_WORDS.quoteMissing)}</p>`);
+  // D110: each premise of an item to verify that Sonah could not check, in its check's words.
+  for (const parts of list(item.restsOutside)) out.push(labelled(REPORT_ITEM_WORDS.restsOutside, partsHtml(parts),
+    'line rests-outside'));
   if (item.impact) out.push(labelled(REPORT_ITEM_WORDS.impact, partsHtml(item.impact), 'line impact'));
   if (item.agentSaid) out.push(labelled(item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid, partHtml(item.agentSaid),
     'line agent-said'));
@@ -264,8 +282,26 @@ function itemBody(item, trimmed) {
   out.push(whereHtml(item));
   out.push(excerptHtml(item.where[0]?.excerpt));
   out.push(evidenceHtml(item, trimmed));
+  return out.join('');
+}
+/** D112: the members of an item, after its own lines: the line that counts them, then each one, its type word, what it
+ *  is and its own tier word, then its lines; folded (`<details>`) when the model folds it. */
+function membersHtml(item, trimmed) {
+  const members = list(item.members);
+  if (!members.length) return '';
+  return `<div class="members"><p class="note">${esc(REPORT_ITEM_WORDS.members(members.length))}</p>${members.map((m) => {
+    const head = `<strong class="type">${esc(REPORT_TYPE_WORDS[m.type])}:</strong> ${partsHtml(m.what.parts)} · `
+      + `<span class="tier-word">${esc(REPORT_TIER_WORDS[m.tier.final])}</span>`;
+    return m.folded ? `<details class="member"><summary>${head}</summary>${linesHtml(m, trimmed)}</details>`
+      : `<div class="member"><p class="member-head">${head}</p>${linesHtml(m, trimmed)}</div>`;
+  }).join('')}</div>`;
+}
+/** The visible lines of an item (D97), in order, then its evidence fold, then its members (D112). */
+function itemBody(item, trimmed) {
+  const scope = item.scope.notAsked ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.notAsked)}</span>`
+    : item.scope.askedUnknown ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.askedUnknown)}</span>` : '';
   return { head: `<span class="n">${item.n}</span> <strong class="type">${esc(REPORT_TYPE_WORDS[item.type])}:</strong> `
-    + `${partsHtml(item.what.parts)}${scope}`, body: out.join('') };
+    + `${partsHtml(item.what.parts)}${scope}`, body: linesHtml(item, trimmed) + membersHtml(item, trimmed) };
 }
 function itemHtml(item, trimmed) {
   const { head, body } = itemBody(item, trimmed);
@@ -317,8 +353,9 @@ function didHtml(model, factor) {
     + (did.files.grouped ? `<p class="note">${esc(REPORT_DID_WORDS.filesByAsk)}</p>` : '')
     + (did.files.total ? groups : `<p class="note">${esc(REPORT_DID_WORDS.noFiles)}</p>`)
     + (filesMore > 0 ? `<p class="cut">${esc(REPORT_DID_WORDS.moreFiles(filesMore))}</p>` : '')
-    + (did.files.outside ? `<p class="note">${esc(REPORT_DID_WORDS.outside(did.files.outside.n, did.files.outside.paths.join(', '),
-      did.files.outside.more))}</p>` : '')
+    // D109 (its review): with the code step's one tally, the writes it counts and that are no file of the change.
+    + (did.files.outside ? `<p class="note">${esc((did.files.outside.notInChange ? REPORT_DID_WORDS.notInChange
+      : REPORT_DID_WORDS.outside)(did.files.outside.n, did.files.outside.paths.join(', '), did.files.outside.more))}</p>` : '')
     + (did.files.unconfirmed ? `<p class="note">${esc(REPORT_DID_WORDS.unconfirmed(did.files.unconfirmed))}</p>` : '');
   // Runs.
   const runsShown = did.runs.shown.slice(0, cap(did.runs.shown.length, factor));
@@ -509,6 +546,10 @@ details[open] > summary::before { transform: rotate(90deg); }
 details.evidence { margin-top: 4px; }
 details.evidence > *:not(summary) { margin-top: 6px; }
 details.item.gtk > summary { font: 500 15px/1.45 var(--display); color: var(--ink); }
+.members { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.member { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 6px; }
+.member-head, details.member > summary { font: 500 15px/1.45 var(--display); color: var(--ink); overflow-wrap: anywhere; }
+.member .tier-word { color: var(--muted); }
 .fold-tier { display: flex; flex-direction: column; gap: 12px; }
 .fold-part > summary.card-bar { color: var(--ink); }
 .fold-part:not([open]) > summary.card-bar { border-bottom: none; }

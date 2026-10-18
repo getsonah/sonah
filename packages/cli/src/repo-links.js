@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { runGit } from './code-snapshot.js';
+import { CODE_OUTSIDE_STATES } from '../../evidence/src/code-pass.js';
 
 /**
  * Every git argv this file may run, as a shape: a literal word, or a slot (`<remote>`, `<object>`, `<commit>`,
@@ -99,7 +100,7 @@ export async function readRepoFacts({ snapshot, codePass, git = runGit } = {}) {
   const headSha = HASH.test(head ?? '') ? head : null;
   const start = HASH.test(codePass.base.commit ?? '') ? codePass.base.commit : null;
   const files = (Array.isArray(codePass.files) ? codePass.files : []).filter((f) => f && typeof f === 'object'
-    && f.state !== 'outside_root' && linkablePath(f.path));
+    && !CODE_OUTSIDE_STATES.includes(f.state) && linkablePath(f.path));
   const atHead = [], goneAtHead = [];
   if (headSha) {
     for (const f of files) {

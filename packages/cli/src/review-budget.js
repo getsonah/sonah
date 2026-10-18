@@ -175,8 +175,9 @@ export const REVIEW_ESTIMATE_RATES = Object.freeze({ minutesAtOneMB: 12.3, expon
   range: Object.freeze([0.6, 1.7]), unknownRequestBytes: 48_000 });
 
 /** The agentic code step's share of the estimate (code-pass/7): a literal range of minutes added after the session's
- *  windows — one review agent, then its checking agents side by side — until it is timed on real reviews. Reported,
- *  never a limit. */
+ *  windows — one review agent, then its checking agents side by side (and, F3b, D111, its accounting agents beside
+ *  them, then the checks of the accounting's own findings) — until it is timed on real reviews. Reported, never a
+ *  limit. */
 export const CODE_STEP_ESTIMATE_MINUTES = Object.freeze([3, 15]);
 
 /** The rough time range, in whole minutes, of a review whose windows' first requests are `requestBytes` (one entry per

@@ -882,20 +882,33 @@ const writesInsideRepository = (session) => (Array.isArray(session?.events) ? se
     && change.outsideRepository !== true));
 
 /**
+ * D83 (3)'s `writes_nothing`, one reading for every reader of it (E1-F8, D112): a call that writes nothing by the type
+ * the recorder or the slicer gave it — a read or a search of the slicer's typed read kind (session.js `isRead`: Read,
+ * NotebookRead, Glob, Grep, the vetted MCP file read), or a command the recorder itself typed as only reading,
+ * searching or listing (a Codex `parsed_cmd` whose every entry is `read`, `search` or `list_files`). A command the
+ * recorder did not type so (every Claude Code shell command) is never one; no command text is read. The housekeeping
+ * kinds (`housekeepingKinds`) and the report's default tier of a refused read (render/report-model.js) read this. Pure.
+ */
+export function writesNothing(event) {
+  const parsed = event?.recorded?.parsedCmd;
+  return event?.kind === 'invocation' && (isRead(event) || (event.operation === 'command' && Array.isArray(parsed)
+    && parsed.length > 0 && parsed.every((entry) => READ_ONLY_COMMAND_TYPES.includes(entry?.type))));
+}
+
+/**
  * D83 (3), owner decision 2026-10-12: the HOUSEKEEPING_KINDS of a decision's cited actions, in that order, when every
  * one of them is housekeeping by structure; else null (a decision citing no action — a choice not to act anchored on
  * the agent's words — is never housekeeping). Only typed fields: an action's kind and operation, the slicer's read
- * kind, the recorder's typed reading of a command (`recorded.parsedCmd`), a write's recorded changes and their write
- * scope, whether it was parsed from a command, and whether the recording holds a write inside the repository. Pure.
+ * kind, the recorder's typed reading of a command (`recorded.parsedCmd`, read by `writesNothing`), a write's recorded
+ * changes and their write scope, whether it was parsed from a command, and whether the recording holds a write inside
+ * the repository. Pure.
  */
 export function housekeepingKinds(session, actionEvents) {
   if (!Array.isArray(actionEvents) || !actionEvents.length) return null;
   const kinds = new Set();
   let inside = null;
   for (const event of actionEvents) {
-    const parsed = event?.recorded?.parsedCmd;
-    if (event?.kind === 'invocation' && (isRead(event) || (event.operation === 'command' && Array.isArray(parsed)
-        && parsed.length > 0 && parsed.every((entry) => READ_ONLY_COMMAND_TYPES.includes(entry?.type))))) {
+    if (writesNothing(event)) {
       kinds.add('writes_nothing');
       continue;
     }
@@ -2023,12 +2036,16 @@ export const REQUIREMENT_FACT_WORDS = Object.freeze({
  *   contradicted_by_code  the row's code check reads contradicted by the code at review time
  *   withheld_finding      a withheld finding's `leadsFrom` names the ask's row
  *   question_concerns     a published open question of the code review concerns the ask's row
+ *   unconfirmed_finding   (code-verify/3, D110) the `leadsFrom` of a finding Sonah could not confirm (one premise of
+ *                         its check rests outside the repository and the language: `codePass.unconfirmed`) names the
+ *                         ask's row
  * ASK_CODE_ATTENTION_LINKS: the links that make an ask done (or addressed) or not checked an attention row (review.js
- * `askRowKind`, `asksCodeFinding`); the others are a line beside the row only. (`shown_in_code`, a row's code check
- * reading shown in the code, went with code-pass/9: a link of that name on an earlier report is read as no link.)
+ * `askRowKind`, `asksCodeFinding`); the others are a line beside the row only, so a finding Sonah could not confirm never
+ * moves an ask. (`shown_in_code`, a row's code check reading shown in the code, went with code-pass/9: a link of that
+ * name on an earlier report is read as no link.)
  */
 export const ASK_CODE_LINKS = Object.freeze(['leads_from', 'trace_quotes_ask', 'contradicted_by_code', 'withheld_finding',
-  'question_concerns']);
+  'question_concerns', 'unconfirmed_finding']);
 export const ASK_CODE_ATTENTION_LINKS = Object.freeze(ASK_CODE_LINKS.slice(0, 3));
 
 /**
@@ -3239,8 +3256,11 @@ export const CODE_CHECK_REASONS = Object.freeze(['file_not_shown', 'quote_ungrou
  *   binary                 holds a NUL byte, or is not UTF-8; or git reports it binary: its diff from the start commit has
  *                          no text hunk though its text changed (a `binary` or `-diff` attribute, git's "Binary files …
  *                          differ"), so no line of it is in the change block
- *   oversize               the file is over the review's request bound, or its hunks are over the change block's bound
- *                          (code-pass.js CODE_CHANGE_BLOCK_MAX_BYTES): its hunks are not in the change block
+ *   oversize               the file, or its side at the start commit, is over the review's request bound on its own: its
+ *                          hunks are not in the change block (D109: a file whose hunks the request left out for room is
+ *                          `left_out`, never this); since D109's review also a file whose hunks alone are over what the
+ *                          change block's cap leaves beside its table of contents (the manifest's `alone`): no request
+ *                          can show them
  *   changed_since_session  a fact: its last recorded successful write is no longer literally in it (it changed after
  *                          the session's last recorded edit, so its lines now may not all be the agent's). Since
  *                          code-snapshot/10 its hunks are in the change block like any changed file's, the footer says
@@ -3249,13 +3269,27 @@ export const CODE_CHECK_REASONS = Object.freeze(['file_not_shown', 'quote_ungrou
  *   deleted                not there at review time (a deleted path of the diff shows its removed lines)
  *   outside_root           a recorded write outside the working directory: not part of the change block. One that still
  *                          lies in the repository's top folder is a part of its change the review did not cover (named
- *                          in the footer as withheld; coverage partial); one outside the repository is only counted
+ *                          in the footer as withheld; coverage partial); one outside every folder the review can read
+ *                          (the working directory and the repository's top folder) is only counted
  *   unreadable             could not be read as a regular file, or its diff could not be read consistently (fail closed)
+ *   left_out               (D109) its hunks fit within the review's bound on their own, but the request left them out for
+ *                          room: the request manifest's entry says which bound (CODE_LEFT_OUT_REASONS)
+ *   other_repository       (D109, code-snapshot/12) a recorded write that lies in a folder the review can read, in a git
+ *                          repository other than the review's own (a repository nested in the working directory, or
+ *                          one where the working directory has none): not part of the change block, and a part of the
+ *                          change the review did not cover
+ *   outside_writer_root    (D109, code-snapshot/12) a recorded write under the working directory, in its repository (or
+ *                          in none, as the working directory), that the recording marks outside the working directory of
+ *                          the agent that wrote it (the slicer's write scope: a helper that worked in another folder; a
+ *                          harness home folder is never one): not part of the change block, and a part of the change the
+ *                          review did not cover
  * Its declarations are the gaps `code_unreviewable` and `source_changed` on the `code` channel with scope `repository`
- * — kept in the code pass's own record, never among the report's gaps, so no session coverage reads them.
+ * — kept in the code pass's own record, never among the report's gaps, so no session coverage reads them. From D109
+ * `code_unreviewable` counts the files of the change the code review did not see (code-pass.js `codeChangeTally`, the
+ * one tally of the request manifest and the reading record every coverage line reads), by their state.
  */
 export const CODE_FILE_STATES = Object.freeze(['shown', 'binary', 'oversize', 'changed_since_session', 'deleted',
-  'outside_root', 'unreadable']);
+  'outside_root', 'unreadable', 'left_out', 'other_repository', 'outside_writer_root']);
 // ---- the code step (code-pass/2; agentic since code-pass/7): closed vocabularies ---------------------------------
 
 /**
@@ -3305,11 +3339,28 @@ export const CODE_FINDING_KINDS = Object.freeze(['bug', 'missed_case', 'weak_tes
   'rule_break', 'claim_false']);
 /** A checking agent's verdict on a finding's title (code-pass/7): closed. `holds` — the code, as it traced it, shows
  *  the stated problem; `refuted` — it does not; `cannot_tell` — settling it needs something outside the repository (a
- *  run, a dependency's source, the platform). */
+ *  run, a dependency's source, the platform). Since code-verify/3 (D110) `holds` is never a label by itself: the checking
+ *  agent lists the premises the problem rests on, each with its source (CODE_PREMISE_SOURCES), and code computes from
+ *  them whether a finding that holds is confirmed; `cannot_tell` is a trace that settles nothing either way. */
 export const CODE_VERIFY_VERDICTS = Object.freeze(['holds', 'refuted', 'cannot_tell']);
 /** A checking agent's verdict on each supporting claim of a finding: closed. A claim judged `false` is cut from the
  *  finding: the record keeps it with its verdict, and no reader shows it. */
 export const CODE_CLAIM_VERDICTS = Object.freeze(['holds', 'false']);
+/**
+ * What settles one premise a finding rests on, as its checking agent names it (code-verify/3, D110; the owner's bucket
+ * C, 2026-10-17): each of the 1 to 6 premises it lists has one source. Closed.
+ *   repository  lines of the repository show it: at least one receipt, each a quote code finds literally on the lines of
+ *               the file it names (that a test, bench or command reaches some code is shown only by its call chain:
+ *               its entry point and each call on the way)
+ *   language    documented behaviour of the language or of its standard library settles it, named in the premise;
+ *               any receipt it gives grounds like any other
+ *   outside     anything else: toolchain or compiler internals, a dependency the agent cannot open, timing, a run
+ * Code computes the label from these alone (code-pass.js `findingConfirmed`): a finding is confirmed only when its
+ * verdict holds and every premise is `repository` or `language`, each receipt grounded; one `outside` premise makes it
+ * not confirmed, published apart (`codePass.unconfirmed`) with that premise in the checking agent's words. No model
+ * rates its own confidence: the source says where a premise's evidence is, and code reads only that and the receipts.
+ */
+export const CODE_PREMISE_SOURCES = Object.freeze(['repository', 'language', 'outside']);
 /** A checking agent's verdict on an open question for the person: closed. `false_premise` — the code shows what it rests
  *  on is not so. */
 export const CODE_QUESTION_VERDICTS = Object.freeze(['sound', 'false_premise']);
@@ -3333,7 +3384,7 @@ export const CODE_REFUTATION_REASONS = Object.freeze(['incorrect', 'mitigation_s
  * CODE_FINDING_WITHHELD). A withheld item keeps its text and is shown folded with its reason, never
  * counted. Closed.
  *   malformed                  it broke the contract after the one repair (its `cause`: a CODE_ITEM_ERRORS member; its
- *                              `repair`, a CODE_REPAIR_UNCHECKED member, when no repaired version of it was checked)
+ *                              `repair`, a CODE_REPAIR_UNCHECKED member, when no item of the repair stood in its place)
  *   evidence_grounding_failed  a quote or an anchor did not ground after the one repair (its `cause`, its `repair`)
  *   out_of_scope               the anchor does not touch the change, and no step quotes a changed line where its kind
  *                              allows that (contract_break, rule_break, claim_false)
@@ -3342,30 +3393,84 @@ export const CODE_REFUTATION_REASONS = Object.freeze(['incorrect', 'mitigation_s
  *   verify_unexecuted          its check did not complete: the verdict was void after its one re-ask (its `cause`: a
  *                              CODE_VOID_CAUSES member)
  *   false_premise              a question whose premise its checking agent showed false in the code
- *   request_failed             its checking request was not answered (the call failed, or it was over the bound)
+ *   request_failed             its checking request was not answered (the call failed; before code-pass/12, also a
+ *                              request over the bound)
+ *   request_too_large          (code-pass/12, D105) its checking request was too large to send: Sonah did not send it
  */
 export const CODE_WITHHELD_REASONS = Object.freeze(['malformed', 'evidence_grounding_failed', 'out_of_scope',
-  'verify_refuted', 'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed']);
+  'verify_refuted', 'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed', 'request_too_large']);
 /**
- * Why Sonah checked no repair of an item it withheld by its shape or its grounding (`withheld[].repair`, code-pass/10;
- * reasons `malformed`, `evidence_grounding_failed` and `out_of_scope`). Absent, the one repair's item at the item's
- * index was the same item, was checked again and failed too; present, Sonah checked no repaired version of it, so no
- * reader says it failed "even after one repair". Closed; set by structure (which call was made, and what the repair
- * returned at the item's index: code-pass.js `sameItem`, `PUBLISHED_AS`).
- *   different  the repair returned another item at the item's index: a member that names the item and that the
- *              answer gave valid is not the same there (a finding's kind, its anchor's path or side; a question's
- *              dossier key). A member the answer gave outside its list, or not at all, takes no part
- *   absent     the repair returned no item at the item's index (its list is shorter, is no list, or holds no object
- *              there)
- *   repeated   the repair returned at the item's index the same item that stands at another index: the same value as
- *              the answer's item there, or, checked, what the step publishes once with an item kept there (a repair
- *              that shifted its list). Taking it would merge the item into that one, with no record of its own
- *   failed     the repair's call failed, its answer was not an object, or its request was over the bound
- *   spent      the one repair went to asking again for an answer that could not be used whole, and the item is of
- *              the answer that it brought
- *   unasked    the item is past its list's limit (CODE_REVIEW_ITEMS_MAX): withheld unchecked, named in no repair
+ * Why no item of the one repair stood in the place of an item withheld by its shape or its grounding
+ * (`withheld[].repair`, code-pass/10; reasons `malformed`, `evidence_grounding_failed` and `out_of_scope`). Absent, an
+ * item of the repair matched it one to one (CODE_REPAIR_FATES: by identity, never by its index alone and never by
+ * order; code-pass.js `mergeRepair`), stood in its place, was checked and failed too; present, none did, so no reader
+ * says it failed "even after one repair". Each member says only what code compared: an item of the repair that corrects
+ * the very part an identity reads (its anchor's lines, a missing anchor, a question's words) matches no item, and is
+ * checked as a new item (D107). Closed; set by structure (which call was made, which items have an identity, and which
+ * items of the repair matched it).
+ *   unmatched           Sonah compared it with every item of the repair, past its list's limit included, and none
+ *                       matched it: none of the same value, no finding of its kind on its file version with anchor
+ *                       lines that overlap its anchor's, no question with its words on its dossier item
+ *   uncompared          none matched it, but at least one item of the repair has no identity (a finding whose anchor is
+ *                       missing, is not in its closed shape, names lines that are not all lines of a readable file
+ *                       version or ends before it starts; a question with no words): Sonah compared it with that one by
+ *                       value only
+ *   ambiguous           items of the repair up to its list's limit matched it, but not one to one: more than one item
+ *                       of the repair matched it (past its list's limit included), or the one that matched it matched
+ *                       another item of the answer too. Sonah breaks no such tie, by order or otherwise: no item takes
+ *                       its place
+ *   matched_past_limit  only items of the repair past its list's limit matched it, and those take no place: unchecked
+ *   unnamed             it has no identity and no anchor in its closed shape (a finding whose anchor is missing or not
+ *                       in its shape, an item that is not an object, a question with no words), and no item of the
+ *                       repair is of the same value
+ *   unplaced            a finding whose anchor is in its closed shape, but whose lines are not all lines of a readable
+ *                       file version, or whose last line is before its first: it has no identity, and no item of the
+ *                       repair is of the same value
+ *   brought             the item came in the one repair and holds no place of the answer: no repair was left for it
+ *   failed              the repair's call failed, or its answer was not an object (before code-pass/12, also a
+ *                       request over the bound)
+ *   spent               the one repair went to asking again for an answer that could not be used whole, and the item is
+ *                       of the answer that it brought
+ *   unasked             the item is past its list's limit (CODE_REVIEW_ITEMS_MAX): withheld unchecked, named in no
+ *                       repair
+ *   too_large           (code-pass/12, D105) the repair's request was too large to send, even with the lowest blocks
+ *                       left out: Sonah did not send it
+ *   accounted           (F3b, D111) a finding that came with the accounting of the code review (code-pass.js
+ *                       `accountItems`): no repair is asked for one, so none stood in its place
+ * A member never changes its meaning: an earlier report's `different`, `absent` and `repeated` (code-pass/10, read at
+ * the item's index) keep their words in the readers (code-report.js `unrepaired`) and are written no more.
  */
-export const CODE_REPAIR_UNCHECKED = Object.freeze(['different', 'absent', 'repeated', 'failed', 'spent', 'unasked']);
+export const CODE_REPAIR_UNCHECKED = Object.freeze(['unmatched', 'uncompared', 'ambiguous', 'matched_past_limit',
+  'unnamed', 'unplaced', 'brought', 'failed', 'spent', 'unasked', 'too_large', 'accounted']);
+/**
+ * What became of each item of the review agent's answer and of its one repair's answer (`codePass.fates`, F3a): every
+ * item of either answer, each list to its end, gets exactly one fate record. Items are matched by identity, never by
+ * their index alone and never by order (code-pass.js `mergeRepair`): an item matches another when they are the same
+ * value; two findings when they are of the same kind on the same file version and their anchors' lines overlap (the
+ * kind takes part when the answer gave it valid; an anchor names lines only when it is in its closed shape and they are
+ * lines of a readable file version, the first not after the last); two questions when they have the same words and name
+ * the same dossier item (the key takes part when it names one). An item of the repair takes the place of an item of the
+ * answer only one to one: each is the only item of the other answer that it matches. Closed.
+ *   kept      it stands and goes to its checking agent: an item of the answer that passed its checks, or an item of the
+ *             repair that passed its checks and stands in place of the item of the answer it replaces (`replaces`)
+ *   replaced  an item of the answer that failed its checks, in whose place the one item of the repair that matched it,
+ *             which matched no other item of the answer, stands, or is withheld when it failed too (`by`)
+ *   added     an item of the repair that passed its checks, holds no place and matches no item of the answer that
+ *             stands: it stands and goes to its checking agent (two such items, or one beside an item of the repair
+ *             that holds a place, stand as two items of one answer do)
+ *   folded    an item of the repair that matches items of the answer that stand, so it never stands beside one
+ *             (`into`: all of them); an item of the repair that does not stand on its own (it failed and holds no
+ *             place, or it is past its list's limit), into every item of the answer of its value, else into every item
+ *             that stands that it matches
+ *   withheld  an item withheld by its shape, its grounding or its list's limit (`reason`, a CODE_WITHHELD_REASONS
+ *             member, as its withheld record gives it); an item of the repair withheld in the place of the item of the
+ *             answer it replaces says which (`replaces`)
+ */
+export const CODE_REPAIR_FATES = Object.freeze(['kept', 'replaced', 'added', 'folded', 'withheld']);
+/** Which answer the item of a fate record is of (`codePass.fates[].from`): the review agent's answer, or its one
+ *  repair's; or (F3b, D111) an answer of the accounting of the code review, whose findings are numbered across its
+ *  answers in the order code read them (code-pass.js `accountItems`). Closed. */
+export const CODE_ANSWER_SOURCES = Object.freeze(['answer', 'repair', 'account']);
 /** What a withheld item of the code step is (`withheld[].what`): a finding or an open question. Closed. (`held`, a
  *  statement found to hold, went with code-pass/9: an earlier report's such entry is listed nowhere.) */
 export const CODE_WITHHELD_ITEMS = Object.freeze(['finding', 'question']);
@@ -3402,7 +3507,8 @@ export const CODE_VOID_CAUSES = Object.freeze(['shape', 'receipt_ungrounded', 's
   'refutation_uncited']);
 /** How the review agent's request ended (code-pass/7, `codePass.agent.terminal`): closed. `answered` — an answer in the
  *  contract's top-level shape; `unusable` — an answer outside it; `failed` — the call failed; `not_sent` — no change to
- *  review, or a request over the review's bound. */
+ *  review, or a request too large to send (code-pass/12: its minimum over the review's bound, `manifest.review.sent`
+ *  false). */
 export const CODE_REVIEW_TERMINALS = Object.freeze(['answered', 'unusable', 'failed', 'not_sent']);
 /** The kinds of the session dossier's items (code-context.js `codeDossier`), built by code from the saved report. */
 export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pivot', 'failure',
@@ -3431,18 +3537,147 @@ export const CODE_DOSSIER_MOVES = Object.freeze(['claim_unconfirmed', 'claim_con
  *   withheld        a path of the change whose hunks are not in the change block, by its own state (`path`; its
  *                   `files[]` entry gives the state), a recorded write outside the working directory in the repository
  *                   included
- *   clipped         a path of the change whose hunks are over the change block's bound (`path`): the agent may read the
- *                   file, not its diff
+ *   clipped         a path of the change whose hunks the request left out for room (`path`; the manifest's entry says
+ *                   which bound, CODE_LEFT_OUT_REASONS): the agent may read the file, not its diff
  *   failed          calls of a part of the code step (`part`, CODE_STEP_PARTS) that gave no usable answer (`count`)
- *   outside_root    recorded writes outside the repository (`count`): an agent's scratch files, counted, not part of
- *                   the change reviewed
+ *   outside_root    recorded writes outside every folder the review can read (`count`; D109: the working directory and
+ *                   the repository's top folder): an agent's scratch files, counted, not part of the change reviewed.
+ *                   D109's review: `home`, how many of them lie in a harness home folder or are named from the home
+ *                   folder (never project work, D69 b), which can lie in a folder the review can read: said apart
  *   source_changed  the repository changed while the code step ran (its state before the first request and after the
  *                   last differ), so what the agents read may mix two states
+ *   too_large       (code-pass/12, D105) requests of a part of the code step (`part`) too large to send (`count`):
+ *                   Sonah sent none of them, so none is a call that did not answer
+ *   commands_left_out  (code-pass/12) commands of the session the review request left out for room (`count`): the
+ *                   agent cannot read a command itself
+ *   unaccounted     (F3b, D111) items of the session review in scope of the accounting (`scope`, a CODE_ACCOUNT_SCOPE
+ *                   member) whose fate is `not_examined` or `missing` (`count`): one entry per scope member with any.
+ *                   No entry ever counts the items the accounting examined: the page has no positive line of them
+ * From code-pass/12, `withheld` and `clipped` name only a file the code review did not see (code-pass.js `codeSeenOf`:
+ * not shown, and not read; a Read that failed read nothing): one it read in part, read whole whose change it did not see
+ * (the request did not show its hunks' rows on the earlier side), or read with no lines Sonah could read, is named by the
+ * readers' seen lines (and keeps the coverage short while its change is not seen); one whose change it saw whole is not
+ * named.
  */
-export const CODE_FOOTER_KINDS = Object.freeze(['withheld', 'clipped', 'failed', 'outside_root', 'source_changed']);
+export const CODE_FOOTER_KINDS = Object.freeze(['withheld', 'clipped', 'failed', 'outside_root', 'source_changed',
+  'too_large', 'commands_left_out', 'unaccounted']);
 /** The parts of the code step (code-pass/7): the review agent, its one repair, a finding's checking agent, the batch
- *  checking agent of the questions. A failed call is named by its part in the footer. Closed. */
-export const CODE_STEP_PARTS = Object.freeze(['review', 'repair', 'verify', 'batch']);
+ *  checking agent of the questions; and (F3b, D111) an accounting agent. A failed call is named by its part in the
+ *  footer. Closed. */
+export const CODE_STEP_PARTS = Object.freeze(['review', 'repair', 'verify', 'batch', 'account']);
+/**
+ * The items of the session dossier (code-context.js `codeDossier`) that the code review's accounting accounts for (F3b,
+ * D111; the owner's bucket C, 2026-10-17), in the order code sends them: the session review's asks (dossier kind `ask`:
+ * every requirement, whoever's words it rests on, `CODE_ACCOUNT_ASK_SOURCES`), then the statements the agent wrote into
+ * a file (the dossier items of the report's `writtenClaims`), then the agent's decisions not to act (dossier kind
+ * `decision` with the move `not_acting`), each in the dossier's order. Chosen by the item's recorded structure, never by
+ * its words. Closed.
+ */
+export const CODE_ACCOUNT_SCOPE = Object.freeze(['ask', 'written_claim', 'not_acting']);
+/**
+ * Whose words an ask of the session review rests on (D111 amended, 2026-10-18; the owner: "go for fix first"), read from
+ * the recorded event its instruction receipt cites (code-context.js `askSourceOf`), never from its words: `person` — your
+ * own words (a root instruction recorded with human authority, or a project instruction file you wrote that the main
+ * agent was given: code-context.js `actorOf`); `helper_brief` — a brief an agent wrote for a helper (an instruction of a
+ * helper's session, recorded with its parent agent's authority); `other` — anything else, or what Sonah cannot read
+ * (another agent's message, a file given to a helper or written by the session, an event the session does not hold, an
+ * ask with no instruction receipt): never said to be yours. Closed, in the order the readers say them.
+ */
+export const CODE_ACCOUNT_ASK_SOURCES = Object.freeze(['person', 'helper_brief', 'other']);
+/**
+ * What an accounting agent answers for one item in scope (F3b, D111): closed. The answer is the agent's; code checks its
+ * shape and grounds each receipt by string search, and no reader shows it (the private report keeps it).
+ *   breaks        the code, as it traced it, breaks the item: its entry names a finding or question of the code review
+ *                 (`by`), or carries a finding of its own, which goes to a checking agent like any finding
+ *   holds         the code, as it traced it, delivers the ask or bears out the statement or the decision
+ *   outside       settling it needs what no file of the repository shows
+ *   not_examined  it did not examine the item
+ * `breaks`, `holds` and `outside` each need at least one receipt, a quote of the code that grounds.
+ */
+export const CODE_ACCOUNT_OUTCOMES = Object.freeze(['breaks', 'holds', 'outside', 'not_examined']);
+/** What code records of each item in scope (`codePass.account.entries[].fate`), exactly one each (F3b, D111): the
+ *  outcome of an entry code could use (CODE_ACCOUNT_OUTCOMES), or `missing` with its cause (CODE_ACCOUNT_MISSING).
+ *  Closed. */
+export const CODE_ACCOUNT_FATES = Object.freeze([...CODE_ACCOUNT_OUTCOMES, 'missing']);
+/**
+ * Why an item in scope has no entry that code could use (`missing`, F3b, D111): closed, set by structure (which call was
+ * made, which entries came back, whether their quotes ground, which findings were published).
+ *   not_returned               the answer of its batch gave no entry for it
+ *   malformed                  its entry broke the contract (Sonah asked once more when its batch's re-ask was left)
+ *   evidence_grounding_failed  a receipt of its entry is not word for word on the lines that it names (Sonah asked once
+ *                              more when its batch's re-ask was left)
+ *   unreported                 a `breaks` entry that names no finding or question of the code review and carries no
+ *                              finding that stands
+ *   inconsistent               a `holds` entry for an item that a published finding of the code review follows from: the
+ *                              entry is voided, and the finding is kept as its check left it
+ *   batch_failed               its batch's call did not answer, or its answer could not be read
+ *   too_large                  its batch's request was too large to send: Sonah did not send it
+ *   over_review_limit          it is past the most items one review accounts for (code-pass.js CODE_ACCOUNT_LIMITS)
+ */
+export const CODE_ACCOUNT_MISSING = Object.freeze(['not_returned', 'malformed', 'evidence_grounding_failed', 'unreported',
+  'inconsistent', 'batch_failed', 'too_large', 'over_review_limit']);
+/**
+ * What a code-step request shows of one unit of its blocks (code-pass/12, D105): the state of each entry of the request
+ * manifest (`codePass.manifest.review`). Closed.
+ *   whole       the request shows every line of it
+ *   in_part     the request shows some of its whole lines, named by their numbers: a command or a session text over
+ *               its own cap (`item_cap`); with part B on (D106), a file the session read, the lines it read shown
+ *   hunks_only  a changed file whose hunks the request shows, not every line of the file; with part B on (D106), its
+ *               `reason` says why the file is not shown whole
+ *   left_out    not shown for room, named in fixed words (its `reason`, CODE_LEFT_OUT_REASONS): a rule or skill file, a
+ *               changed file's hunks, a command; with part B on (D106), a file the session read, none of its ranges
+ *               shown (each range left out with its reason)
+ *   not_shown   a changed file whose hunks cannot be shown, by its own state (its `reason`: the file's CODE_FILE_STATES
+ *               member, or before D109 its diff's CODE_DIFF_STATES member); from D109 also a recorded write the change
+ *               block does not hold that lies in a folder the review can read (its `reason` `outside_root`,
+ *               `other_repository` or `outside_writer_root`)
+ * From D109 each changed file's entry also says whether a recorded edit of the session wrote it (`recorded`), and a file
+ * whose change is the whole file (git's `added`, or one a recorded edit wrote whole) keeps that change as every line of
+ * it (`change`, `[[1, lines]]`) when the request shows it short of whole: the whole file is its change. Since D109's
+ * review a `left_out` file whose hunks alone are over what the change block's cap leaves beside its table of contents
+ * says so (`alone: true`): too large on its own (its file state `oversize`), never left out for room.
+ * With part B on (D106, code-pass.js `CODE_WHOLE_FILES`, on since D108), a changed file the whole files block shows is
+ * `whole`.
+ */
+export const CODE_SHOWN_STATES = Object.freeze(['whole', 'in_part', 'hunks_only', 'left_out', 'not_shown']);
+/**
+ * Why a code-step request left a unit out, or showed a text in part (code-pass/12, D105). Closed.
+ *   block_cap      it is over its block's frozen cap (the change block's, the rule files' block; with part B on, D106,
+ *                  the whole files' block, the reads' block)
+ *   request_bound  the request's blocks were over its bound with it, the lower blocks already left out
+ *   item_cap       a command or a session text over its own frozen cap (code-context.js SHOWN_SIDE_BYTES a side): its
+ *                  first and last whole lines that fit are shown
+ */
+export const CODE_LEFT_OUT_REASONS = Object.freeze(['block_cap', 'request_bound', 'item_cap']);
+/**
+ * What the code review saw of a changed file or a rule or skill file the session loaded (code-pass/12, D105), computed
+ * by code from the request manifest and the review agent's reading record (code-pass.js `codeSeenOf`), never from a
+ * word. Closed. Seeing is not checking: no reader says a file seen whole is fine.
+ *   whole       shown whole, or the shown and the read lines together cover every line
+ *   in_part     the review read some of its lines beyond what the request showed, not every line (the lines named)
+ *   hunks_only  the request showed its hunks, and the review read no other line of it
+ *   not_seen    the request did not show it, and the review read no line of it
+ *   lines_unknown  the review read it with a Read that did not fail but whose typed result gave no lines (an image, a
+ *               repeated read, a format change), and the shown and read lines do not cover every line: never called not
+ *               seen, nor seen only in part
+ * A Read that failed (CODE_READ_FAILURES) read nothing: it makes no file seen in any state.
+ * Each file of the change also carries whether the review saw its change (`changeSeen`): on each side of its hunks, every
+ * line they hold seen — on the side the file has now, shown or read (or the file seen whole); on the earlier side of a
+ * file that has one now, shown, since no Read can show it (a file whose hunks hold no row there has nothing to see on
+ * it). A file read in part or whole whose hunks the request did not show keeps the coverage short.
+ */
+export const CODE_SEEN_STATES = Object.freeze(['whole', 'in_part', 'hunks_only', 'not_seen', 'lines_unknown']);
+/**
+ * Why a code-step agent's Read read nothing (code-pass/12, D105; the agent transport /2), from the CLI's typed fields
+ * only, never from the result's text. Closed.
+ *   refused  the CLI's result lists the Read among the tool uses it refused (`permission_denials`, by the use's id):
+ *            `--restricted` refuses a path outside the working directory and its added folders
+ *   failed   the CLI typed the Read's tool result as an error (`is_error`): a file too large to read at once, a path that
+ *            is not there, … (which one, Sonah does not read)
+ * The reading record keeps such a Read apart (its path and this reason), never as a read: no reader counts its file as
+ * seen, in part, or with lines Sonah could not tell.
+ */
+export const CODE_READ_FAILURES = Object.freeze(['refused', 'failed']);
 
 // ---- the report's items and their tiers (D96, D97): closed vocabularies ----------------------------------------------
 
@@ -3484,6 +3719,8 @@ export const REPORT_ITEM_TYPES = Object.freeze(['fix', 'decide', 'read', 'verify
  *   pivot                    a change of approach
  *   decision_whether_asked   a decision where Sonah could not check whether you asked
  *   code_question_finding    a code finding its check found real but not against your goal, asked of you
+ *   code_finding_unconfirmed a code finding its check found to hold that Sonah could not confirm: a premise of the check
+ *                            rests outside the repository and the language (`codePass.unconfirmed`, D110)
  *   claim_corrected          a contradicted claim the agent corrected or told you about, or a helper's (FYI)
  *   edit_undone              an edit against your words the agent undid or told you about, or a helper's (FYI)
  *   claim_not_checked        a claim Sonah did not check (listed; an item only when the code review raises it)
@@ -3495,8 +3732,9 @@ export const REPORT_ITEM_TYPES = Object.freeze(['fix', 'decide', 'read', 'verify
 export const REPORT_ITEM_KINDS = Object.freeze(['ask_not_done', 'ask_partly_done', 'code_ask_not_met',
   'claim_contradicted', 'code_claim_false', 'edit_against_instruction', 'code_bug', 'code_contract',
   'written_contradicted', 'code_weak_test', 'failure_passed_over', 'decision_not_acting', 'decision_unasked',
-  'code_question', 'decision_chose', 'pivot', 'decision_whether_asked', 'code_question_finding', 'claim_corrected',
-  'edit_undone', 'claim_not_checked', 'claim_incomplete', 'written_not_checked', 'code_finding_legacy']);
+  'code_question', 'decision_chose', 'pivot', 'decision_whether_asked', 'code_question_finding',
+  'code_finding_unconfirmed', 'claim_corrected', 'edit_undone', 'claim_not_checked', 'claim_incomplete',
+  'written_not_checked', 'code_finding_legacy']);
 /**
  * Why an item's final tier is not the one proposed for it (triage.js `boundTier`). Closed.
  *   kind_floor            the proposal was below the floor of the item's kind
@@ -3504,6 +3742,26 @@ export const REPORT_ITEM_KINDS = Object.freeze(['ask_not_done', 'ask_partly_done
  *   refused_call_ceiling  the item cites a call a permission rule or auto mode refused before it ran: never Must act
  */
 export const TIER_BOUND_REASONS = Object.freeze(['kind_floor', 'kind_ceiling', 'refused_call_ceiling']);
+/**
+ * E1-F8 (D112, one point, one item): the checked ties that put a row inside the item of another row, as a member of
+ * that item, instead of an item of its own. Code reads structure only, never a word. Closed.
+ *   concerns  a question that the code review wrote (`from: 'review'`), whose `concerns` names a row that an item of the
+ *             report holds; the code step grounded the question's quote in that row's words before it published it.
+ *             D112 amended (2026-10-18): only when the question's own place (the recorded events, files and lines its
+ *             receipt or anchor names) overlaps that item's place (render/report-model.js `placesOverlap`); one that
+ *             names no place (quote null) stays an item. A question on an ask, and a question routed from a finding
+ *             (`from: 'finding'`), are never members.
+ *   nested    a decision whose stated receipt is nested in another decision's (`nestedReceipts`, D102: the same event,
+ *             one quote holding the other); the decision with the longer quote leads the item.
+ */
+export const REPORT_GROUP_TIES = Object.freeze(['concerns', 'nested']);
+/**
+ * E1-F8 (D112): which row places an item in its tier. Closed.
+ *   lead    the item's own row
+ *   member  a member of the item whose own tier is higher than the lead's: the item takes the higher tier, so no row of
+ *           an item sits below the tier it has alone
+ */
+export const REPORT_TIER_SOURCES = Object.freeze(['lead', 'member']);
 /**
  * What is wrong with one entry of the code review's `triage` or `files` list, beside the shape errors of
  * CODE_ITEM_ERRORS (code-pass/10): named in the one repair when a failing finding or question asks for it, and kept as

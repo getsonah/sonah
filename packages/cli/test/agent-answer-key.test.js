@@ -4,9 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { REVIEW_AGENT_TRANSPORT_VERSION, agentRequestOf, reviewAgentCliArgs, reviewAgentKeyArgs } from '../src/review-judge.js';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { REVIEW_AGENT_TRANSPORT_VERSION, agentRequestOf, agentRunRecord, reviewAgentCliArgs, reviewAgentKeyArgs }
+  from '../src/review-judge.js';
 import { ANSWER_CACHE_VERSION, REPO_STATE, answerKey, createAnswerCache, memoizeJudge } from '../src/answer-cache.js';
 import { PROBE_REQUEST } from '../src/review-probe.js';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
@@ -73,7 +74,8 @@ test('agent transport: a stored agent answer replays for the same request and re
   const store = await scratch(t, 'answers');
   const identity = { backend: 'claude-cli', model: MODEL };
   let calls = 0;
-  const answering = async () => { calls++; return { exports: ['a'] }; };
+  // An agent answer carries its run record, as the transport sets it (D105: one without it is never stored).
+  const answering = async () => { calls++; return withRun({ exports: ['a'] }); };
   const first = memoizeJudge(answering, createAnswerCache(store, { ...identity, repoState: STATE }));
   assert.deepEqual(await first(request), ANSWER);
   assert.equal(calls, 1);
@@ -98,4 +100,66 @@ test('agent transport: a stored agent answer replays for the same request and re
   assert.deepEqual(stateless.answers, { calls: 2, reused: 0 });
   for (const repoState of ['', 'a'.repeat(63), 'A'.repeat(64), 7, {}])
     assert.throws(() => createAnswerCache(store, { ...identity, repoState }), TypeError, String(repoState));
+});
+
+// ---- D105: the reading record is stored with the answer and set on it again on replay ---------------------------------
+/** A run record as the agent transport /2 sets it on an answer: not enumerable, with what it read. */
+const RUN = Object.freeze({ numTurns: 4, toolCalls: { Read: 2, Grep: 1, Glob: 0, StructuredOutput: 1 },
+  reads: ['/repo/pkg/a.js', '/repo/pkg/b.png'], readRanges: [{ path: '/repo/pkg/a.js', startLine: 125, numLines: 80,
+    totalLines: 423 }], readsUnranged: 1, readsUnrangedPaths: ['/repo/pkg/b.png'],
+  readsFailed: [{ path: '/repo/pkg/gone.js', reason: 'failed' }, { path: '/etc/hosts', reason: 'refused' }],
+  permissionDenials: 0, durationMs: 10, costUsd: 0.01, usage: { input_tokens: 1 } });
+function withRun(answer, run = RUN) {
+  return Object.defineProperty(answer, 'agentRun', { value: structuredClone(run), enumerable: false });
+}
+
+test('D105: an agent answer is stored with its reading record and replays with it, set again, not enumerable; one '
+  + 'without a record is never stored, and a stored one without it is a miss; a session answer\'s record is as before',
+async (t) => {
+  const { request } = await repository(t);
+  const store = await scratch(t, 'answers-run');
+  const identity = { backend: 'claude-cli', model: MODEL, repoState: STATE };
+  // Stored with its record (paths and counts only), and replayed with it.
+  const cache = createAnswerCache(store, identity);
+  assert.equal(await cache.put(request, withRun({ exports: ['a'] })), true);
+  const [name] = await readdir(store);
+  const record = JSON.parse(await readFile(join(store, name), 'utf8'));
+  assert.deepEqual(Object.keys(record), ['key', 'occurrence', 'response', 'run']);
+  assert.deepEqual(record.run, agentRunRecord(RUN));
+  assert.deepEqual(Object.keys(record.run), ['numTurns', 'toolCalls', 'reads', 'readRanges', 'readsUnranged',
+    'readsUnrangedPaths', 'readsFailed'],
+    'no duration, cost or usage');
+  assert.deepEqual(record.run.readsFailed, RUN.readsFailed, 'the Reads that read nothing, apart: paths and reasons');
+  const replayed = await createAnswerCache(store, identity).get(request);
+  assert.deepEqual(replayed, { exports: ['a'] });
+  assert.deepEqual(Object.keys(replayed), ['exports'], 'not enumerable');
+  assert.deepEqual(replayed.agentRun, agentRunRecord(RUN));
+  // A live agent answer with no record (or a record of /1, with no ranges) is not stored.
+  const bare = await scratch(t, 'answers-bare');
+  const { readRanges: _r, readsUnranged: _u, ...older } = RUN;
+  // Nor one whose record does not keep the paths of its Reads with no range: a reader would call those files unseen.
+  const { readsUnrangedPaths: _p, ...unnamed } = RUN;
+  // Nor one that does not keep its failed Reads apart, or names a reason outside the closed list (CODE_READ_FAILURES).
+  const { readsFailed: _f, ...unfailed } = RUN;
+  const unreasoned = { ...RUN, readsFailed: [{ path: '/repo/pkg/gone.js', reason: 'too_large' }] };
+  const texted = { ...RUN, readsFailed: [{ path: '/repo/pkg/gone.js', reason: 'failed', text: 'File does not exist.' }] };
+  for (const answer of [{ exports: ['a'] }, withRun({ exports: ['a'] }, older), withRun({ exports: ['a'] }, unnamed),
+    withRun({ exports: ['a'] }, unfailed), withRun({ exports: ['a'] }, unreasoned), withRun({ exports: ['a'] }, texted)])
+    assert.equal(await createAnswerCache(bare, identity).put(request, answer), false);
+  assert.deepEqual(await readdir(bare), []);
+  // A stored agent record without its run (or with one that is not a record) is a miss: asked again live.
+  for (const run of [undefined, { ...agentRunRecord(RUN), readRanges: [{ path: 'x', startLine: 0, numLines: 1,
+    totalLines: 1 }] }]) {
+    const { run: _run, ...rest } = record;
+    await writeFile(join(store, name), JSON.stringify(run === undefined ? rest : { ...rest, run }), { mode: 0o600 });
+    assert.equal(await createAnswerCache(store, identity).get(request), null);
+  }
+  // A session request's stored record holds no run, and is read as before.
+  const session = await scratch(t, 'answers-session');
+  const sessionRequest = { system: SYSTEM, prompt: PROMPT, schema: SCHEMA };
+  assert.equal(await createAnswerCache(session, identity).put(sessionRequest, withRun({ exports: ['a'] })), true);
+  const [sessionName] = await readdir(session);
+  assert.deepEqual(Object.keys(JSON.parse(await readFile(join(session, sessionName), 'utf8'))), ['key', 'occurrence',
+    'response']);
+  assert.equal((await createAnswerCache(session, identity).get(sessionRequest)).agentRun, undefined);
 });

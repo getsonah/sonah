@@ -431,6 +431,12 @@ const MOVED_BY_GROUNDING_CAUSES = Object.freeze({ story: 'facea3446d08092752a1e2
  *  for byte). Nothing renders a story back, so every capture below carries it. No event, gap, request, label, window or
  *  window failure moved. */
 const MOVED_BY_SEEN_IN_PART = Object.freeze({ story: '6b9c1c22f0c7f7be14efe09fdd8291cd5269f3edf029973a703d41a51d746a22' });
+/** Bucket B's one move of the story (story /38, report model /4): D105 (one request, one bound, a manifest) and D107
+ *  (F3a, the repair kept by identity) move it together, once: the story, by the report model's version in its footer
+ *  alone — the case runs no code step, so no seen line and no withheld item of a code review shows (rendered with the
+ *  model's /3, it is MOVED_BY_SEEN_IN_PART's, byte for byte). Nothing renders a story back, so every capture below
+ *  carries it. No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_ONE_BOUND = Object.freeze({ story: 'c43076953b96f780661dd23efc880d74ad8fbb26994f5cff6b7f72c4bae68dbc' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
@@ -445,14 +451,15 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
     ...MOVED_BY_M36_FORMAT, ...MOVED_BY_M36_CONVERSATION, ...MOVED_BY_D71, ...MOVED_BY_D71_BRIEF, ...MOVED_BY_D71_CHANNELS,
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
     ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
-    ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART }));
+    ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND }));
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
   // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more
   // (MOVED_BY_REPORT_MD), the story now the report .md; and once more (MOVED_BY_MD_FIXES), by the report's fixes; and
   // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes; and once more (MOVED_BY_ABSENCE_AUDIT), by
   // the audit of absence sentences; and D101 once more (MOVED_BY_GROUNDING_CAUSES), by the report model's version; and
-  // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer.
+  // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer; and bucket B (D105 and D107)
+  // once more (MOVED_BY_ONE_BOUND), the same way.
   // W2: moved once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): moved once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: moved once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

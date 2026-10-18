@@ -17,7 +17,8 @@ import { estimateLine, CODE_STEP_ESTIMATE_MINUTES } from '../src/review-budget.j
 import { CODE_FILES, FAKE_KEY, PARSE_QUOTE, codeSession, codeJudge, gitRepoWith, repoWith, reviewFinding, sha256 }
   from './code-pass-fixture.js';
 
-const CODE_LABEL = /^code-(?:review|verify)(?::|$)/;
+// F3b (D111): the accounting's calls are the code step's too.
+const CODE_LABEL = /^code-(?:review|verify|account)(?::|$)/;
 const strip = (report) => {
   const { codePass: _pass, ...rest } = report;
   return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
@@ -90,12 +91,17 @@ test('D87: the session part is byte-identical with the code step on and off — 
   const all = (calls) => calls.map((r) => JSON.stringify([r.label, r.system, r.prompt])).sort();
   assert.deepEqual(all(byDefault.calls), all(on.calls), 'no flag sends what --code-pass sends');
   assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole repository \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  // F3b (D111) and its review: the accounting's calls, counted by the items in scope, each kind named (never every claim
+  // and decision).
+  assert.match(byDefault.out, /check call for each finding\. It adds one more call for each 30 items, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\. /m);
   assert.match(on.out, /^Code review: on \(--code-pass\)\. /m);
   assert.match(off.out, /^Code review: off \(--no-code-pass\)\. Sonah reviews only the session, and reads or sends no file\. /m);
   // The agent requests: the review agent, then the checking agent of its one finding, each with its agent fields.
   const code = on.calls.filter((r) => CODE_LABEL.test(r.label));
-  assert.deepEqual(code.map((r) => r.label), ['code-review:agent', 'code-verify:F1']);
-  assert.deepEqual(code.map((r) => [r.agent.maxTurns, r.agent.timeoutMs]), [[150, 45 * 60_000], [60, 30 * 60_000]]);
+  // F3b (D111): and the accounting agent of its one batch.
+  assert.deepEqual(code.map((r) => r.label), ['code-review:agent', 'code-verify:F1', 'code-account:1']);
+  assert.deepEqual(code.map((r) => [r.agent.maxTurns, r.agent.timeoutMs]), [[150, 45 * 60_000], [60, 30 * 60_000],
+    [80, 30 * 60_000]]);
   assert.ok(code.every((r) => r.agent.root === root && Array.isArray(r.agent.addDirs) && r.schema));
   // The report: the session's members as they were; the pass beside them, and the row its claim_false finding names.
   assert.equal(off.report.codePass, undefined);
@@ -175,11 +181,19 @@ test('D60: the same repository asks nothing twice, and an existing state replays
   // And the same repository again: nothing at all is asked, the review agent and its checkers included.
   const third = await review(t, { root, state, argv: ['--code-pass'] });
   assert.deepEqual(third.calls, []);
-  assert.match(third.out, /Code review answers: 2 of 2 reused \(no call\)/);
+  // F3b (D111): the review agent, its finding's checker and the accounting's one batch.
+  assert.match(third.out, /Code review answers: 3 of 3 reused \(no call\)/);
   const uncounted = (report) => JSON.parse(JSON.stringify(report, (key, value) => (['answers', 'resume'].includes(key)
     ? undefined : value)));
   assert.deepEqual(uncounted(third.report), uncounted(second.report));
   assert.deepEqual(third.report.codePass.answers, { calls: 0, reused: second.report.codePass.answers.calls });
+  // D105: every agent answer the report uses carries its reading record, live and replayed alike: the store keeps it
+  // beside the answer and sets it again, so the replayed report's records are the live one's, and none is null.
+  for (const report of [second.report, third.report]) {
+    assert.ok(report.codePass.agents.length >= 2);
+    assert.ok(report.codePass.agents.every((a) => a.run !== null && a.run.reads.length > 0), JSON.stringify(report.codePass.agents));
+  }
+  assert.deepEqual(third.report.codePass.agents, second.report.codePass.agents);
   assert.ok(!third.report.codePass.footer.some((f) => f.kind === 'source_changed'), 'the repository did not change');
 });
 
@@ -321,4 +335,11 @@ test('D87 low: a pass over a session that changed no file says it had none, neve
     /code review did not cover all of the change and its checks/);
   assert.match(line({ ran: false, coverage: 'missing', files: [], gaps: [{ code: 'code_step_backend' }] }),
     /code review did not run, because it runs only on the claude-cli backend/);
+  // D105: a review request too large to send was never sent: the review did not run, as the page says — never "did not
+  // finish", which would say a call started.
+  const unsent = { ran: true, coverage: 'missing', files: [{ path: 'a.js', state: 'shown' }],
+    manifest: { review: { sent: false } } };
+  assert.match(line(unsent), /code review did not run, because its input was too large to send\)/);
+  assert.doesNotMatch(line(unsent), /did not finish/);
+  assert.match(line({ ...unsent, manifest: { review: { sent: true } } }), /code review did not finish\)/);
 });

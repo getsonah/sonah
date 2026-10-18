@@ -60,7 +60,11 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   profileBeforeChangedSinceShown, CLEANUP_VERSIONS, profileBeforeCleanup, TRIAGE_VERSIONS, profileBeforeTriage,
   profileBeforeTiedTier, profileBeforeRepairUnchecked, ONE_READING_VERSIONS, profileBeforeOneReading,
   profileBeforeGroundingCauses, profileBeforeEvidenceMerge, SKIM_VERSIONS, profileBeforeSkim, modulesBeforeSkim,
-  CITED_WHOLE_VERSIONS, profileBeforeCitedWhole, REFUSED_AFTER_EDIT_VERSIONS, profileBeforeRefusedAfterEdit }
+  CITED_WHOLE_VERSIONS, profileBeforeCitedWhole, REFUSED_AFTER_EDIT_VERSIONS, profileBeforeRefusedAfterEdit,
+  ONE_BOUND_VERSIONS, profileBeforeOneBound, WHOLE_FILES_MEMBER, profileBeforeWholeFiles, REPAIR_MERGE_UNCHECKED,
+  profileBeforeRepairMerge, WHOLE_FILES_ON_MEMBER, profileBeforeWholeFilesOn, WHERE_IT_LIES_VERSIONS,
+  WHERE_IT_LIES_STATES, profileBeforeWhereItLies, PREMISE_VERSIONS, profileBeforePremises, ACCOUNT_VERSIONS,
+  profileBeforeAccount, ONE_ITEM_VERSIONS, profileBeforeOneItem }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1278,13 +1282,116 @@ const MOVED_BY_REFUSED_AFTER_EDIT = Object.freeze({
     combined: MOVED_BY_CITED_WHOLE.runProfile.combined },
   sessionProfileDigest: '1f6fc3b75cc4fcd8713a0bc479aa6ed5b9c168aed66b8c8842854d5f21a3904a',
 });
+/**
+ * D107 (F3a, the repair kept by identity; m33-integration-fixture.js `REPAIR_MERGE_UNCHECKED`, `profileBeforeRepairMerge`):
+ * the values that moved from the owner's answers' — the session-only run profile alone, by its code-pass member (the
+ * closed list of unchecked repairs, each member saying only what code compared, and `repairMerge`: the rule, one to one
+ * and never by order since its second review, the fates and the answers an item is of). No case's request moved, and
+ * the combined profile did not move. Rendered back, the owner's answers'. Bucket B's merge puts it first: D105 then
+ * added `too_large` to its list.
+ */
+const MOVED_BY_REPAIR_MERGE = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'a57d4b77cf113375b3d8de7b7518b28f35d2105ceb50bb3175c2eeac7e885498',
+    combined: MOVED_BY_REFUSED_AFTER_EDIT.runProfile.combined },
+  sessionProfileDigest: 'a57d4b77cf113375b3d8de7b7518b28f35d2105ceb50bb3175c2eeac7e885498',
+});
+/**
+ * D105 (one request, one bound, a manifest; m33-integration-fixture.js `ONE_BOUND_VERSIONS`, `profileBeforeOneBound`): the
+ * values that moved from D107's (bucket B's merge; on its own lane, from the owner's answers') — the session-only run
+ * profile alone, by its code-pass member (`sonah.code-pass/12` and the members of its request: the rule block's cap, a
+ * session text's side, the yield order and the closed lists of the manifest and of what the review saw, and since its
+ * second review the closed list of why a Read read nothing). No case's request moved, and the combined profile did not
+ * move. Rendered back, D107's.
+ */
+const MOVED_BY_ONE_BOUND = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'fef52db0a503adc060a623627ecebb1f8aba132fa825197f7e86fc146914e748',
+    combined: MOVED_BY_REPAIR_MERGE.runProfile.combined },
+  sessionProfileDigest: 'fef52db0a503adc060a623627ecebb1f8aba132fa825197f7e86fc146914e748',
+});
+/**
+ * D106 (F2 part B, held; m33-integration-fixture.js `WHOLE_FILES_MEMBER`, `profileBeforeWholeFiles`): the values that
+ * moved from D105's — the session-only run profile alone, by its code-pass member's new setting (`wholeFiles`, off). No
+ * case's request moved, and the combined profile did not move. Rendered back, D105's.
+ */
+const MOVED_BY_WHOLE_FILES = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'e65d0c470a2421483e22d758f3da71f70ad798a06a93b58571c12cd368745be1',
+    combined: MOVED_BY_ONE_BOUND.runProfile.combined },
+  sessionProfileDigest: 'e65d0c470a2421483e22d758f3da71f70ad798a06a93b58571c12cd368745be1',
+});
+/**
+ * D108 (the owner, 2026-10-17: "Yes, keep it on for now"; m33-integration-fixture.js `WHOLE_FILES_ON_MEMBER`,
+ * `profileBeforeWholeFilesOn`): the values that moved from D106's — the session-only run profile alone, by its code-pass
+ * member's setting turned on (`wholeFiles.on`). No case's request moved (no case runs the code step), and the combined
+ * profile did not move. Rendered back, D106's.
+ */
+const MOVED_BY_WHOLE_FILES_ON = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'a6c8674e947a9b8547330b1ec2eb31cd3261e9199cd3783af782650f362bae92',
+    combined: MOVED_BY_WHOLE_FILES.runProfile.combined },
+  sessionProfileDigest: 'a6c8674e947a9b8547330b1ec2eb31cd3261e9199cd3783af782650f362bae92',
+});
+/**
+ * D109 (the code review's coverage lines from one tally; m33-integration-fixture.js `WHERE_IT_LIES_VERSIONS`,
+ * `profileBeforeWhereItLies`): the values that moved from D108's — the session-only run profile alone, by its code-pass
+ * member's snapshot version (/12) and its file states (`left_out`, `other_repository`, `outside_writer_root`). No case's
+ * request moved (no case runs the code step, and no request byte moved), and the combined profile did not move.
+ * Rendered back, D108's.
+ */
+const MOVED_BY_WHERE_IT_LIES = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'f2d106300e5096186b81fea90be8af6a6e7021b1f412aeba2ce8dd7ddfd14102',
+    combined: MOVED_BY_WHOLE_FILES_ON.runProfile.combined },
+  sessionProfileDigest: 'f2d106300e5096186b81fea90be8af6a6e7021b1f412aeba2ce8dd7ddfd14102',
+});
+/**
+ * D110 (bucket C, the premise contract; m33-integration-fixture.js `PREMISE_VERSIONS`, `profileBeforePremises`): the
+ * values that moved from D109's — the session-only run profile alone, by its code-pass member (`sonah.code-verify/3`,
+ * the trace limits' premises, `premises` and the tier table `sonah.tiers/2`). No case's request moved (no case runs the
+ * code step), and the combined profile did not move. Rendered back, D109's.
+ */
+const MOVED_BY_PREMISES = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '2179ec6e5cec8be4fe11808929a1d1bfe77827e913b2508e1a6bc45c7c4ed84e',
+    combined: MOVED_BY_WHERE_IT_LIES.runProfile.combined },
+  sessionProfileDigest: '2179ec6e5cec8be4fe11808929a1d1bfe77827e913b2508e1a6bc45c7c4ed84e',
+});
+/**
+ * D111 (F3b, the accounting; m33-integration-fixture.js `ACCOUNT_VERSIONS`, `profileBeforeAccount`): the values that
+ * moved from D110's — the session-only run profile alone, by its code-pass member (`account`: `sonah.code-account/1`, its
+ * closed lists and bounds; the agents' guards, the step's parts, the footer kinds, the unchecked repairs and the fate
+ * records' sources each gained the accounting's member). No case's request moved (no case runs the code step), and the
+ * combined profile did not move. Rendered back, D110's.
+ */
+const MOVED_BY_ACCOUNT = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '3cf630eb06d82a0d3ae7b126e961bd6881fc7c24520aae3f91a63d82a1ba0908',
+    combined: MOVED_BY_PREMISES.runProfile.combined },
+  sessionProfileDigest: '3cf630eb06d82a0d3ae7b126e961bd6881fc7c24520aae3f91a63d82a1ba0908',
+});
+/**
+ * E1-F8 (D112, one point, one item; m33-integration-fixture.js `ONE_ITEM_VERSIONS`, `profileBeforeOneItem`): the values
+ * that moved from D111's — the session-only run profile alone, by its code-pass member's tier table (every kind's
+ * `refusedReadTier`; the table's version is D110's move). No case's request moved, and the combined profile did not
+ * move. Rendered back, D111's.
+ */
+const MOVED_BY_ONE_ITEM = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '642bcf90fdded5ca4e8b6b9c88cb75047b8f73e471f14195c41b6f216550ca94',
+    combined: MOVED_BY_ACCOUNT.runProfile.combined },
+  sessionProfileDigest: '642bcf90fdded5ca4e8b6b9c88cb75047b8f73e471f14195c41b6f216550ca94',
+});
 /** What the evidence merge sent: the agent transport's cases (the cleanup withdrew the void re-asks). */
 const EVIDENCE_MERGE_CASES = AGENT_TRANSPORT_CURRENT.cases;
 /** What the code sends now. */
 const CURRENT = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT,
-  cases: withMoves(withMoves(withMoves({ cases: EVIDENCE_MERGE_CASES }, MOVED_BY_SKIM.cases), MOVED_BY_CITED_WHOLE.cases),
-    MOVED_BY_REFUSED_AFTER_EDIT.cases).cases,
-  runProfile: MOVED_BY_REFUSED_AFTER_EDIT.runProfile, sessionProfileDigest: MOVED_BY_REFUSED_AFTER_EDIT.sessionProfileDigest });
+  cases: withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(
+    { cases: EVIDENCE_MERGE_CASES }, MOVED_BY_SKIM.cases), MOVED_BY_CITED_WHOLE.cases), MOVED_BY_REFUSED_AFTER_EDIT.cases),
+  MOVED_BY_REPAIR_MERGE.cases), MOVED_BY_ONE_BOUND.cases), MOVED_BY_WHOLE_FILES.cases), MOVED_BY_WHOLE_FILES_ON.cases),
+  MOVED_BY_WHERE_IT_LIES.cases), MOVED_BY_PREMISES.cases), MOVED_BY_ACCOUNT.cases), MOVED_BY_ONE_ITEM.cases).cases,
+  runProfile: MOVED_BY_ONE_ITEM.runProfile, sessionProfileDigest: MOVED_BY_ONE_ITEM.sessionProfileDigest });
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
  *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
  *  `modulesBeforeSkim`). */
@@ -1384,10 +1491,89 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   // D103 part 2 (cited results whole) moved no case; rendered back (`profileBeforeCitedWhole`), the run profiles are the
   // skim's.
   assert.deepEqual(MOVED_BY_CITED_WHOLE.cases, [{}, {}, {}]);
+  // E1-F8 (D112) moved no case and the session-only profile alone, by its code-pass member's tier table (every kind's
+  // `refusedReadTier`; the table's /2 is D110's move, the same one); rendered back (`profileBeforeOneItem`), the run
+  // profiles are D111's.
+  assert.deepEqual(MOVED_BY_ONE_ITEM.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.triage.table, ONE_ITEM_VERSIONS.table.after);
+  assert.deepEqual(ONE_ITEM_VERSIONS.table, PREMISE_VERSIONS.tiers);
+  const oneItemBack = (...args) => profileBeforeOneItem(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: oneItemBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(oneItemBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_ACCOUNT.runProfile, sessionProfileDigest: MOVED_BY_ACCOUNT.sessionProfileDigest });
+  // D111 moved no case and the session-only profile alone, by its code-pass member (the accounting); rendered back
+  // (`profileBeforeAccount`), the run profiles are D110's.
+  assert.deepEqual(MOVED_BY_ACCOUNT.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.account.version, ACCOUNT_VERSIONS.account);
+  const accountBack = (...args) => profileBeforeAccount(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: accountBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(accountBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_PREMISES.runProfile, sessionProfileDigest: MOVED_BY_PREMISES.sessionProfileDigest });
+  // D110 moved no case and the session-only profile alone, by its code-pass member (the checking agents' version, the
+  // premise contract, the tier table); rendered back (`profileBeforePremises`), the run profiles are D109's.
+  assert.deepEqual(MOVED_BY_PREMISES.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.verify, PREMISE_VERSIONS.verify.after);
+  const premisesBack = (...args) => profileBeforePremises(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: premisesBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(premisesBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_WHERE_IT_LIES.runProfile,
+    sessionProfileDigest: MOVED_BY_WHERE_IT_LIES.sessionProfileDigest });
+  // D109 moved no case and the session-only profile alone, by its code-pass member's snapshot version and file states;
+  // rendered back (`profileBeforeWhereItLies`), the run profiles are D108's.
+  assert.deepEqual(MOVED_BY_WHERE_IT_LIES.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.snapshot, WHERE_IT_LIES_VERSIONS.snapshot.after);
+  assert.deepEqual(reviewRun.runProfile('session-only').codePass.fileStates.slice(-3), WHERE_IT_LIES_STATES);
+  const liesBack = (...args) => profileBeforeWhereItLies(reviewRun.runProfile(...args));
+  assert.equal(liesBack('session-only').codePass.snapshot, WHERE_IT_LIES_VERSIONS.snapshot.before);
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: liesBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(liesBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_WHOLE_FILES_ON.runProfile,
+    sessionProfileDigest: MOVED_BY_WHOLE_FILES_ON.sessionProfileDigest });
+  // D108 moved no case and the session-only profile alone, by its code-pass member's setting turned on; rendered back
+  // (`profileBeforeWholeFilesOn`), the run profiles are D106's.
+  assert.deepEqual(MOVED_BY_WHOLE_FILES_ON.cases, [{}, {}, {}]);
+  assert.deepEqual(reviewRun.runProfile('session-only').codePass.wholeFiles, WHOLE_FILES_ON_MEMBER);
+  assert.deepEqual(WHOLE_FILES_ON_MEMBER, { ...WHOLE_FILES_MEMBER, on: true });
+  const onBack = (...args) => profileBeforeWholeFilesOn(reviewRun.runProfile(...args));
+  assert.deepEqual(onBack('session-only').codePass.wholeFiles, WHOLE_FILES_MEMBER);
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: onBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(onBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_WHOLE_FILES.runProfile, sessionProfileDigest: MOVED_BY_WHOLE_FILES.sessionProfileDigest });
+  // D106 moved no case and the session-only profile alone, by its code-pass member's setting (off); rendered back
+  // (`profileBeforeWholeFiles`), the run profiles are D105's.
+  assert.deepEqual(MOVED_BY_WHOLE_FILES.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('combined').codePass, undefined);
+  const wholeBack = (...args) => profileBeforeWholeFiles(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: wholeBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(wholeBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_ONE_BOUND.runProfile, sessionProfileDigest: MOVED_BY_ONE_BOUND.sessionProfileDigest });
+  // D105 moved no case and the session-only profile alone, by its code-pass member (and `too_large` in D107's list of
+  // unchecked repairs); rendered back (`profileBeforeOneBound`), the run profiles are D107's.
+  assert.deepEqual(MOVED_BY_ONE_BOUND.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.pass, ONE_BOUND_VERSIONS.pass.after);
+  assert.equal(ONE_BOUND_VERSIONS.pass.before, REFUSED_AFTER_EDIT_VERSIONS.pass.after);
+  // (D111 added `accounted` after it: rendered back, D110's list.)
+  assert.deepEqual(profileBeforeAccount(reviewRun.runProfile('session-only')).codePass.repairUnchecked,
+    [...REPAIR_MERGE_UNCHECKED.after, 'too_large']);
+  const boundBack = (...args) => profileBeforeOneBound(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: boundBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(boundBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_REPAIR_MERGE.runProfile, sessionProfileDigest: MOVED_BY_REPAIR_MERGE.sessionProfileDigest });
+  // D107 (F3a) moved no case and the session-only profile alone, by its code-pass member's closed lists; rendered back
+  // (`profileBeforeRepairMerge`), the run profiles are the owner's answers'.
+  assert.deepEqual(MOVED_BY_REPAIR_MERGE.cases, [{}, {}, {}]);
+  assert.deepEqual(profileBeforeOneBound(reviewRun.runProfile('session-only')).codePass.repairUnchecked,
+    REPAIR_MERGE_UNCHECKED.after);
+  const mergeBack = (...args) => profileBeforeRepairMerge(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: mergeBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(mergeBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_REFUSED_AFTER_EDIT.runProfile,
+    sessionProfileDigest: MOVED_BY_REFUSED_AFTER_EDIT.sessionProfileDigest });
   // The owner's answers of 2026-10-17 moved no case and the session-only profile alone, by its code-pass version;
   // rendered back (`profileBeforeRefusedAfterEdit`), the run profiles are D103 part 2's.
   assert.deepEqual(MOVED_BY_REFUSED_AFTER_EDIT.cases, [{}, {}, {}]);
-  assert.equal(reviewRun.runProfile('session-only').codePass.pass, REFUSED_AFTER_EDIT_VERSIONS.pass.after);
+  assert.equal(profileBeforeOneBound(reviewRun.runProfile('session-only')).codePass.pass,
+    REFUSED_AFTER_EDIT_VERSIONS.pass.after);
   assert.equal(REFUSED_AFTER_EDIT_VERSIONS.pass.before, TRIAGE_VERSIONS.pass.after);
   const answersBack = (...args) => profileBeforeRefusedAfterEdit(reviewRun.runProfile(...args));
   assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: answersBack,
@@ -1690,8 +1876,32 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // the evidence merge's. D103's cited results whole moved every profile's challenge version (and the lean profile's
     // dossier version); rendered back (`profileBeforeCitedWhole`), the skim's. The owner's answers of 2026-10-17 moved
     // the session-only profile's code-pass version (code-pass/11); rendered back (`profileBeforeRefusedAfterEdit`), D103
-    // part 2's.
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_REFUSED_AFTER_EDIT.runProfile[scope], scope);
+    // part 2's. D107 (F3a) moved the session-only profile's code-pass member by its closed lists alone; rendered back
+    // (`profileBeforeRepairMerge`), the owner's answers'. D105 moved it once more (code-pass/12); rendered back
+    // (`profileBeforeOneBound`), D107's. D106 moved it once more by its part B setting alone (off); rendered back
+    // (`profileBeforeWholeFiles`), D105's. D108 moved it once more by that setting turned on; rendered back
+    // (`profileBeforeWholeFilesOn`), D106's. D109 moved it once more by its snapshot version and file states; rendered
+    // back (`profileBeforeWhereItLies`), D108's. D110 moved it once more by the premise contract (code-verify/3, the tier
+    // table); rendered back (`profileBeforePremises`), D109's. D111 moved it once more by the accounting
+    // (code-account/1); rendered back (`profileBeforeAccount`), D110's. E1-F8 (D112) moved it once more by its tier
+    // table's kinds alone; rendered back (`profileBeforeOneItem`), D111's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_ONE_ITEM.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeOneItem(reviewRun.runProfile(scope)))),
+      MOVED_BY_ACCOUNT.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeAccount(reviewRun.runProfile(scope)))),
+      MOVED_BY_PREMISES.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforePremises(reviewRun.runProfile(scope)))),
+      MOVED_BY_WHERE_IT_LIES.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeWhereItLies(reviewRun.runProfile(scope)))),
+      MOVED_BY_WHOLE_FILES_ON.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeWholeFilesOn(reviewRun.runProfile(scope)))),
+      MOVED_BY_WHOLE_FILES.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeWholeFiles(reviewRun.runProfile(scope)))),
+      MOVED_BY_ONE_BOUND.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeOneBound(reviewRun.runProfile(scope)))),
+      MOVED_BY_REPAIR_MERGE.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeRepairMerge(reviewRun.runProfile(scope)))),
+      MOVED_BY_REFUSED_AFTER_EDIT.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeRefusedAfterEdit(reviewRun.runProfile(scope)))),
       MOVED_BY_CITED_WHOLE.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeCitedWhole(reviewRun.runProfile(scope)))), MOVED_BY_SKIM.runProfile[scope],

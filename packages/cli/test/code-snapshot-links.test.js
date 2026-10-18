@@ -91,7 +91,8 @@ test('D87 links: a link that stays inside the working directory to an ordinary f
   assert.equal(createRepositoryReader({ root, maxBytes: 100_000 }).read('lib/util.js').path, 'src/util.js');
 });
 
-test('D87 reader: a home-spelled path and a write the slicer scoped outside the repository are outside_root', async (t) => {
+test('D87 reader: a home-spelled path is outside_root; a write the slicer scoped outside the repository that lies in the '
+  + 'working directory is outside_writer_root (D109)', async (t) => {
   // Each is there inside the working directory under a folder that spells it, so only the rule keeps it out.
   const root = await repoWith(t, { ...CODE_FILES, '~/notes.js': 'export const n = 1;\n', 'scoped.js': 'export const s = 1;\n' });
   const session = new Session({ sessionKey: 's', events: [
@@ -101,7 +102,8 @@ test('D87 reader: a home-spelled path and a write the slicer scoped outside the 
       input: [], changes: [{ path: 'scoped.js', outsideRepository: true, before: [], after: [], diff: [] }], sequence: 1 },
   ] });
   const snapshot = await readCodeSnapshot(session, { root, maxBytes: 100_000 });
-  assert.deepEqual(states(snapshot).sort(), [['scoped.js', 'outside_root'], ['~/notes.js', 'outside_root']]);
+  // D109: by where it lies — under the working directory, in no other repository — never "outside the repository".
+  assert.deepEqual(states(snapshot).sort(), [['scoped.js', 'outside_writer_root'], ['~/notes.js', 'outside_root']]);
 });
 
 test('D87 reader: a FIFO is not a regular file: it is unreadable, and reading it never waits', { timeout: 10_000 },

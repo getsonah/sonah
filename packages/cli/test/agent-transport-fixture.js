@@ -68,8 +68,11 @@ process.stdin.on('end', () => {
 export function agentEvents(root, { answer = ANSWER, tools = ['Read', 'StructuredOutput'], result = {} } = {}) {
   const assistant = (content) => ({ type: 'assistant', parent_tool_use_id: null,
     message: { model: MODEL, role: 'assistant', content } });
-  const toolResult = (id, content) => ({ type: 'user', parent_tool_use_id: null,
-    message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', content }] } });
+  // Claude Code 2.1.296 prints a Read's typed result beside its tool result (`tool_use_result.file`): what the agent
+  // transport /2 reads its lines from.
+  const toolResult = (id, content, typed = undefined) => ({ type: 'user', parent_tool_use_id: null,
+    message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', content }] },
+    ...(typed ? { tool_use_result: typed } : {}) });
   const events = [{ type: 'system', subtype: 'init', cwd: root, model: MODEL, permissionMode: 'dontAsk',
     tools: ['Glob', 'Grep', 'Read', 'StructuredOutput'], mcp_servers: [], claude_code_version: '2.1.296' },
   assistant([{ type: 'thinking', thinking: '' }])];
@@ -78,7 +81,9 @@ export function agentEvents(root, { answer = ANSWER, tools = ['Read', 'Structure
     const input = name === 'Read' ? { file_path: join(root, 'a.js') } : name === 'StructuredOutput' ? answer
       : name === undefined ? {} : { pattern: 'export' };
     events.push(assistant([{ type: 'tool_use', id, ...(name === undefined ? {} : { name }), input }]),
-      toolResult(id, name === 'StructuredOutput' ? 'Structured output provided successfully' : '1\texport const a = 1;'));
+      toolResult(id, name === 'StructuredOutput' ? 'Structured output provided successfully' : '1\texport const a = 1;',
+        name === 'Read' ? { type: 'text', file: { filePath: join(root, 'a.js'), content: 'export const a = 1;\n',
+          numLines: 1, startLine: 1, totalLines: 1 } } : undefined));
   });
   events.push({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: {
     five_hour: { utilization: 0.12 } } } });

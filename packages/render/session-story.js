@@ -55,8 +55,18 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  proves it, in the page's words. /36 (D101, owner decision 2026-10-17): an ask that Sonah did not check because a
  *  test refused its quote says which test, with the numbers code measured, as the page does. /37 (D104, F5 part 4): a
  *  claim, a run and a decision you settled show their rows' shown-in-part mark under its label, as an item's evidence
- *  and an ask's lines show it. */
-export const STORY_VERSION = 'sonah.session-story/37';
+ *  and an ask's lines show it. /38 (D105, F2 part A): what the code review saw short of whole, a request too large to
+ *  send, and the commands left out of it for room, in the page's words; and in the same move (D107, F3a), whether an
+ *  item of the repair matched a withheld finding or question, by identity, saying only what code compared, as the page
+ *  says it. And (D110, the premise contract): a code finding confirmed only by code's label, with its premises; a
+ *  finding Sonah could not confirm as an item to verify, each premise that Sonah could not check on a visible line; and
+ *  no sentence that a second reviewer checked a finding, as the page says it. And (D111, F3b, the accounting): the
+ *  items of the session review that the code review's item-by-item check (the accounting) did not examine in a way
+ *  that Sonah could use, counted by kind, as the page says it; never the ones it examined; and the code review's coverage
+ *  line by its own coverage (D111's second review), as the page says it. And (E1-F8, D112: one point, one item): an item's
+ *  members after its own lines, as the page shows them, and the items of a section in the report model's order (by final
+ *  level, then kind). */
+export const STORY_VERSION = 'sonah.session-story/38';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -1003,8 +1013,10 @@ function promptSection(model, trim, notice) {
 function whereMd(item) {
   const places = [...item.where.map((w) => (w.anchor ? mdOwn(w.text) : codeSpan(placeText(w)))),
     ...(item.whereMore ? [mdOwn(REPORT_ITEM_WORDS.morePlaces(item.whereMore))] : [])];
-  const marker = item.scope.asks.length && !item.where.some((w) => w.anchor === `ask-${item.scope.asks[0]}`)
-    ? [mdOwn(REPORT_ITEM_WORDS.asked(item.scope.asks[0]))] : [];
+  // A member (D112) has no scope of its own: its item's marker says whether you asked.
+  const asks = item.scope?.asks ?? [];
+  const marker = asks.length && !item.where.some((w) => w.anchor === `ask-${asks[0]}`)
+    ? [mdOwn(REPORT_ITEM_WORDS.asked(asks[0]))] : [];
   return places.length || marker.length ? `${mdOwn(REPORT_ITEM_WORDS.where)} ${[...places, ...marker].join(' · ')}` : null;
 }
 function evidenceFold(item, trimmed) {
@@ -1025,12 +1037,14 @@ const itemHead = (item, render) => {
   return render === 'html' ? `${item.n} ${escHtml(REPORT_TYPE_WORDS[item.type])}: ${partsHtml(item.what.parts)}${escHtml(scope)}`
     : `**${item.n} ${mdOwn(REPORT_TYPE_WORDS[item.type])}:** ${partsMd(item.what.parts)}${mdOwn(scope)}`;
 };
-/** An item (D97): its visible lines in order (with its head unless the fold's summary shows it), each permalink on its
- *  own line, the excerpt as a fence when its place has no permalink, then its evidence, folded. */
-function itemMd(item, { head = true, evidence = false, excerpts = false } = {}) {
-  const lines = head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [];
+/** An item or a member's lines (D97, D112) after `lines` (its head, when shown): each permalink on its own line, the
+ *  excerpt as a fence when its place has no permalink, then its evidence, folded. */
+function entryMd(item, lines, { evidence = false, excerpts = false } = {}) {
   if (item.quote) lines.push(`${item.quoteLabel ? `${mdOwn(item.quoteLabel)} ` : ''}${partMd(item.quote)}`);
   else if (item.quoteMissing) lines.push(mdOwn(REPORT_ITEM_WORDS.quoteMissing));
+  // D110: each premise of an item to verify that Sonah could not check, in its check's words.
+  for (const parts of Array.isArray(item.restsOutside) ? item.restsOutside : [])
+    lines.push(`${mdOwn(REPORT_ITEM_WORDS.restsOutside)} ${partsMd(parts)}`);
   if (item.impact) lines.push(`${mdOwn(REPORT_ITEM_WORDS.impact)} ${partsMd(item.impact)}`);
   if (item.agentSaid) lines.push(`${mdOwn(item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid)} ${partMd(item.agentSaid)}`);
   if (item.action) lines.push(`${mdOwn(REPORT_ITEM_WORDS.action)} ${partsMd(item.action)}`);
@@ -1043,6 +1057,25 @@ function itemMd(item, { head = true, evidence = false, excerpts = false } = {}) 
   if (fence && !excerpts) blocks.push(fenced(fence));
   blocks.push(evidenceFold(item, evidence));
   return { text: blocks.filter(Boolean).join('\n\n'), fenced: fence !== null };
+}
+/** An item (D97): its visible lines in order (with its head unless the fold's summary shows it), then (D112) the line
+ *  that counts its members and each member: its type word, what it is and its own tier word, then its lines, inside a
+ *  fold when the report model folds it. */
+function itemMd(item, { head = true, evidence = false, excerpts = false } = {}) {
+  const own = entryMd(item, head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [], { evidence, excerpts });
+  const members = list(item.members);
+  if (!members.length) return own;
+  const blocks = [own.text, mdOwn(REPORT_ITEM_WORDS.members(members.length))];
+  let fencedAny = own.fenced;
+  for (const m of members) {
+    const tier = REPORT_TIER_WORDS[m.tier.final];
+    const one = m.folded ? entryMd(m, [], { evidence, excerpts })
+      : entryMd(m, [`**${mdOwn(REPORT_TYPE_WORDS[m.type])}:** ${partsMd(m.what.parts)} · ${mdOwn(tier)}`], { evidence, excerpts });
+    fencedAny = fencedAny || one.fenced;
+    blocks.push(m.folded ? fold(`${escHtml(REPORT_TYPE_WORDS[m.type])}: ${partsHtml(m.what.parts)} · ${escHtml(tier)}`,
+      [one.text]) : one.text);
+  }
+  return { text: blocks.join('\n\n'), fenced: fencedAny };
 }
 
 function tierSection(model, tier, trim, notice) {
@@ -1113,9 +1146,11 @@ function didSection(model, trim, notice) {
   }
   if (!did.files.total) blocks.push(mdOwn(REPORT_DID_WORDS.noFiles));
   if (did.files.total > shownFiles) blocks.push(mdOwn(REPORT_DID_WORDS.moreFiles(did.files.total - shownFiles)));
-  if (did.files.outside) blocks.push(did.files.outside.paths.length ? mdOwnNaming((names) => REPORT_DID_WORDS.outside(
+  // D109 (its review): with the code step's one tally, the writes it counts and that are no file of the change.
+  const outsideWords = did.files.outside?.notInChange ? REPORT_DID_WORDS.notInChange : REPORT_DID_WORDS.outside;
+  if (did.files.outside) blocks.push(did.files.outside.paths.length ? mdOwnNaming((names) => outsideWords(
     did.files.outside.n, names, did.files.outside.more), did.files.outside.paths)
-    : mdOwn(REPORT_DID_WORDS.outside(did.files.outside.n, '')));
+    : mdOwn(outsideWords(did.files.outside.n, '')));
   if (did.files.unconfirmed) blocks.push(mdOwn(REPORT_DID_WORDS.unconfirmed(did.files.unconfirmed)));
   // Runs, from the recording, in order.
   blocks.push(sub(REPORT_SECTION_WORDS.runs));

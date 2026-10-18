@@ -45,8 +45,12 @@ const windowOf = (session) => [{ windowIndex: 0, eventIds: session.events.map((e
 test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', () => {
   assert.equal(md(), readFileSync(SNAPSHOT, 'utf8'));
   // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
-  assert.equal(STORY_VERSION, 'sonah.session-story/37');
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark. Bucket B once more
+  // (sonah.session-story/38): what the code review saw short of whole (D105), and why no repaired version was checked,
+  // by identity (D107). In the same move (D110): the premise contract, a finding to verify, no second reviewer;
+  // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level. D112 amended
+  // (2026-10-18, unreleased, no version move): the fixture's Q1 names no place (quote null), so it is an item of its own.
+  assert.equal(STORY_VERSION, 'sonah.session-story/38');
 });
 
 test('D97 (1): the .md has the report model\'s sections in order, with the page\'s counts, for every report shape', () => {
@@ -350,7 +354,7 @@ test('D97 (2a): no pings — mentions, issues and bare commit hashes in recorded
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/3', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/4', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });

@@ -22,7 +22,7 @@ import { INSTRUCTION_GAP_NOTES, DELEGATION_BRIEF_GAP_NOTES, INTER_AGENT_GAP_NOTE
   WORKFLOW_GAP_NOTES }
   from '../adapters/sonah-ledger.js';
 import { promisesBesideFindings } from './run-review.js';
-import { codeContradictedRows, codePassFindings } from './code-pass.js';
+import { codeContradictedRows, codePassFindings, codePassUnconfirmed, codeLinkStands } from './code-pass.js';
 import { withheldWhy } from './code-report.js';
 
 /** M33 X second recheck's closed note (the retired carry's, `sonah.carry`): a window whose request cap kept earlier
@@ -99,20 +99,24 @@ const ASK_CODE_FINDING_STATUSES = Object.freeze([ASK_DONE, ASK_ADDRESSED, ASK_NO
 const [FAILURE_ACTED_ON, FAILURE_TOLD_HUMAN, FAILURE_PASSED_OVER] = FAILURE_HANDLINGS;
 const [, WRITTEN_CONTRADICTED_LABEL] = WRITTEN_LABELS;
 const rowObject = (row) => row !== null && typeof row === 'object' && !Array.isArray(row);
-/** The closed links the code step joined to an ask row (ask-code-links.js: its `codeLinks`), by name. */
-const askLinksOf = (r) => (Array.isArray(r.codeLinks) ? r.codeLinks : []).filter((l) => rowObject(l)
-  && ASK_CODE_LINKS.includes(l.link)).map((l) => l.link);
+/** The closed links the code step joined to an ask row (ask-code-links.js: its `codeLinks`), by name; given the
+ *  report, each as a reader reads it (D110's review, code-pass.js `codeLinkStands`: under the premise contract, a link
+ *  that can move the ask stands only beside a finding that code's label confirms). */
+const askLinksOf = (r, report = null) => (Array.isArray(r.codeLinks) ? r.codeLinks : []).filter((l) => rowObject(l)
+  && ASK_CODE_LINKS.includes(l.link) && codeLinkStands(report, l)).map((l) => l.link);
 /**
  * D88: the kind of one ask row, or null when it is neither counted nor folded. By its status token, and the links the
  * code step joined to it (ledger.js ASK_CODE_LINKS), never its words:
  *   - done (or addressed) or not checked, with an attention link (ASK_CODE_ATTENTION_LINKS: a published finding that
  *     follows from it or whose trace quotes its words, or its code check contradicting it): `asksCodeFinding`, counted;
  *   - otherwise by its status (ASK_ROW_KINDS): not done or partly done counts, not checked is folded, done is neither.
- * Nothing the code step says makes a not-checked ask read as checked: it is folded unless a link counts it.
+ * Nothing the code step says makes a not-checked ask read as checked: it is folded unless a link counts it. Given the
+ * report (`report`), each link is read as it stands (`askLinksOf`, D110's review): a finding whose stored check code's
+ * label no longer confirms moves no ask, as a finding to verify moves none.
  */
-export const askRowKind = (r) => {
+export const askRowKind = (r, report = null) => {
   if (!rowObject(r)) return null;
-  const links = askLinksOf(r);
+  const links = askLinksOf(r, report);
   if (ASK_CODE_FINDING_STATUSES.includes(r.status) && links.some((link) => ASK_CODE_ATTENTION_LINKS.includes(link)))
     return 'asksCodeFinding';
   return Object.hasOwn(ASK_ROW_KINDS, r.status) ? ASK_ROW_KINDS[r.status] : null;
@@ -324,16 +328,20 @@ export const ASK_CODE_WORDS = Object.freeze({
   bearsOn: 'a finding of the code review concerns it',
   withheld: 'Sonah withheld a finding of the code review about this ask',
   question: 'The code review asks you about this ask',
+  // D110: a finding of the code review with a premise of its check that rests outside the repository and the
+  // language: beside the status, never a problem that Sonah checked.
+  unconfirmed: 'the code review found a problem that Sonah could not check in full',
   /** The line of a finding beside the session review's status: the status, then what the code review found. */
   withStatus: (status, words) => `${status}, and ${words}`,
 });
-const [LEADS_FROM_LINK, , , WITHHELD_FINDING_LINK, QUESTION_CONCERNS_LINK] = ASK_CODE_LINKS;
+const [LEADS_FROM_LINK, , , WITHHELD_FINDING_LINK, QUESTION_CONCERNS_LINK, UNCONFIRMED_FINDING_LINK] = ASK_CODE_LINKS;
 const [, , , , ASK_NOT_MET_KIND] = CODE_FINDING_KINDS;
 const capitalized = (text) => `${text[0].toUpperCase()}${text.slice(1)}`;
 /**
  * The lines an ask row (a report row with the `codeLinks` the code step joined) shows beside its status, one per item
  * the code step tied to it, in the order of its links: `{ link, words, subject }` and the item — `finding` (the
- * published finding), `withheld` or `question` (its index in the code step's list). `words` are ASK_CODE_WORDS
+ * published finding), `withheld` or `question` (its index in the code step's list), or (D110) `unconfirmed` (a finding
+ * Sonah could not confirm, by its id, read through code-pass.js `codePassUnconfirmed`). `words` are ASK_CODE_WORDS
  * by structure: for a finding, the row's status and whether the finding is an ask not met that names this ask (any
  * other link reads "bears on it"); for a withheld finding, why it was withheld in the code step's closed reason words
  * (code-report.js `withheldWhy`: its CODE_WITHHELD_REASONS member, the refutation's reason, the closed cause), as What
@@ -348,12 +356,18 @@ export function askCodeNotes(report, row) {
   const item = (key, k) => (Number.isSafeInteger(k) && k >= 0 && Array.isArray(pass[key]) && rowObject(pass[key][k])
     ? pass[key][k] : null);
   const findings = codePassFindings(report);
+  const unconfirmed = codePassUnconfirmed(report);
   const status = Object.hasOwn(ASK_CODE_WORDS.status, row.status) ? ASK_CODE_WORDS.status[row.status] : null;
   const notes = [];
   const seen = new Set();
   const once = (key) => (seen.has(key) ? false : (seen.add(key), true));
   for (const l of links) {
-    if (typeof l.finding === 'string') {
+    if (l.link === UNCONFIRMED_FINDING_LINK) {
+      const f = typeof l.unconfirmed === 'string' ? unconfirmed.find((x) => x.id === l.unconfirmed) : undefined;
+      if (!f || !once(`unconfirmed ${f.id}`)) continue;
+      notes.push({ link: l.link, unconfirmed: f, words: status ? ASK_CODE_WORDS.withStatus(status,
+        ASK_CODE_WORDS.unconfirmed) : capitalized(ASK_CODE_WORDS.unconfirmed), subject: f.title });
+    } else if (typeof l.finding === 'string') {
       const f = findings.find((x) => x.id === l.finding);
       if (!f || !once(`finding ${f.id}`)) continue;
       const names = links.some((x) => x.link === LEADS_FROM_LINK && x.finding === f.id);
@@ -944,7 +958,7 @@ export const attentionLines = (report) => attentionSummary(report).lines;
  */
 export function checklistRowCounts(report, { contradicted = [], edits = [], codeFindings = [] } = {}) {
   const rows = (value) => (Array.isArray(value) ? value.filter((row) => row !== null && typeof row === 'object') : []);
-  return rowKindCounts({ decisions: rows(report.decisions), pivots: rows(report.pivots).length,
+  return rowKindCounts({ report, decisions: rows(report.decisions), pivots: rows(report.pivots).length,
     requirements: rows(report.requirements), contradicted: contradicted.length,
     codeContradicted: codeContradictedRows(report).length, failures: failureRows(report) ?? [], forbidden: edits.length,
     written: rows(report.writtenClaims).filter((w) => typeof w.text === 'string'),
@@ -955,15 +969,16 @@ export function checklistRowCounts(report, { contradicted = [], edits = [], code
  * member of ATTENTION_ROWS and FOLDED_ROWS, each row read by the shared rules (`decisionRowKinds`, `askRowKind`,
  * `failureRowKind`, `writtenRowKind`, `claimRowKind`). A reader passes the rows it lists (the CLI and the PR comment the
  * report's, through `checklistRowCounts`; the page its own, which list the same claims, `listedPromises`, and read who
- * decided by the same rule, `derivedColumn`) and the counts of what it places by finding. Pure.
+ * decided by the same rule, `derivedColumn`) and the counts of what it places by finding, and the report its asks'
+ * links are read against (`askRowKind`). Pure.
  */
-export function rowKindCounts({ decisions = [], pivots = 0, requirements = [], contradicted = 0, codeContradicted = 0,
-  failures = [], forbidden = 0, written = [], codeFindings = 0, promises = [] } = {}) {
+export function rowKindCounts({ report = null, decisions = [], pivots = 0, requirements = [], contradicted = 0,
+  codeContradicted = 0, failures = [], forbidden = 0, written = [], codeFindings = 0, promises = [] } = {}) {
   const counts = Object.fromEntries([...ATTENTION_ROWS, ...FOLDED_ROWS].map((kind) => [kind, 0]));
   const add = (kind) => { if (kind !== null && Object.hasOwn(counts, kind)) counts[kind] += 1; };
   for (const d of decisions) decisionRowKinds(d).forEach(add);
   counts.pivots = pivots;
-  for (const r of requirements) add(askRowKind(r));
+  for (const r of requirements) add(askRowKind(r, report));
   counts.contradicted = contradicted;
   counts.codeContradicted = codeContradicted;
   for (const row of failures) add(failureRowKind(row));
@@ -1017,7 +1032,7 @@ export const STYLE_FIXTURES = Object.freeze({
   ...Object.fromEntries(Object.keys(ATTENTION_WORDS).filter((key) => typeof ATTENTION_WORDS[key] === 'function')
     .map((key) => [`ATTENTION_WORDS.${key}`, [[1], [2]]])),
   'ASK_CODE_WORDS.withStatus': [[ASK_CODE_WORDS.status.done, ASK_CODE_WORDS.notMet],
-    [ASK_CODE_WORDS.status['not-checked'], ASK_CODE_WORDS.bearsOn]],
+    [ASK_CODE_WORDS.status['not-checked'], ASK_CODE_WORDS.bearsOn], [ASK_CODE_WORDS.status.done, ASK_CODE_WORDS.unconfirmed]],
   'CHECKLIST_OUTCOME_WORDS.ran-failed': [[1], [null]], 'CHECKLIST_OUTCOME_WORDS.failed-or-refused': [[]],
   'CHECKLIST_OUTCOME_WORDS.did-not-run': [[]],
   'CHECKLIST_OUTCOME_WORDS.end-unread': [[null, 'background'], [null, 'unchecked']],

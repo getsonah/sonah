@@ -23,7 +23,14 @@ import { STOPPED_DENIALS, actionOutcome, samePathChangedBetween, writtenInSessio
   UNRUN_WRITE_ENDS }
   from '../src/ledger.js';
 import { codeSnapshotPlan } from '../src/code-pass.js';
-import { commandsAfterLastEdit, renderDossier } from '../src/code-context.js';
+import { commandsAfterLastEdit, renderCommands } from '../src/code-context.js';
+
+/** The commands listed after a path's last edit (code-pass/12, D105: each command once, numbered; a file names the first
+ *  of them after its last edit): every command from that one on; none when the file names none. */
+const commandsAfter = (listed, path) => {
+  const file = listed.files.find((f) => f.path === path);
+  return !file || file.first === null ? [] : listed.commands.filter((c) => c.n >= file.first);
+};
 import { supportCheck } from '../src/claims.js';
 import { readWrittenStatement } from '../src/written.js';
 import { storyFacts } from '../../render/session-story.js';
@@ -263,11 +270,11 @@ test('D98 F9: the code step\'s commands after a file\'s last edit read its last 
   const [heredocWrite] = invocations(session).filter((e) => e.shellWriteOf);
   assert.equal(effect(heredocWrite), NONE);
   assert.deepEqual(codeSnapshotPlan(session).map((entry) => entry.path), ['a.md']);
-  const [commands] = commandsAfterLastEdit(session, ['a.md']);
+  const commands = commandsAfterLastEdit(session, ['a.md']);
   // The owner's answers of 2026-10-17 (code-pass/11): the refused heredoc ran nothing, so the dossier no longer lists it.
-  assert.deepEqual(commands.after.map((run) => run.ran.split('\n')[0]), ['npm test']);
-  assert.deepEqual(commands.after[0].exit, 0);
-  assert.doesNotMatch(renderDossier([], [commands]), /never_ran/);
+  assert.deepEqual(commandsAfter(commands, 'a.md').map((run) => run.text.split('\n')[0]), ['npm test']);
+  assert.deepEqual(commandsAfter(commands, 'a.md')[0].exit, 0);
+  assert.doesNotMatch(renderCommands(commands), /never_ran/);
   const model = reportModel(session, { windowResults: [{ windowIndex: 0, eventIds: session.events.map((e) => e.id),
     failure: null }] }, {});
   assert.deepEqual(model.did.runs.neverRan, []);
@@ -292,9 +299,9 @@ test('D98 (the owner\'s answer 1, 2026-10-17): the dossier lists no command refu
   const refused = ['npm test', 'npm run lint', 'npm run build'].map((cmd) => commandOf(session, cmd));
   assert.deepEqual(refused.map((event) => effect(event)), [NONE, NONE, NONE], 'premise: each typed refused before it ran');
   assert.deepEqual(codeSnapshotPlan(session).map((entry) => entry.path), ['a.md']);
-  const [commands] = commandsAfterLastEdit(session, ['a.md']);
-  assert.deepEqual(commands.after, [], 'no command that may have run follows the last edit');
-  const text = renderDossier([], [commands]);
+  const commands = commandsAfterLastEdit(session, ['a.md']);
+  assert.deepEqual(commandsAfter(commands, 'a.md'), [], 'no command that may have run follows the last edit');
+  const text = renderCommands(commands);
   assert.match(text, /^\{"path":"a\.md","commandsAfterLastEdit":"none","move":"never_ran"\}$/m);
   for (const cmd of ['npm test', 'npm run lint', 'npm run build']) assert.equal(text.includes(cmd), false, cmd);
   // The page's Runs list says the same of the file, and still lists each refused command, as did not run.
@@ -311,9 +318,9 @@ test('D98 (the owner\'s answer 1, 2026-10-17): the dossier lists no command refu
   const failed = [...rows.slice(0, -1), use('t4', 'Bash', { command: 'npm run check', description: 'Check' }),
     answer('t4', 'boom', { isError: true }), say(SAID)];
   const after = await slice(t, { rows: failed });
-  const [listed] = commandsAfterLastEdit(after.session, ['a.md']);
-  assert.deepEqual(listed.after.map((run) => run.ran), ['npm run check']);
-  assert.doesNotMatch(renderDossier([], [listed]), /never_ran/);
+  const listed = commandsAfterLastEdit(after.session, ['a.md']);
+  assert.deepEqual(commandsAfter(listed, 'a.md').map((run) => run.text), ['npm run check']);
+  assert.doesNotMatch(renderCommands(listed), /never_ran/);
   assert.deepEqual(reportModel(after.session, { windowResults: [{ windowIndex: 0,
     eventIds: after.session.events.map((e) => e.id), failure: null }] }, {}).did.runs.neverRan, []);
 });
@@ -457,7 +464,10 @@ function readersAgree({ raw, session }, label) {
   const at = new Map(session.events.map((event, i) => [event.id, i]));
   const lastOf = (path) => writes.filter((w) => changing(w) && names(w, path)).reduce((last, w) => Math.max(last,
     at.get(w.id)), -1);
-  for (const { path, after } of commandsAfterLastEdit(session, [...changed])) {
+  const listed = commandsAfterLastEdit(session, [...changed]);
+  assert.deepEqual(new Set(listed.files.map((f) => f.path)), changed, label);
+  for (const { path } of listed.files) {
+    const after = commandsAfter(listed, path);
     // The owner's answers of 2026-10-17 (code-pass/11): a command refused before it ran (effect none) is not listed.
     const later = session.events.slice(lastOf(path) + 1).filter((e) => e.kind === 'invocation' && e.operation === 'command'
       && effect(e) !== NONE);

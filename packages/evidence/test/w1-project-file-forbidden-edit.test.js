@@ -99,8 +99,11 @@ test('W1 B: the versions, the contract and the brief', () => {
   // D99 moved it once more (sonah.session-story/34): a background run's end, and a stopped run, in the page's words.
   // D100 moved it once more (sonah.session-story/35): an absence only where code proves it.
   // D101 moved it once more (sonah.session-story/36): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark.
-  assert.equal(STORY_VERSION, 'sonah.session-story/37');
+  // D104 moved it once more (sonah.session-story/37): the shown-in-part mark. Bucket B once more
+  // (sonah.session-story/38): what the code review saw short of whole (D105), and why no repaired version was checked,
+  // by identity (D107). In the same move (D110): the premise contract, a finding to verify, no second reviewer;
+  // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level.
+  assert.equal(STORY_VERSION, 'sonah.session-story/38');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -122,8 +125,11 @@ test('W1 B: the versions, the contract and the brief', () => {
   // D99 moved it once more (sonah.session-page/39): a background run's end is said absent only where it is proved.
   // D100 moved it once more (sonah.session-page/40): an absence only where code proves it.
   // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
-  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/42');
+  // D104 moved it once more (sonah.session-page/42): the shown-in-part mark. Bucket B once more (sonah.session-page/43):
+  // what the code review saw short of whole (D105), and why no repaired version was checked, by identity (D107). In
+  // the same move (D110): the premise contract, a finding to verify, no second reviewer; (D111) the accounting's footer
+  // counts; and (D112) an item's members, and the order by final level.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/43');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes

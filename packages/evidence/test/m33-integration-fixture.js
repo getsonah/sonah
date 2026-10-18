@@ -1555,6 +1555,16 @@ export const SEEN_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/41', after: 'sonah.session-page/42' }),
   story: Object.freeze({ before: 'sonah.session-story/36', after: 'sonah.session-story/37' }),
 });
+/** D107 (F3a, the repair kept by identity): the report model, the page and the story move once each, one link after
+ *  D104's: a withheld finding or question of the code review says whether an item of the repair matched it, by identity,
+ *  never by its place, and says only what code compared (code-report.js `CODE_REPORT_WORDS.unrepaired`; an earlier
+ *  report's members keep their words). No instrument version moved by it: the review and repair requests did not move
+ *  for it. Bucket B moves each reader once: this is the same move as D105's (`ONE_BOUND_READER_VERSIONS`). */
+export const REPAIR_MERGE_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/3', after: 'sonah.report-model/4' }),
+  page: Object.freeze({ before: 'sonah.session-page/42', after: 'sonah.session-page/43' }),
+  story: Object.freeze({ before: 'sonah.session-story/37', after: 'sonah.session-story/38' }),
+});
 /** A run profile with the cleanup's versions rendered back to a file changed since the session, shown's
  *  (`CLEANUP_VERSIONS`, `CLEANUP_CODE_PASS_MEMBERS`); anything else untouched. `profileBeforeChangedSinceShown` applies
  *  it first. */
@@ -1714,12 +1724,274 @@ export const REFUSED_AFTER_EDIT_VERSIONS = Object.freeze({
   pass: Object.freeze({ before: 'sonah.code-pass/10', after: 'sonah.code-pass/11' }),
 });
 /** A run profile with the owner's answers' version rendered back to D103 part 2's (`REFUSED_AFTER_EDIT_VERSIONS`);
- *  anything else untouched. `profileBeforeCitedWhole` applies it first. */
+ *  anything else untouched. `profileBeforeCitedWhole` applies it first. Bucket B (D105, D107): it applies
+ *  `profileBeforeRepairMerge` first, which applies `profileBeforeOneBound` first. */
 export function profileBeforeRefusedAfterEdit(profile) {
-  const copy = structuredClone(profile);
+  const copy = profileBeforeRepairMerge(profile);
   const member = copy?.codePass;
   if (member && typeof member === 'object' && member.pass === REFUSED_AFTER_EDIT_VERSIONS.pass.after)
     member.pass = REFUSED_AFTER_EDIT_VERSIONS.pass.before;
+  return copy;
+}
+/**
+ * D105 (F2 part A; amends D92): one request, one bound, a manifest. The review agent's request is a frozen list
+ * of blocks, each within its frozen cap, the lowest giving way in whole units only when their sum is over the bound;
+ * rule and skill files whole; the commands once, numbered; nothing cut inside a line; every agent's reading record kept;
+ * a request too large to send named so. The instrument version it moved, once (`sonah.code-pass/12`), with the session
+ * run profile's code-pass member: `projectFileChars` (the cut at 3,600 characters a side) went; `ruleBlockMaxBytes`,
+ * `shownSideBytes`, `yieldOrder`, `shownStates`, `leftOutReasons`, `seenStates` and (its second review) `readFailures`
+ * came; the withheld reasons gained
+ * `request_too_large`, the unchecked repairs `too_large`, the footer `too_large` and `commands_left_out`. Rendered back
+ * (`profileBeforeOneBound`), the owner's answers' member. The agent transport moved too
+ * (`sonah.review-agent-transport/2`; no profile holds it: every agent answer key binds it). No session request byte
+ * moved; every code-step request moved.
+ */
+export const ONE_BOUND_VERSIONS = Object.freeze({
+  pass: Object.freeze({ before: 'sonah.code-pass/11', after: 'sonah.code-pass/12' }),
+  transport: Object.freeze({ before: 'sonah.review-agent-transport/1', after: 'sonah.review-agent-transport/2' }),
+});
+/** D105: the readers it moved, once each, one link after D104's: the report model, the page and the report .md say what
+ *  the code review saw of each file short of whole, a request too large to send, and the commands left out for room. */
+export const ONE_BOUND_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/3', after: 'sonah.report-model/4' }),
+  page: Object.freeze({ before: 'sonah.session-page/42', after: 'sonah.session-page/43' }),
+  story: Object.freeze({ before: 'sonah.session-story/37', after: 'sonah.session-story/38' }),
+});
+/** A run profile with D105's version and members rendered back to the owner's answers' (`ONE_BOUND_VERSIONS`); anything
+ *  else untouched. `profileBeforeRepairMerge` applies it first (bucket B's merge: D105 added `too_large` to the list
+ *  D107 set). D106: it applies `profileBeforeWholeFiles` first. */
+export function profileBeforeOneBound(profile) {
+  const copy = profileBeforeWholeFiles(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.pass === ONE_BOUND_VERSIONS.pass.after) {
+    member.pass = ONE_BOUND_VERSIONS.pass.before;
+    for (const key of ['ruleBlockMaxBytes', 'shownSideBytes', 'yieldOrder', 'shownStates', 'leftOutReasons', 'seenStates',
+      'readFailures']) delete member[key];
+    member.projectFileChars = 3_600;
+    const without = (values, gone) => (Array.isArray(values) ? values.filter((v) => !gone.includes(v)) : values);
+    member.withheld = without(member.withheld, ['request_too_large']);
+    member.repairUnchecked = without(member.repairUnchecked, ['too_large']);
+    member.footer = without(member.footer, ['too_large', 'commands_left_out']);
+  }
+  return copy;
+}
+/**
+ * D106 (F2 part B, held): the code review's request may also show the changed files whole and what the session read of
+ * unchanged tracked files, behind one frozen setting that is off (code-pass.js `CODE_WHOLE_FILES`). No version moved
+ * (`sonah.code-pass/12` is unreleased) and, off, no request byte; the session run profile's code-pass member gained the
+ * setting (`wholeFiles`: on, the two blocks' caps, the read page and the two blocks' place in the yield order), so the
+ * session-only profile moved by it alone. Rendered back (`profileBeforeWholeFiles`: the member taken out), D105's. D108
+ * turned the setting on (`WHOLE_FILES_ON_MEMBER`).
+ */
+export const WHOLE_FILES_MEMBER = Object.freeze({ on: false, maxBytes: 400_000, readsMaxBytes: 400_000, readPage: 2_000,
+  yieldFirst: Object.freeze(['reads', 'wholeFiles']) });
+/** A run profile with D106's member rendered back to D105's (`WHOLE_FILES_MEMBER`); anything else untouched.
+ *  `profileBeforeOneBound` applies it first. D108: it applies `profileBeforeWholeFilesOn` first. */
+export function profileBeforeWholeFiles(profile) {
+  const copy = profileBeforeWholeFilesOn(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object') delete member.wholeFiles;
+  return copy;
+}
+/**
+ * D108 (the owner, 2026-10-17: "Yes, keep it on for now"): D106's setting is on, the same frozen literal
+ * (code-pass.js `CODE_WHOLE_FILES.on`), so the code step sends part B by default. No version moved
+ * (`sonah.code-pass/12` is unreleased); the session run profile's code-pass member moved by `wholeFiles.on` alone. The
+ * review's and its repair's requests moved by part B's blocks and brief; the checking agents' did not
+ * (code-pass-triage.test.js pins both). Rendered back (`profileBeforeWholeFilesOn`: `on` false), D106's.
+ */
+export const WHOLE_FILES_ON_MEMBER = Object.freeze({ ...WHOLE_FILES_MEMBER, on: true });
+/**
+ * D109 (2026-10-17, the code review's coverage lines from one tally): the instrument version it moved, once
+ * (`sonah.code-snapshot/12`, which shipped at /11 in 0.3.0-beta.3: a recorded write outside the working directory is
+ * classed by where it really lies), with the session run profile's code-pass member, whose file states gained
+ * `left_out` (hunks left out for room, never `oversize`), `other_repository` and `outside_writer_root`. Rendered back
+ * (`profileBeforeWhereItLies`), D108's member. `sonah.code-pass/12` is unreleased and did not move. No request byte
+ * moved: the request's rows keep their words, and the manifest, the record and the readers are no part of a request.
+ */
+export const WHERE_IT_LIES_VERSIONS = Object.freeze({
+  snapshot: Object.freeze({ before: 'sonah.code-snapshot/11', after: 'sonah.code-snapshot/12' }),
+});
+/** D109: the file states it added to ledger.js CODE_FILE_STATES, at its end. */
+export const WHERE_IT_LIES_STATES = Object.freeze(['left_out', 'other_repository', 'outside_writer_root']);
+/** A run profile with D109's version and file states rendered back to D108's (`WHERE_IT_LIES_VERSIONS`,
+ *  `WHERE_IT_LIES_STATES`); anything else untouched. `profileBeforeWholeFilesOn` applies it first. D110 (bucket C): it
+ *  applies `profileBeforePremises` first. */
+export function profileBeforeWhereItLies(profile) {
+  const copy = profileBeforePremises(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.snapshot === WHERE_IT_LIES_VERSIONS.snapshot.after) {
+    member.snapshot = WHERE_IT_LIES_VERSIONS.snapshot.before;
+    if (Array.isArray(member.fileStates))
+      member.fileStates = member.fileStates.filter((state) => !WHERE_IT_LIES_STATES.includes(state));
+  }
+  return copy;
+}
+/** A run profile with D108's setting rendered back to D106's (`WHOLE_FILES_ON_MEMBER` to `WHOLE_FILES_MEMBER`); anything
+ *  else untouched. `profileBeforeWholeFiles` applies it first. D109: it applies `profileBeforeWhereItLies` first. */
+export function profileBeforeWholeFilesOn(profile) {
+  const copy = profileBeforeWhereItLies(profile);
+  const member = copy?.codePass?.wholeFiles;
+  if (member && typeof member === 'object' && member.on === WHOLE_FILES_ON_MEMBER.on) member.on = WHOLE_FILES_MEMBER.on;
+  return copy;
+}
+/**
+ * D110 (bucket C, F4; owner, 2026-10-17: "There is some usage left to go for C and E"): the premise contract. A
+ * finding's checking agent lists the premises a finding rests on, each with its source and receipts, and code computes
+ * the label: confirmed only when every premise is `repository` or `language`, else published apart, not confirmed. The
+ * checking agents' version moved, once (`sonah.code-verify/3`; `/2` shipped in 0.3.0-beta.3), with the session run
+ * profile's code-pass member: `trace` gained `premises` and `premiseChars`; `premises` came (the closed sources and the
+ * rule's name); the tier table moved (`sonah.tiers/2`, its kinds gaining `code_finding_unconfirmed`). Rendered back
+ * (`profileBeforePremises`), D109's. No session request byte moved; every finding's checking request moved (its brief and
+ * contract); the review agent's and the batch checking agent's did not.
+ */
+export const PREMISE_VERSIONS = Object.freeze({
+  verify: Object.freeze({ before: 'sonah.code-verify/2', after: 'sonah.code-verify/3' }),
+  tiers: Object.freeze({ before: 'sonah.tiers/1', after: 'sonah.tiers/2' }),
+});
+/** D110: the readers it moved: the report model, the page and the report .md show a finding as checked only by code's
+ *  label, a finding that the label does not confirm as an item to verify, and no second reviewer. Its lane moved each
+ *  once more, one link after bucket B's; joined into 0.3.0-beta.4, each reader moves once from beta.3, so this is the
+ *  same move as D105's (`ONE_BOUND_READER_VERSIONS`). */
+export const PREMISE_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/3', after: 'sonah.report-model/4' }),
+  page: Object.freeze({ before: 'sonah.session-page/42', after: 'sonah.session-page/43' }),
+  story: Object.freeze({ before: 'sonah.session-story/37', after: 'sonah.session-story/38' }),
+});
+/** D110: a finding's checking agent's brief (code-pass.js `CODE_VERIFY_SYSTEM`) rendered back to D109's, line for line:
+ *  the answer's object without `premises`, `cannot_tell` as it was, and no premise contract. Anything else untouched, so
+ *  a request captured now and rendered back is byte for byte what bucket B sent. */
+export function verifyBriefBeforePremises(system) {
+  if (typeof system !== 'string') return system;
+  const lines = system.split('\n');
+  const at = (text) => lines.findIndex((line) => line.startsWith(text));
+  const head = at('Judge, and answer through the structured output tool, as one object {verdict, reason, claims, premises,');
+  if (head < 0) return system;
+  lines.splice(head, 2, 'Judge, and answer through the structured output tool, as one object {verdict, reason, claims, '
+    + 'receipts, explanation}:');
+  const tell = at('  when it does not; "cannot_tell" when your trace settles neither.');
+  lines.splice(tell, 1, '  when it does not; "cannot_tell" when settling it needs something outside the repository (a run, '
+    + 'a dependency\'s', '  source, the platform or the compiler).');
+  const from = at('- premises: what must be true'), to = at("  A premise's receipts are as below;");
+  lines.splice(from, to - from + 1);
+  return lines.join('\n');
+}
+/** A run profile with D110's versions and members rendered back to D109's (`PREMISE_VERSIONS`); anything else untouched.
+ *  `profileBeforeWhereItLies` applies it first. D111 (F3b): it applies `profileBeforeAccount` first. */
+export function profileBeforePremises(profile) {
+  const copy = profileBeforeAccount(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.verify === PREMISE_VERSIONS.verify.after) {
+    member.verify = PREMISE_VERSIONS.verify.before;
+    delete member.premises;
+    if (member.trace && typeof member.trace === 'object') { delete member.trace.premises; delete member.trace.premiseChars; }
+    const triage = member.triage;
+    if (triage && typeof triage === 'object' && triage.table === PREMISE_VERSIONS.tiers.after) {
+      triage.table = PREMISE_VERSIONS.tiers.before;
+      if (triage.kinds && typeof triage.kinds === 'object') delete triage.kinds.code_finding_unconfirmed;
+    }
+  }
+  return copy;
+}
+/**
+ * D111 (F3b, bucket C; owner, 2026-10-17: "There is some usage left to go for C and E"): the accounting. After the code
+ * review and its repair, accounting agents account for the items of the session review in scope (the person's asks,
+ * the statements the agent wrote into a file, its decisions not to act), in batches of at most 30, at most 4 a review;
+ * each item gets one closed fate, and the footer counts those left not examined or missing, by kind. A new instrument,
+ * its version at its first (`sonah.code-account/1`); the session run profile's code-pass member gained `account` (the
+ * version, the scope, the outcomes, the fates, the causes of `missing` and the bounds), the agents' guards `account`, the
+ * step's parts `account`, the footer `unaccounted`, the unchecked repairs `accounted` and the fate records' sources
+ * `account`. Rendered back (`profileBeforeAccount`), D110's. No request of the review, its repair or its checks moved
+ * (`sonah.code-pass/12` and `sonah.code-verify/3` did not); every review with an item in scope sends the new calls.
+ */
+export const ACCOUNT_VERSIONS = Object.freeze({ account: 'sonah.code-account/1' });
+/** D111: the readers it moved: the report model, the page and the report .md count, by kind, the items in scope that
+ *  the accounting did not examine in a way that Sonah could use. Its lane moved each once more, one link after D110's;
+ *  joined into 0.3.0-beta.4, this is the same move as D105's (`ONE_BOUND_READER_VERSIONS`). */
+export const ACCOUNT_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/3', after: 'sonah.report-model/4' }),
+  page: Object.freeze({ before: 'sonah.session-page/42', after: 'sonah.session-page/43' }),
+  story: Object.freeze({ before: 'sonah.session-story/37', after: 'sonah.session-story/38' }),
+});
+/** A run profile with D111's members rendered back to D110's (`ACCOUNT_VERSIONS`); anything else untouched.
+ *  `profileBeforePremises` applies it first. D112 (E1-F8): it applies `profileBeforeOneItem` first. */
+export function profileBeforeAccount(profile) {
+  const copy = profileBeforeOneItem(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.account?.version === ACCOUNT_VERSIONS.account) {
+    delete member.account;
+    const without = (values, gone) => (Array.isArray(values) ? values.filter((v) => v !== gone) : values);
+    member.repairUnchecked = without(member.repairUnchecked, 'accounted');
+    if (member.repairMerge && typeof member.repairMerge === 'object')
+      member.repairMerge.sources = without(member.repairMerge.sources, 'account');
+    member.parts = without(member.parts, 'account');
+    member.footer = without(member.footer, 'unaccounted');
+    if (member.agents && typeof member.agents === 'object') delete member.agents.account;
+  }
+  return copy;
+}
+/**
+ * E1-F8 (D112; owner, 2026-10-17: "go for C and E"; one point, one item): the tier table moved once (`sonah.tiers/2`;
+ * `/1` shipped in 0.3.0-beta.2 and beta.3): every kind gains `refusedReadTier`, and a failure that the agent passed over
+ * defaults to Good to know when its call is a refused read by the recorder's types (`failure_passed_over`'s is Good to
+ * know, every other kind's null). The session run profile's code-pass member moved by its `triage` alone (its kinds);
+ * no instrument version moved (`sonah.code-pass/12` is unreleased), and no request byte: the dossier never carries a
+ * tier. Joined into 0.3.0-beta.4 after bucket C, whose D110 moved the table to `/2` already: the table moves once, so
+ * this is the same move as D110's (`PREMISE_VERSIONS.tiers`), and rendered back (`profileBeforeOneItem`: every kind's
+ * `refusedReadTier` taken out; the version stays, D110's), D111's.
+ */
+export const ONE_ITEM_VERSIONS = Object.freeze({
+  table: Object.freeze({ before: 'sonah.tiers/1', after: 'sonah.tiers/2' }),
+});
+/** E1-F8 (D112): the readers it moved: an item shows its members (a question of the code review on its row, a decision
+ *  whose stated quote nests in its own), and a section orders its items by final level, then by kind. Its lane moved
+ *  each once more, one link after bucket B's; joined into 0.3.0-beta.4, each reader moves once from beta.3, so this is
+ *  the same move as D105's (`ONE_BOUND_READER_VERSIONS`). */
+export const ONE_ITEM_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/3', after: 'sonah.report-model/4' }),
+  page: Object.freeze({ before: 'sonah.session-page/42', after: 'sonah.session-page/43' }),
+  story: Object.freeze({ before: 'sonah.session-story/37', after: 'sonah.session-story/38' }),
+});
+/** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
+ *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
+ *  applies it first. */
+export function profileBeforeOneItem(profile) {
+  const copy = structuredClone(profile);
+  const triage = copy?.codePass?.triage;
+  if (triage && typeof triage === 'object' && triage.table === ONE_ITEM_VERSIONS.table.after) {
+    for (const k of Object.values(triage.kinds ?? {})) if (k && typeof k === 'object') delete k.refusedReadTier;
+  }
+  return copy;
+}
+/**
+ * D107 (F3a, bucket B; owner, 2026-10-17: "Once that is done, go for bucket B"): the code step's one repair keeps
+ * everything, matched by identity, never by index alone (code-pass.js `mergeRepair`). Its lane moved no version
+ * (`sonah.code-pass/11` was unreleased when it branched); `/11` shipped in 0.3.0-beta.3, and bucket B moves it once,
+ * with D105 (`ONE_BOUND_VERSIONS`). The session run profile's code-pass member gained `repairMerge` (the rule,
+ * ledger.js CODE_REPAIR_FATES and CODE_ANSWER_SOURCES) and its closed list of unchecked repairs moved
+ * (`REPAIR_MERGE_UNCHECKED`: the members read at an index, `different`, `absent` and `repeated`, out; `unmatched`,
+ * `uncompared`, `ambiguous`, `matched_past_limit`, `unnamed`, `unplaced` and `brought` in, each saying only what code
+ * compared; the readers keep the words of the members that went, for earlier reports; the rule, `identity-one-to-one`:
+ * an item of the repair takes a failing item's place only one to one, never by order). Rendered back
+ * (`profileBeforeRepairMerge`), the owner's answers' member. No request byte moved by it (D105's moved every code-step
+ * request).
+ */
+export const REPAIR_MERGE_UNCHECKED = Object.freeze({
+  before: Object.freeze(['different', 'absent', 'repeated', 'failed', 'spent', 'unasked']),
+  after: Object.freeze(['unmatched', 'uncompared', 'ambiguous', 'matched_past_limit', 'unnamed', 'unplaced', 'brought',
+    'failed', 'spent', 'unasked']),
+});
+/** A run profile with D107's members rendered back to the owner's answers' (`REPAIR_MERGE_UNCHECKED`, `repairMerge`
+ *  taken out); anything else untouched. `profileBeforeRefusedAfterEdit` applies it first. Bucket B's merge: it applies
+ *  `profileBeforeOneBound` first, which takes out the `too_large` D105 added to this list. */
+export function profileBeforeRepairMerge(profile) {
+  const copy = profileBeforeOneBound(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object') {
+    delete member.repairMerge;
+    if (JSON.stringify(member.repairUnchecked) === JSON.stringify(REPAIR_MERGE_UNCHECKED.after))
+      member.repairUnchecked = [...REPAIR_MERGE_UNCHECKED.before];
+  }
   return copy;
 }
 /** A run profile with D103's versions and skim rendered back to the evidence merge's (`SKIM_VERSIONS`; 3,600 bytes a side
