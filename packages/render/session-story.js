@@ -33,13 +33,16 @@
 // at this file's top level reads a binding of report-model.js (it is read only inside the functions).
 
 import { verifyReceipt, effectReader, CHANGING_EFFECTS, REFUSED_DENIALS, ACTION_EFFECTS } from '../evidence/src/session.js';
+import { HOME_SPELLED, unresolvedShellPaths } from '../evidence/src/code-context.js';
+import { literalOf } from '../evidence/src/code-pass.js';
 import { startsSegment } from '../evidence/src/windows.js';
 import { locateQuote, overlapping, sharedChars } from '../evidence/src/ask-code-links.js';
 import { DISCLOSURE_REASONS, REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, STOPPED_DENIALS, REPORT_TIERS,
   REPORT_ITEM_KINDS } from '../evidence/src/ledger.js';
 import { escapeSource } from '../evidence/src/review.js';
+import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
 import { INTER_AGENT_GAP_NOTES } from '../evidence/adapters/sonah-ledger.js';
-import { reportModel, REPORT_LIMITS } from './report-model.js';
+import { reportModel, REPORT_LIMITS, scopeMarker, folderNameOf } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS } from './report-words.js';
@@ -65,8 +68,14 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  that Sonah could use, counted by kind, as the page says it; never the ones it examined; and the code review's coverage
  *  line by its own coverage (D111's second review), as the page says it. And (E1-F8, D112: one point, one item): an item's
  *  members after its own lines, as the page shows them, and the items of a section in the report model's order (by final
- *  level, then kind). */
-export const STORY_VERSION = 'sonah.session-story/38';
+ *  level, then kind). /39 (D113, 0.3.0-beta.5; /38 shipped in 0.3.0-beta.4): the code review's notes as the page says them:
+ *  the change holds only the files that the session's recorded writes could have changed, the files that changed
+ *  outside those writes named, and a change with no file to review said by the session's own writes. In the same
+ *  move (D115, the owner: "for the hn5, start work now"): the session review's rows in words no wider than the field
+ *  each rests on, and (D116) a question's pointer to an item or an ask only where code checked its tie, as the page
+ *  says them. And (D125, the owner: "Let's fix 1st"; amended, "go for option 3"): the note on a not-checked ask that the
+ *  code review found to hold in the code, as the page says it. */
+export const STORY_VERSION = 'sonah.session-story/39';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -370,9 +379,10 @@ function commandEnd(outcomes, event) {
  * effect rule's `unknown`), and a command that failed marks the writes parsed from it `failed`. A direct write whose
  * own result the record proved failed or cancelled left nothing (effect `undone`) and has no row.
  */
-function countedChanges(session, events, outcomes) {
+function countedChanges(session, events, outcomes, literal = []) {
   const counted = new Map();
   const state = new Map();
+  const notResolved = new Set(unresolvedShellPaths(session, { literal }));
   const unconfirmedEnd = (event) => {
     const parsed = typeof event.shellWriteOf === 'string' && event.shellWriteOf !== '';
     const call = parsed ? session.event(event.shellWriteOf) : event;
@@ -387,11 +397,19 @@ function countedChanges(session, events, outcomes) {
     const rows = [];
     list(event.changes).forEach((change, index) => {
       if (typeof change?.path !== 'string' || !change.path) return;
-      const outside = change.outsideRepository === true;
-      const facts = changeFacts(session, event, change, outside ? undefined : state.get(change.path));
-      if (!outside) state.set(change.path, end === null ? facts.state : UNKNOWN);
-      rows.push({ event, index, helper: event.childId != null, outside, ...(end === null ? {} : { unconfirmed: end }),
-        ...facts });
+      // D109 (D122 (a), judgment call (4), as its review found it): a path named from the home folder (evidence
+      // code-context.js `HOME_SPELLED`: `~/`, `$HOME/`, `${HOME}/`) lies outside the repository, as the code step's
+      // snapshot places it (cli code-snapshot.js `placeEntry`), whatever the slicer's write scope says of it (that scope
+      // marks only the harness's home folders): with the code step off as with it on, it is counted outside, never a
+      // file of the change, never a path not resolved.
+      const outside = change.outsideRepository === true || HOME_SPELLED.test(change.path);
+      // D118 (b) and D117 amended, one rule: a path the recording does not resolve (evidence code-context.js
+      // `unresolvedShellPaths`) names no file Sonah can place: no state of its own, and counted apart (`stepActivity`).
+      const unresolved = notResolved.has(change.path);
+      const facts = changeFacts(session, event, change, outside || unresolved ? undefined : state.get(change.path));
+      if (!outside && !unresolved) state.set(change.path, end === null ? facts.state : UNKNOWN);
+      rows.push({ event, index, helper: event.childId != null, outside, ...(unresolved ? { unresolved } : {}),
+        ...(end === null ? {} : { unconfirmed: end }), ...facts });
     });
     counted.set(event.id, rows);
   }
@@ -427,7 +445,9 @@ export function storyFacts(session, report) {
   const orderOf = new Map(events.map((event, index) => [event.id, index]));
   const order = (id) => orderOf.get(id) ?? Infinity;
   const outcomes = outcomeIndex(session, events);
-  const counted = countedChanges(session, events, outcomes);
+  // D117 amended and D118 (b), one rule: the spellings the code step's snapshot found naming a path (its record's
+  // `base.literal`) are files, as the code step read them.
+  const counted = countedChanges(session, events, outcomes, literalOf(report?.codePass?.base));
   const windows = list(report?.windowResults);
 
   const instructions = events.filter((event) => event.kind === 'instruction' && event.authority === 'human');
@@ -658,8 +678,7 @@ function groupRequirements(batches, spansOf) {
  * the review's words of the row the status is from, for the reader when two requirements read as the same words.
  */
 function distinctRequirements(session, report, askIds) {
-  const readable = (r) => plainObject(r) && typeof r.text === 'string' && readableStatus(r.status)
-    && plainObject(r.instruction) && askIds.has(r.instruction.eventId);
+  const readable = (r) => readableRequirement(r) && askIds.has(r.instruction.eventId);
   const spansCache = new Map();
   const spansOf = (id) => {
     if (!spansCache.has(id)) spansCache.set(id, session.textSpansOf(session.event(id), 'text'));
@@ -710,6 +729,15 @@ function distinctRequirements(session, report, askIds) {
 }
 
 /**
+ * Whether a requirement row of the report has the shape the readers read: an object with its text, a status of the
+ * closed lists and an instruction receipt. Where its instruction is one of your messages (or a file you attached to one),
+ * it is an ask of your prompt (`distinctRequirements`). D115: the report model says "Sonah could not read" only of a row
+ * that fails this shape. Pure.
+ */
+export const readableRequirement = (r) => plainObject(r) && typeof r.text === 'string' && readableStatus(r.status)
+  && plainObject(r.instruction);
+
+/**
  * D71 (S4): one checklist requirement row as the readers show it — the human's grounded words for the ask (code's own
  * row, `codeMade`, has none: it reads in its fixed words), the status code published, and the row itself (`checked`:
  * its deliverable, shortfall, `restsOn`, closed reason and facts). Structure only.
@@ -726,10 +754,10 @@ function checklistRequirement(session, r, spansOf) {
 
 /** What a list of events did: its commands (each with how its record says it ended, `commandEnd`), the files it
  *  changed in the repository with their line counts, and hand-offs. Changes outside the repository are only counted, as
- *  distinct paths. D80: a write of a failed or stopped command, and (D98) a direct write the recorder typed as stopped
+ *  distinct paths; so are (D118 b) the paths the recording does not resolve (`unresolvedPaths`), apart from both. D80: a write of a failed or stopped command, and (D98) a direct write the recorder typed as stopped
  *  (`unconfirmed`, inside the repository or not), is none of the changes: it is listed apart. */
 function stepActivity(session, events, outcomes, counted) {
-  const commands = [], changes = [], unconfirmed = [], outside = new Set();
+  const commands = [], changes = [], unconfirmed = [], outside = new Set(), unresolved = new Set();
   let spawns = 0;
   for (const event of events) {
     if (event.kind !== 'invocation') continue;
@@ -742,7 +770,9 @@ function stepActivity(session, events, outcomes, counted) {
       if (session.childFor(event.id)?.relation !== 'followup') spawns++;
     } else if (WRITE_OPERATIONS.includes(event.operation)) {
       for (const row of counted.get(event.id) ?? []) {
-        if (row.unconfirmed) unconfirmed.push(row);
+        // D118 (b): a path the recording does not resolve is none of the others: counted apart, by its spelling.
+        if (row.unresolved) unresolved.add(row.path);
+        else if (row.unconfirmed) unconfirmed.push(row);
         else if (row.outside) outside.add(row.path);
         else changes.push(row);
       }
@@ -758,7 +788,7 @@ function stepActivity(session, events, outcomes, counted) {
   }
   const counts = [...files.values()].reduce((sum, file) => addCounts(sum, file.counts), zeroCounts());
   return { commands, changes, unconfirmed, files: [...files.values()], counts, spawns, outsidePaths: outside,
-    outside: outside.size };
+    outside: outside.size, unresolvedPaths: unresolved };
 }
 
 /** How long the recording ran, from its first to its last recorded timestamp: "12 min" or "1 h 5 min"; null with fewer
@@ -944,17 +974,23 @@ function askWordsMd(ask) {
 function headerBlocks(model) {
   const { header, countLine } = model;
   const blocks = [`## ${mdOwn(REPORT_HEADER_WORDS.review)}${header.title ? ` · ${partsMd(header.title.parts)}` : ''}`];
-  const lines = [mdOwn(header.size.join(' · ')), ...(header.noLinks.length ? [mdOwn(header.noLinks.join(' '))] : []),
+  // D118 (a): no code reviewed, right after the size line (the first screen); the folder's name last, as a code span.
+  const noCode = header.noCode ? [[mdOwn(header.noCode.words), ...(header.noCode.impact ? [mdOwn(header.noCode.impact)]
+    : []), ...(header.noCode.folder ? [mdOwnNaming(CODE_REPORT_WORDS.notReviewedFolder, [header.noCode.folder])] : [])]
+    .join(' ')] : [];
+  const lines = [mdOwn(header.size.join(' · ')), ...noCode,
+    ...(header.noLinks.length ? [mdOwn(header.noLinks.join(' '))] : []),
     ...(header.runs.length ? [mdOwn(header.runs.join(' '))] : [])];
   const notChecked = [...header.reviewIncomplete];
   if (header.didNotCheck) notChecked.push(`${header.didNotCheck.lead} ${header.didNotCheck.phrases.join(' · ')}`
     + `${header.didNotCheck.more ? ` ${header.didNotCheck.more}` : ''}`);
   if (notChecked.length) lines.push(mdOwn(notChecked.join(' ')));
-  if (header.noCode) lines.push(mdOwn(header.noCode.join(' ')));
   blocks.push(lines.join(BR));
   const tiers = countLine.tiers.map((t) => `${REPORT_COUNT_WORDS.tier(t.words, t.n)}${t.folded
     ? ` ${REPORT_COUNT_WORDS.folded}` : ''}`).join(' · ');
   const count = [mdOwn(`${tiers} · ${countLine.prompt}`)];
+  // D113 amended: how many items are about code outside the evaluated session.
+  if (countLine.outside) count.push(mdOwn(countLine.outside));
   if (countLine.empty) count.push(mdOwn(countLine.empty));
   else if (countLine.labels.length) count.push(`${mdOwn(REPORT_COUNT_WORDS.mustActLead)} ${countLine.labels
     .map((l) => `[${partsMd(l.parts)}](#item-${l.n})`).join(' · ')}${countLine.more
@@ -1032,8 +1068,8 @@ function evidenceFold(item, trimmed) {
 }
 /** The head of an item: its number, its type word first (S10), what it is, and whether you asked for it. */
 const itemHead = (item, render) => {
-  const scope = item.scope.notAsked ? ` ${REPORT_ITEM_WORDS.notAsked}` : item.scope.askedUnknown
-    ? ` ${REPORT_ITEM_WORDS.askedUnknown}` : '';
+  // D113 amended: the model's one marker (`scopeMarker`), an item outside the evaluated session's among them.
+  const scope = scopeMarker(item.scope);
   return render === 'html' ? `${item.n} ${escHtml(REPORT_TYPE_WORDS[item.type])}: ${partsHtml(item.what.parts)}${escHtml(scope)}`
     : `**${item.n} ${mdOwn(REPORT_TYPE_WORDS[item.type])}:** ${partsMd(item.what.parts)}${mdOwn(scope)}`;
 };
@@ -1108,19 +1144,23 @@ function goodToKnowSection(model, trim, notice) {
 }
 
 const cap = (n) => Math.min(n, REPORT_LIMITS.files);
+/** D123: the sentence of an empty Files section, by the report model's `files.none` (report-model.js
+ *  REPORT_NO_FILES_KINDS); the page reads it too. */
+export const noFilesWords = (did) => (did.files.none === 'unseen' ? REPORT_DID_WORDS.noSeenFiles
+  : did.files.none === 'folder' ? REPORT_DID_WORDS.noFilesHere : REPORT_DID_WORDS.noFiles);
 /** D104: a row's shown-in-part mark in a list (`seen`: lines of parts), each line after the row's own, under its label. */
 const seenMd = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `${mdOwn(REPORT_SEEN_WORDS.label)} ` : ''}`
   + partsMd(line)).join('');
 function didSection(model, trim, notice) {
   const { did } = model;
-  const summary = escHtml(REPORT_SECTION_WORDS.didCounted(did.files.total, did.runs.commands, did.runs.others,
-    did.claims.total));
+  const summary = escHtml(REPORT_SECTION_WORDS.didCounted(did.files.none === 'unseen' ? null : did.files.total,
+    did.runs.commands, did.runs.others, did.claims.total));
   const sub = (heading) => `#### ${mdOwn(heading)}`;
   const counted = (n) => (n ? mdOwn(REPORT_NOT_CHECKED_WORDS.rowsNotShown(n)) : null);
   const blocks = notice ? [mdOwn(notice)] : [];
   const rows = did.files.total + did.runs.shown.length + did.claims.total + did.leftOut.length + did.settled.length;
   if (trim.didCounts) {
-    blocks.push(sub(REPORT_SECTION_WORDS.files), did.files.total ? counted(did.files.total) : mdOwn(REPORT_DID_WORDS.noFiles),
+    blocks.push(sub(REPORT_SECTION_WORDS.files), did.files.total ? counted(did.files.total) : mdOwn(noFilesWords(did)),
       sub(REPORT_SECTION_WORDS.runs), did.runs.total ? counted(did.runs.total) : mdOwn(REPORT_DID_WORDS.noRuns),
       sub(REPORT_SECTION_WORDS.claims), did.claims.total ? counted(did.claims.total) : mdOwn(REPORT_DID_WORDS.noClaims),
       sub(REPORT_SECTION_WORDS.leftOut), did.leftOut.length ? counted(did.leftOut.length) : mdOwn(REPORT_DID_WORDS.noLeftOut),
@@ -1132,7 +1172,8 @@ function didSection(model, trim, notice) {
   if (did.files.grouped) blocks.push(mdOwn(REPORT_DID_WORDS.filesByAsk));
   let room = cap(did.files.total), shownFiles = 0;
   // A file's counts sit mid-line, so their leading `+` opens no list: escaped as inline text only.
-  const fileLine = (f) => `- ${codeSpan(f.path)} · ${mdOwn(f.type)}${f.counts ? ` · ${mdEscape(`·${f.counts}`).slice(1)}` : ''}`
+  const fileLine = (f) => `- ${codeSpan(f.path)}${f.type ? ` · ${mdOwn(f.type)}` : ''}${f.counts
+    ? ` · ${mdEscape(`·${f.counts}`).slice(1)}` : ''}`
     + `${f.state ? ` · ${mdOwn(f.state)}` : ''}${f.what ? ` · ${partsMd(f.what)}` : ''}`
     + `${typeof f.link === 'string' && GITHUB_URL.test(f.link) ? ` · ${f.link}` : ''}`
     + `${f.items.map((n) => ` → ${mdOwn(REPORT_ITEM_WORDS.item(n))}`).join('')}`;
@@ -1144,14 +1185,21 @@ function didSection(model, trim, notice) {
     if (did.files.grouped) blocks.push(`**${mdOwn(g.ask === null ? REPORT_DID_WORDS.noAskGroup : REPORT_DID_WORDS.askGroup(g.ask))}**`);
     blocks.push(shown.map(fileLine).join('\n'));
   }
-  if (!did.files.total) blocks.push(mdOwn(REPORT_DID_WORDS.noFiles));
+  if (!did.files.total) blocks.push(mdOwn(noFilesWords(did)));
   if (did.files.total > shownFiles) blocks.push(mdOwn(REPORT_DID_WORDS.moreFiles(did.files.total - shownFiles)));
   // D109 (its review): with the code step's one tally, the writes it counts and that are no file of the change.
   const outsideWords = did.files.outside?.notInChange ? REPORT_DID_WORDS.notInChange : REPORT_DID_WORDS.outside;
   if (did.files.outside) blocks.push(did.files.outside.paths.length ? mdOwnNaming((names) => outsideWords(
     did.files.outside.n, names, did.files.outside.more), did.files.outside.paths)
     : mdOwn(outsideWords(did.files.outside.n, '')));
+  // D118 (b): the paths the recording does not resolve, apart, each a code span.
+  if (did.files.unresolved) blocks.push(mdOwnNaming((names) => REPORT_DID_WORDS.unresolved(did.files.unresolved.n, names,
+    did.files.unresolved.more), did.files.unresolved.paths));
   if (did.files.unconfirmed) blocks.push(mdOwn(REPORT_DID_WORDS.unconfirmed(did.files.unconfirmed)));
+  // D113 amended: the files outside the evaluated session, apart, each tagged.
+  const away = did.files.outsideSession;
+  if (away) blocks.push(mdOwn(away.lead), away.files.map(fileLine).join('\n'),
+    ...(away.more > 0 ? [mdOwn(REPORT_DID_WORDS.moreFiles(away.more))] : []));
   // Runs, from the recording, in order.
   blocks.push(sub(REPORT_SECTION_WORDS.runs));
   if (!did.runs.total) blocks.push(mdOwn(REPORT_DID_WORDS.noRuns));
@@ -1201,6 +1249,7 @@ function notCheckedSection(model, trim, notice) {
     blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.codeReview)}`, ...nc.code.map(partsMd), listed(code));
     if (nc.withheldTotal) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.withheld(nc.withheldTotal)), trim.notCheckedCounts
       ? [counted(nc.withheldTotal)] : [nc.withheld.map((w) => `- ${w.what ? `${mdOwn(w.what)} ` : ''}${partsMd(w.words)}`
+        + `${w.outside ? ` · ${mdOwn(w.outside)}` : ''}`
         + `${w.why ? ` · ${mdOwn(w.why)}` : ''}${w.check ? ` · ${mdOwn(REPORT_NOT_CHECKED_WORDS.checkSaid)} `
         + `${partsMd(w.check)}` : ''}`).join('\n'), counted(nc.withheldTotal - nc.withheld.length)]));
   }
@@ -1252,13 +1301,18 @@ function composeMd(model, trim, notice) {
  * own), the report is every shortening applied and over the bound, and says that it is still too long for one comment
  * (`REPORT_TRIM_WORDS.mdStillLong`): the CLI then prints no `gh` line
  * (report-output.js). `options` are the report model's: `title`, `sonahVersion`, and the CLI's repository and GitHub
- * facts (`repo`, `github`), from which the report model builds the code links; and `page`, `{ whole }` when the same
- * run wrote the HTML page (session-page.js `sessionPage`), so a shortened report says the page holds every part only
- * when that is so. Pure: the same inputs give the same bytes.
+ * facts (`repo`, `github`), from which the report model builds the code links; `folder`, the folder the code step looked
+ * in, which this report names by its name alone, and `homes`, the home folder's spellings (`folderNameOf`); and `page`,
+ * `{ whole }` when the same run wrote the HTML page (session-page.js `sessionPage`), so a shortened report says the page
+ * holds every part only when that is so. Pure: the same inputs give the same bytes.
  */
 export function renderReportMarkdown(session, report, options = {}) {
   const opts = plainObject(options) ? options : {};
-  const model = reportModel(session, plainObject(report) ? report : {}, opts);
+  // D118 (a), amended (the owner, 2026-10-19: "yes, folder name only"): this report is meant for a pull request, so its
+  // model is given the folder the code step looked in by its name alone (`folderNameOf`; the home folder itself, any of
+  // `options.homes`, as `~`), never the path: the page and the terminal name the path.
+  const model = reportModel(session, plainObject(report) ? report : {}, { ...opts,
+    folder: folderNameOf(opts.folder, opts.homes) });
   // R2: the sentence that the HTML page holds every part only when this run wrote the page and the page kept every
   // part (`options.page`: `{ whole }` from session-page.js `sessionPage`; none with `--format md`, the default).
   const said = (base) => [base, ...(opts.page?.whole === true ? [REPORT_TRIM_WORDS.pageWhole] : [])].join(' ');

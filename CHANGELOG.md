@@ -1,5 +1,290 @@
 # Changelog
 
+## 0.3.0-beta.5 (2026-10-20)
+
+The code review now reviews the session's own change as the change, in every git repository that the session wrote to,
+and the other files that differ apart from it, marked outside the evaluated session. It lists the folders outside every
+repository that the session wrote to, and says when edits by scripts or helper agents can be missing. It takes your asks
+from the session review's list. When no code was reviewed, the first lines of every report say so and why, and so does
+the pull request check. When a session ran shell commands, the reason no longer says that it wrote nothing, and
+`--code-repo` points the code review at the repository that they changed. An ask that the session review could not check
+still reads "Not checked", and now says when the code review found that it holds in the code. The header and the files
+list count the same files, and Sonah says what it did not read one kind at a time. Sonah reads the row in which Claude
+Code lists its deferred tools with their definitions (seen from Claude Code 2.1.295 on). Each line that the report shows
+about an ask of the session review now says only what Sonah's checks show. A question of the code review points to
+another part of the report only where code checked the link. A command that you run in Claude Code itself is no longer
+an ask. Two decisions in one sentence are two items, and a failure that the agent passed over is in Must know whatever
+its call. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, Sonah asks the code review again for a session that an earlier version reviewed. The session review's stored
+answers stay, but Sonah asks the session review again for the part of a session that holds a command that you ran in
+Claude Code itself, and for a session whose recording holds the row in which Claude Code lists its deferred tools with
+their definitions.
+
+### The code review reviews the session's own change
+
+- With git, the change now holds only the files that a recorded write of the session could have changed, and the files
+  whose last change came while the session ran. Before, it held every file that differs from the commit where the
+  session started, so a repository that moved after the session gave the code review later work as the session's.
+- Sonah names the other files on the page as files that changed outside the session's recorded writes: the first 10,
+  then how many more. They are never part of the change. A file that a command of the session moved or deleted is among
+  them, since its time does not place it in the session.
+- A file that the session wrote and that changed again later still says so, as before.
+- When the change holds no file, the page and the line `Sonah's review: …` that the review prints give the same
+  reason: the recording shows no write of the session that could have changed a file, Sonah found no write that it can
+  read but the session ran shell commands, no file that the session wrote differs in the working directory, or no file
+  differs. The code review then does not run, and the page says neither where the change runs from nor that the code
+  review proposed no finding.
+- The dry run counts the files that Sonah leaves out of the change. It says that Sonah gives them to the code review
+  only if there is room in its input.
+- Those other files are now outside the evaluated session, and Sonah says so in those words wherever it names them.
+  When the change holds a file to review, Sonah reads them too and gives them to the code review after the change and
+  apart from it. When the review is too large, Sonah leaves them out first. Your session's change and its coverage
+  lines stay as they are.
+- A finding of the code review about such a file, and a question from one, says "It is about code outside the evaluated
+  session." It never names your asks or the agent's claims, and it never marks a claim as contradicted by the code. An
+  ask not met or a contradicted claim about such a file is withheld, and its row says why by its kind.
+- A broken contract, a broken rule or a contradicted claim that a line of your session's change causes is your session's
+  finding, even when it shows in such a file. It is not marked, and it keeps its link to your ask or the agent's claim.
+  A finding whose only changed lines are in such files is marked and has no such link, and so is one that the code
+  review's item-by-item check adds.
+- When the check of a finding about such a file fails or its input is too large to send, the code review's coverage,
+  what Sonah could not cover, the line `Sonah's review: …` and the exit code stay as they are. Before, they said that
+  the code review did not cover all of the change and its checks. Sonah counts those checks apart.
+- Sonah withholds a finding about such a file that is not about lines that a change touched, as it withholds one about
+  the files of your session's change.
+- The count line on the page, in the Markdown report and on the terminal counts these items, and marks them where it
+  names them. The pull request comment counts these findings apart from your session's own. What the agent did lists the
+  files apart, each marked. The code review's notes say what it saw of them.
+
+### The code review reviews the session's change in every git repository that the session wrote to
+
+- The change now also holds the files that the session wrote outside your working directory in a git repository: a
+  sibling worktree or another repository, a repository inside yours, or elsewhere in your repository. Before, Sonah only
+  counted these files, so a session whose work lay in another repository had no change to review.
+- In another git repository, the change runs from the commit where that repository stood when the session started, by
+  the same rule as in your working directory. As there, the change also holds a file there that no recorded write of
+  the session touched when its last change came while the session ran. The other files that differ there are outside
+  the evaluated session, as in your working directory: Sonah names them, and gives them to the code review apart from
+  the change when there is room.
+- Such a repository counts only when a file that the session wrote there is there now and differs from that commit. A
+  repository where every file that the session wrote is gone, or has no difference, is only counted, and Sonah reads
+  nothing in it. A repository inside your working directory follows the rule of your own repository: a file that the
+  session wrote there is part of the change when it differs from that commit, a deleted one too, and a file with no
+  difference is not counted as a path that the code review could not read.
+- A file that the session wrote in a folder that no git repository holds, such as a notes folder or a temporary folder,
+  is not reviewed. The page and the dry run list each such folder with how many files the session wrote there. These
+  files do not change the code review's coverage, and its agents do not read those folders.
+- A path that a shell command wrote and that holds a shell variable or command substitution as recorded, such as
+  `cat > "$DIR/notes.md"`, names no file that Sonah can find. It is not a file of the change, it never makes a
+  repository part of the change, and Sonah counts it apart (see "The header and the files list count the same files").
+- When the session ran a shell command, the page, the Markdown report and the line that Sonah prints before the review
+  say: "Sonah does not yet see every edit made by helper agents or by scripts after a cd. The change can miss some of
+  them." A hand-off to a helper agent alone does not make Sonah say it.
+- Two spellings of one file outside your working directory, such as `/tmp/x` and `/private/tmp/x` on macOS, are one
+  file.
+- The code review and its checks can read each repository that holds a file of the change, and nothing more. A file in
+  Claude Code's or Codex's own folders or in Sonah's own folders, or a file named from your home folder (`~/…`), is
+  still only counted.
+- The page shows the files of your working folder's repository first, then each other repository's, those with more
+  files first. It says where the change runs from in each, how many files lie in each, and where each file of the list
+  lies. The header counts the repositories when there is more than one.
+- The dry run names each of these repositories, how many paths lie in it and how many files of the change it holds. It
+  says which of them the code review reads right after them, and then lists the folders that it does not review.
+- Sonah reads only the repositories that hold a file of the change, so work that someone else does in another one
+  during the review does not read as a change of what the code review read.
+- The line that Sonah prints before the review says how many other folders the code review reads. The dry run counts a
+  repository inside your working directory as read. When no git repository holds your working directory, the line and
+  the dry run say that the code review reads your working directory.
+- Sonah does not follow a link that git lists out of your working directory or out of another repository. A file under
+  your working directory in a folder that Sonah cannot open is named as not readable again, as before.
+- When the code review or a check names a file of another repository by its path from that repository's top folder,
+  such as `docs/INSTALL.md`, Sonah now reads that repository's file and checks the quote there. Before, it looked for
+  the path in your working directory, so it withheld a real finding and dropped the notes on those files. A path that
+  names a file in more than one repository of the change names none of them: Sonah withholds a finding that cites it,
+  says why, and asks the code review once to name the file by its full path.
+
+### The code review takes your asks from the session review
+
+- Sonah now shows the code review your messages as messages, and then your asks as the session review lists them, each
+  by its key. Before, it showed your messages as what you asked, so text that a message only quotes, such as data or an
+  example, could read as an ask.
+- The checks of the code review's findings and questions, and its item-by-item check, get the same list. A check still
+  sees no words of the agent's, and neither does the check of a finding that the item-by-item check adds.
+- The code review names an ask by its key when a finding or a question is about it.
+- Every saved code review asks again, because its input changed. The session review's stored answers stay.
+
+### Each line about an ask says what Sonah checked
+
+- An ask that the session review tied only to the agent's words now says so, and no more: "The session review cited
+  the agent's words as what does it, not a recorded result or change." Before, it also said that Sonah found no
+  recorded result or change for the ask. Sonah never searched for one, and the recording can hold one.
+- The header counts these asks in the same words.
+- An ask that the session review did not check, where its part of the recording holds the end, now says: "The session
+  review did not check whether the agent did this ask: it cited nothing that does it." Before, it said that the session
+  review found nothing that does the ask before the recording ended. The agent can still have done it.
+- An ask that an agent wrote into a helper's brief is now named so. Before, the page said that Sonah could not read
+  such asks. Sonah read them. They are not your asks, so your prompt does not list them.
+- Sonah says that it could not read an ask only when the ask's record has no form that Sonah reads. Of any other ask
+  that your prompt does not list, it says that it could not place the ask among the asks of your prompt.
+
+### A question of the code review points only where code checked the link
+
+- A question now names an item or an ask only when the question and that part name one place: the same recorded
+  event, such as a message or an edit, or the same file. Before, a question could point to an unrelated item. One long
+  session's page pointed a question about the write permissions of one file to a decision about another file.
+- The line beside an ask that names a question follows the same rule.
+- A question with no recorded place names no other part of the report.
+- A question now puts the item it names in a higher tier only when code checked the link. Before, a question with no
+  recorded place could move a decision on how to do your ask from Good to know to Must know. That item then named the
+  question, but the question named no item.
+- None of the changes in this section changes a request to a model.
+
+### The first lines say when no code was reviewed
+
+- When the code review read no code, the first lines of the page, of the Markdown report, of the pull request comment
+  and of the terminal output now say "No code was reviewed." and give one reason. The reasons: the review ran without
+  the code review; the code review needs Claude Code; Sonah could not read the session's working directory; the
+  recording shows no write that could have changed a file; Sonah found no write that it can read, but the session ran
+  shell commands; Sonah found no changed file in the folder, or none that the session wrote; Sonah could show the code
+  review no changed lines; its input was too large to send; it did not answer; it saw none of the files of the change;
+  or the review was saved by an earlier version of Sonah, which did not record why. The page and the terminal also name
+  the folder that Sonah looked in, by its full path. The Markdown report is meant for a pull request, so it names only
+  the folder's name, and your home folder itself as `~`. It never names the path of your home folder or your user name
+  there. The pull request comment names no folder.
+- Before, a session whose code review had no change to review showed nothing about it on the first screen. The
+  terminal said "Sonah's review: complete" and "code pass complete". Now it says "Sonah's review: complete, but no code
+  was reviewed" and "code pass reviewed no code". The pull request check's title says "Sonah finished its advisory
+  review, but no code was reviewed".
+- Every one of these places decides it the same way. A pull request review of the earlier kind, which reviewed the
+  code of the pull request itself, says none of it.
+
+### Point the code review at a repository with `--code-repo`
+
+- `sonah review --code-repo DIR` reads the git repository that holds `DIR` as if the session had written there. Give it
+  once for each repository. It is for a session that changed a repository with no write that Sonah sees: a script, a
+  write after a `cd`, or a session that started in a folder that no git repository holds.
+- In that repository, the change runs from the commit where it stood when the session started, by the same rule as
+  in your working directory. It holds the files that a recorded write could have changed there and the files whose
+  last change came while the session ran, each marked as written by no recorded edit. The other files that differ
+  there are outside the evaluated session. The code review and its checks read that folder too.
+- The page and the Markdown report name each repository that you gave with its count of files, none included. When you
+  give the repository that holds the working directory, they say so: Sonah reads it by the working directory's own rule.
+- When no code was reviewed after all, the reason says what Sonah found in the repositories that you gave, and does not
+  tell you to give them again.
+- A folder that is not there, or that no git repository holds, stops the review before anything is read or sent:
+  `code_repo_not_found`, `code_repo_not_git`. Without `--code-repo`, the review reads and sends what it did before.
+
+### An ask that the code review found to hold in the code says so
+
+- When the session review could not check an ask in the recording, and the code review's item-by-item check found in
+  the code that it holds, the ask's row now says so after the session review's reason: "The code review found that it
+  holds in the code (Sonah found its quote word for word at `path:line`). Sonah did not check whether it holds." The
+  places are the lines where Sonah found each quote of that check word for word in the files as they are now. It shows
+  with `--code-repo`, where the session review never sees what a script wrote.
+- The ask still reads "Not checked", and every count is as before: the header's "Sonah did not check", the count line
+  and the heading of your prompt, the count under What Sonah could not check and the pull request comment count it as
+  not checked. No check of Sonah's tests the code review's verdict, and the code can do an ask that the agent did not do
+  in this session.
+- Only an ask that no check of Sonah's speaks against gets the note: the session review found nothing in the recording
+  that settles it, or Sonah did not find the evidence that it cited word for word, or not after your ask. An ask whose
+  cited run or write did not run to its end (or whose end Sonah could not read), whose status Sonah's own check refuted
+  or did not settle, or whose missing part Sonah did not find gets no note, whatever the code review says. Neither does
+  an ask for which the code review quoted the files as they were at the session's start commit.
+- An ask that the code review says does not hold, or that it ties to a finding, a question or a withheld finding, reads
+  as before. So does every other ask, and every report whose code review left no such verdict.
+
+### A session that changed files only through a script is not said to have written nothing
+
+- When the recording shows no write that could have changed a file but the session ran shell commands, the reason is
+  now "Sonah found no write of the session that it can read. The session ran shell commands, and Sonah does not yet see
+  what a script writes. Check each repository that they could change, with git status and git diff. To review that
+  code, run sonah review again with --code-repo <the repository's folder>." Before, it said
+  that the recording shows no write of the session that could have changed a file, so a session whose script changed
+  files in another repository read as one that changed nothing. Every place that says the reason says this one: the
+  page, the Markdown report, the terminal, the pull request comment and the pull request check.
+- Sonah still does not see what a script writes, or a write after a `cd`, so the code review does not review those
+  files unless you give their repository with `--code-repo` (below). Running the review from another folder does not
+  change this: the code review reads the folder that the recording names.
+- In that case, "What the agent did" no longer says "0 files" or "Sonah found no file in the repository that the agent
+  changed". It says that Sonah found no write of the agent that it can read, and that Sonah does not yet see what a
+  script writes. When the code review ran and found that no git repository holds the working directory, an empty files
+  list says "in the working directory", not "in the repository". When the code review did not run (it was off, the
+  reviewer was not `claude`, or Sonah could not read the working directory), Sonah did not look for a repository there,
+  and an empty files list still says "Sonah found no file in the repository that the agent changed", as before.
+- The coverage line that a session review prints no longer starts with "code missing". That part named the code review
+  of a pull request of the earlier kind, which a session review never has, so it read as a contradiction of "code pass
+  complete" on the same line. A pull request review of the earlier kind still shows it.
+- `docs/TROUBLESHOOTING.md` no longer says "Nothing to review" for a session that ran shell commands, and no longer
+  tells you to run the review from another folder.
+
+### Claude Code's list of deferred tools is read when it holds their definitions
+
+- Claude Code can write its list of deferred tools with one more part, the definitions of the tools that it names (seen
+  from Claude Code 2.1.295 on). Sonah did not know that part, so it read no row of that kind. A review of a recording
+  with such a row said that the session evidence was incomplete and that a record has a form that Sonah cannot read,
+  and a decision could show "Sonah could not check whether you asked for this". Sonah now reads that row as the
+  harness's own context, as it reads the rest of the list. It reads nothing in the new part.
+- Sonah still does not read every row that a recent Claude Code writes. A row of another form that Sonah does not read
+  yet, such as the session's budget in dollars (`budget_usd`), still makes a review say that the session evidence is
+  incomplete and how many records have a form that Sonah cannot read.
+
+### The header and the files list count the same files
+
+- The number of files in the header now comes from the list that "What the agent did" shows. With git it is git's list
+  of the change. Without git it is the session's writes in the folder of the review. Before, a session whose change held
+  no file could show "15 files changed" in the header and no file in the list.
+- When that list is empty, the header shows no file count.
+- A path that the agent wrote with a shell command and that holds a shell variable or the output of a command as
+  recorded (such as `$P/run.sh`) is no longer a file of the change. Sonah cannot tell where it is. "What the agent did"
+  names these paths apart and counts them. The code review does not get them, and still counts them as writes of the
+  session.
+- The recording keeps such a path without the command's quotes. So when the path, spelled as recorded, names a file or
+  folder that is there (a relative path in the session's working folder, an absolute path where it points), such as a
+  route file `app/routes/users.$id.tsx` that a shell command wrote, it is a file of the change. So is such a file that
+  the session deleted, when git lists it as changed since the commit the session started from. A path that a file tool
+  wrote is taken as spelled, even with a `$` in its name. When the code review is off, Sonah does not look for such
+  files, and the path is counted apart.
+- A path named from your home folder (`~/notes.md`, `$HOME/notes.md`) is counted among the files that the agent changed
+  outside the repository, also when the code review is off. It is never a file of the change.
+
+### Sonah says what it did not read one kind at a time
+
+- The line "N parts of the evidence that Sonah read are incomplete" added up things of different kinds, such as lines of
+  a workflow's journal and entries of its folder, and said "read" for things that Sonah did not read. It is now one line
+  for each kind, with one count: workflow runs that Sonah did not read with the recordings of their agents, other
+  entries of workflow run folders, workflow calls with no launch recorded, helper recordings that Sonah read only in
+  part, calls whose recorded input Sonah holds only in part, and calls of the agent's code cells that no recorded item
+  accounts for. Any other kind is counted by kind: "Sonah holds N kinds of evidence only in part".
+- None of the changes in this section changes a request to a model.
+
+### A command that you run in Claude Code itself is not an ask
+
+- Sonah no longer lists a local command, such as `/model` or `/agents-info`, as an ask. Claude Code runs such a
+  command itself, and the command sends nothing to the agent. Claude Code 2.1.295 marks some of these commands as your
+  messages. Before, your prompt showed them as asks that Sonah did not check.
+- Sonah finds such a command by the note that Claude Code writes before it and the output that Claude Code writes
+  after it. Sonah never reads the name of the command.
+- A slash command that sends a prompt to the agent is still an ask. A message that you send while the agent works is
+  still an ask too.
+- For a session with such a command, Sonah asks the session review again for the part that holds the command.
+
+### Two decisions in one sentence are two items, and a failure passed over is in Must know
+
+- When the agent states two decisions in one sentence, the report now shows each decision as an item of its own, in
+  its own tier. Before, the report showed the shorter decision folded inside the item of the longer one.
+- A failure that the agent passed over is now in Must know whatever its call. Before, a read that the recording marks
+  as refused before it ran went to Good to know. The code review can still move such an item, as before.
+- Neither change changes a request to a model. Every saved code review asks again once, because the table of tiers
+  that its stored answers rest on changed.
+
+### Versions
+
+- These versions move: `sonah.session-page/44`, `sonah.session-story/39`, `sonah.report-model/5`,
+  `sonah.code-snapshot/13`, `sonah.code-pass/13`, `sonah.code-verify/4`, `sonah.code-account/2` and `sonah.tiers/3`.
+  Each moves once from 0.3.0-beta.4.
+
 ## 0.3.0-beta.4
 
 The code review now runs on long sessions too, and the page says exactly what it saw. It gets the changed files

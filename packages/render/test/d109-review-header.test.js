@@ -129,7 +129,10 @@ test('D109 review: the size line gives the change\'s lines only when Sonah holds
   assert.ok(reportModel(session, git, {}).header.size.includes(REPORT_HEADER_WORDS.change(1)));
   // With no code step, the recording's own files and lines, as before.
   assert.ok(reportModel(session, {}, {}).header.size.includes('1 file changed, +4 −0'));
-  // An earlier report (no manifest) whose files are not all counted: the recording's own, as before.
-  const earlier = report({ manifest: null });
-  assert.ok(reportModel(session, earlier, {}).header.size.includes('1 file changed, +4 −0'));
+  // An earlier report (no manifest) whose files are not all counted. D118 (c): the one list the Files section counts
+  // (with a git base, git's), never the recording's own beside it: no lines, since Sonah does not hold every file's.
+  const earlier = reportModel(session, report({ manifest: null }), {});
+  assert.ok(earlier.header.size.includes(REPORT_HEADER_WORDS.change(earlier.did.files.total)));
+  assert.equal(earlier.header.changeFiles, earlier.did.files.total);
+  assert.ok(earlier.did.files.total > 1);
 });

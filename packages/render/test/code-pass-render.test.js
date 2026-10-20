@@ -28,7 +28,7 @@ import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER
   REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS,
   GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
@@ -724,10 +724,13 @@ test('D88 with the agentic code step: one counting — published findings only, 
 
 // R9: "The recording ends here." beside ask 2 of 6 read as if the recording stopped at that ask (s2), though the fact
 // says only that the part which reported the row holds the recording's last event. Its words name no place.
+// D115: its next words, "found nothing that does this ask before the recording ended", read as a fact of the whole
+// recording, which the agent's later work contradicted; they now say only what the row cites, and what the session
+// review did not check.
 test('R9: the end-of-recording fact beside an ask names no place in the recording', () => {
   const words = CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end;
-  assert.equal(words, 'The session review found nothing that does this ask before the recording ended.');
-  assert.doesNotMatch(words, /\bhere\b|\bends\b/);
+  assert.equal(words, 'The session review did not check whether the agent did this ask: it cited nothing that does it.');
+  assert.doesNotMatch(words, /\bhere\b|\bends?\b|\bended\b|recording/);
 });
 
 // An ask the code step contradicts can also carry a fact of code's (here `no_deliverable_by_end`, beside an ask not
@@ -807,7 +810,8 @@ test('agentic code step: one word table — every closed token of the report has
       'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed', 'request_too_large'],
     ['finding', 'question'],
     ['key_missing', 'key_outside_contract', 'value_outside_list', 'text_over_limit', 'dossier_key_unknown',
-      'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote', 'file_not_readable', 'out_of_scope'],
+      'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote', 'file_not_readable', 'out_of_scope',
+      'path_ambiguous'],
     ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace', 'refutation_uncited']]);
   for (const list of [CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS, CODE_QUESTION_VERDICTS, CODE_WITHHELD_REASONS,
     CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES]) assert.ok(Object.isFrozen(list));
@@ -855,8 +859,15 @@ test('agentic code step: the page and the story moved once, one link after the r
   assert.deepEqual(PREMISE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ACCOUNT_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [ONE_BOUND_READER_VERSIONS.page.after,
-    ONE_BOUND_READER_VERSIONS.story.after]);
+  // D113 and D114 (0.3.0-beta.5): each once more (SESSION_CHANGE_READER_VERSIONS), one link after 0.3.0-beta.4's.
+  assert.deepEqual([SESSION_CHANGE_READER_VERSIONS.page.before, SESSION_CHANGE_READER_VERSIONS.story.before],
+    [ONE_BOUND_READER_VERSIONS.page.after, ONE_BOUND_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [SESSION_CHANGE_READER_VERSIONS.page.after,
+    SESSION_CHANGE_READER_VERSIONS.story.after]);
+  // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
+  // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
+  // reader once.
+  assert.deepEqual(REPORT_TRUTH_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS);
   assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
   assert.deepEqual(CLEANUP_READER_VERSIONS, { page: { before: AGENTIC_READER_VERSIONS.page, after: 'sonah.session-page/36' },

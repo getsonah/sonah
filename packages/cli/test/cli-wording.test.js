@@ -164,10 +164,11 @@ test('a dry run says in plain words what it did and what a review would do', asy
   assert.match(lines[2], /^The session has \d+ events, and Sonah would review them in 1 window\.$/);
   assert.match(lines[3], /^A review should take roughly \d+-\d+ minutes \(less if answers are already stored\)\.$/);
   // Owner decision 2026-10-14: beside the estimate, whether the code step runs (on by default) and what it adds; the
-  // session only read a.js and changed nothing, so the agentic code step has no change to review and adds no call.
+  // session only read a.js and changed nothing, so the agentic code step has no change to review and adds no call. D117's
+  // review: no git repository holds this working directory, so the line names the working directory.
   assert.equal(lines[4], 'Code review: on (the default). It reviews the change with read-only access to the whole '
-    + 'repository. It found no change to review here, so it adds no call. Turn it off with --no-code-pass, or for every '
-    + 'review with sonah config code-pass off.');
+    + 'working directory. It found no change to review here, so it adds no call. Turn it off with --no-code-pass, or for '
+    + 'every review with sonah config code-pass off.');
   assert.match(lines[5], /^In the recording: 1 action · 1 message of yours · \d+ known gaps?\.$/);
   assert.doesNotMatch(out.chunks.stdout, /windows;|first requests|runs to the end|No findings were evaluated/);
   assert.doesNotMatch(out.chunks.stdout, INTERNAL);
@@ -183,7 +184,7 @@ test('a dry run says in plain words what it did and what a review would do', asy
 test('the top-level help, sonah help, sonah slice and the debug switch use the product\'s own name', async () => {
   const help = await cli(['--help']);
   assert.equal(help.code, 0);
-  assert.match(help.stdout, /^Sonah reviews a recorded AI coding session/);
+  assert.match(help.stdout, /^Sonah reviews what your coding agent did, not just the diff:/);
   assert.match(help.stdout, /--output ~\/review\.html/, 'the example writes outside the repository');
   assert.doesNotMatch(help.stdout, INTERNAL);
   for (const line of help.stdout.split('\n')) assert.ok(line.length <= 80, `wider than 80 columns: ${line}`);

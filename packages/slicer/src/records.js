@@ -18,8 +18,8 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { recordingIdentity } from './recording-identity.js';
 import { duplicateJsonKeys } from './strict-json.js';
-import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId, claudeNotificationCarrier }
-  from './harness-context.js';
+import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId, claudeNotificationCarrier,
+  isLocalCommandCaveat, LOCAL_COMMAND_OUTPUT_SUBTYPE } from './harness-context.js';
 import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, labelOf, applyLabel, humanPart } from './labels.js';
 
 // 2 (C-01 event identity, 2026-10-07): every ledger element that becomes a canonical event records where the recorder
@@ -69,7 +69,7 @@ const validAgentId = (value) => typeof value === 'string' && value.length > 0 &&
  * carrying a label gap (the legacy recorder's, `legacy_recorder`), keeps its class (fail closed). Before this rule,
  * such harness rows were declared instructions lost.
  * Any other type, payload key, row key or value shape stays unclassified (fail closed).
- * Key sets are the known ones (Claude Code 2.1.121–2.1.293); nothing is inferred from values.
+ * Key sets are the known ones (Claude Code 2.1.121–2.1.296); nothing is inferred from values.
  * D72 (2026-10-09, M43 reader): from 2.1.286 the recorder adds keys the reader did not list, and every row carrying
  * them was unclassified (attachment rows of 2.1.286, 2.1.289 and 2.1.293): the
  * row keys `renderedRole` and `renderedBesideToolResult` (CLAUDE_RENDERED_ROLES below), the `queued_command` payload
@@ -91,8 +91,10 @@ const CLAUDE_ATTACHMENTS = Object.freeze({
   batching_reminder_sent: shape(H, ['model', 'text'], ['clearAt']),
   environment: shape(H, ['snapshot'], ['changes']),
   model: shape(H, ['identity', 'text']),
+  // D123: `surfacedDefinitions`, the definitions of the tools named in `surfacedNames` (seen from recorder 2.1.295 on).
   deferred_tools_delta: shape(H, ['addedLines', 'addedNames', 'removedNames'], ['readdedNames',
-    'failedMcpServers', 'needsAuthMcpServers', 'pendingMcpServers', 'surfacedNames', 'wireHiddenNames']),
+    'failedMcpServers', 'needsAuthMcpServers', 'pendingMcpServers', 'surfacedNames', 'surfacedDefinitions',
+    'wireHiddenNames']),
   deferred_tools_record: shape(H, ['entries'], ['toolInputCopies', 'nameOnlyAnnouncements']),
   agent_listing_delta: shape(H, ['addedLines', 'addedTypes', 'isInitial', 'removedTypes', 'showConcurrencyNote'],
     ['builtInTypes']),
@@ -888,7 +890,12 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  *
  *   assistant  `text` → thought; `tool_use` → action; thinking → private (never used); a row the recorder wrote itself
  *              (`model: <synthetic>`, `isApiErrorMessage`) → harness.
- *   system     harness; `compact_boundary` also carries `compaction`.
+ *   system     harness; `compact_boundary` also carries `compaction`. D120: a `local_command` output row (the recorder's
+ *              typed output of a local command) settles the row its recorded `parentUuid` names when that row hangs
+ *              from the recorder's own local-command caveat (an `isMeta` row that is only its `local-command-caveat`
+ *              element): a row between the caveat and the command's output is a command the person ran in the harness
+ *              itself, never a message to the agent, so it is harness (`local_command`) whatever its own fields said
+ *              (Claude Code 2.1.295 types some with `origin: human`). No command's name is read.
  *   attachment `queued_command` of a human prompt → human + queued; a task notification (`claudeNotificationCarrier`, the
  *              rule every reader of the fact reads) → observation; an @-mentioned
  *              file, directory or PDF on the main thread whose recorded `parentUuid` chain (through attachment rows)
@@ -927,6 +934,8 @@ export function claudeLabeller() {
   // M34 labels review (F5): every call id this recording recorded so far, so a notification is linked to the call it
   // names when it is labelled.
   const callIds = new Set();
+  // D120: the recorded uuids of the recorder's own local-command caveats, so a local command's output settles its command.
+  const caveats = new Set();
   const value = (label, basis, opts) => labelOf(label, basis, opts);
   /** A background task's notification: an observation, linked (`links.notifies`) to the call whose id it carries when
    *  this recording recorded that call before it (`recorderNotificationCallId`). Owner decision 2026-10-07: one whose
@@ -1087,6 +1096,22 @@ export function claudeLabeller() {
     return value(L.harness, B.attachmentRow);
   };
 
+  /**
+   * D120 (owner 2026-10-18, DF3 part 1): a local command's typed output row (`system`, subtype `local_command`) settles
+   * the row its recorded `parentUuid` names, when that row hangs from the recorder's own local-command caveat: the row
+   * between the two is a command the person ran in the harness, never a message to the agent. Labelled the human's by
+   * its own fields, it becomes harness (`local_command`), in place, before any label is applied; its markers, gap and
+   * links go with the human label. Structure only: the recorder's uuid chain, its `isMeta` flag, its caveat element and
+   * the output's typed subtype; no command's name is read. A row with no caveat before it, or no output after it, keeps
+   * its label (a prompt command the person sent the agent has neither).
+   */
+  const settleLocalCommand = (d) => {
+    const command = typeof d.parentUuid === 'string' ? rows.get(d.parentUuid) : undefined;
+    if (!command || command.attachment || !caveats.has(command.parent) || command.value?.label !== L.human) return;
+    for (const key of ['markers', 'gap', 'links']) delete command.value[key];
+    Object.assign(command.value, { label: L.harness, basis: B.localCommand });
+  };
+
   /** The label of one row (`label` below), remembered by its recorded uuid for the attachment chain (F1). */
   const labelRow = (d) => {
     const result = labelOne(d);
@@ -1116,10 +1141,15 @@ export function claudeLabeller() {
       for (const entry of enqueues) if (entry.at !== null && at !== null && at > entry.at) entry.working = true;
       return assistantRow(d);
     }
-    if (d.type === 'system') return isCompactionMarker(d)
-      ? value(L.harness, B.compactBoundary, { markers: [M.compaction] }) : value(L.harness, B.systemRow);
+    if (d.type === 'system') {
+      if (d.subtype === LOCAL_COMMAND_OUTPUT_SUBTYPE) settleLocalCommand(d);
+      return isCompactionMarker(d) ? value(L.harness, B.compactBoundary, { markers: [M.compaction] })
+        : value(L.harness, B.systemRow);
+    }
     if (d.type === 'attachment') return attachmentRow(d);
     if (isCompactionMarker(d)) return value(L.harness, B.compactSummary, { markers: [M.compaction] });
+    // D120: the recorder's own caveat before a local command (`isMeta`, only its caveat element), remembered by uuid.
+    if (flagged(d.isMeta) && typeof d.uuid === 'string' && d.uuid && isLocalCommandCaveat(textOf(d))) caveats.add(d.uuid);
     const content = d.message?.content;
     if (Array.isArray(content) && content.some((block) => block?.type === 'tool_result')) {
       const single = content.filter((block) => block?.type === 'tool_result').length === 1;

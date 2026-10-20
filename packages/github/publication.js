@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { canonicalJson } from '../evidence/contracts/index.js';
 import { PUBLIC_STATUSES, honestStatuses, reviewRunState } from '../evidence/src/ledger.js';
 import { coverageCauses, COVERAGE_SENTENCE, attentionSummary } from '../evidence/src/review.js';
+import { CODE_REPORT_WORDS, reportNotReviewedOf } from '../evidence/src/code-report.js';
 import { fail } from './errors.js';
 import { request, targetPath, listPages } from './client.js';
 import { isOid, freeze, checkMetadata } from './reader.js';
@@ -33,8 +34,10 @@ export const PUBLIC_RUN_WORDS = Object.freeze({
   incomplete: 'Sonah did not finish its review. Read what Sonah could not check before you use this review.',
 });
 /** D71 (a): the GitHub check's title, by run state. The conclusion is always `neutral`: informational, never success
- *  or failure. */
+ *  or failure. D122 (a review low of D118: a status word never says complete without naming what is missing): a run
+ *  that finished and reviewed no code (`reportNotReviewedOf`) says so (`completeNoCode`). */
 export const CHECK_TITLES = Object.freeze({ complete: 'Sonah finished its advisory review',
+  completeNoCode: 'Sonah finished its advisory review, but no code was reviewed',
   incomplete: 'Sonah did not finish its advisory review' });
 /** The comment's other fixed words: its title, the causes line, the attention heading and the advisory sentences. */
 export const PUBLICATION_WORDS = Object.freeze({
@@ -77,6 +80,17 @@ function attentionStatement(report) {
   return parts.length ? `${parts.join('\n\n')}\n\n` : '';
 }
 
+/** D118 (a), the owner's go of 2026-10-18 (the dogfood's DF2): when no code was reviewed (evidence code-report.js
+ *  `codeNotReviewedOf`), the first screen's sentence and its one closed reason, right after whether Sonah's review ran:
+ *  fixed words only, escaped as every other sentence is. The comment names no path, so no folder (it is public). A
+ *  combined pull request review (an earlier route, `reviewScope` not session-only, no code pass record) is not one. */
+function noCodeStatement(report) {
+  // D122: one definition with the report model and the terminal (`reportNotReviewedOf`).
+  const reason = reportNotReviewedOf(report);
+  return reason === null ? ''
+    : `${escapePublicText(CODE_REPORT_WORDS.notReviewed(CODE_REPORT_WORDS.notReviewedReasons[reason]))}\n\n`;
+}
+
 /**
  * The one place the comment's text is escaped before it is shown, hashed or posted (D82 step 10): every sentence of the
  * comment that is not a fixed literal of this file passes through this call — its control characters dropped, and
@@ -107,6 +121,7 @@ export function publicCommentText(report) {
   report = { ...report, ...recomputed };
   const run = reviewRunState(report) === 'complete' ? 'complete' : 'incomplete';
   const summary = `${PUBLICATION_WORDS.title}\n\n${PUBLIC_RUN_WORDS[run]}\n\n`
+    + noCodeStatement(report)
     + coverageStatement(report)
     + attentionStatement(report)
     + PUBLICATION_WORDS.advisory;
@@ -120,6 +135,8 @@ export function createPublicationPlan({ report, pr }) {
       || pr.repo?.host !== 'github.com' || !/^\d+$/.test(pr.repo.id ?? '')
       || typeof pr.github?.owner !== 'string' || typeof pr.github?.name !== 'string') fail('invalid_input');
   const { run, summary } = publicCommentText(report);
+  // D122: whether no code was reviewed, by the one definition (`reportNotReviewedOf`), for the check's title.
+  const noCode = reportNotReviewedOf(report) !== null;
   const target = { owner: pr.github.owner.toLowerCase(), repo: pr.github.name.toLowerCase(), number: pr.number,
     repositoryId: pr.repo.id, private: pr.github.private === true };
   targetPath(target);
@@ -129,7 +146,8 @@ export function createPublicationPlan({ report, pr }) {
   // D71 (a): the check is informational — `neutral`, never `success` or `failure` — and its title says only whether
   // Sonah's own review ran.
   const check = { name: 'Sonah advisory review', head_sha: pr.headOid, status: 'completed', conclusion: 'neutral',
-    external_id: id, output: { title: CHECK_TITLES[run], summary: `${summary}\n\n${marker}` } };
+    external_id: id, output: { title: run === 'complete' && noCode ? CHECK_TITLES.completeNoCode : CHECK_TITLES[run],
+      summary: `${summary}\n\n${marker}` } };
   if (Buffer.byteLength(body) > 60000) fail('disclosure_rejected');
   // No inline comments: a session review anchors nothing to a line of the PR (C-10).
   const review = { commit_id: pr.headOid, body, comments: [] };
@@ -279,3 +297,5 @@ export const STYLE_KINDS = Object.freeze({ PUBLIC_RUN_WORDS: 'notice', CHECK_TIT
 export const STYLE_FIXTURES = Object.freeze({
   'PUBLICATION_WORDS.notCovered': [[['1 of 2 review windows did not finish']],
     [['1 of 2 review windows did not finish', 'the recorder shortened 2 messages of yours']]] });
+/** D122: the owner's words of D118 ("No code was reviewed."), passive on purpose: no review of any actor read code. */
+export const STYLE_ALLOW = Object.freeze({ 'CHECK_TITLES.completeNoCode': ['actor-unknown'] });

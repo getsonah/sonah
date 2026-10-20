@@ -79,12 +79,14 @@ test('release review: the code step on by default never makes the exit code non-
     assert.match(run.out, /^Coverage: .*code pass partial/m);
     assert.ok(run.written.includes(STORY_CODE_WORDS.coverage.partial), format);
   }
-  // Nothing to read (the session changed and read no file): exit 0, said as such.
+  // Nothing to read (the session changed and read no file): exit 0, said as such. D113: said plainly, as no write of
+  // the session that the recording shows; D113's review: on the terminal too, as the page says it.
   const empty = await repoWith(t);
   const none = await review(t, { session: noFileSession(), cwd: empty });
   assert.equal(none.code, 0);
-  assert.ok(none.out.includes(`code review ${RUN_STATE_WORDS.codePass.noFile})`), none.out);
-  assert.ok(none.written.includes(STORY_CODE_WORDS.noFile));
+  assert.ok(none.out.includes(`code review ${RUN_STATE_WORDS.codePass.noWrite})`), none.out);
+  assert.ok(none.written.includes(STORY_CODE_WORDS.noWrite));
+  assert.ok(!none.written.includes(STORY_CODE_WORDS.noFile));
   // No working directory here (the recording's is not on this computer): exit 0, said as such.
   const gone = join(tmpdir(), `sonah-no-such-folder-${sha256(root).slice(0, 12)}`);
   for (const format of ['md', 'html']) {

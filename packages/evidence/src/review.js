@@ -19,10 +19,10 @@ import { DECISION_ORDER, honestStatuses, unrecordedCover,
   from './ledger.js';
 import { INSTRUCTION_GAP_NOTES, DELEGATION_BRIEF_GAP_NOTES, INTER_AGENT_GAP_NOTES, HELPER_REPORT_CLIPPED_NOTE, LABEL_GAP_NOTES,
   CLOSING_STATEMENT_CLIPPED_NOTE, BODY_CAPPED_NOTE, HUMAN_INTERACTION_UNKNOWN_NOTE, END_UNREAD_NOTE, END_UNCHECKED_NOTE,
-  WORKFLOW_GAP_NOTES }
+  WORKFLOW_GAP_NOTES, WORKFLOW_RUN_GAP_NOTES, CHILD_CAPTURE_INCOMPLETE_NOTE, CALL_INPUT_GAP_NOTES, NATIVE_SHORTFALL_GAPS }
   from '../adapters/sonah-ledger.js';
 import { promisesBesideFindings } from './run-review.js';
-import { codeContradictedRows, codePassFindings, codePassUnconfirmed, codeLinkStands } from './code-pass.js';
+import { codeContradictedRows, codePassFindings, codePassUnconfirmed, codeLinkStands, askCodeHolds } from './code-pass.js';
 import { withheldWhy } from './code-report.js';
 
 /** M33 X second recheck's closed note (the retired carry's, `sonah.carry`): a window whose request cap kept earlier
@@ -66,7 +66,7 @@ const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  *     whether you asked; its changes of approach), then the settled problems (asks shown not done or partly done;
  *     claims the recording contradicts; rows the code at review time contradicts; failures the agent passed over; edits
  *     against what you said or the project's instruction file; statements written into a file and contradicted; the
- *     code review's findings).
+ *     code review's findings, then, apart, its findings about code outside the evaluated session: D113 amended).
  *   - FOLDED_ROWS, the rows Sonah could not check (asks not checked; claims not checked against a recorded result;
  *     claims resting on a check that never completed; failures whose handling could not be checked; statements written
  *     into files and not checked): every one is kept in one collapsed section, "What Sonah could not check (N)", last,
@@ -83,7 +83,8 @@ const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  * listed under What you asked with its status unchanged.
  */
 export const ATTENTION_ROWS = Object.freeze(['notActing', 'unasked', 'chose', 'whetherAsked', 'pivots', 'asksNotDone',
-  'asksCodeFinding', 'contradicted', 'codeContradicted', 'passedOver', 'forbidden', 'writtenContradicted', 'codeFindings']);
+  'asksCodeFinding', 'contradicted', 'codeContradicted', 'passedOver', 'forbidden', 'writtenContradicted', 'codeFindings',
+  'codeFindingsOutside']);
 export const FOLDED_ROWS = Object.freeze(['asksNotChecked', 'claimsOpen', 'claimsIncomplete', 'failuresNotChecked',
   'writtenOpen']);
 /** D88: an ask by its status token (ledger.js REQUIREMENT_STATUSES; a legacy report's LEGACY_REQUIREMENT_STATUSES, the
@@ -110,9 +111,10 @@ const askLinksOf = (r, report = null) => (Array.isArray(r.codeLinks) ? r.codeLin
  *   - done (or addressed) or not checked, with an attention link (ASK_CODE_ATTENTION_LINKS: a published finding that
  *     follows from it or whose trace quotes its words, or its code check contradicting it): `asksCodeFinding`, counted;
  *   - otherwise by its status (ASK_ROW_KINDS): not done or partly done counts, not checked is folded, done is neither.
- * Nothing the code step says makes a not-checked ask read as checked: it is folded unless a link counts it. Given the
- * report (`report`), each link is read as it stands (`askLinksOf`, D110's review): a finding whose stored check code's
- * label no longer confirms moves no ask, as a finding to verify moves none.
+ * Nothing the code step says makes a not-checked ask read as checked: it is folded unless a link counts it (D125
+ * amended: the code review's verdict that it holds in the code is a note on its row, `askCodeHoldsNote`, never a kind).
+ * Given the report (`report`), each link is read as it stands (`askLinksOf`, D110's review): a finding whose stored check
+ * code's label no longer confirms moves no ask, as a finding to verify moves none.
  */
 export const askRowKind = (r, report = null) => {
   if (!rowObject(r)) return null;
@@ -121,6 +123,18 @@ export const askRowKind = (r, report = null) => {
     return 'asksCodeFinding';
   return Object.hasOwn(ASK_ROW_KINDS, r.status) ? ASK_ROW_KINDS[r.status] : null;
 };
+/**
+ * D125 (the owner, 2026-10-20: "Let's fix 1st"; amended the same day, "go for option 3"): the code review's verdict that
+ * an ask the session review left not checked holds in the code, as every reader reads it — code-pass.js `askCodeHolds`
+ * (`{ receipts }`) on a row that the code step tied nothing else to (no link that stands, `askLinksOf`: a published
+ * finding, a trace that quotes it, a contradiction, a withheld finding, a question, a finding to verify), or null. Two
+ * statements of the code review on one ask is ambiguous evidence, and ambiguous evidence is NONE. It moves nothing: the
+ * ask keeps its status and its kind (`askRowKind`: not checked, folded), so every count is as before; its row gains a
+ * note (report-model.js `promptOf`) that says the code review's verdict, where Sonah found its quotes, and that Sonah
+ * did not check it. Structure only. Pure.
+ */
+export const askCodeHoldsNote = (r, report = null) => (rowObject(r) && !askLinksOf(r, report).length
+  ? askCodeHolds(report, r) : null);
 /** D88: the kind of one claim, and who decided a decision (`claimRowKind`, `derivedColumn`, DERIVED_COLUMN_STATE):
  *  moved to ledger.js so the code step's triage reads them without importing this file (no import cycle); re-exported
  *  here by name, so no reader's import changes. */
@@ -183,6 +197,11 @@ export const ATTENTION_WORDS = Object.freeze({
   writtenContradicted: (n) => `${counted(n, 'statement')} that the agent wrote into ${n === 1 ? 'a file' : 'files'} `
     + 'and that the recording contradicts: see Edits against what you said.',
   codeFindings: (n) => `${counted(n, 'finding')} of the code review: see What the code review found.`,
+  // D113 amended (its second review): the published findings of the code review about code outside the evaluated
+  // session (their record's `outsideSession`), counted apart from the session's own, in the tag's words, as the page's,
+  // the Markdown report's and the terminal's count line count them.
+  codeFindingsOutside: (n) => `${counted(n, 'finding')} of the code review about code outside the evaluated session: see `
+    + 'What the code review found.',
   // What the review could not cover (the coverage causes), apart from the rows it could not check (`folded`, the folded
   // section of that name): one thing, one term.
   notCovered: 'What Sonah could not cover: see the Not covered line at the top.',
@@ -306,9 +325,13 @@ export const CHECKLIST_CLAIM_REASON_WORDS = Object.freeze({
 /** The reader's words for a fact code adds beside an ask (ledger.js REQUIREMENT_FACTS). `no_deliverable_by_end` is
  *  set when the reporting part of a not-checked row with no deliverable holds the recording's last event: it says
  *  nothing about where the ask stands, so its words name no place ("ends here" read as if the recording stopped at
- *  the ask). Reader-facing only: no model request carries them. */
+ *  the ask). Reader-facing only: no model request carries them. D115 (the owner: "for the hn5, start work now"): "found
+ *  nothing that does this ask before the recording ended" read as a fact of the whole recording, which the agent's
+ *  later work contradicted; code proves only what the published row cites (no deliverable, and its status), so the
+ *  words say that and what the session review did not settle, never what the recording holds. */
 export const CHECKLIST_REQUIREMENT_FACT_WORDS = Object.freeze({
-  no_deliverable_by_end: 'The session review found nothing that does this ask before the recording ended.',
+  no_deliverable_by_end: 'The session review did not check whether the agent did this ask: it cited nothing that '
+    + 'does it.',
 });
 /**
  * An ask's status never contradicts Sonah's own findings: the words of the line an ask row shows beside its status for
@@ -467,7 +490,9 @@ export const COVERAGE_CAUSES = Object.freeze(['no_windows', 'no_actions', 'windo
   'instructions_refusal_untyped', 'instructions_refusal_session_unknown', 'human_interaction_unknown',
   'delegations_unlinked',
   'delegations_ambiguous',
-  'briefs_encrypted', 'messages_encrypted', 'incomplete_inventory',
+  'briefs_encrypted', 'messages_encrypted', 'workflow_runs_unread', 'workflow_entries_unread',
+  'workflow_calls_unlaunched', 'helper_captures_incomplete', 'call_inputs_unread', 'native_calls_unaccounted',
+  'incomplete_inventory',
   'observations_incomplete', 'source_clipped', 'reports_capped', 'statements_capped', 'bodies_capped',
   'unsupported_message', 'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit', 'carry_capped',
   'other_gap', 'code_unreviewable',
@@ -587,11 +612,27 @@ export const COVERAGE_SENTENCE = Object.freeze({
   messages_encrypted: (counts = {}) => `the recorder encrypted ${amount(counts)} `
     + `${nounOf(counts, 'message', 'messages')} between agents, so Sonah cannot show or check `
     + `${nounOf(counts, 'it', 'them')}`,
-  // F170: every other code a declared gap can cap with. A count no declaration stated is not
-  // invented: `coverageCauses` counts such a declaration as one, and says "at least". W3c-8:
-  // `unrecorded_body` (F96) and `code_unreviewable` (F106) were the first two.
-  incomplete_inventory: (counts = {}) => `${positiveAmount(counts)} ${nounOf(counts, 'part', 'parts')} of the evidence `
-    + `that Sonah read ${nounOf(counts, 'is', 'are')} incomplete`,
+  // D119, the owner's go of 2026-10-18 (the dogfood's DF11): each kind of loss that `incomplete_inventory` summed with
+  // others of unlike units, said apart in one unit, naming what Sonah did not read; "read" only of what it read.
+  workflow_runs_unread: (counts = {}) => `Sonah did not read ${positiveAmount(counts)} workflow `
+    + `${nounOf(counts, 'run', 'runs')} or the recordings of ${nounOf(counts, 'its', 'their')} agents`,
+  workflow_entries_unread: (counts = {}) => `Sonah did not read ${positiveAmount(counts)} other `
+    + `${nounOf(counts, 'entry', 'entries')} in the folders of workflow runs`,
+  workflow_calls_unlaunched: (counts = {}) => `Sonah found no launch recorded for ${positiveAmount(counts)} workflow `
+    + `${nounOf(counts, 'call', 'calls')}, so it did not read the recordings of any agents that `
+    + `${nounOf(counts, 'it', 'they')} started`,
+  helper_captures_incomplete: (counts = {}) => `Sonah read only part of ${positiveAmount(counts)} helper `
+    + `${nounOf(counts, 'recording', 'recordings')}`,
+  call_inputs_unread: (counts = {}) => `Sonah holds only part of the recorded input of ${positiveAmount(counts)} `
+    + `${nounOf(counts, 'call', 'calls')} of the agent`,
+  native_calls_unaccounted: (counts = {}) => `Sonah could not match ${positiveAmount(counts)} `
+    + `${nounOf(counts, 'call', 'calls')} that the agent's code cells made to a recorded command, file change or tool `
+    + 'item',
+  // F170: every other code a declared gap can cap with. W3c-8: `unrecorded_body` (F96) and `code_unreviewable` (F106)
+  // were the first two. D119: counted by kind (code, channel and note), never by summing counts of unlike units, and
+  // said as what Sonah holds, never as what it read.
+  incomplete_inventory: (counts = {}) => `Sonah holds ${positiveAmount(counts)} ${nounOf(counts, 'kind', 'kinds')} of `
+    + 'evidence only in part',
   observations_incomplete: (counts = {}) => `Sonah could not read the result of ${positiveAmount(counts)} `
     + `${nounOf(counts, 'action', 'actions')}, so it cannot tell whether ${nounOf(counts, 'it', 'they')} succeeded`,
   // A text the recorder cut and one an earlier Sonah cut are declared alike here: said as what Sonah holds.
@@ -724,12 +765,39 @@ const INSTRUCTION_NOTE_CAUSE = Object.freeze({
 // session evidence that was incomplete. A brief redaction withheld keeps the cause it always had.
 const ACTION_NOTE_CAUSE = Object.freeze({
   [DELEGATION_BRIEF_GAP_NOTES.recorder_encrypted]: 'briefs_encrypted',
+  // D119 (the dogfood's DF11): kinds that `incomplete_inventory` summed with others of unlike units, each by its own
+  // cause in one unit: the calls whose recorded input Sonah holds only in part (a brief is a hand-off's input), counted by
+  // call; and the calls a turn's code cells made that no recorded item accounts for (Codex), by its declared count.
+  [DELEGATION_BRIEF_GAP_NOTES.redaction_withheld]: 'call_inputs_unread',
+  ...Object.fromEntries(Object.values(CALL_INPUT_GAP_NOTES).map((note) => [note, 'call_inputs_unread'])),
+  [NATIVE_SHORTFALL_GAPS.find(([key]) => key === 'nativeInventoryShortfall')[3]]: 'native_calls_unaccounted',
 });
 // M33 F. And on the `children` channel: inter-agent messages the recorder encrypted are named as that. Every other
 // communication loss (an unparsed row, a final report not attached) keeps the cause it always had.
 const CHILDREN_NOTE_CAUSE = Object.freeze({
   [INTER_AGENT_GAP_NOTES.encrypted]: 'messages_encrypted',
+  // D119, the owner's go of 2026-10-18 ("cool go for it"; the dogfood's DF11, the "492" sentence): a gap kind that
+  // `incomplete_inventory` summed with others of unlike units is named by its own cause, each counted in one unit
+  // (INVENTORY_EVENT_CAUSES): the workflow runs Sonah did not read with their agents' recordings (a journal missing or
+  // not in its recorded shape, or a run whose directory did not resolve), the other entries of run folders, the workflow
+  // calls with no launch recorded, and the linked helper recordings Sonah read only in part.
+  [WORKFLOW_RUN_GAP_NOTES.workflow_journal_missing]: 'workflow_runs_unread',
+  [WORKFLOW_RUN_GAP_NOTES.workflow_journal_unreadable]: 'workflow_runs_unread',
+  [WORKFLOW_GAP_NOTES.agents]: 'workflow_runs_unread',
+  [WORKFLOW_RUN_GAP_NOTES.workflow_run_entry_unread]: 'workflow_entries_unread',
+  [WORKFLOW_GAP_NOTES.unlaunched]: 'workflow_calls_unlaunched',
+  [CHILD_CAPTURE_INCOMPLETE_NOTE]: 'helper_captures_incomplete',
 });
+/**
+ * D119: the causes counted by the events their declarations name, each once (a workflow run by its call; a helper
+ * recording by its hand-off's assignment), never by their declared counts: a journal's count is its lines, and a helper's
+ * own capture loss states no count. A declaration that names no event counts as its capping count says.
+ */
+const INVENTORY_EVENT_CAUSES = Object.freeze(['workflow_runs_unread', 'helper_captures_incomplete',
+  'call_inputs_unread']);
+/** D119: `incomplete_inventory` (the kinds no cause of their own names) counts kinds of declaration — code, channel and
+ *  note — never the sum of their counts, which are of unlike units. */
+const KIND_COUNTED_CAUSE = 'incomplete_inventory';
 // M33 F. And on the `observations` channel: a helper report this review capped is named as that, never as a text the
 // recorder cut. Every other clipped observation keeps the cause it always had.
 const OBSERVATION_NOTE_CAUSE = Object.freeze({
@@ -776,6 +844,9 @@ const headerCauseOf = (gap) => {
       && Object.hasOwn(INSTRUCTION_NOTE_CAUSE, gap.note)) return INSTRUCTION_NOTE_CAUSE[gap.note];
   if (gap.channel === 'actions' && gap.code === 'incomplete_inventory' && typeof gap.note === 'string'
       && Object.hasOwn(ACTION_NOTE_CAUSE, gap.note)) return ACTION_NOTE_CAUSE[gap.note];
+  // D119: a write's recorded body Sonah holds only in part is a call's input too (CALL_INPUT_GAP_NOTES.code_redacted).
+  if (gap.channel === 'code' && gap.code === 'incomplete_inventory' && gap.note === CALL_INPUT_GAP_NOTES.code_redacted)
+    return 'call_inputs_unread';
   if (gap.channel === 'children' && gap.code === 'incomplete_inventory' && typeof gap.note === 'string'
       && Object.hasOwn(CHILDREN_NOTE_CAUSE, gap.note)) return CHILDREN_NOTE_CAUSE[gap.note];
   const onChannel = Object.hasOwn(GAP_HEADER_CAUSE_ON_CHANNEL, gap.channel) ? GAP_HEADER_CAUSE_ON_CHANNEL[gap.channel] : null;
@@ -879,12 +950,25 @@ export function coverageCauses(report) {
   // M33 (C-06): every declared cause carries a count. Summed across the cause's declarations; a
   // declaration that stated none counts as one, and makes the sum a lower bound (`atLeast`).
   const declared = new Map();
+  // D119: the events each event-counted cause names, and the kinds the kind-counted cause holds.
+  const eventsOf = new Map(INVENTORY_EVENT_CAUSES.map((cause) => [cause, new Set()]));
+  const kinds = new Set();
   for (const gap of declaredGapList(report)) {
     const capping = cappingCount(gap, context);
     if (capping === undefined) continue;
     const cause = headerCauseOf(gap);
     const sum = declared.get(cause) ?? { n: 0, exact: true };
-    declared.set(cause, { n: sum.n + capping.n, exact: sum.exact && capping.exact });
+    const ids = (Array.isArray(gap.eventIds) ? gap.eventIds : []).filter((id) => typeof id === 'string' && id);
+    if (eventsOf.has(cause) && ids.length) {
+      const seen = eventsOf.get(cause);
+      const before = seen.size;
+      for (const id of ids) seen.add(id);
+      declared.set(cause, { n: sum.n + seen.size - before, exact: sum.exact });
+    } else if (cause === KIND_COUNTED_CAUSE) {
+      const kind = `${gap.code}\u0000${gap.channel}\u0000${typeof gap.note === 'string' ? gap.note : ''}`;
+      declared.set(cause, { n: sum.n + (kinds.has(kind) ? 0 : 1), exact: true });
+      kinds.add(kind);
+    } else declared.set(cause, { n: sum.n + capping.n, exact: sum.exact && capping.exact });
   }
   const countsOf = ({ n, exact }) => (exact ? { n } : { n, atLeast: true });
   const unlinkedByFact = named.get('delegations_unlinked');
@@ -958,11 +1042,15 @@ export const attentionLines = (report) => attentionSummary(report).lines;
  */
 export function checklistRowCounts(report, { contradicted = [], edits = [], codeFindings = [] } = {}) {
   const rows = (value) => (Array.isArray(value) ? value.filter((row) => row !== null && typeof row === 'object') : []);
+  // D113 amended (its second review): a published finding of the code step about code outside the evaluated session
+  // (`outsideSession`) is counted apart from the session's own.
+  const away = codePassFindings(report).filter((f) => f.outsideSession === true).length;
   return rowKindCounts({ report, decisions: rows(report.decisions), pivots: rows(report.pivots).length,
     requirements: rows(report.requirements), contradicted: contradicted.length,
     codeContradicted: codeContradictedRows(report).length, failures: failureRows(report) ?? [], forbidden: edits.length,
     written: rows(report.writtenClaims).filter((w) => typeof w.text === 'string'),
-    codeFindings: codeFindings.length + codePassFindings(report).length, promises: listedPromises(report) });
+    codeFindings: codeFindings.length + codePassFindings(report).length - away, codeFindingsOutside: away,
+    promises: listedPromises(report) });
 }
 /**
  * The judgment-first review (low, one counting): the one function every reader counts its rows with, by kind — every
@@ -973,7 +1061,8 @@ export function checklistRowCounts(report, { contradicted = [], edits = [], code
  * links are read against (`askRowKind`). Pure.
  */
 export function rowKindCounts({ report = null, decisions = [], pivots = 0, requirements = [], contradicted = 0,
-  codeContradicted = 0, failures = [], forbidden = 0, written = [], codeFindings = 0, promises = [] } = {}) {
+  codeContradicted = 0, failures = [], forbidden = 0, written = [], codeFindings = 0, codeFindingsOutside = 0,
+  promises = [] } = {}) {
   const counts = Object.fromEntries([...ATTENTION_ROWS, ...FOLDED_ROWS].map((kind) => [kind, 0]));
   const add = (kind) => { if (kind !== null && Object.hasOwn(counts, kind)) counts[kind] += 1; };
   for (const d of decisions) decisionRowKinds(d).forEach(add);
@@ -985,6 +1074,7 @@ export function rowKindCounts({ report = null, decisions = [], pivots = 0, requi
   counts.forbidden = forbidden;
   for (const w of written) add(writtenRowKind(w));
   counts.codeFindings = codeFindings;
+  counts.codeFindingsOutside = codeFindingsOutside;
   for (const p of promises) add(claimRowKind(p));
   return counts;
 }

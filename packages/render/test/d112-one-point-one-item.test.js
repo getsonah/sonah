@@ -1,12 +1,14 @@
 // E1-F8 (D112, owner 2026-10-17: "go for C and E"): one point, one item. The invariants of FIXES-GLOBAL F8 as tests, on
 // synthetic sessions only (report-fixture.js, session-story-fixture.js): a question the code review wrote is shown inside
-// the item of the row it concerns, at the higher of the two tiers; two decisions whose stated quotes nest are one item,
-// led by the longer quote; inside each section the items come by final level (high, medium, low, then none), then by
-// kind; a passed-over call defaults to Good to know only when the recorder typed it as a refused read. Nothing is
-// dropped, no row sits below the tier it has alone, no member is lifted, and the same input gives the same bytes.
+// the item of the row it concerns, at the higher of the two tiers; (D112 amended, 2026-10-18) two decisions whose stated
+// quotes nest stay two items; inside each section the items come by final level (high, medium, low, then none), then by
+// kind; (D122 (b), the beta.5 integration) a passed-over call defaults to Must know whatever its call: the refused-read
+// default is removed. Nothing is dropped, no row sits below the tier it has alone, no member is lifted, and the same
+// input gives the same bytes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, reportPlacement, refusedRead, itemVisibleText } from '../report-model.js';
+import * as reportModelModule from '../report-model.js';
+import { reportModel, reportPlacement, itemVisibleText } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_TIER_WHY, REPORT_ITEM_WORDS, REPORT_KIND_WORDS, REPORT_TIER_WORDS } from '../report-words.js';
@@ -36,10 +38,11 @@ function assertInvariants(model, label) {
     assert.ok(RANK[item.tier.final] >= RANK[item.own.final], `${label} item ${item.n}: not below its lead`);
     for (const m of item.members) {
       assert.ok(RANK[item.tier.final] >= RANK[m.tier.final], `${label} item ${item.n}: not below a member`);
-      // No group lifts a member: it keeps its own tier, and is folded when that tier is below the item's or it repeats
-      // the lead.
-      assert.equal(m.folded, m.tie === 'nested' || RANK[m.tier.final] < RANK[item.tier.final], `${label} ${item.n}`);
+      // No group lifts a member: it keeps its own tier, and is folded when that tier is below the item's.
+      assert.equal(m.folded, RANK[m.tier.final] < RANK[item.tier.final], `${label} ${item.n}`);
       assert.ok(REPORT_GROUP_TIES.includes(m.tie), `${label}: a closed tie`);
+      // D112 amended (its nested join removed; D122): a member is only a question of the code review.
+      assert.equal(m.kind, 'code_question', `${label} item ${item.n}: a member is a question`);
       // A member's rows are the item's too.
       for (const r of m.rows) assert.ok(holds(item, r.source, r.index), `${label} item ${item.n} holds ${r.source}:${r.index}`);
     }
@@ -55,6 +58,10 @@ function assertInvariants(model, label) {
       .filter((x) => x.tier.final === item.tier.final).map((x) => levelRank(x.tier))));
     assert.deepEqual(levels, [...levels].sort((a, b) => a - b), `${label} ${tier}: by final level`);
   }
+  // What the agent said it did not do lists each decision not to act by its own item, once (D122: no member is one).
+  const notActing = items.filter((item) => item.kind === 'decision_not_acting').map((item) => item.n);
+  for (const row of model.did.leftOut) assert.ok(notActing.includes(row.item), `${label}: listed by its own item`);
+  assert.equal(new Set(model.did.leftOut.map((row) => row.item)).size, model.did.leftOut.length, `${label}: once`);
   // One anchor, one item: no row in two items, and no two items joined by a checked tie.
   const held = items.flatMap((item) => item.rows.map((r) => `${r.source}:${r.index}`));
   assert.equal(new Set(held).size, held.length, `${label}: no row in two items`);
@@ -175,8 +182,14 @@ test('D112 (1): a question on an ask, one routed from a finding, and one whose r
   assert.ok(itemsOf(model).some((item) => item.kind === 'ask_not_done' && holds(item, 'requirements', 5)
     && !item.members.length), 'the ask\'s item has no member');
   assert.deepEqual(reportPlacement(model)['codePass.questions:2'], { item: own(2).n });
-  // The question on an ask still points to the ask, as before.
-  assert.deepEqual(own(2).where.map((w) => w.anchor), ['ask-1']);
+  // D116: it points to the ask only where code checked the tie (its own place overlaps the ask's): with no quote it
+  // names no place, so no pointer; quoting your words of the ask, it points to the ask, as before.
+  assert.deepEqual(own(2).where.map((w) => w.anchor), []);
+  report.codePass.questions[2] = { ...report.codePass.questions[2], quote: receipt('instruction', 'I1',
+    'Return 429 with a Retry-After header in seconds.') };
+  const quoted = reportModel(session, report, repoFacts());
+  assert.deepEqual(itemsOf(quoted).find((item) => item.rows[0].source === 'codePass.questions'
+    && item.rows[0].index === 2).where.map((w) => w.anchor), ['ask-1']);
   // Only the question the code review wrote on an item's row joined it.
   const decision = itemsOf(model).find((x) => holds(x, 'decisions', 3));
   assert.deepEqual(decision.members.map((m) => m.rows[0]), [{ source: 'codePass.questions', index: 0 }]);
@@ -203,45 +216,38 @@ function decisionsReport(session, decisions) {
   requirements: [], decisions };
 }
 
-test('D112 (2): two decisions whose stated quotes nest on one event are one item, led by the longer quote', () => {
+test('D112 amended (2026-10-18): two decisions whose stated quotes nest on one event stay two items; nothing joins them',
+  () => {
+  // The owner (2026-10-18): D112's nested-decision join is removed.
   const session = decisionsSession();
-  const short = 'I will not add Redis.';
-  const long = 'An in-process cache is enough, so I will not add Redis or any server.';
   const decisions = [
-    decided({ id: id('1'), dimension: 'store', chosen: 'no Redis', notActing: true, stated: receipt('commentary', 'C1', short) }),
-    decided({ id: id('2'), dimension: 'cache', chosen: 'an in-process cache', stated: receipt('commentary', 'C1', long) }),
-    // The same words on another event: not the same place, so not the same point.
+    decided({ id: id('1'), dimension: 'store', chosen: 'no Redis', notActing: true,
+      stated: receipt('commentary', 'C1', 'I will not add Redis or any server.') }),
+    decided({ id: id('2'), dimension: 'cache', chosen: 'an in-process cache',
+      stated: receipt('commentary', 'C1', 'An in-process cache is enough, so I will not add Redis or any server.') }),
     decided({ id: id('3'), dimension: 'store again', chosen: 'no Redis', notActing: true,
       stated: receipt('commentary', 'C2', 'I will not add Redis or any server.') }),
-    // Another sentence of the first event that nests in neither: its own item.
     decided({ id: id('4'), dimension: 'servers', chosen: 'none', stated: receipt('commentary', 'C1', 'An in-process cache') }),
   ];
-  assert.equal(nestedReceipts(decisions[0].stated, decisions[1].stated), false, 'the two sentences do not nest');
-  // The first decision's quote lies inside the second's: make it so.
-  decisions[0] = { ...decisions[0], stated: receipt('commentary', 'C1', 'I will not add Redis or any server.') };
-  assert.ok(nestedReceipts(decisions[0].stated, decisions[1].stated));
+  assert.ok(nestedReceipts(decisions[0].stated, decisions[1].stated), 'the first quote lies inside the second');
+  assert.ok(nestedReceipts(decisions[3].stated, decisions[1].stated), 'so does the fourth');
   const report = decisionsReport(session, decisions);
   const model = reportModel(session, report, {});
-  const lead = itemsOf(model).find((item) => holds(item, 'decisions', 1));
-  assert.deepEqual(lead.rows[0], { source: 'decisions', index: 1 }, 'the longer quote leads');
-  assert.deepEqual(lead.members.map((m) => [m.rows[0].index, m.tie, m.folded]), [[0, 'nested', true],
-    [3, 'nested', true]], 'decision 4\'s quote lies inside the lead\'s too');
-  assert.deepEqual(reportPlacement(model)['decisions:0'], { memberOf: lead.n });
-  assert.deepEqual(reportPlacement(model)['decisions:1'], { item: lead.n });
-  // Another event's decision stays its own item.
-  assert.deepEqual(reportPlacement(model)['decisions:2'], { item: itemsOf(model).find((x) => holds(x, 'decisions', 2)).n });
-  // Shown once: one item; the member's own lines are folded inside it, never dropped.
-  assert.equal(itemsOf(model).length, 2);
-  // The member decision not to act is still listed under what the agent said it did not do, by its item.
-  assert.ok(model.did.leftOut.some((x) => x.item === lead.n && x.quote.text === 'I will not add Redis or any server.'));
-  // The item takes the higher tier: the decision not to act (Must know) over the lead (Must know): from the lead.
-  assert.deepEqual([lead.tier.final, lead.tier.from], ['must_know', 'lead']);
-  const md = renderReportMarkdown(session, report, {});
-  assert.ok(md.includes('<details><summary>Decide: The agent decided not to act. About: <em>store</em>. Its decision: '
-    + '<em>no Redis</em>. · Must know</summary>'), md);
+  // Each decision is an item of its own, with no member; every row is placed as its own item.
+  assert.equal(itemsOf(model).length, 4);
+  for (const item of itemsOf(model)) assert.deepEqual([item.rows.length, item.members.length], [1, 0]);
+  const placement = reportPlacement(model);
+  for (const index of [0, 1, 2, 3]) {
+    const own = itemsOf(model).find((item) => holds(item, 'decisions', index));
+    assert.deepEqual(placement[`decisions:${index}`], { item: own.n });
+  }
+  // The decision not to act is listed under what the agent said it did not do, by its own item.
+  const notActing = itemsOf(model).find((item) => holds(item, 'decisions', 0));
+  assert.ok(model.did.leftOut.some((x) => x.item === notActing.n && x.quote.text === 'I will not add Redis or any server.'));
+  assertInvariants(model, 'nested decisions');
 });
 
-test('D112 (2): a member of a higher tier than the longer quote\'s lifts the item, and the item says why', () => {
+test('D112 amended (2026-10-18): a decision cut from the same sentence as a decision not to act keeps its own tier', () => {
   const session = decisionsSession();
   const report = decisionsReport(session, [
     // The longer quote: you asked, the agent decided how (Good to know).
@@ -254,12 +260,12 @@ test('D112 (2): a member of a higher tier than the longer quote\'s lifts the ite
       stated: receipt('commentary', 'C1', 'I will not add Redis or any server.') }),
   ]);
   const model = reportModel(session, report, {});
-  const [item] = itemsOf(model);
-  assert.equal(itemsOf(model).length, 1);
-  assert.deepEqual([item.kind, item.own.final, item.tier.final, item.tier.from], ['decision_chose', 'good_to_know',
-    'must_know', 'member']);
-  assert.equal(item.why, REPORT_TIER_WHY.held(REPORT_KIND_WORDS.decision_not_acting, 'Must know'));
-  assert.ok(model.tiers.must_know.includes(item));
+  const of = (kind) => itemsOf(model).find((item) => item.kind === kind);
+  assert.equal(itemsOf(model).length, 2);
+  // Nothing lifts the "you asked" decision: it stays in Good to know, by its own default.
+  assert.deepEqual([of('decision_chose').own.final, of('decision_chose').tier.final, of('decision_chose').tier.from],
+    ['good_to_know', 'good_to_know', 'lead']);
+  assert.ok(model.tiers.must_know.includes(of('decision_not_acting')));
 });
 
 // ---- (3) the order inside a section --------------------------------------------------------------------------------
@@ -272,13 +278,14 @@ test('D112 (3): inside each section, items come by final level (high, medium, lo
     ['ask_not_done', null]]);
   // Must know: rated high (held at Must know by a ceiling), then medium, then low (lifted by a floor), then none.
   const levels = model.tiers.must_know.map((item) => levelRank(item.tier));
-  assert.deepEqual(levels, [0, 0, 0, 0, 1, 1, 2, 3, 3, 3, 3]);
+  // D122 (b): the fixture's refused read, a failure passed over, is unrated Must know (no refused-read default).
+  assert.deepEqual(levels, [0, 0, 0, 0, 1, 1, 2, 3, 3, 3, 3, 3]);
   assert.deepEqual(order('must_know').slice(6, 7), [['code_bug', 'good_to_know']], 'the floored bug follows the rated');
   // Good to know: the low-rated weak test before the unrated items.
   assert.deepEqual(order('good_to_know')[0], ['code_weak_test', 'good_to_know']);
 });
 
-// ---- (4) default tiers from recorder-typed operations ---------------------------------------------------------------
+// ---- (4) default tiers: D112's refused-read default, removed at the beta.5 integration (D122 (b)) --------------------
 
 /** A call and its terminal result, as the adapter spells them (`recorded`: the recorder's typed facts on the call). */
 function call(b, callId, { tool, operation = 'other', command = null, recorded = null, result = 'failed' }) {
@@ -307,30 +314,29 @@ function failuresSession() {
 const failureRow = (callId, outcome = 'did-not-run') => ({ eventId: `${callId}-r`, action: callId, outcome, form: 'denial',
   tool: 'read', handling: 'passed-over' });
 
-test('D112 (4): a passed-over call defaults to Good to know only when the recorder typed it as a refused read', () => {
+test('D122 (b): a passed-over call defaults to Must know whatever its call — a refused read, a read a rule refused, a '
+  + 'command typed as a search, a refused command or write, a read that failed or was stopped', () => {
   const session = failuresSession();
   const report = { ...decisionsReport(session, [
     decided({ id: id('9'), dimension: 'tests', chosen: 'no new test', notActing: true,
       stated: receipt('commentary', 'F1', 'Done.') })]),
   failures: ['X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7'].map((x) => failureRow(x)) };
-  assert.deepEqual(['X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7'].map((x) => refusedRead(session, failureRow(x))),
-    [true, true, false, false, false, false, true]);
+  // The rule and its reader are gone.
+  assert.equal(reportModelModule.refusedRead, undefined);
+  assert.equal(Object.hasOwn(REPORT_TIER_WHY, 'refusedRead'), false);
   const model = reportModel(session, report, {});
   const tierOf = (index) => itemsOf(model).find((item) => holds(item, 'failures', index));
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map((i) => tierOf(i).tier.final), ['good_to_know', 'good_to_know', 'must_know',
-    'must_know', 'must_know', 'must_know', 'good_to_know']);
-  assert.equal(tierOf(0).why, REPORT_TIER_WHY.refusedRead('Good to know'));
-  assert.equal(tierOf(2).why, REPORT_TIER_WHY.byDefault(REPORT_KIND_WORDS.failure_passed_over, 'Must know'));
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map((i) => tierOf(i).tier.final), Array(7).fill('must_know'));
+  for (const i of [0, 1, 2, 3, 4, 5, 6])
+    assert.equal(tierOf(i).why, REPORT_TIER_WHY.byDefault(REPORT_KIND_WORDS.failure_passed_over, 'Must know'), String(i));
   // A decision not to act stays in Must know.
   assert.equal(itemsOf(model).find((item) => item.kind === 'decision_not_acting').tier.final, 'must_know');
   // The code review's level still moves a refused read, inside its bounds.
   const rated = { ...report, codePass: { ran: true, findings: [], questions: [], withheld: [], files: [], footer: [],
-    triage: [{ ref: { source: 'failures', index: 0, id: null }, level: 'medium', impact: 'It may matter.',
+    triage: [{ ref: { source: 'failures', index: 0, id: null }, level: 'low', impact: 'It may matter.',
       action: 'Read the file.', label: 'read the file', where: null }] } };
   const moved = itemsOf(reportModel(session, rated, {})).find((item) => holds(item, 'failures', 0));
-  assert.deepEqual([moved.tier.default, moved.tier.proposed, moved.tier.final], ['good_to_know', 'must_know', 'must_know']);
-  // A row that is no failure the agent handled, or names no call the session holds, is none.
-  assert.equal(refusedRead(session, { ...failureRow('X1'), handling: undefined }), false);
-  assert.equal(refusedRead(session, { eventId: 'nope-r', action: 'nope', handling: 'passed-over' }), false);
-  assert.deepEqual(boundTier('failure_passed_over', null, { refusedRead: true }).final, 'good_to_know');
+  assert.deepEqual([moved.tier.default, moved.tier.proposed, moved.tier.final], ['must_know', 'good_to_know',
+    'good_to_know']);
+  assert.deepEqual(boundTier('failure_passed_over', null, { refusedRead: true }).final, 'must_know');
 });

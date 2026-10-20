@@ -51,10 +51,13 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   REPAIR_MERGE_UNCHECKED, profileBeforeRepairMerge,
   REPORT_MD_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
   REPAIR_MERGE_READER_VERSIONS, PREMISE_VERSIONS, PREMISE_READER_VERSIONS, profileBeforePremises, ACCOUNT_VERSIONS,
-  ACCOUNT_READER_VERSIONS, profileBeforeAccount, ONE_ITEM_VERSIONS, ONE_ITEM_READER_VERSIONS, profileBeforeOneItem }
+  ACCOUNT_READER_VERSIONS, profileBeforeAccount, ONE_ITEM_VERSIONS, ONE_ITEM_READER_VERSIONS, profileBeforeOneItem,
+  SESSION_CHANGE_VERSIONS, SESSION_CHANGE_READER_VERSIONS, LISTED_ASKS_VERSIONS, profileBeforeSessionChange,
+  profileBeforeListedAsks, REPORT_TRUTH_READER_VERSIONS, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
+  RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace }
   from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
-  verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, PARSE_QUOTE as QUOTE }
+  verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
   from '../../cli/test/code-pass-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
@@ -211,9 +214,10 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(ledger.CODE_ANSWER_SOURCES, ['answer', 'repair', 'account']);
   assert.deepEqual(CODE_PASS_PROFILE.repairMerge, { rule: 'identity-one-to-one', fates: ledger.CODE_REPAIR_FATES,
     sources: ledger.CODE_ANSWER_SOURCES });
+  // D122 (d): and a relative path that names an existing file in more than one place of the change.
   assert.deepEqual(CODE_ITEM_ERRORS, ['key_missing', 'key_outside_contract', 'value_outside_list', 'text_over_limit',
     'dossier_key_unknown', 'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote',
-    'file_not_readable', 'out_of_scope']);
+    'file_not_readable', 'out_of_scope', 'path_ambiguous']);
   assert.deepEqual(CODE_VOID_CAUSES, ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace',
     'refutation_uncited']);
   assert.deepEqual(CODE_REVIEW_TERMINALS, ['answered', 'unusable', 'failed', 'not_sent']);
@@ -254,12 +258,18 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // answers of 2026-10-17: the dossier leaves out a command refused before it ran; /10 the triage, D96) and the
   // checking agents /3 (D110: the premise contract; /2 the cleanup: nothing held); step 1 retired; the session's
   // untouched. D109: the snapshot /12 (a recorded write outside the working directory classed by where it lies).
-  assert.equal(CODE_SNAPSHOT_VERSION, 'sonah.code-snapshot/12');
-  assert.equal(CODE_PASS_VERSION, 'sonah.code-pass/12');
-  assert.equal(CODE_VERIFY_VERSION, 'sonah.code-verify/3');
-  assert.deepEqual(PREMISE_VERSIONS.verify, { before: CLEANUP_VERSIONS.verify.after, after: CODE_VERIFY_VERSION });
+  // D113 and D114 (0.3.0-beta.5): the snapshot /13 (the session's own change), the pass /13 and the checking agents /4
+  // (the listed asks), each one link after 0.3.0-beta.4's.
+  assert.equal(CODE_SNAPSHOT_VERSION, 'sonah.code-snapshot/13');
+  assert.equal(CODE_PASS_VERSION, 'sonah.code-pass/13');
+  assert.equal(CODE_VERIFY_VERSION, 'sonah.code-verify/4');
+  assert.deepEqual(SESSION_CHANGE_VERSIONS.snapshot, { before: WHERE_IT_LIES_VERSIONS.snapshot.after,
+    after: CODE_SNAPSHOT_VERSION });
+  assert.deepEqual([LISTED_ASKS_VERSIONS.pass, LISTED_ASKS_VERSIONS.verify], [{ before: ONE_BOUND_VERSIONS.pass.after,
+    after: CODE_PASS_VERSION }, { before: PREMISE_VERSIONS.verify.after, after: CODE_VERIFY_VERSION }]);
+  assert.deepEqual(PREMISE_VERSIONS.verify, { before: CLEANUP_VERSIONS.verify.after, after: 'sonah.code-verify/3' });
   assert.equal(CODE_VERIFY_PASSES, 1);
-  assert.deepEqual(ONE_BOUND_VERSIONS.pass, { before: REFUSED_AFTER_EDIT_VERSIONS.pass.after, after: CODE_PASS_VERSION });
+  assert.deepEqual(ONE_BOUND_VERSIONS.pass, { before: REFUSED_AFTER_EDIT_VERSIONS.pass.after, after: 'sonah.code-pass/12' });
   assert.deepEqual(REFUSED_AFTER_EDIT_VERSIONS.pass, { before: TRIAGE_VERSIONS.pass.after, after: 'sonah.code-pass/11' });
   assert.deepEqual(TRIAGE_VERSIONS.pass, { before: CLEANUP_VERSIONS.pass.after, after: 'sonah.code-pass/10' });
   assert.deepEqual([CLEANUP_VERSIONS.pass, CLEANUP_VERSIONS.verify], [{ before: CHANGED_SINCE_SHOWN_VERSIONS.pass.after,
@@ -267,7 +277,7 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D98: the snapshot once more, one link after a file changed since the session, shown's; D109 once more after it.
   assert.deepEqual(ONE_READING_VERSIONS.snapshot, { before: CHANGED_SINCE_SHOWN_VERSIONS.snapshot.after,
     after: WHERE_IT_LIES_VERSIONS.snapshot.before });
-  assert.deepEqual(WHERE_IT_LIES_VERSIONS.snapshot, { before: 'sonah.code-snapshot/11', after: CODE_SNAPSHOT_VERSION });
+  assert.deepEqual(WHERE_IT_LIES_VERSIONS.snapshot, { before: 'sonah.code-snapshot/11', after: 'sonah.code-snapshot/12' });
   assert.deepEqual(CHANGED_SINCE_SHOWN_VERSIONS, { snapshot: { before: AGENTIC_CODE_STEP_VERSIONS.snapshot.after,
     after: 'sonah.code-snapshot/10' }, pass: { before: AGENTIC_CODE_STEP_VERSIONS.pass.after,
     after: 'sonah.code-pass/8' } });
@@ -317,8 +327,16 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(PREMISE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ACCOUNT_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [ONE_BOUND_READER_VERSIONS.page.after,
+  // D113 and D114 (0.3.0-beta.5): each reader once more, one link after 0.3.0-beta.4's.
+  assert.deepEqual([SESSION_CHANGE_READER_VERSIONS.page.before, SESSION_CHANGE_READER_VERSIONS.story.before,
+    SESSION_CHANGE_READER_VERSIONS.model.before], [ONE_BOUND_READER_VERSIONS.page.after,
     ONE_BOUND_READER_VERSIONS.story.after, ONE_BOUND_READER_VERSIONS.model.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [SESSION_CHANGE_READER_VERSIONS.page.after,
+    SESSION_CHANGE_READER_VERSIONS.story.after, SESSION_CHANGE_READER_VERSIONS.model.after]);
+  // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
+  // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
+  // reader once.
+  assert.deepEqual(REPORT_TRUTH_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS);
   assert.equal(REPORT_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.page.after);
   assert.equal(REPORT_MD_READER_VERSIONS.story.before, CLEANUP_READER_VERSIONS.story.after);
   assert.deepEqual([CLEANUP_READER_VERSIONS.page.before, CLEANUP_READER_VERSIONS.story.before],
@@ -358,7 +376,8 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual([current.codePass.account.version, accountBack.codePass.account, accountBack.codePass.agents.account,
     accountBack.codePass.parts.includes('account'), accountBack.codePass.footer.includes('unaccounted'),
     accountBack.codePass.repairUnchecked.includes('accounted'), accountBack.codePass.repairMerge.sources],
-  [ACCOUNT_VERSIONS.account, undefined, undefined, false, false, false, ['answer', 'repair']]);
+  [LISTED_ASKS_VERSIONS.account.after, undefined, undefined, false, false, false, ['answer', 'repair']]);
+  assert.equal(LISTED_ASKS_VERSIONS.account.before, ACCOUNT_VERSIONS.account);
   // D110 moved the checking agents' version, the trace limits and the tier table, and added `premises`: rendered back
   // first (`profileBeforePremises`, which every older render-back applies first), D106's.
   const premisesBack = profileBeforePremises(current);
@@ -385,7 +404,7 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D98 moved the snapshot version alone: rendered back (`profileBeforeOneReading`, which every older render-back
   // applies first, and which renders back every later link first: the owner's answers' code-pass/11 among them), the
   // release check's member.
-  assert.equal(current.codePass.pass, ONE_BOUND_VERSIONS.pass.after);
+  assert.equal(current.codePass.pass, LISTED_ASKS_VERSIONS.pass.after);
   assert.deepEqual(profileBeforeOneReading(current), { challenge: { version: CITED_WHOLE_VERSIONS.challenge.before },
     codePass: { ...beforeMerge, repairUnchecked: REPAIR_MERGE_UNCHECKED.before, snapshot: 'sonah.code-snapshot/10',
       pass: REFUSED_AFTER_EDIT_VERSIONS.pass.before } });
@@ -394,16 +413,44 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(profileBeforeTriage(current), triageBack);
   assert.deepEqual(current.codePass.triage, JSON.parse(JSON.stringify({ levels: ['high', 'medium', 'low'],
     limits: { entries: 120, impactChars: 200, actionChars: 160, labelChars: 48, labelWords: 6, files: 200, fileChars: 100 },
-    errors: ledger.TRIAGE_ERRORS, table: ONE_ITEM_VERSIONS.table.after, kinds: ITEM_KIND_TABLE })));
+    errors: ledger.TRIAGE_ERRORS, table: TIER_REVERT_VERSIONS.table.after, kinds: ITEM_KIND_TABLE })));
+  // D122 (d) (0.3.0-beta.5, the dogfood rerun's relative names) moved the item errors alone (`path_ambiguous`, last):
+  // rendered back (`profileBeforeRelativePlace`, which every older render-back applies first), D122 (b)'s.
+  const placeBack = profileBeforeRelativePlace(current);
+  assert.deepEqual([current.codePass.itemErrors.at(-1), placeBack.codePass.itemErrors],
+    [RELATIVE_PLACE_ITEM_ERROR, current.codePass.itemErrors.slice(0, -1)]);
+  assert.deepEqual({ ...placeBack, codePass: { ...placeBack.codePass, itemErrors: undefined } },
+    { ...current, codePass: { ...current.codePass, itemErrors: undefined } });
+  // D122 (b) (0.3.0-beta.5, the integration) moved the tier table alone (`sonah.tiers/3`: every kind without
+  // `refusedReadTier`): rendered back (`profileBeforeTierRevert`, which every older render-back applies first), D114's:
+  // the table at /2, `failure_passed_over` Good to know for a refused read and every other kind null, nothing else moved.
+  const tierBack = profileBeforeTierRevert(current);
+  assert.equal(tierBack.codePass.triage.table, TIER_REVERT_VERSIONS.table.before);
+  assert.deepEqual(Object.fromEntries(Object.entries(tierBack.codePass.triage.kinds).filter(([, k]) => k.refusedReadTier
+    !== null).map(([kind, k]) => [kind, k.refusedReadTier])), { failure_passed_over: 'good_to_know' });
+  assert.ok(Object.values(tierBack.codePass.triage.kinds).every((k) => Object.hasOwn(k, 'refusedReadTier')));
+  assert.deepEqual({ ...tierBack, codePass: { ...tierBack.codePass, triage: undefined } },
+    { ...placeBack, codePass: { ...placeBack.codePass, triage: undefined } });
+  assert.deepEqual(TIER_REVERT_VERSIONS.table.before, ONE_ITEM_VERSIONS.table.after);
   // E1-F8 (D112) moved the tier table's kinds alone (`refusedReadTier`; the table's `sonah.tiers/2` is D110's move, the
   // same one): rendered back (`profileBeforeOneItem`, which every older render-back applies first), D111's: the table at
   // D110's version, every kind without the field.
   assert.deepEqual(ONE_ITEM_VERSIONS.table, PREMISE_VERSIONS.tiers);
+  // D113 and D114 (0.3.0-beta.5) moved the snapshot, pass, verify and account versions alone: rendered back
+  // (`profileBeforeSessionChange`, which applies `profileBeforeListedAsks` first, and which every older render-back
+  // applies first), D112's.
+  const sessionBack = profileBeforeSessionChange(current);
+  assert.deepEqual(sessionBack, { ...tierBack, codePass: { ...tierBack.codePass,
+    snapshot: SESSION_CHANGE_VERSIONS.snapshot.before, pass: LISTED_ASKS_VERSIONS.pass.before,
+    verify: LISTED_ASKS_VERSIONS.verify.before, account: { ...tierBack.codePass.account,
+      version: LISTED_ASKS_VERSIONS.account.before } } });
+  assert.deepEqual(profileBeforeListedAsks(current), { ...sessionBack, codePass: { ...sessionBack.codePass,
+    snapshot: SESSION_CHANGE_VERSIONS.snapshot.after } });
   const oneItemBack = profileBeforeOneItem(current);
   assert.equal(oneItemBack.codePass.triage.table, PREMISE_VERSIONS.tiers.after);
   assert.deepEqual(Object.values(oneItemBack.codePass.triage.kinds).filter((k) => Object.hasOwn(k, 'refusedReadTier')), []);
   assert.deepEqual({ ...oneItemBack, codePass: { ...oneItemBack.codePass, triage: undefined } },
-    { ...current, codePass: { ...current.codePass, triage: undefined } });
+    { ...sessionBack, codePass: { ...sessionBack.codePass, triage: undefined } });
   // The cleanup moved the challenge version, and of the code-pass member its pass and verify versions, the row outcomes,
   // the withheld items and the limits that named what held: rendered back (`profileBeforeCleanup`, which renders the
   // triage back first), a file changed since the session, shown's.
@@ -586,7 +633,8 @@ test('agentic code step: the review request carries the person\'s words, the pro
   // In order: the person's words, the project files, the change, the changed files whole and the session's reads (D106,
   // on since D108), the dossier, where the agent is.
   const at = (text) => prompt.indexOf(text);
-  const order = ['# What the person asked, in their own words', CODE_TEXT.ask,
+  const order = ['# The person\'s messages, in their own words', CODE_TEXT.ask,
+    '# The person\'s asks, as Sonah\'s review of the session lists them: the only asks',
     '# The project\'s instruction files the session loaded', blobs.rules, '.claude/skills/tidy/SKILL.md', skill.trim(),
     '# The change', '## Files (1)', '|      |    2 | + |   const parts = input.split(",");',
     '# The changed files whole, as they are now', '# The lines of unchanged tracked files the session read',
@@ -600,6 +648,9 @@ test('agentic code step: the review request carries the person\'s words, the pro
   // The dossier: the ask shown done asks its delivery to be checked in the code (`ask_done`).
   const ask = dossierItems(prompt).find((item) => item.kind === 'ask');
   assert.deepEqual([ask.key, ask.move, ask.status], [ASK, 'ask_done', 'done']);
+  // D114: the asks block lists the dossier's asks, each by its key and its words, and nothing else.
+  assert.deepEqual(askedItems(prompt), dossierItems(prompt).filter((item) => item.kind === 'ask')
+    .map((item) => ({ key: item.key, asked: item.asked })));
   // A file the change does not touch, and that the session did not read, is not in the request (the agent reads it
   // itself).
   assert.ok(!prompt.includes(CODE_FILES['src/util.js'].split('\n')[2]));
@@ -1666,8 +1717,14 @@ test('agentic code step: a finding\'s checking agent sees the finding, the chang
   const shown = verifiedFinding(verify.prompt);
   assert.deepEqual(Object.keys(shown), ['kind', 'title', 'claims', 'input', 'trace', 'anchor']);
   assert.deepEqual(shown.claims, [{ claim: 1, text: 'First supporting claim.' }, { claim: 2, text: 'Second.' }]);
-  for (const hidden of ['{"key":"S', CLAIM_QUOTE, 'leadsFrom', '"lens"', 'Sonah\'s review of the session'])
+  for (const hidden of [CLAIM_QUOTE, 'leadsFrom', '"lens"', 'Sonah\'s review of the session (the dossier)'])
     assert.ok(!verify.prompt.includes(hidden), hidden);
+  // D114: no dossier line; the person's asks as the session review lists them, in the person's words, as the review
+  // agent was shown them.
+  assert.deepEqual(dossierItems(verify.prompt), []);
+  const review = seen.find((r) => r.label === 'code-review:agent');
+  assert.deepEqual(askedItems(verify.prompt), askedItems(review.prompt));
+  assert.ok(askedItems(verify.prompt).length > 0 && askedItems(verify.prompt).every((a) => typeof a.asked === 'string'));
   // The batch checker: a question about the agent's claim shows the item by its kind and key alone.
   const batch = seen.find((r) => r.label === 'code-verify:batch');
   assert.equal(batch.system, CODE_BATCH_VERIFY_SYSTEM);

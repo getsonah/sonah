@@ -31,10 +31,10 @@ import { NARRATIVE_SHORTFALL, TRANSPORT_SHORTFALL, WINDOW_FAILURE_CODES,
   windowIncompleteReasons } from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILES, isStandardProfile, requestBoundOf, reviewSpeedProfile } from '../../evidence/src/review-profiles.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
-import { markSourceChanged, runCodePass, withCodePass } from '../../evidence/src/code-pass.js';
+import { markSourceChanged, placesHolding, runCodePass, withCodePass } from '../../evidence/src/code-pass.js';
 import { withAskCodeLinks } from '../../evidence/src/ask-code-links.js';
 import { memoizeJudge } from './answer-cache.js';
-import { createRepositoryReader, repositoryState } from './code-snapshot.js';
+import { changeState, createRepositoryReader, repositoryState } from './code-snapshot.js';
 import { RATE_LIMIT_STATUSES, RATE_LIMIT_TYPES, RATE_LIMIT_WINDOWS, REVIEW_CANCELLED,
   withTransportRetry } from './review-judge.js';
 
@@ -496,21 +496,30 @@ function codeStepPlace(snapshot) {
   const root = ran && typeof snapshot.dir === 'string' ? snapshot.dir : null;
   const top = ran && typeof snapshot.top === 'string' && typeof snapshot.realRoot === 'string'
     && snapshot.top !== snapshot.realRoot ? snapshot.top : null;
-  return { ran, root, top, base: snapshot?.base ?? null, gate: typeof snapshot?.gate === 'string' ? snapshot.gate : null };
+  // D117: the folders the agents read beside the working directory (code-snapshot.js `agentFolders`), when the snapshot
+  // found them; else the repository's top folder when it is another, as before. Its review: and the working directory's
+  // real path, so a place of the change in it is said to be read there.
+  return { ran, root, top, base: snapshot?.base ?? null, gate: typeof snapshot?.gate === 'string' ? snapshot.gate : null,
+    ...(ran && Array.isArray(snapshot.folders) ? { folders: snapshot.folders } : {}),
+    ...(ran && typeof snapshot.realRoot === 'string' ? { realRoot: snapshot.realRoot } : {}) };
 }
 /** The repository reader the code step's grounding reads through, made from the snapshot (code-snapshot.js
- *  `createRepositoryReader`), each file at most `bound` bytes; none when the step does not run. */
+ *  `createRepositoryReader`), each file at most `bound` bytes; none when the step does not run. D117: it reads the
+ *  change's other places too, those that hold a file of the change (code-pass.js `placesHolding`: the places the agents
+ *  read and the state covers), and names each file of the change as the change does. */
 function codeStepReader(snapshot, bound) {
   const place = codeStepPlace(snapshot);
+  const files = Array.isArray(snapshot.files) ? snapshot.files : [];
   return place.ran && place.root ? createRepositoryReader({ root: place.root, top: snapshot.top,
-    commit: typeof place.base?.commit === 'string' ? place.base.commit : null, maxBytes: bound }) : null;
+    commit: typeof place.base?.commit === 'string' ? place.base.commit : null, maxBytes: bound,
+    places: placesHolding(place.base, files), files }) : null;
 }
 
 /**
  * D87 (owner decisions 2026-10-13/14): the code pass over a finished session review, after `reviewSession` returned its
  * report; the agentic code step since code-pass/7 (D90). `snapshot` is the frozen snapshot (code-snapshot.js
- * `readCodeSnapshot`: `{ root, dir, top, realRoot, base, files, repoState }`); with no root the pass does not run (`ran:
- * false`), and with a `gate` (`code_step_backend`: the review's backend is not claude-cli) it does not run and says
+ * `readCodeSnapshot`: `{ root, dir, top, realRoot, base, files, outsideFiles, repoState }`); with no root the pass does
+ * not run (`ran: false`), and with a `gate` (`code_step_backend`: the review's backend is not claude-cli) it does not run and says
  * why. `repo` is the repository reader its grounding reads through (code-snapshot.js `createRepositoryReader`, made
  * here from the snapshot when none is given). Its calls go through the same bounded, retrying transport as the
  * session's (`boundedJudge`, at the session request bound of `speedProfile` and `backend`) and through its own D60
@@ -537,17 +546,22 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
   const reader = repo ?? codeStepReader(snapshot, bound);
   const release = await store.lock();
   try {
+    // D113 amended: the files outside the evaluated session too (`outsideFiles`), which the code review is given apart.
     const result = await runCodePass({ report, session, snapshot: Array.isArray(snapshot?.files) ? snapshot.files : [],
-      repo: reader, bound, judge: memo, ...place });
+      outsideSnapshot: Array.isArray(snapshot?.outsideFiles) ? snapshot.outsideFiles : [], repo: reader, bound,
+      judge: memo, ...place });
     if (signal?.aborted === true) throw failure(REVIEW_INTERRUPTED);
     let { codePass } = result;
     // The repository's state after the step's last request, against its state before the first (code-snapshot.js).
     if (codePass.ran === true && typeof snapshot?.repoState === 'string') {
       let after = null;
       try {
-        after = await (stateNow ?? (() => repositoryState({ top: snapshot.top, commit: place.base?.commit ?? null,
-          omit: Array.isArray(snapshot.stateOmits) ? snapshot.stateOmits : [],
-          root: typeof snapshot.realRoot === 'string' ? snapshot.realRoot : null })))();
+        // D117: the state of every place the step read (code-snapshot.js `changeState`), as the snapshot took it; a
+        // snapshot made by hand with no such fact, its repository's state, as before.
+        after = await (stateNow ?? (() => (typeof snapshot.repository === 'boolean' ? changeState(snapshot)
+          : repositoryState({ top: snapshot.top, commit: place.base?.commit ?? null,
+            omit: Array.isArray(snapshot.stateOmits) ? snapshot.stateOmits : [],
+            root: typeof snapshot.realRoot === 'string' ? snapshot.realRoot : null }))))();
       } catch { after = null; }
       if (after !== snapshot.repoState) codePass = markSourceChanged(codePass);
     }
@@ -585,7 +599,8 @@ export async function dryRunReplay({ session, answerCache, snapshot, backend, mo
     const { name: speed } = reviewSpeedProfile(speedProfile);
     const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
     // The same request a review would send first: the same reader, so the same project and skill files.
-    await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [], bound,
+    await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [],
+      outsideSnapshot: Array.isArray(snapshot.outsideFiles) ? snapshot.outsideFiles : [], bound,
       repo: codeStepReader(snapshot, bound), ...codeStepPlace(snapshot),
       judge: async (request) => {
         codeRequests.push({ label: request.label, bytes: Buffer.byteLength(request.system ?? '', 'utf8')

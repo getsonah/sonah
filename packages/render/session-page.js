@@ -25,8 +25,9 @@
 //   4. Fold, never drop: every row of the review is placed once (report-model.js `reportPlacement`); a fold's summary
 //      carries its count.
 
-import { visible, backtickPieces } from './session-story.js';
-import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS } from './report-model.js';
+import { visible, backtickPieces, noFilesWords } from './session-story.js';
+import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
+import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, askStatusWord } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS,
@@ -67,8 +68,17 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  and the code review's coverage line by its own coverage (D111's second review), as the report model gives it. And (E1-F8, D112: one
  *  point, one item): an item shows its members after its own lines — the line that counts them, then each member's type
  *  word, what it is, its own tier word and its lines, folded when the report model folds it — and the items of a section
- *  come in the report model's order (by final level, then kind). */
-export const PAGE_VERSION = 'sonah.session-page/43';
+ *  come in the report model's order (by final level, then kind). /44 (D113, 0.3.0-beta.5; /43 shipped in 0.3.0-beta.4):
+ *  What Sonah could not check says, as the report model gives it, that the change holds only the files that the
+ *  session's recorded writes could have changed, names the files that changed outside those writes, and says a change
+ *  with no file to review by the session's own writes. In the same move (D115, the owner: "for the hn5, start work
+ *  now"): the session review's rows in words no wider than the field each rests on (an ask tied only to the agent's
+ *  words, the end-of-recording fact, an ask of a helper's brief named so, never one Sonah could not read), and
+ *  (D116) a question's pointer to an item or an ask only where code checked its tie, as the report model gives them.
+ *  And (D125, the owner: "Let's fix 1st"; amended the same day, "go for option 3"): an ask that the session review left
+ *  not checked and that the code review found to hold in the code keeps "Not checked", with the note the report model
+ *  gives its row; the mark's word by the model's one map (`askStatusWord`). */
+export const PAGE_VERSION = 'sonah.session-page/44';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -99,6 +109,8 @@ export function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 const esc = escapeHtml;
+/** Where a sentence of Sonah's names a recorded path: a character no word table holds. */
+const SLOT = '\uE000';
 /** A recorded or review-written text, escaped, each balanced single-backtick span a `<code>` element (session-story.js
  *  `backtickPieces`), as the Markdown report shows it as a code span. */
 const codeHtml = (text) => backtickPieces(text).map((p) => (p.code ? `<code>${esc(p.text)}</code>` : esc(p.text))).join('');
@@ -136,16 +148,22 @@ function headerHtml(model) {
   const out = [];
   // Your words, each recorded span a quote of its own; a join and the cut are outside the quotation marks.
   if (header.title) out.push(`<p class="title-words">${partsHtml(header.title.parts)}</p>`);
+  // D118 (a): no code reviewed, first after your words (the first screen); the folder last, as code.
+  if (header.noCode) out.push(`<p class="meta no-code">${[esc(header.noCode.words),
+    ...(header.noCode.impact ? [esc(header.noCode.impact)] : []),
+    ...(header.noCode.folder ? [esc(CODE_REPORT_WORDS.notReviewedFolder(SLOT)).split(SLOT)
+      .join(`<code>${esc(header.noCode.folder)}</code>`)] : [])].join(' ')}</p>`);
   if (header.noLinks.length) out.push(`<p class="meta no-links">${header.noLinks.map(esc).join(' ')}</p>`);
   if (header.runs.length) out.push(`<p class="meta runs">${header.runs.map(esc).join(' ')}</p>`);
   const notChecked = [...header.reviewIncomplete.map(esc)];
   if (header.didNotCheck) notChecked.push(`${esc(header.didNotCheck.lead)} ${header.didNotCheck.phrases.map(esc).join(' · ')}`
     + `${header.didNotCheck.more ? ` <a href="#not-checked">${esc(header.didNotCheck.more)}</a>` : ''}`);
   if (notChecked.length) out.push(`<p class="meta not-checked">${notChecked.join(' ')}</p>`);
-  if (header.noCode) out.push(`<p class="meta no-code">${header.noCode.map(esc).join(' ')}</p>`);
   const tiers = countLine.tiers.map((t) => `<a href="#${t.tier.replace(/_/g, '-')}">${esc(REPORT_COUNT_WORDS.tier(t.words, t.n))}`
     + `${t.folded ? ` ${esc(REPORT_COUNT_WORDS.folded)}` : ''}</a>`).join(' · ');
   out.push(`<p class="count">${tiers} · <a href="#prompt">${esc(countLine.prompt)}</a></p>`);
+  // D113 amended: how many items are about code outside the evaluated session.
+  if (countLine.outside) out.push(`<p class="count-outside">${esc(countLine.outside)}</p>`);
   if (countLine.empty) out.push(`<p class="count-empty">${esc(countLine.empty)}</p>`);
   else if (countLine.labels.length) out.push(`<p class="count-labels">${esc(REPORT_COUNT_WORDS.mustActLead)} `
     + `${countLine.labels.map((l) => `<a href="#item-${l.n}">${partsHtml(l.parts)}</a>`).join(' · ')}`
@@ -170,8 +188,8 @@ function segmentsHtml(segments, room, ids) {
     if (seg.join) { out.push(`<span class="join">${esc(text)}</span>`); continue; }
     if (!seg.ask) { out.push(seg.sonah ? `<span class="note">${esc(text)}</span>` : codeHtml(text)); continue; }
     const id = seg.first && !ids.has(seg.ask) ? (ids.add(seg.ask), ` id="ask-${seg.ask}"`) : '';
-    const status = REPORT_PROMPT_WORDS.status[{ done: 'done', doneCode: 'done', partly: 'partly', notDone: 'notDone',
-      notChecked: 'notChecked', notCheckedCode: 'notChecked' }[seg.state]];
+    // The status word of the ask's state, by the report model's one map (`askStatusWord`).
+    const status = askStatusWord(seg.state);
     out.push(`<mark class="ask s-${esc(seg.state)}"${id}>${seg.first ? `<span class="tag">${esc(status)}</span>` : ''}`
       + `${codeHtml(text)}</mark>`);
   }
@@ -298,8 +316,9 @@ function membersHtml(item, trimmed) {
 }
 /** The visible lines of an item (D97), in order, then its evidence fold, then its members (D112). */
 function itemBody(item, trimmed) {
-  const scope = item.scope.notAsked ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.notAsked)}</span>`
-    : item.scope.askedUnknown ? ` <span class="scope">${esc(REPORT_ITEM_WORDS.askedUnknown)}</span>` : '';
+  // D113 amended: the model's one marker (`scopeMarker`), an item outside the evaluated session's among them.
+  const marker = scopeMarker(item.scope).trim();
+  const scope = marker ? ` <span class="scope">${esc(marker)}</span>` : '';
   return { head: `<span class="n">${item.n}</span> <strong class="type">${esc(REPORT_TYPE_WORDS[item.type])}:</strong> `
     + `${partsHtml(item.what.parts)}${scope}`, body: linesHtml(item, trimmed) + membersHtml(item, trimmed) };
 }
@@ -336,7 +355,8 @@ function didHtml(model, factor) {
   const note = factor < 1 ? `<p class="cut">${esc(REPORT_TRIM_WORDS.listsTrimmed)}</p>` : '';
   // Files.
   let room = cap(REPORT_LIMITS.files, factor);
-  const fileLine = (f) => `<li><code>${esc(f.path)}</code> · ${esc(f.type)}${f.counts ? ` · <span class="mono">${esc(f.counts)}</span>`
+  const fileLine = (f) => `<li><code>${esc(f.path)}</code>${f.type ? ` · ${esc(f.type)}` : ''}${f.counts
+    ? ` · <span class="mono">${esc(f.counts)}</span>`
     : ''}${f.state ? ` · ${esc(f.state)}` : ''}${f.what ? ` · ${partsHtml(f.what)}` : ''}${gitHubLink(f.link)}`
     + `${f.items.map((n) => ` <a href="#item-${n}">→ item ${n}</a>`).join('')}</li>`;
   let shownFiles = 0;
@@ -349,14 +369,22 @@ function didHtml(model, factor) {
     return rows.length ? `${heading}<ul class="files">${rows.map(fileLine).join('')}</ul>` : '';
   }).join('');
   const filesMore = did.files.total - shownFiles;
+  const away = did.files.outsideSession;
   const files = `<h3 class="sub-h">${esc(REPORT_SECTION_WORDS.files)}</h3>`
     + (did.files.grouped ? `<p class="note">${esc(REPORT_DID_WORDS.filesByAsk)}</p>` : '')
-    + (did.files.total ? groups : `<p class="note">${esc(REPORT_DID_WORDS.noFiles)}</p>`)
+    + (did.files.total ? groups : `<p class="note">${esc(noFilesWords(did))}</p>`)
     + (filesMore > 0 ? `<p class="cut">${esc(REPORT_DID_WORDS.moreFiles(filesMore))}</p>` : '')
     // D109 (its review): with the code step's one tally, the writes it counts and that are no file of the change.
     + (did.files.outside ? `<p class="note">${esc((did.files.outside.notInChange ? REPORT_DID_WORDS.notInChange
       : REPORT_DID_WORDS.outside)(did.files.outside.n, did.files.outside.paths.join(', '), did.files.outside.more))}</p>` : '')
-    + (did.files.unconfirmed ? `<p class="note">${esc(REPORT_DID_WORDS.unconfirmed(did.files.unconfirmed))}</p>` : '');
+    // D118 (b): the paths the recording does not resolve, apart, each as code.
+    + (did.files.unresolved ? `<p class="note">${esc(REPORT_DID_WORDS.unresolved(did.files.unresolved.n, SLOT,
+      did.files.unresolved.more)).split(SLOT).join(did.files.unresolved.paths.map((p) => `<code>${esc(p)}</code>`)
+      .join(', '))}</p>` : '')
+    + (did.files.unconfirmed ? `<p class="note">${esc(REPORT_DID_WORDS.unconfirmed(did.files.unconfirmed))}</p>` : '')
+    // D113 amended: the files outside the evaluated session, apart, each tagged.
+    + (away ? `<p class="note">${esc(away.lead)}</p><ul class="files">${away.files.map(fileLine).join('')}</ul>`
+      + (away.more > 0 ? `<p class="cut">${esc(REPORT_DID_WORDS.moreFiles(away.more))}</p>` : '') : '');
   // Runs.
   const runsShown = did.runs.shown.slice(0, cap(did.runs.shown.length, factor));
   const runsCut = did.runs.shown.length - runsShown.length;
@@ -400,7 +428,8 @@ function didHtml(model, factor) {
       + partHtml(x.youSaid) : ''}${seenHtml(x.seen)}</li>`).join('') + `</ul>${more(did.settled.length - settledShown.length)}`
     : `<p class="note">${esc(REPORT_DID_WORDS.noSettled)}</p>`);
   return `<details class="card-ui part fold-part" id="did"><summary class="card-bar"><h2>${esc(REPORT_SECTION_WORDS
-    .didCounted(did.files.total, did.runs.commands, did.runs.others, did.claims.total))}</h2></summary><div class="content">${note}`
+    .didCounted(did.files.none === 'unseen' ? null : did.files.total, did.runs.commands, did.runs.others,
+      did.claims.total))}</h2></summary><div class="content">${note}`
     + files + runs + claims + leftOut + settled + '</div></details>';
 }
 
@@ -416,7 +445,8 @@ function notCheckedHtml(model, factor) {
     + nc.code.map((line) => `<p class="note">${partsHtml(line)}</p>`).join('') : '';
   const withheldHtml = nc.withheldTotal ? `<details class="fold"><summary>${esc(REPORT_SECTION_WORDS.withheld(nc.withheldTotal))}`
     + `</summary><ul class="rows">${withheld.map((w) => `<li>${w.what ? `<span class="label">${esc(w.what)}</span> ` : ''}`
-      + `${partsHtml(w.words)}${w.why ? ` · ${esc(w.why)}` : ''}${w.check ? ` · <span class="label">${esc(REPORT_NOT_CHECKED_WORDS
+      + `${partsHtml(w.words)}${w.outside ? ` · ${esc(w.outside)}` : ''}${w.why ? ` · ${esc(w.why)}` : ''}`
+      + `${w.check ? ` · <span class="label">${esc(REPORT_NOT_CHECKED_WORDS
         .checkSaid)}</span> ${partsHtml(w.check)}` : ''}</li>`).join('')}</ul>`
     + (nc.withheldTotal > withheld.length ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS.rowsNotShown(nc.withheldTotal
       - withheld.length))}</p>` : '') + '</details>' : '';

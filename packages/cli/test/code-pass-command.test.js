@@ -5,7 +5,7 @@
 // Synthetic sessions, synthetic files and a deterministic fake reviewer: no recording, no model, no network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CODE_PASS_NO_ROOT, CODE_STEP_BACKEND_LINE, codeSnapshotLine, codeStepLine, parseSessionReviewArgs,
@@ -14,8 +14,8 @@ import { createRepositoryReader, readCodeSnapshot } from '../src/code-snapshot.j
 import { reviewCodePass } from '../src/session-review.js';
 import { Session } from '../../evidence/src/session.js';
 import { estimateLine, CODE_STEP_ESTIMATE_MINUTES } from '../src/review-budget.js';
-import { CODE_FILES, FAKE_KEY, PARSE_QUOTE, codeSession, codeJudge, gitRepoWith, repoWith, reviewFinding, sha256 }
-  from './code-pass-fixture.js';
+import { CODE_FILES, CODE_TEXT, FAKE_KEY, PARSE_QUOTE, buildCodeSession, codeSession, codeJudge, gitRepoWith, repoWith,
+  reviewFinding, sha256 } from './code-pass-fixture.js';
 
 // F3b (D111): the accounting's calls are the code step's too.
 const CODE_LABEL = /^code-(?:review|verify|account)(?::|$)/;
@@ -24,13 +24,17 @@ const strip = (report) => {
   return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
 };
 
-/** One `sonah review` run on the synthetic session, its files under `root`, its state under `state`. */
+/** One `sonah review` run on the synthetic session, its files under `root`, its state under `state`; `cwd`, the
+ *  working directory the recording names, or a function of the run's home folder that gives it; `home`, a folder that
+ *  is there to be the run's home folder, else a new one named `homeName`. */
 async function review(t, { root, state = null, argv = [], judge = codeJudge(), session = codeSession(), cwd = root,
-  format = 'md', runCode = undefined } = {}) {
+  format = 'md', runCode = undefined, home: given = null, homeName = 'home' } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'sonah-code-pass-run-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const home = join(dir, 'home'), file = join(dir, 'recording.jsonl');
-  await mkdir(home); await writeFile(file, '{}\n');
+  const home = given ?? join(dir, homeName), file = join(dir, 'recording.jsonl');
+  if (typeof cwd === 'function') cwd = cwd(home);
+  if (given === null) await mkdir(home);
+  await writeFile(file, '{}\n');
   const env = { HOME: home, SONAH_HOME: join(home, '.sonah'), CODEX_HOME: join(home, 'codex'),
     SONAH_CLAUDE_PROJECTS: join(home, 'claude-projects') };
   const output = join(dir, format === 'html' ? 'page.html' : 'story.md');
@@ -49,9 +53,11 @@ async function review(t, { root, state = null, argv = [], judge = codeJudge(), s
       return judge(request);
     } });
   const written = await readFile(output, 'utf8').catch(() => null);
+  // D97: with --format html, the Markdown report beside the page.
+  const besideMd = format === 'html' ? await readFile(join(dir, 'page.md'), 'utf8').catch(() => null) : null;
   const report = JSON.parse(await readFile(join(state ?? join(dir, 'state'), 'review', 'report.private.json'), 'utf8')
     .catch(() => 'null'));
-  return { code, out, err, calls, written, report };
+  return { code, out, err, calls, written, besideMd, report, home };
 }
 
 test('D87 --code-pass and --no-code-pass: each parses once, never both, is listed, and leaves every other option as it was',
@@ -90,7 +96,8 @@ test('D87: the session part is byte-identical with the code step on and off — 
   assert.equal(off.calls.filter((r) => CODE_LABEL.test(r.label)).length, 0, 'with --no-code-pass the step asks nothing');
   const all = (calls) => calls.map((r) => JSON.stringify([r.label, r.system, r.prompt])).sort();
   assert.deepEqual(all(byDefault.calls), all(on.calls), 'no flag sends what --code-pass sends');
-  assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole repository \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  // D117's review: no git repository holds this working directory, so the line names the working directory.
+  assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
   // F3b (D111) and its review: the accounting's calls, counted by the items in scope, each kind named (never every claim
   // and decision).
   assert.match(byDefault.out, /check call for each finding\. It adds one more call for each 30 items, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\. /m);
@@ -117,7 +124,10 @@ test('D87: the session part is byte-identical with the code step on and off — 
   assert.match(on.out, /^Must act: ask 1 · src\/parse\.js:2 \(item 2\)$/m);
   assert.doesNotMatch(off.out, /src\/parse\.js:2/);
   assert.doesNotMatch(off.out, /code review (covered|did|had)/);
-  assert.equal(off.out.match(/code review/gi).length, 1, 'off: only the line that says so');
+  // D118 (a): off, the first screen says no code was reviewed and why, right after the run state; on, it does not.
+  assert.match(off.out, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\.\nNo code was reviewed\. Reason: this review ran without the code review\. The items show no impact and no action\.$/m);
+  assert.doesNotMatch(on.out, /No code was reviewed/);
+  assert.equal(off.out.match(/code review/gi).length, 2, 'off: only the line that says so, and the no-code line');
 });
 
 /** FAKE secrets in a file the review agent reads and the session only read: a key of a known shape, and a value only its
@@ -246,7 +256,7 @@ test('D87: a dry run reads the change, sends nothing, and the estimate includes 
   const { code, out, calls } = await review(t, { root, argv: ['--dry-run', '--code-pass'] });
   assert.equal(code, 0);
   assert.deepEqual(calls, []);
-  assert.match(out, /^Code review: the change holds 1 path that the session changed or that git shows as different\. Sonah can read 1 of them now\. Sonah could not read from git where the session started, so the change is the edits that the session recorded\. The code review can read any file of the repository\.$/m);
+  assert.match(out, /^Code review: the change holds 1 path that a recorded write could have changed or that changed during the session\. Sonah can read 1 of them now\. Sonah could not read from git where the session started, so the change is the edits that the session recorded\. The code review can read any file of the working directory\.$/m);
   assert.match(out, /^A review should take roughly [^\n]*\nCode review: on \(--code-pass\)\. It reviews the change/m);
   assert.match(plain.out, /^A review should take roughly [^\n]*\nCode review: off \(--no-code-pass\)\. /m);
   assert.notEqual(out.match(/A review should take roughly [^\n]*/)[0], plain.out.match(/A review should take roughly [^\n]*/)[0]);
@@ -288,6 +298,47 @@ test('D87: with no working directory to read under, the pass is not run, says so
   assert.equal(report.codePass.ran, false);
   assert.match(out, /code review did not run/);
   assert.equal(codeSnapshotLine({ root: false, files: [] }), CODE_PASS_NO_ROOT);
+});
+
+test('D118 (a), amended (the owner, 2026-10-19: "yes, folder name only"): the report .md names the folder Sonah looked in '
+  + 'by its name alone, never the home folder\'s path or the user name in it; the page and the terminal name the path',
+async (t) => {
+  // The recording names a working directory under the home folder that is not there now: no code was reviewed
+  // (`no_folder`), and the first screen names the folder the code step looked in.
+  const USER = 'jdoe-synthetic';
+  const at = (home) => join(home, 'code', 'gone-app');
+  for (const format of ['md', 'html']) {
+    const run = await review(t, { root: null, cwd: at, format, homeName: USER });
+    const folder = at(run.home);
+    const md = format === 'html' ? run.besideMd : run.written;
+    assert.equal(run.report.codePass.ran, false, format);
+    assert.match(md, /No code was reviewed\. Reason: Sonah could not read a working directory of the session on this /);
+    assert.ok(md.includes('Folder: `gone-app`'), `${format}: the .md names the folder by its name`);
+    for (const part of [folder, run.home, USER]) assert.ok(!md.includes(part), `${format}: the .md never holds ${part}`);
+    assert.ok(run.out.includes(`Folder: ${folder}`), `${format}: the terminal names the path`);
+    if (format === 'html') assert.ok(run.written.includes(`<code>${folder}</code>`), 'the page names the path');
+  }
+  // The home folder itself, as the environment spells it and as the disk resolves it (a harness records the working
+  // directory's real path): its name is the user name, so the .md says `~`. A session that wrote nothing, run in the
+  // home folder: the code step looked there and reviewed no code (`no_write`).
+  const session = buildCodeSession('sess-no-write', CODE_TEXT, [
+    { id: 'I1', kind: 'instruction', blob: 'ask', turn: 'T1' },
+    { id: 'R1', kind: 'invocation', read: 'src/util.js', blob: 'readUtil', turn: 'T1' },
+    { id: 'R1-r', kind: 'observation', invocation: 'R1', blob: 'readOut', turn: 'T1' },
+    { id: 'C2', kind: 'commentary', blob: 'final', phase: 'final', turn: 'T1' }]);
+  const real = await mkdtemp(join(tmpdir(), 'sonah-code-pass-home-'));
+  t.after(() => rm(real, { recursive: true, force: true }));
+  await mkdir(join(real, USER));
+  await symlink(join(real, USER), join(real, 'link'));
+  const realHome = await realpath(join(real, USER));
+  for (const [home, cwd] of [[join(real, USER), join(real, USER)], [join(real, 'link'), realHome]]) {
+    const run = await review(t, { root: null, cwd, home, session });
+    assert.equal(run.report.codePass.ran, true, home);
+    assert.match(run.written, /No code was reviewed\. Reason: the recording shows no write of the session /, home);
+    assert.ok(run.written.includes('Folder: `~`'), `${home}: the .md names the home folder itself as ~`);
+    for (const part of [home, cwd, USER]) assert.ok(!run.written.includes(part), `${home}: the .md holds ${part}`);
+    assert.ok(run.out.includes(`Folder: ${cwd}`), `${home}: the terminal names the path`);
+  }
 });
 
 test('D90 reader: any file of the repository is read — .env and a .claude folder too; outside the top folder, nothing', async (t) => {

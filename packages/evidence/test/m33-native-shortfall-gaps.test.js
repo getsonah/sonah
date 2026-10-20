@@ -102,9 +102,12 @@ test('C-02 native-first: a completed review names each shortfall with its count'
   const causes = Object.fromEntries(coverageCauses(report));
   assert.equal(causes.command_outcome_unknown.n, 3);
   assert.equal(causes.write_outcome_unknown.n, 2);
-  // The inventory shortfall (5) alone: the generic declaration is not made beside it (M33 refreeze).
-  assert.equal(causes.incomplete_inventory.n, 5, JSON.stringify(causes.incomplete_inventory));
+  // The inventory shortfall (5) alone: the generic declaration is not made beside it (M33 refreeze). D119: by its own
+  // cause, in its own unit (calls), never summed with other kinds.
+  assert.equal(causes.native_calls_unaccounted.n, 5, JSON.stringify(causes.native_calls_unaccounted));
+  assert.equal(causes.incomplete_inventory, undefined);
   const header = causeLine(report);
+  assert.match(header, /Sonah could not match 5 calls that the agent's code cells made to a recorded command, file change or tool item/);
   assert.match(header, /Sonah could not read the exit status of 3 commands/);
   assert.match(header, /Sonah could not read whether 2 writes succeeded/);
 });

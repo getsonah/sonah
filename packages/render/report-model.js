@@ -23,24 +23,26 @@ import { honestStatuses, resultOutcome, actionOutcome, DECISION_COLUMNS, REQUIRE
   LEGACY_REQUIREMENT_STATUSES, FAILURE_HANDLINGS, PROMISE_STATUSES, WRITTEN_LABELS, CONTRADICTION_SOURCES,
   CONTRADICTION_ROLES, OWN_WRITTEN_SOURCE, REPORT_TIERS, REPORT_ITEM_KINDS, TRIAGE_LEVELS, PART_REASONS,
   windowRecordComplete, TRIAGE_ERRORS, STOPPED_OUTCOME_FORMS, PROVED_NO_END_FORM, NO_RESULT_OUTCOME_FORM,
-  nestedReceipts, writesNothing, REPORT_GROUP_TIES, REPORT_TIER_SOURCES }
+  REPORT_GROUP_TIES, REPORT_TIER_SOURCES, CODE_ACCOUNT_ASK_SOURCES, CODE_NOT_REVIEWED_REASONS }
   from '../evidence/src/ledger.js';
 import { boundTier, itemKindOf, PERMISSION_DENIALS, ITEM_KIND_TABLE } from '../evidence/src/triage.js';
 import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, uncappedCauses, COVERAGE_SENTENCE,
-  checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS }
+  checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS, askCodeHoldsNote }
   from '../evidence/src/review.js';
 import { seenInPartOf, SEEN_IN_PART_SOURCES } from '../evidence/src/seen-in-part.js';
 import { requirementRowId, failureRowId } from '../evidence/src/checklist.js';
 import { statusUncovered } from '../evidence/src/status-fact.js';
+import { askSourceOf } from '../evidence/src/code-context.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, findingConfirmed, premiseConfirms,
-  premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally }
-  from '../evidence/src/code-pass.js';
+  premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
+  placesOf } from '../evidence/src/code-pass.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound, findingClaims, withheldWhy,
   codeNoFindingLine, codeStepWithheld, codeUnseenFiles, codeUnseenReadByChecks, codeQuestionsLine, codeBaseLine,
-  codeHowLine }
+  codeHowLine, codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, CODE_REPORT_LIMITS,
+  codePlaceLines, codeWritesLines }
   from '../evidence/src/code-report.js';
 import { storyFacts, visible, oneLine, clip, lineWord, durationWord, failedCommandText, disclosedEdit, locateQuote,
-  overlapping, withoutLeadingCd } from './session-story.js';
+  overlapping, withoutLeadingCd, readableRequirement } from './session-story.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HEADER_WORDS, REPORT_RESULT_PARTS,
   REPORT_NOT_CHECKED_PARTS, REPORT_COUNT_WORDS, REPORT_PROMPT_PARTS, REPORT_ITEM_WORDS, REPORT_WHAT_WORDS,
   REPORT_CONTRADICTION_SOURCES, REPORT_DISCLOSURE_WORDS, REPORT_KIND_LABELS, REPORT_TIER_WHY, REPORT_KIND_WORDS,
@@ -73,9 +75,26 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  one item, led by the longer quote: each joined row is a member of the item (`members`, placed `memberOf`), with its
  *  own lines and its own tier, folded when that tier is below the item's or when it repeats the lead; the item takes the
  *  higher of its rows' tiers (`tier.from`, `own`). Inside each section the items are ordered by final level (high,
- *  medium, low, then none), then by kind as before. A failure that the agent passed over defaults to Good to know when
- *  its call is a refused read by the recorder's types (triage.js `sonah.tiers/2`). */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/4';
+ *  medium, low, then none), then by kind as before. (A failure that the agent passed over defaulted to Good to know
+ *  when its call was a refused read, until D122 (b) removed that default in 0.3.0-beta.5: triage.js `sonah.tiers/3`.)
+ *  /5 (D113, 0.3.0-beta.5; /4 shipped in
+ *  0.3.0-beta.4): the code review's notes say that the change holds only the files that the session's recorded writes
+ *  could have changed, name the files that changed outside those writes (Sonah did not review them), and say a change
+ *  with no file to review by the session's own writes (evidence code-report.js `codeBaseLine`,
+ *  `codeChangedOutsideLine`, `codeCoverageLines`). In the same move (D115, the owner: "for the hn5, start work
+ *  now"): a sentence about a row of the session review claims no more than the field it rests on — an ask the
+ *  session review tied only to the agent's words is said and counted by one predicate (`citesOnlyAgentWords`), an
+ *  ask that Sonah lists under no message of yours is said by whose words it rests on (`briefAsks`, evidence
+ *  code-context.js `askSourceOf`), never as one Sonah could not read; and (D116) a question of the code review names
+ *  the item or ask its `concerns` key names (its Where line, its related items, the line beside the ask) only where
+ *  code checked the tie: the question's own place overlaps that row's (`concernsTied`, D112 amended's
+ *  `placesOverlap`); and (D116's review) only there does it lift the tier of the item that holds that row (D96 R6,
+ *  `questionTiedTo`), so no tier sentence names a question that names no such item. And (D125, the owner: "Let's fix
+ *  1st"; amended the same day, "go for option 3"): an ask that the session review left not checked, and that the code
+ *  review's item-by-item check recorded as holding in the code (evidence review.js `askCodeHoldsNote`), keeps "Not
+ *  checked" and every count as before; after the session review's reason its row says the code review's verdict, where
+ *  Sonah found each quote of it, and that Sonah did not check it (REPORT_PROMPT_WORDS `codeHolds`, `codeHoldsUnchecked`). */
+export const REPORT_MODEL_VERSION = 'sonah.report-model/5';
 
 /**
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
@@ -87,7 +106,7 @@ export const REPORT_MODEL_VERSION = 'sonah.report-model/4';
 export const REPORT_LIMITS = Object.freeze({ quoteChars: 120, askPrefixWords: 12, messageChars: 300, excerptLines: 8,
   excerptLineChars: 160, permalinkLines: 8, where: 3, runs: 40, claims: 50, files: 200, mustActLabels: 3, titleChars: 80,
   questionChars: TRACE_LIMITS.questionChars, commandChars: 80, wordsChars: 160, notCheckedPhrases: 4, closingLines: 200, withheld: 100,
-  unreadIds: 20, labelWords: 6 });
+  unreadIds: 20, labelWords: 6, folderChars: 300 });
 
 // ---- small helpers ------------------------------------------------------------------------------------------------
 
@@ -100,9 +119,34 @@ const [ADDRESSED, PARTLY_ADDRESSED, OPEN] = LEGACY_REQUIREMENT_STATUSES;
 const [ACTED_ON, TOLD_HUMAN, PASSED_OVER, FAILURE_NOT_CHECKED] = FAILURE_HANDLINGS;
 const [, PROMISE_VERIFIED, PROMISE_INCOMPLETE] = PROMISE_STATUSES;
 const [, WRITTEN_CONTRADICTED] = WRITTEN_LABELS;
+const [, ASKED_IN_BRIEF] = CODE_ACCOUNT_ASK_SOURCES;
 const CODE_REVIEW = 'code-review';
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+/** D118 (a): the reasons no code was reviewed for which the code step looked in no folder (it was off, or needs another
+ *  backend): the header names no folder beside them. */
+const NOT_LOOKED = Object.freeze(CODE_NOT_REVIEWED_REASONS.slice(0, 2));
+/** D123 and D124's review: the closed reasons of no write that Sonah can read beside shell commands, with or without a
+ *  repository given with --code-repo; the Files section says the same of both (`files.none`). */
+const UNSEEN_WRITES = Object.freeze(['no_seen_write', 'no_seen_write_given']);
+/** How a reader for a pull request names the home folder itself (`folderNameOf`): its name is the user name. */
+export const HOME_FOLDER_NAME = '~';
+/**
+ * D118 (a), amended by the owner's decision of 2026-10-19 ("yes, folder name only"): the folder the code step looked in,
+ * as the report .md names it (it is meant for a pull request): its name alone, the last segment of `path` (cut at `/`
+ * and at `\`, trailing ones dropped), never the path, so the .md holds neither your home folder's path nor the user name
+ * in it. The home folder itself (any of `homes`, its spellings) is `HOME_FOLDER_NAME`, since its name is the user name.
+ * Null when `path` is not a text or names no folder by a name (the root). The page and the terminal, which stay on your
+ * computer, name the path. Pure: the same inputs give the same name on every platform.
+ */
+export function folderNameOf(path, homes = []) {
+  if (typeof path !== 'string') return null;
+  const bare = (spelling) => spelling.replace(/[\\/]+$/, '');
+  const folder = bare(path);
+  if (folder && (Array.isArray(homes) ? homes : []).some((home) => typeof home === 'string' && bare(home) === folder))
+    return HOME_FOLDER_NAME;
+  return folder.split(/[\\/]/).pop() || null;
+}
 
 /** A text part: Sonah's own words unless `by` says whose (the session review's or the code review's words, which a
  *  reader sets apart), and whether it is code, a verbatim quote (`quote`, with `cut` when the report clipped it) or a
@@ -298,6 +342,10 @@ const REPO_WIDE_NO_LINK = Object.freeze(['remote', 'unpushed']);
 /** A place's permalink (`permalinkOf`), noting a reason that holds for the whole repository in `ctx.noLinks` (by side,
  *  for a commit not on GitHub). */
 function linkOf(ctx, location) {
+  // D117: a file of another repository or folder the session wrote to (its record names its `place`) lies outside the
+  // repository the links point into: no link, and no reason that speaks of that repository's commits.
+  if (plain(location) && list(ctx.codePass?.files).some((f) => plain(f) && f.path === location.path
+    && typeof f.place === 'string')) return { url: null, reason: null };
   const link = permalinkOf(ctx.options, location);
   if (!link.url && REPO_WIDE_NO_LINK.includes(link.reason))
     ctx.noLinks.add(link.reason === 'unpushed' ? `unpushed:${location?.side === 'old' ? 'old' : 'new'}` : link.reason);
@@ -308,9 +356,11 @@ const noLinkWords = (reason) => (reason === 'uncommitted' ? REPORT_ITEM_WORDS.no
 
 // ---- code excerpts -------------------------------------------------------------------------------------------------
 
-/** The file's hash on a side, from the change's list of files, or null. */
+/** The file's hash on a side, from the change's list of files (D113 amended: or the list of the files outside the
+ *  evaluated session, as `codeReceiptFound` reads them), or null. */
 function fileSha(report, path, side) {
-  const file = list(report?.codePass?.files).find((f) => plain(f) && f.path === path);
+  const file = [...list(report?.codePass?.files), ...list(report?.codePass?.outsideFiles)]
+    .find((f) => plain(f) && f.path === path);
   const sha = side === 'old' ? file?.baseSha256 : file?.sha256;
   return typeof sha === 'string' ? sha : null;
 }
@@ -396,25 +446,20 @@ export function refusedCall(session, row) {
   return false;
 }
 
-/** E1-F8 (D112): is this failure row's own call a refused read by the recorder's types? Its call (the row's `action`,
- *  else its result's call) has the result class `did-not-run` (ledger.js `actionOutcome`: a typed denial other than a
- *  stop, `user-rejected` included, unlike `refusedCall`'s ceiling), and its tool writes nothing by type (ledger.js
- *  `writesNothing`: the slicer's read kind, or a command the recorder typed as only reading, searching or listing). A
- *  call the session does not hold is none. Recorder fields only: no command text and no word is read. */
-export function refusedRead(session, row) {
-  if (!plain(row) || typeof row.eventId !== 'string' || !FAILURE_HANDLINGS.includes(row.handling)) return false;
-  const result = session?.event?.(row.eventId);
-  const id = typeof row.action === 'string' ? row.action : result?.invocation;
-  const call = typeof id === 'string' ? session?.event?.(id) : null;
-  if (!writesNothing(call)) return false;
-  try { return actionOutcome(session, call).class === 'did-not-run'; } catch { return false; }
-}
-
 // ---- your prompt (D97) -------------------------------------------------------------------------------------
 
 const DONE_STATUSES = Object.freeze([DONE, ADDRESSED]);
 const PARTLY_STATUSES = Object.freeze([PARTLY_DONE, PARTLY_ADDRESSED]);
 const NOT_DONE_STATUSES = Object.freeze([NOT_DONE, OPEN]);
+/**
+ * D115: whether the session review cited only the agent's words as what does an ask: the deliverable of its checked row
+ * (checklist.js `checkedRequirement` grounds it in the kind of text that it names) is the agent's message (role
+ * `commentary`). The one predicate of the prompt table's line and the header's count (REPORT_PROMPT_WORDS.agentOnly,
+ * REPORT_NOT_CHECKED_PARTS.agentOnly): it reads the row, so their words name only what the row cites, never what the
+ * recording holds. Pure.
+ */
+const citesOnlyAgentWords = (checked) => plain(checked) && plain(checked.deliverable)
+  && checked.deliverable.role === 'commentary';
 /** An ask's place on the count line (D93 split); its links read against the report (D110's review: `askRowKind`). */
 function askState(req, report) {
   const code = askRowKind(req, report) === 'asksCodeFinding';
@@ -425,6 +470,9 @@ function askState(req, report) {
 }
 const STATE_WORD = Object.freeze({ done: 'done', doneCode: 'done', partly: 'partly', notDone: 'notDone',
   notChecked: 'notChecked', notCheckedCode: 'notChecked' });
+/** An ask's status word by its state (`askState`): the prompt table's and the page's mark of the ask, by one map. */
+export const askStatusWord = (state) => (Object.hasOwn(STATE_WORD, state) ? REPORT_PROMPT_WORDS.status[STATE_WORD[state]]
+  : undefined);
 const PROMPT_PART_ORDER = Object.freeze(['done', 'doneCode', 'partly', 'notDone', 'notChecked', 'notCheckedCode']);
 
 /**
@@ -499,8 +547,11 @@ function promptAsks(session, report, facts) {
  * - `version`: `REPORT_MODEL_VERSION`.
  * - `header`: `title` (`{ text, parts, quoted, cut }` or null: your words as quote parts, the joins and the cut outside
  *   them; a caller's title as one plain part; `text` the plain text, for a page's `<title>`), `size` (the size line's
- *   parts), `runs` (line C's sentences), `reviewIncomplete` (sentences), `didNotCheck` (`{ lead, phrases, more }` or
- *   null), `noCode` (line E's sentences, or null when the code step ran).
+ *   parts), `changeFiles` (D118 c: the size line's count of files, the Files section's `did.files.total`; 0 when the
+ *   size line names no files), `runs` (line C's sentences), `reviewIncomplete` (sentences), `didNotCheck` (`{ lead,
+ *   phrases, more }` or null), `noCode` (D118 (a): `{ reason, words, folder, impact }` — the reason no code was reviewed, of ledger.js
+ *   CODE_NOT_REVIEWED_REASONS, the owner's sentence with it, the folder the code step looked in or null, and the items'
+ *   line with no code step that ran, or null — or null when code was reviewed).
  * - `countLine`: `tiers` (`[{ tier, words, n, folded }]`), `prompt` (its text), `labels` (`[{ n, parts }]`, the first
  *   Must act items' labels), `more` (Must act items past them), `empty` (the fixed pair, or null), `counts` (by tier).
  * - `prompt`: `asks` (`[{ n, message, state, status, words (Parts), quoted, located, item, lines (Part lists),
@@ -516,7 +567,9 @@ function promptAsks(session, report, facts) {
  *   asks }, evidence (`[{ label, parts }]`, folded), why (its tier's sentence), rowId, answer ({ words, reason } or
  *   null), rows ([{ source, index }], the primary row first) }`.
  * - `did`: `files` (`{ groups: [{ ask, files: [{ path, type, counts, state, what, asks, link, items }] }], grouped,
- *   total, shown, more, outside: { n, paths, more, notInChange } | null, unconfirmed }`; `notInChange`: the code step's
+ *   total, shown, more, outside: { n, paths, more, notInChange } | null, unresolved: { n, paths, more } | null (D118 b: the
+ *   paths the recording does not resolve), unconfirmed, none }`; `none` (D123): with no file, which sentence says so (one of
+ *   REPORT_NO_FILES_KINDS), else null; `notInChange`: the code step's
  *   writes that are no file of its change, D109), `runs` (`{ shown: [{ k, text, tool, afterEdit, outcome, handling,
  *   item, failureIndex }], total, commands, others, quietExit0, cut, cutParts, neverRan, cutRuns }`: `commands` the
  *   runs that are commands, as the header counts them; `others` the calls of other tools a failure row answers for), `claims` (`{ shown: [{ anchor,
@@ -626,7 +679,8 @@ function triageOf(report) {
 }
 /** The rows of the report a published finding of the code review follows from (`leadsFrom`) or one of its questions
  *  concerns (`concerns`), by `source:index`, each with the finding's or question's own row keys (`codePass.findings:i`,
- *  `codePass.questions:i`): structure only (D96 amended, 2026-10-16). */
+ *  `codePass.questions:i`): structure only (D96 amended, 2026-10-16). These are the keys as the code review wrote them;
+ *  the tier tie keeps a question's only where code checked it (`placeItems`, D116's review). */
 function codeTiedRows(report) {
   const tied = new Map();
   const add = (ref, by) => {
@@ -844,37 +898,22 @@ function candidatesOf(ctx) {
 const sameReceipt = (a, b) => plain(a) && plain(b) && a.role === b.role && a.eventId === b.eventId
   && typeof a.quote === 'string' && a.quote === b.quote;
 
-/** The items: one per candidate with a kind, its tier bounded, grouped (E1-F8, D112: `groupItems`), ordered (D97; by
- *  final level first since D112) and numbered across the three tiers. A row folded into another follows its target's
- *  chain to the item that holds it. */
+/** The items: one per candidate with a kind, its tier bounded, grouped (E1-F8, D112: `joinItems`, `rankItems`), ordered
+ *  (D97; by final level first since D112) and numbered across the three tiers. A row folded into another follows its
+ *  target's chain to the item that holds it. */
 function placeItems(ctx, candidates) {
   const byKey = new Map(candidates.map((c) => [c.key, c]));
   const items = [];
-  const readOf = (c) => c.kind === 'failure_passed_over' && refusedRead(ctx.session, c.row);
   const bounds = (c, entry, tied) => boundTier(c.kind, entry?.level ?? null, { refused: refusedCall(ctx.session, c.row),
-    unchecked: c.kind === 'code_question' && !plain(c.row.check), tied, refusedRead: readOf(c) });
+    unchecked: c.kind === 'code_question' && !plain(c.row.check), tied });
   for (const c of candidates) {
     if (c.kind === null || c.foldInto) continue;
     const entry = ctx.triage.get(triageKeyOf(c, c.row)) ?? null;
     items.push({ kind: c.kind, type: ITEM_TYPES[c.kind], tier: bounds(c, entry, false), tied: false, tiedBy: null,
       triage: entry, primary: c, rows: [{ source: c.source, index: c.index }], folded: [], members: [], memberOf: null,
-      tie: null, refusedRead: readOf(c) });
+      tie: null });
   }
   const itemOf = new Map(items.map((item) => [item.primary.key, item]));
-  // Tied (D96 amended, R6): a published finding of the code review follows from this row, or one of its questions
-  // concerns it, and that item is in the report. The tie lifts the row's item at most to the tier of the item that
-  // ties it, never above it: only when the tying item's own tier is at least the kind's tied tier. The tying items'
-  // own tiers never rest on a tie (their kinds have none), so one pass reads them.
-  for (const item of items) {
-    const tiedTier = ITEM_KIND_TABLE[item.kind].tiedTier;
-    if (tiedTier === null) continue;
-    const by = list(ctx.codeTied.get(item.primary.key)).map((key) => itemOf.get(key)).filter(Boolean)
-      .sort((a, b) => TIER_RANK[b.tier.final] - TIER_RANK[a.tier.final]);
-    if (!by.length || TIER_RANK[by[0].tier.final] < TIER_RANK[tiedTier]) continue;
-    item.tier = bounds(item.primary, item.triage, true);
-    item.tied = true;
-    item.tiedBy = by[0];
-  }
   const holder = (c, seen = new Set()) => {
     if (!c.foldInto || seen.has(c.key)) return itemOf.get(c.key) ?? null;
     seen.add(c.key);
@@ -887,7 +926,28 @@ function placeItems(ctx, candidates) {
     if (item) { item.rows.push({ source: c.source, index: c.index }); item.folded.push(c); c.heldBy = item; }
     else { c.place = c.source === 'requirements' ? { ask: ctx.askOfRow.get(c.index)?.n ?? null } : { list: 'claims' }; }
   }
-  const placed = groupItems(items, ctx.session);
+  // D112: which item holds which row (the folds above, then the joins), before any tier rests on a tie: a question's tie
+  // is checked against the place of the item that holds the row it names (D116's review).
+  joinItems(items, ctx.session);
+  // Tied (D96 amended, R6): a published finding of the code review follows from this row, or one of its questions
+  // concerns it where code checked that tie (D116's review: `questionTiedTo`, the rule of every pointer the report
+  // prints from a question's `concerns` key; a question that names no place ties nothing), and that item is in the
+  // report. The tie lifts the row's item at most to the tier of the item that ties it, never above it: only when the
+  // tying item's own tier is at least the kind's tied tier. The tying items' own tiers never rest on a tie (their kinds
+  // have none), so one pass reads them.
+  const checkedTie = (item, by) => by.primary.source !== 'codePass.questions'
+    || questionTiedTo(ctx.session, by.primary.row, item.memberOf ?? item, null);
+  for (const item of items) {
+    const tiedTier = ITEM_KIND_TABLE[item.kind].tiedTier;
+    if (tiedTier === null) continue;
+    const by = list(ctx.codeTied.get(item.primary.key)).map((key) => itemOf.get(key))
+      .filter((x) => x && checkedTie(item, x)).sort((a, b) => TIER_RANK[b.tier.final] - TIER_RANK[a.tier.final]);
+    if (!by.length || TIER_RANK[by[0].tier.final] < TIER_RANK[tiedTier]) continue;
+    item.tier = bounds(item.primary, item.triage, true);
+    item.tied = true;
+    item.tiedBy = by[0];
+  }
+  const placed = rankItems(items);
   for (const item of items) item.scope = scopeOf(ctx, item);
   const firstAsk = (item) => (item.scope.asks.length ? Math.min(...item.scope.asks) : Infinity);
   // D112 (3): inside each section, by final level first (`levelOf`: high, medium, low, then none), then as before.
@@ -899,13 +959,11 @@ function placeItems(ctx, candidates) {
   return numbered;
 }
 
-const [CONCERNS_TIE, NESTED_TIE] = REPORT_GROUP_TIES;
+const [CONCERNS_TIE] = REPORT_GROUP_TIES;
 const [FROM_LEAD, FROM_MEMBER] = REPORT_TIER_SOURCES;
 /** A question that the code review wrote itself (code-pass.js publishes `from: 'review'`; `'finding'` is a finding its
  *  check found not against your goal, whose `concerns` no quote checked). */
 const FROM_REVIEW = 'review';
-/** A decision's stated quote, or null. */
-const statedQuote = (item) => (typeof item.primary.row.stated?.quote === 'string' ? item.primary.row.stated.quote : null);
 /** A proposal's rank for the order: the level's tier (high, medium, low), else none, last. */
 const PROPOSED_RANK = Object.freeze({ [MUST_ACT]: 0, [MUST_KNOW]: 1, [GOOD_TO_KNOW]: 2 });
 const proposedRank = (tier) => (tier.proposed === null ? REPORT_TIERS.length : PROPOSED_RANK[tier.proposed]);
@@ -964,61 +1022,96 @@ function placesOverlap(a, b) {
   return a.files.some((x) => b.files.some((y) => x.path === y.path && (x.lines === null || y.lines === null
     || (x.side === y.side && x.lines[0] <= y.lines[1] && y.lines[0] <= x.lines[1]))));
 }
-/** An item's place: its lead's rows and those folded into it, and its nested members' (D112 amended). */
+/** An item's place: its lead's rows and those folded into it (D112 amended). */
 const itemPlaceOf = (session, item) => {
   const place = { events: new Set(), files: [] };
-  for (const one of [item, ...item.members.filter((m) => m.tie === NESTED_TIE)])
-    for (const c of [one.primary, ...one.folded]) {
-      const own = placeOf(session, c.row);
-      for (const id of own.events) place.events.add(id);
-      place.files.push(...own.files);
-    }
+  for (const c of [item.primary, ...item.folded]) {
+    const own = placeOf(session, c.row);
+    for (const id of own.events) place.events.add(id);
+    place.files.push(...own.files);
+  }
   return place;
 };
+/**
+ * D116 (the owner: "for the hn5, start work now"): whether code checked the tie of a question of the code review to the
+ * row `source`/`index` of the report: the question's own place (`placeOf`: the events, files and lines that its receipt
+ * or its anchor names) overlaps the place of the item that holds that row (`itemPlaceOf`), or, for a row that no item
+ * holds, that row's own place — D112 amended's rule, the one that joins a question to an item. Reads `ctx.items` and
+ * `ctx.itemOfRow`. Pure. The tier tie reads the same rule (`questionTiedTo`) before the items are numbered (D116's
+ * review), so no pointer and no tier sentence of the report part on one tie.
+ */
+function questionTied(ctx, q, source, index) {
+  if (!plain(q) || typeof source !== 'string' || !Number.isSafeInteger(index)) return false;
+  const n = ctx.itemOfRow.get(rowKey(source, index)) ?? null;
+  const holder = n === null ? null : list(ctx.items).find((item) => item.n === n) ?? null;
+  // A row no item holds is a session review's row (a code step's row that no item holds names no place: fail closed).
+  const row = holder || source.startsWith('codePass.') ? null : list(ctx.report[source])[index];
+  return questionTiedTo(ctx.session, q, holder, row);
+}
+/** D116: the place test itself: the question `q`'s own place overlaps the place of `holder` (the item that holds the row
+ *  it names: its lead's rows and those folded into it, `itemPlaceOf`), or, with no holder, the
+ *  place of `row`. One rule for every pointer and for the tier tie. Pure. */
+const questionTiedTo = (session, q, holder, row) => plain(q)
+  && placesOverlap(placeOf(session, q), holder ? itemPlaceOf(session, holder) : placeOf(session, row));
+/**
+ * D116: the item and the ask of your prompt that a question of the code review names by its `concerns` key, each only
+ * where code checked the tie (`questionTied`). The key is the code review's word for what the question is about; every
+ * pointer the report prints from it (the question's Where line, its related items, the line beside the ask) stands only
+ * where that tie holds. `{ item, ask }`, each a number or null. Pure.
+ */
+function concernsTied(ctx, q) {
+  const none = { item: null, ask: null };
+  const concerns = plain(q) && plain(q.concerns) && typeof q.concerns.source === 'string'
+    && Number.isSafeInteger(q.concerns.index) ? q.concerns : null;
+  if (!concerns || !questionTied(ctx, q, concerns.source, concerns.index)) return none;
+  const n = ctx.itemOfRow.get(rowKey(concerns.source, concerns.index)) ?? null;
+  if (n !== null) return { item: n, ask: null };
+  return { item: null, ask: concerns.source === 'requirements' ? ctx.askOfRow.get(concerns.index)?.n ?? null : null };
+}
+/** D116: the notes beside the ask row `row` (review.js `askCodeNotes`) that the report prints: a question's
+ *  (`question_concerns`, read from the question's `concerns` key) only where code checked the question's tie to this
+ *  row (`questionTied`); every other note as it is. Pure. */
+const tiedAskNotes = (ctx, notes, row) => notes.filter((note) => note.link !== 'question_concerns'
+  || questionTied(ctx, list(ctx.report.codePass?.questions)[note.question], 'requirements',
+    list(ctx.report.requirements).indexOf(row)));
 
 /**
- * E1-F8 (D112, owner 2026-10-17: "One point, one item"): the items that lead, each with the rows a checked tie joins to
- * it as its `members` (ledger.js REPORT_GROUP_TIES). Structure only, never a word:
- *   nested    two decisions whose stated receipts nest (ledger.js `nestedReceipts`, D102's one shared key: the same
- *             event, one quote holding the other) are one item. The decision with the longer quote leads (the earlier
- *             row on a tie); each decision joins the first lead, in that order, whose quote holds its own, so a member's
- *             quote always lies inside its lead's.
+ * E1-F8 (D112, owner 2026-10-17: "One point, one item"): sets the items that lead, each with the rows a checked tie
+ * joins to it as its `members` (ledger.js REPORT_GROUP_TIES). Structure only, never a word:
  *   concerns  a question that the code review wrote (`from: 'review'`; the code step grounded its quote in the words of
- *             the row it concerns before it published it) joins the item that holds that row, the lead's or a
- *             member's — D112 amended (2026-10-18): only when the question's own place (the events, files and lines
+ *             the row it concerns before it published it) joins the item that holds that row — D112 amended
+ *             (2026-10-18): only when the question's own place (the events, files and lines
  *             its receipt or anchor names: `placeOf`) overlaps the item's place (`itemPlaceOf`, `placesOverlap`). The
  *             row its `concerns` names is the code review's word for what it is about; a place both name is a fact of
  *             the recording. A question whose quote the code step found only in the words the session review wrote of
  *             the row (`quote` null) names no place, and stays its own item. A question on an ask stays its own item,
  *             as before (your prompt shows its line); so does a question routed from a finding, and one whose row no
  *             item holds.
- * A finding never joins anything, and no D97 fold moves. The item takes the higher of its rows' tiers: the lead's own
- * (`own`), or a member's when that is higher (`tier.from` `member`), so no row of an item sits below the tier it has
- * alone — a question's own tier among them — and no member is lifted: each keeps its own tier, shown folded when that
- * tier is below the item's or when it repeats its lead (`nested`). Returns the leads; every member carries `memberOf`
- * and `tie`.
+ * D112 amended (owner, 2026-10-18): two decisions whose stated quotes nest (two decisions cut from one sentence) are no
+ * longer joined; each is an item of its own.
+ * A finding never joins anything, and no D97 fold moves. Every member carries `memberOf` and `tie`. Structure only: no
+ * tier is read, so the tier tie can read which item holds a row (D116's review); `rankItems` then sets the tiers.
  */
-function groupItems(items, session = null) {
+function joinItems(items, session = null) {
   const join = (into, item, tie) => { item.memberOf = into; item.tie = tie; into.members.push(item); };
-  const decisions = items.filter((item) => item.primary.source === 'decisions' && statedQuote(item) !== null)
-    .sort((a, b) => statedQuote(b).length - statedQuote(a).length || a.primary.index - b.primary.index);
-  const leads = [];
-  for (const d of decisions) {
-    const into = leads.find((lead) => nestedReceipts(lead.primary.row.stated, d.primary.row.stated));
-    if (into) join(into, d, NESTED_TIE); else leads.push(d);
-  }
   const holderOf = new Map();
-  for (const item of items.filter((x) => !x.memberOf))
-    for (const one of [item, ...item.members]) for (const ref of one.rows) holderOf.set(rowKey(ref.source, ref.index), item);
+  for (const item of items) for (const ref of item.rows) holderOf.set(rowKey(ref.source, ref.index), item);
   for (const item of items) {
     const concerns = item.primary.row.concerns;
     if (item.kind !== 'code_question' || item.primary.row.from !== FROM_REVIEW || !plain(concerns)
       || typeof concerns.source !== 'string' || concerns.source === 'requirements' || !Number.isSafeInteger(concerns.index))
       continue;
     const into = holderOf.get(rowKey(concerns.source, concerns.index));
-    if (into && into !== item && placesOverlap(placeOf(session, item.primary.row), itemPlaceOf(session, into)))
-      join(into, item, CONCERNS_TIE);
+    if (into && into !== item && questionTiedTo(session, item.primary.row, into, null)) join(into, item, CONCERNS_TIE);
   }
+}
+/**
+ * E1-F8 (D112): the tiers of the items `joinItems` grouped. The item takes the higher of its rows' tiers: the lead's own
+ * (`own`), or a member's when that is higher (`tier.from` `member`), so no row of an item sits below the tier it has
+ * alone — a question's own tier among them — and no member is lifted: each keeps its own tier, shown folded when that
+ * tier is below the item's. Returns the leads.
+ */
+function rankItems(items) {
   const placed = items.filter((item) => !item.memberOf);
   for (const item of placed) {
     item.own = item.tier;
@@ -1031,7 +1124,7 @@ function groupItems(items, session = null) {
     item.tier = { ...setter.tier, from: setter === item ? FROM_LEAD : FROM_MEMBER };
     item.setter = setter;
     for (const member of item.members)
-      member.foldedMember = member.tie === NESTED_TIE || TIER_RANK[member.tier.final] < TIER_RANK[item.tier.final];
+      member.foldedMember = TIER_RANK[member.tier.final] < TIER_RANK[item.tier.final];
   }
   return placed;
 }
@@ -1060,7 +1153,12 @@ function scopeOf(ctx, item) {
           asks.add(ask.n);
     }
   }
-  return { asks: [...asks].sort((a, b) => a - b), notAsked, askedUnknown, preExisting: false };
+  // D113 amended: a finding of the code review, or a question from one, outside the evaluated session (its record's
+  // `outsideSession`, set by code-pass.js from where it is anchored), tagged in fixed words.
+  const outsideSession = primary.source.startsWith('codePass.') && plain(primary.row)
+    && primary.row.outsideSession === true;
+  return { asks: [...asks].sort((a, b) => a - b), notAsked, askedUnknown, preExisting: false,
+    ...(outsideSession ? { outsideSession: true } : {}) };
 }
 
 // ---- one item's fields (D97) ---------------------------------------------------------------------
@@ -1106,7 +1204,7 @@ function finishItem(ctx, item) {
   };
   const sessionFile = (receipt) => (plain(receipt) && ['code', 'action'].includes(receipt.role)
     ? eventPaths(session, receipt.eventId).slice(0, 1).map((path) => locationOf(ctx, { path })) : []);
-  const askNotes = (askRow) => askCodeNotes(ctx.report, askRow).map((note) => {
+  const askNotes = (askRow) => tiedAskNotes(ctx, askCodeNotes(ctx.report, askRow), askRow).map((note) => {
     const subject = typeof note.subject === 'string' && note.subject ? [S(' '), C(words(note.subject))] : [];
     return { label: null, parts: [S(sentence(note.words)), ...subject] };
   });
@@ -1384,16 +1482,12 @@ function finishItem(ctx, item) {
         what = [C(clip(text, REPORT_LIMITS.questionChars))];
         quoteLine = plain(q.quote) ? quoteOf(session, q.quote) : null;
         if (quoteLine) quoteLabel = roleLabel(q.quote);
-        const concerns = plain(q.concerns) && typeof q.concerns.source === 'string' && Number.isSafeInteger(q.concerns.index)
-          ? q.concerns : null;
-        if (concerns) {
-          const target = ctx.itemOfRow.get(rowKey(concerns.source, concerns.index));
-          const askN = concerns.source === 'requirements' ? ctx.askOfRow.get(concerns.index)?.n : null;
-          // D112: a member's row is in its own item, which it never names as a place.
-          if (target && target !== (item.n ?? item.memberOf?.n)) where.push(anchorOf(`item-${target}`,
-            REPORT_ITEM_WORDS.item(target)));
-          else if (!target && askN) where.push(anchorOf(`ask-${askN}`, REPORT_ITEM_WORDS.asked(askN)));
-        }
+        // D116: the item or ask its `concerns` key names, only where code checked the tie (`concernsTied`).
+        const tied = concernsTied(ctx, q);
+        // D112: a member's row is in its own item, which it never names as a place.
+        if (tied.item !== null && tied.item !== (item.n ?? item.memberOf?.n)) where.push(anchorOf(`item-${tied.item}`,
+          REPORT_ITEM_WORDS.item(tied.item)));
+        else if (tied.ask !== null) where.push(anchorOf(`ask-${tied.ask}`, REPORT_ITEM_WORDS.asked(tied.ask)));
       }
       if (plain(q.check) && typeof q.check.explanation === 'string' && q.check.explanation.trim())
         evidence(REPORT_ITEM_WORDS.check, [C(words(q.check.explanation, 300))]);
@@ -1457,10 +1551,9 @@ function finishItem(ctx, item) {
     : own.bound === 'refused_call_ceiling' ? REPORT_TIER_WHY.refused
       : own.proposed === null && item.tied ? (item.tiedBy.memberOf === holding ? REPORT_TIER_WHY.tiedHere(tierWords)
         : REPORT_TIER_WHY.tied(item.tiedBy.n ?? item.tiedBy.memberOf?.n, tierWords))
-        : own.proposed === null && item.refusedRead ? REPORT_TIER_WHY.refusedRead(tierWords)
-          : own.proposed === null ? REPORT_TIER_WHY.byDefault(kindWords, tierWords)
-            : own.bound === null ? REPORT_TIER_WHY.kept(REPORT_LEVEL_WORDS[entry.level])
-              : REPORT_TIER_WHY.bounded(REPORT_LEVEL_WORDS[entry.level], kindWords, REPORT_TIER_WORDS[own.proposed]);
+        : own.proposed === null ? REPORT_TIER_WHY.byDefault(kindWords, tierWords)
+          : own.bound === null ? REPORT_TIER_WHY.kept(REPORT_LEVEL_WORDS[entry.level])
+            : REPORT_TIER_WHY.bounded(REPORT_LEVEL_WORDS[entry.level], kindWords, REPORT_TIER_WORDS[own.proposed]);
   // The code review's label, else the fixed kind label. A fixed label that does not name its item by a number (two
   // findings on one line, two false claims) ends with the item's number, so no two labels read the same (D97). A
   // member has no label: the count line names items.
@@ -1520,11 +1613,15 @@ const exitOf = (session, event) => {
 /** The items and asks an item is joined to by structure: a code finding's other rows, a question's row. */
 function relatedOf(ctx, item) {
   const items = new Set(), asks = new Set(item.scope.asks);
-  const refs = CODE_FINDING_SOURCES.includes(item.primary.source) ? list(item.primary.row.leadsFrom)
-    : item.primary.source === 'codePass.questions' && plain(item.primary.row.concerns) ? [item.primary.row.concerns] : [];
+  const refs = CODE_FINDING_SOURCES.includes(item.primary.source) ? list(item.primary.row.leadsFrom) : [];
   for (const ref of refs.filter(plain)) {
     const n = ctx.itemOfRow.get(rowKey(ref.source, ref.index));
     if (n && n !== item.n) items.add(n);
+  }
+  // D116: a question's row, only where code checked the tie (`concernsTied`).
+  if (item.primary.source === 'codePass.questions') {
+    const n = concernsTied(ctx, item.primary.row).item;
+    if (n !== null && n !== item.n) items.add(n);
   }
   for (const other of ctx.items) {
     if (other === item || !CODE_FINDING_SOURCES.includes(other.primary.source)) continue;
@@ -1551,8 +1648,8 @@ function promptOf(ctx) {
     const checked = plain(req.checked) ? req.checked : null;
     const itemN = ctx.itemOfRow.get(rowKey('requirements', ask.rows[0] ?? -1)) ?? null;
     const lines = [];
-    const notes = checked ? askCodeNotes(report, checked) : [];
-    if ((ask.state === 'done' || ask.state === 'doneCode') && checked?.deliverable?.role === 'commentary')
+    const notes = checked ? tiedAskNotes(ctx, askCodeNotes(report, checked), checked) : [];
+    if ((ask.state === 'done' || ask.state === 'doneCode') && citesOnlyAgentWords(checked))
       lines.push(ONE(REPORT_PROMPT_WORDS.agentOnly));
     if (ask.state === 'doneCode' || ask.state === 'notCheckedCode') {
       const linked = notes.find((note) => plain(note.finding));
@@ -1566,6 +1663,17 @@ function promptOf(ctx) {
       const fact = checked ? list(checked.facts).find((x) => Object.hasOwn(CHECKLIST_REQUIREMENT_FACT_WORDS, x)) : null;
       if (reason) lines.push(ONE(reason));
       else if (fact) lines.push(ONE(CHECKLIST_REQUIREMENT_FACT_WORDS[fact]));
+      // D125 amended (the owner: "go for option 3"): after the session review's reason, the code review's verdict that
+      // the ask holds in the code, where Sonah found each of its quotes (the entry's grounded receipts, each place once,
+      // in its order) and that Sonah did not check it, as one line. The status stays "Not checked".
+      const holds = checked ? askCodeHoldsNote(checked, report) : null;
+      if (holds) {
+        const places = [...new Set(holds.receipts.map((r) => `${r.path}:${r.startLine === r.endLine ? r.startLine
+          : `${r.startLine}-${r.endLine}`}`))];
+        lines.push([S(REPORT_PROMPT_WORDS.codeHolds(places.length)), S(' '),
+          ...places.flatMap((place, at) => [...(at ? [S(at === places.length - 1 ? ' and ' : ', ')] : []), CODE(place)]),
+          S('). '), S(REPORT_PROMPT_WORDS.codeHoldsUnchecked)]);
+      }
     }
     const askCheck = codeCheckLine(report, checked);
     if (askCheck) lines.push(ONE(askCheck));
@@ -1588,7 +1696,7 @@ function promptOf(ctx) {
     }
     // Sonah's own row for a message no row cited (`codeMade`) has no words of anyone's: only its status and reason.
     const askText = checked?.codeMade === true ? [] : req.quoted ? [quoted(req.text)] : [R(words(req.text))];
-    return { n: ask.n, message: ask.message, state: ask.state, status: REPORT_PROMPT_WORDS.status[STATE_WORD[ask.state]],
+    return { n: ask.n, message: ask.message, state: ask.state, status: askStatusWord(ask.state),
       words: askText, quoted: req.quoted === true, located: ask.located.length > 0, item: itemN, lines,
       codeMade: checked?.codeMade === true,
       rowId: checked ? requirementRowId(checked) : null };
@@ -1657,21 +1765,23 @@ function didOf(ctx) {
   // Files. D109 (its review): with the code step's one tally, the files of the change (`ctx.change`): every file the
   // coverage line counts, a recorded write that lies in a folder the code review could read among them; else, with a git
   // base, the change's files whose lines the change block holds; else the recording's own writes.
-  const recordOf = new Map(list(codePass?.files).filter((f) => plain(f) && typeof f.path === 'string')
-    .map((f) => [f.path, f]));
-  const codeFiles = ctx.change ? ctx.change.units.map((u) => recordOf.get(u.path) ?? { path: u.path })
-    : ctx.codeRan && codePass?.base?.kind === 'git'
-      ? list(codePass.files).filter((f) => plain(f) && typeof f.path === 'string' && !CODE_OUTSIDE_STATES.includes(f.state))
-      : null;
+  // D118 (c): the one list the header's size line counts too (`changeListOf`).
+  const changeList = changeListOf(ctx);
+  const codeFiles = changeList.source === CHANGE_FROM_WRITES ? null : changeList.files;
   const storyFile = new Map(facts.whole.files.map((f) => [f.path, f]));
   const askOfRef = (ref) => (plain(ref) && ref.source === 'requirements' ? ctx.askOfRow.get(ref.index)?.n ?? null : null);
   let files;
+  // D117: each other place of the change (the record's `base.places`), and whether a git repository holds it.
+  const inRepository = new Map(list(codePass?.base?.places).filter((p) => plain(p) && typeof p.at === 'string')
+    .map((p) => [p.at, p.kind === 'git' || p.repository === true]));
   if (codeFiles) {
     files = codeFiles.map((f) => {
       const counts = Number.isSafeInteger(f.added) && Number.isSafeInteger(f.removed) ? `+${f.added} −${f.removed}`
         : storyFile.has(f.path) ? lineWord(storyFile.get(f.path).counts) : null;
-      const state = f.state && f.state !== 'shown' && Object.hasOwn(CODE_REPORT_WORDS.states, f.state)
-        ? CODE_REPORT_WORDS.states[f.state] : null;
+      // D117: a file of another place says where it lies, after its own state.
+      const state = [f.state && f.state !== 'shown' && Object.hasOwn(CODE_REPORT_WORDS.states, f.state)
+        ? CODE_REPORT_WORDS.states[f.state] : null, typeof f.place === 'string' && inRepository.has(f.place)
+        ? CODE_REPORT_WORDS.placeOfFile(f.place, inRepository.get(f.place)) : null].filter(Boolean).join(', ') || null;
       const asks = Array.isArray(f.asks) ? [...new Set(f.asks.map(askOfRef).filter(Boolean))] : null;
       // A recorded write the change block does not hold lies outside the change block's repository or files: no link.
       return { path: f.path, type: REPORT_DID_WORDS.fileTypes[f.type] ?? REPORT_DID_WORDS.fileTypes.modified, counts, state,
@@ -1693,12 +1803,52 @@ function didOf(ctx) {
   // The writes outside the files above: with the code step's one tally, those it counts and that are no file of the
   // change (its record's writes outside the change block that the tally does not hold, `notInChange`, the footer's
   // count); else the recording's writes outside its write scope.
+  // D118 (b): never a path the recording does not resolve (the story's `unresolvedPaths`; a code step's record written
+  // before D118 can hold one among its writes outside the change).
+  const unresolvedPaths = [...facts.whole.unresolvedPaths];
+  const unresolvedSet = new Set(unresolvedPaths);
   const tallied = ctx.change ? new Set(ctx.change.units.map((u) => u.path)) : null;
   const outsidePaths = tallied ? [...new Set(list(codePass.files).filter((f) => plain(f) && typeof f.path === 'string'
-    && CODE_OUTSIDE_STATES.includes(f.state) && !tallied.has(f.path)).map((f) => f.path))] : [...facts.whole.outsidePaths];
+    && CODE_OUTSIDE_STATES.includes(f.state) && !tallied.has(f.path) && !unresolvedSet.has(f.path)).map((f) => f.path))]
+    : [...facts.whole.outsidePaths];
   const outsideCut = cutTo(outsidePaths, 3);
   const outside = outsidePaths.length ? { n: outsidePaths.length, paths: outsideCut.shown, more: outsideCut.more,
     notInChange: tallied !== null } : null;
+  // D118 (b): the paths the recording does not resolve, apart from every list above, counted in their own unit.
+  const unresolvedCut = cutTo(unresolvedPaths, 3);
+  const unresolved = unresolvedPaths.length ? { n: unresolvedPaths.length, paths: unresolvedCut.shown,
+    more: unresolvedCut.more } : null;
+  // D113 amended: the files that changed outside this session's recorded writes, listed apart after the files above,
+  // each tagged outside the evaluated session: with the code step's record of them (`codePass.outsideFiles`, when the
+  // code review was given them) their type, lines and state; else their paths alone (evidence code-pass.js
+  // `sessionChangeOf`). The first CODE_REPORT_LIMITS.changedOutsideNames, the others counted, as the code review's note
+  // names them.
+  // D117 (merged with D113 amended): the working directory's, then each other git repository's, in the places' order.
+  const awayPaths = codePass?.ran === true ? [...list(sessionChangeOf(codePass.base).changedOutside),
+    ...placesOf(codePass.base).flatMap((p) => list(p.changedOutside))] : [];
+  const awayRecord = new Map(list(codePass?.outsideFiles).filter((f) => plain(f) && typeof f.path === 'string')
+    .map((f) => [f.path, f]));
+  const awayRows = awayPaths.slice(0, CODE_REPORT_LIMITS.changedOutsideNames).map((path) => {
+    const f = awayRecord.get(path) ?? { path };
+    const state = f.state && f.state !== 'shown' && Object.hasOwn(CODE_REPORT_WORDS.states, f.state)
+      ? CODE_REPORT_WORDS.states[f.state] : null;
+    return { path, type: typeof f.type === 'string' ? REPORT_DID_WORDS.fileTypes[f.type]
+      ?? REPORT_DID_WORDS.fileTypes.modified : null, counts: Number.isSafeInteger(f.added)
+      && Number.isSafeInteger(f.removed) ? `+${f.added} −${f.removed}` : null,
+    state: [state, CODE_REPORT_WORDS.outsideTag].filter(Boolean).join(' · '), what: null, asks: null, link: null,
+    items: itemsOnPath(path) };
+  });
+  const outsideSession = awayPaths.length ? { lead: REPORT_DID_WORDS.outsideSession(awayPaths.length), files: awayRows,
+    more: awayPaths.length - awayRows.length } : null;
+  // D123 (the beta.5 end-to-end smoke): with no file in the list, which sentence says so (REPORT_NO_FILES_KINDS), by the
+  // gate every first screen reads (evidence code-report.js `reportNotReviewedOf`): no write that Sonah can read beside
+  // shell commands (`no_seen_write`; D124's review: or `no_seen_write_given`, the same with a repository given with
+  // --code-repo) says what Sonah does not see, and no count of files; else the working directory
+  // where the code step ran and its record names a base that is not git (no repository holds the working directory), so
+  // never "in the repository" there; else, as before, the repository.
+  const none = files.length ? null : UNSEEN_WRITES.includes(reportNotReviewedOf(report)) ? NO_FILES_UNSEEN
+    : ctx.codeRan && typeof codePass?.base?.kind === 'string' && codePass.base.kind !== 'git' ? NO_FILES_FOLDER
+      : NO_FILES_REPOSITORY;
   // Runs.
   const { runs, showable } = ctx.runs;
   const quietExit0 = runs.filter((run) => !showable.includes(run));
@@ -1770,9 +1920,10 @@ function didOf(ctx) {
   // with no such words is not listed under this heading: a decision whose quote does not ground is its item, in the
   // session review's words (a missing quote is not silence), and an ask not done is in your prompt and its item, by
   // the session review's status.
-  // D112: a decision not to act that is a member of an item is listed too, by the item that holds it.
-  const leftOut = ctx.items.flatMap((item) => [item, ...item.members].filter((x) => x.kind === 'decision_not_acting')
-    .map((x) => ({ item: item.n, quote: quoteOf(session, x.primary.row.stated) }))).filter((x) => x.quote);
+  // D112 amended (its nested join removed; D122): a member of an item is only a question of the code review, so a
+  // decision not to act is always an item of its own, listed by its number.
+  const leftOut = ctx.items.filter((item) => item.kind === 'decision_not_acting')
+    .map((item) => ({ item: item.n, quote: quoteOf(session, item.primary.row.stated) })).filter((x) => x.quote);
   // Decisions you settled.
   const settled = list(report.decisions).map((d, index) => ({ d, index }))
     .filter(({ d }) => plain(d) && d.notActing !== true && derivedColumn(d) === SETTLED)
@@ -1785,7 +1936,8 @@ function didOf(ctx) {
       seen: seenOf(ctx, [{ source: 'decisions', row: d }]) }));
   return {
     files: { groups, grouped, total: files.length, shown: Math.min(files.length, shownFiles),
-      more: Math.max(0, files.length - shownFiles), outside, unconfirmed: facts.whole.unconfirmed.length },
+      more: Math.max(0, files.length - shownFiles), outside, unresolved, unconfirmed: facts.whole.unconfirmed.length,
+      outsideSession, none },
     runs: { shown: shown.map(runLine), total: runs.length, commands: runs.filter((run) => run.command).length,
       others: runs.filter((run) => !run.command).length, quietExit0: quietExit0.length, cut: cut.length, cutParts,
       neverRan, cutRuns: cut.map((run) => run.k) },
@@ -1918,9 +2070,22 @@ function notCheckedOf(ctx) {
     if (questionsLine) code.push(ONE(questionsLine));
     const baseLine = codeBaseLine(codePass);
     if (baseLine) code.push(ONE(baseLine));
+    // D113: the files that changed outside this session's recorded writes, named: no part of the change.
+    const outsideLine = codeChangedOutsideLine(codePass);
+    if (outsideLine) code.push(ONE(sentence(outsideLine)));
+    // D117: where the change runs from in each other repository or folder the session wrote to, and the files there
+    // that changed outside this session's recorded writes.
+    for (const line of codePlaceLines(codePass)) code.push(ONE(sentence(line)));
+    // D117 amended: the folders in no repository the session wrote to (listed, not reviewed), its writes not resolved
+    // (counted apart), and, when it ran a shell command, that such edits can be missing.
+    for (const line of codeWritesLines(codePass)) code.push(ONE(sentence(line)));
+    // D113 amended: what the code review saw of the files outside the evaluated session, when it was given them.
+    const outsideSeen = codeOutsideSeenLine(codePass);
+    if (outsideSeen) code.push(ONE(outsideSeen));
     for (const line of codeCoverageLines(codePass)) code.push(ONE(sentence(line)));
     // With no finding published as confirmed: whether the review proposed none, or where the ones it proposed are.
-    if (codePass.ran === true && !codePassFindings(report).length)
+    // D113's review: none with no change to review (`codeNoChangeOf`): no code-review call ran to propose anything.
+    if (codePass.ran === true && codeNoChangeOf(codePass) === null && !codePassFindings(report).length)
       code.push(ONE(sentence(codeNoFindingLine(codePass, codeStepWithheld(report), codePassQuestions(report),
         codePassUnconfirmed(report)))));
   }
@@ -1929,7 +2094,9 @@ function notCheckedOf(ctx) {
   for (const line of codeFooterLines(report, { session })) fact('code', ONE(sentence(line)));
   const withheld = codePassWithheld(report).map((w, index) => {
     const why = withheldWhy(w);
+    // D113 amended: a withheld finding anchored in a file outside the evaluated session, tagged so.
     return { index, what: CODE_REPORT_WORDS.withheldWhat[w.what] ?? null,
+      outside: w.outsideSession === true ? CODE_REPORT_WORDS.outsideTag : null,
       words: typeof w.text === 'string' && w.text.trim() ? [C(words(w.text, 300))] : ONE(REPORT_NOT_CHECKED_WORDS.withheldNoText),
       why: why ? REPORT_NOT_CHECKED_WORDS.withheldWhy(why) : null,
       check: plain(w.check) && typeof w.check.explanation === 'string' && w.check.explanation.trim()
@@ -1996,7 +2163,7 @@ function headerOf(ctx, prompt) {
   const duration = durationWord(facts.events);
   const counted = codePass && codePass.ran === true ? list(codePass.files).filter((f) => plain(f)
     && !CODE_OUTSIDE_STATES.includes(f.state)) : [];
-  const files = changeSizeOf(ctx, counted);
+  const files = changeSizeOf(ctx);
   const commit = commitFact(ctx, counted);
   const size = [kind, duration, files, REPORT_HEADER_WORDS.commands(facts.whole.commands.length),
     ...(commit?.short ? [REPORT_HEADER_WORDS.commit(commit.short)] : commit?.notCommitted ? [commit.notCommitted] : [])]
@@ -2023,7 +2190,7 @@ function headerOf(ctx, prompt) {
   if (ctx.honest.sessionReview !== 'complete') notChecked.push(REPORT_HEADER_WORDS.reviewIncomplete);
   const asksNotChecked = ctx.asks.filter((ask) => ask.req.status === NOT_CHECKED).length;
   const agentOnly = ctx.asks.filter((ask) => DONE_STATUSES.includes(ask.req.status)
-    && ask.req.checked?.deliverable?.role === 'commentary').length;
+    && citesOnlyAgentWords(ask.req.checked)).length;
   // The same counts as the claims list shows "not checked" (didOf), in the same terms as What Sonah could not check.
   const { claims, written } = ctx.did.claims.notChecked;
   // D105: every file of a request too large to send; else the files the footer names as not shown.
@@ -2037,9 +2204,21 @@ function headerOf(ctx, prompt) {
   const rest = phrases.slice(cutPhrases.shown.length).reduce((n, [, k]) => n + k, 0);
   const didNotCheck = phrases.length ? { lead: REPORT_HEADER_WORDS.notCheckedLead, phrases: shown,
     more: rest ? REPORT_NOT_CHECKED_PARTS.more(rest) : null } : null;
-  // E. No code step.
-  const noCode = !ctx.codeRan ? [REPORT_HEADER_WORDS.noCodeStep, ...(codePass ? codeCoverageLines(codePass).slice(0, 1)
-    .map(sentence) : [])] : null;
+  // E. D118 (a), the owner's go of 2026-10-18 (the dogfood's DF2): when the code step reviewed no code (evidence
+  // code-report.js `codeNotReviewedOf`: no code pass, none that ran, no change to review, no request sent, no answer, or
+  // no file of the change seen), the owner's fixed sentence and its one closed reason; the folder the code step looked
+  // in, where the reader was given it (`options.folder`) and the step looked; and, with no code step that ran, that the
+  // items show no impact and no action. Every reader shows it on its first screen. The report .md gives the model the
+  // folder's name alone (session-story.js `renderReportMarkdown`, `folderNameOf`; the owner, 2026-10-19).
+  // D122 (a review low of D118): one definition with the terminal and the PR comment (`reportNotReviewedOf`): a combined
+  // pull request review with no code pass record says none of it.
+  const notReviewed = reportNotReviewedOf(report);
+  const looked = notReviewed !== null && !NOT_LOOKED.includes(notReviewed);
+  const folder = looked && typeof options.folder === 'string' && oneLine(options.folder)
+    ? clip(oneLine(options.folder), REPORT_LIMITS.folderChars) : null;
+  const noCode = notReviewed === null ? null : { reason: notReviewed,
+    words: CODE_REPORT_WORDS.notReviewed(CODE_REPORT_WORDS.notReviewedReasons[notReviewed]), folder,
+    impact: ctx.codeRan ? null : REPORT_HEADER_WORDS.noCodeImpact };
   // F. Why the report has no code links, when that holds for the whole repository: said once, here (D97). A commit not
   // on GitHub is said by the side that lacks its links, naming only those (a place on the other side keeps its link);
   // when both sides lack them through one commit, the report has no code link at all, and one sentence says so.
@@ -2051,7 +2230,40 @@ function headerOf(ctx, prompt) {
     ...(head && head === start ? [REPORT_HEADER_WORDS.notOnGitHub.both(short(head))]
       : [...(head ? [REPORT_HEADER_WORDS.notOnGitHub.new(short(head))] : []),
         ...(start ? [REPORT_HEADER_WORDS.notOnGitHub.old(short(start))] : [])])];
-  return { title, size, runs, reviewIncomplete: notChecked, didNotCheck, noCode, noLinks };
+  // D118 (c): how many files the size line counts, from the one list the Files section counts (`changeListOf`).
+  return { title, size, changeFiles: changeListOf(ctx).files.length, runs, reviewIncomplete: notChecked, didNotCheck,
+    noCode, noLinks };
+}
+
+/** D123: which sentence an empty Files section says (`didOf`'s `files.none`): `unseen`, Sonah found no write that it
+ *  can read and the session ran shell commands (REPORT_DID_WORDS `noSeenFiles`, and no count of files in the section's
+ *  heading); `repository`, none in the repository (`noFiles`, as before: a git base, or no code step record); `folder`,
+ *  none in the working directory, which the code step's record names no git base for (`noFilesHere`). */
+export const REPORT_NO_FILES_KINDS = Object.freeze(['unseen', 'repository', 'folder']);
+const [NO_FILES_UNSEEN, NO_FILES_REPOSITORY, NO_FILES_FOLDER] = REPORT_NO_FILES_KINDS;
+
+/** D118 (c): where the one list of the change's files comes from (`changeListOf`). */
+const CHANGE_LIST_SOURCES = Object.freeze(['tally', 'git', 'writes']);
+const [CHANGE_FROM_TALLY, CHANGE_FROM_GIT, CHANGE_FROM_WRITES] = CHANGE_LIST_SOURCES;
+/**
+ * D118 (c), the owner's go of 2026-10-18 ("cool go for it"; the dogfood's DF1, rule 2): the files of the change as one
+ * list, which the header's size line and the Files section both count, so the two never differ. With the code step's
+ * one tally of a change that holds a file (`ctx.change`, D109), its files; else, with a git base, git's list (the code
+ * step's files of the change, none outside it, though it holds none); else the recorded writes that resolve under the
+ * review's folder (the story's files: none outside the write scope, and D118 (b) none whose recorded spelling holds an
+ * expansion the recording does not resolve). `{ source, files }`, `source` one of CHANGE_LIST_SOURCES; each file is the
+ * code step's record (`{ path }` for a unit no record holds) or the story's file. Structure only.
+ */
+function changeListOf(ctx) {
+  const { codePass, facts } = ctx;
+  if (ctx.change) {
+    const recordOf = new Map(list(codePass.files).filter((f) => plain(f) && typeof f.path === 'string')
+      .map((f) => [f.path, f]));
+    return { source: CHANGE_FROM_TALLY, files: ctx.change.units.map((u) => recordOf.get(u.path) ?? { path: u.path }) };
+  }
+  if (ctx.codeRan && codePass?.base?.kind === 'git') return { source: CHANGE_FROM_GIT, files: list(codePass.files)
+    .filter((f) => plain(f) && typeof f.path === 'string' && !CODE_OUTSIDE_STATES.includes(f.state)) };
+  return { source: CHANGE_FROM_WRITES, files: facts.whole.files };
 }
 
 /**
@@ -2063,25 +2275,26 @@ function headerOf(ctx, prompt) {
  * files and lines. Either is said as the change, never as what the recording changed: with git the change runs from the
  * start commit to the files as they are now. Else the files that the recording's own writes changed, with their lines.
  */
-function changeSizeOf(ctx, counted) {
-  const { facts, codePass, change } = ctx;
+function changeSizeOf(ctx) {
+  const { facts, codePass } = ctx;
   const exactOf = (f) => plain(f) && Number.isSafeInteger(f.added) && Number.isSafeInteger(f.removed);
   const exactLines = (fs) => `+${fs.reduce((n, f) => n + f.added, 0)} −${fs.reduce((n, f) => n + f.removed, 0)}`;
-  if (change) {
-    const recordOf = new Map(list(codePass.files).filter((f) => plain(f) && typeof f.path === 'string')
-      .map((f) => [f.path, f]));
-    const records = change.units.map((u) => recordOf.get(u.path));
-    const storyFile = new Map(facts.whole.files.map((f) => [f.path, f]));
-    const story = codePass.base?.kind !== 'git' ? change.units.map((u) => storyFile.get(u.path)) : [];
-    const lines = records.every(exactOf) ? exactLines(records)
-      : story.length && story.every(Boolean) ? lineWord(story.reduce((sum, f) => ({ added: sum.added + f.counts.added,
-        removed: sum.removed + f.counts.removed, addedAtLeast: sum.addedAtLeast || f.counts.addedAtLeast,
-        removedAtLeast: sum.removedAtLeast || f.counts.removedAtLeast }), { added: 0, removed: 0, addedAtLeast: false,
-        removedAtLeast: false })) : null;
-    return REPORT_HEADER_WORDS.change(change.total, lines);
-  }
-  if (counted.length > 0 && counted.every(exactOf)) return REPORT_HEADER_WORDS.change(counted.length, exactLines(counted));
-  return REPORT_HEADER_WORDS.filesChanged(facts.whole.files.length, lineWord(facts.whole.counts));
+  // D118 (c): the one list the Files section counts (`changeListOf`). An empty list says no count: "0 files" would read
+  // as a session that changed nothing, and the first screen's no-code line says why the change held no file (D118 a).
+  const { source, files } = changeListOf(ctx);
+  if (!files.length) return null;
+  if (source === CHANGE_FROM_WRITES) return REPORT_HEADER_WORDS.filesChanged(files.length, lineWord(facts.whole.counts));
+  const storyFile = new Map(facts.whole.files.map((f) => [f.path, f]));
+  const story = source === CHANGE_FROM_TALLY && codePass.base?.kind !== 'git' ? files.map((f) => storyFile.get(f.path))
+    : [];
+  const lines = files.every(exactOf) ? exactLines(files)
+    : story.length && story.every(Boolean) ? lineWord(story.reduce((sum, f) => ({ added: sum.added + f.counts.added,
+      removed: sum.removed + f.counts.removed, addedAtLeast: sum.addedAtLeast || f.counts.addedAtLeast,
+      removedAtLeast: sum.removedAtLeast || f.counts.removedAtLeast }), { added: 0, removed: 0, addedAtLeast: false,
+      removedAtLeast: false })) : null;
+  // D117: how many places hold the change's files (the one tally's places with a file).
+  const places = source === CHANGE_FROM_TALLY ? list(ctx.change.places).filter((p) => p.total > 0).length || 1 : 1;
+  return REPORT_HEADER_WORDS.change(files.length, lines, places);
 }
 
 /** The commit fact (D97): the short HEAD when every counted file of the change is committed, else how
@@ -2090,6 +2303,9 @@ function commitFact(ctx, counted) {
   const facts = linkFacts(ctx.options);
   if (!facts.repo || !validSha(facts.repo.head)) return null;
   if (!ctx.codeRan || !counted.length) return { short: facts.repo.head.slice(0, 7), notCommitted: null };
+  // D117: a change that holds files outside the working directory (another repository or folder, or elsewhere in its
+  // repository): the commit speaks for none of them, so Sonah cannot tell.
+  if (counted.some((f) => typeof f.place === 'string' || (typeof f.path === 'string' && f.path.startsWith('/')))) return null;
   const unknown = counted.some((f) => typeof f.sha256 !== 'string' && f.type !== 'deleted' && f.state !== 'deleted');
   if (unknown) return null;
   const committed = (f) => facts.repo.atHead.has(f.path) || ((f.type === 'deleted' || f.state === 'deleted')
@@ -2104,10 +2320,15 @@ function commitFact(ctx, counted) {
 function countLineOf(ctx, tiers, prompt) {
   const counts = Object.fromEntries(REPORT_TIERS.map((tier) => [tier, tiers[tier].length]));
   const mustAct = tiers[MUST_ACT];
+  // D113 amended: the items about code outside the evaluated session, counted, and each one's label tagged.
+  const away = REPORT_TIERS.flatMap((tier) => tiers[tier]).filter((item) => item.scope?.outsideSession === true).length;
+  const tagged = (item) => (item.scope?.outsideSession === true && Array.isArray(item.label)
+    ? [...item.label, S(' '), S(REPORT_COUNT_WORDS.outsideLabel)] : item.label);
   return {
     tiers: REPORT_TIERS.map((tier) => ({ tier, words: REPORT_TIER_WORDS[tier], n: counts[tier], folded: tier === GOOD_TO_KNOW })),
     prompt: ctx.asks.length ? REPORT_COUNT_WORDS.prompt(prompt.parts.join(', ')) : REPORT_COUNT_WORDS.noAsk,
-    labels: cutTo(mustAct, REPORT_LIMITS.mustActLabels).shown.map((item) => ({ n: item.n, parts: item.label })),
+    outside: away ? REPORT_COUNT_WORDS.outside(away) : null,
+    labels: cutTo(mustAct, REPORT_LIMITS.mustActLabels).shown.map((item) => ({ n: item.n, parts: tagged(item) })),
     more: cutTo(mustAct, REPORT_LIMITS.mustActLabels).more,
     empty: counts[MUST_ACT] === 0 && counts[MUST_KNOW] === 0 ? REPORT_COUNT_WORDS.emptyTiers : null,
     counts,
@@ -2174,7 +2395,17 @@ function placementOf(ctx, candidates, model) {
     return parts.join(', ');
   };
   const nc = model.notChecked;
-  if (unreadAsks.length) nc.unreadAsks = [REPORT_NOT_CHECKED_WORDS.unreadAsks(unreadAsks.length, ids(unreadAsks))];
+  // D115: an ask that Sonah lists under no message of yours is said by what code proves of it, never by one sentence for
+  // all: a brief that an agent wrote for a helper, by the recorded event its instruction cites (code-context.js
+  // `askSourceOf`, the recorder's lineage; with no session it fails closed); else a row whose shape Sonah cannot read
+  // (session-story.js `readableRequirement`); else one that Sonah read and could not place among the asks of your
+  // prompt. Only the second is said to be one that Sonah could not read.
+  const askLines = { brief: [], unreadable: [], unplaced: [] };
+  for (const c of unreadAsks) askLines[plain(c.row) && askSourceOf(ctx.session, c.row.instruction) === ASKED_IN_BRIEF
+    ? 'brief' : readableRequirement(c.row) ? 'unplaced' : 'unreadable'].push(c);
+  nc.unreadAsks = [['unreadable', 'unreadAsks'], ['unplaced', 'unplacedAsks'], ['brief', 'briefAsks']]
+    .filter(([key]) => askLines[key].length)
+    .map(([key, words]) => REPORT_NOT_CHECKED_WORDS[words](askLines[key].length, ids(askLines[key])));
   if (unreadRows.length) nc.unreadRows = [REPORT_NOT_CHECKED_WORDS.unreadRows(unreadRows.length, ids(unreadRows))];
   nc.total = nc.facts.length + nc.withheldTotal + nc.unreadAsks.length + nc.unreadRows.length;
   return { rows, version: REPORT_MODEL_VERSION };
@@ -2208,6 +2439,11 @@ function bodyLines(item) {
   return lines;
 }
 const placeWords = (item) => item.where.map((w) => (w.anchor ? w.text : `${w.path}${w.startLine ? `:${w.startLine}` : ''}`));
+/** The marker after an item's head, by its scope (`scopeOf`): you did not ask for it, Sonah could not check whether you
+ *  asked, or (D113 amended) it is about code outside the evaluated session; else none. The page and the story say the
+ *  same words. */
+export const scopeMarker = (scope) => (scope?.notAsked ? ` ${REPORT_ITEM_WORDS.notAsked}` : scope?.askedUnknown
+  ? ` ${REPORT_ITEM_WORDS.askedUnknown}` : scope?.outsideSession ? ` ${REPORT_ITEM_WORDS.outsideSession}` : '');
 /** A member's head (D112): its type word, what it is, and its own tier word. */
 export const memberHeadText = (member) => `${REPORT_TYPE_WORDS[member.type]}: ${partsText(member.what.parts)} · `
   + `${REPORT_TIER_WORDS[member.tier.final]}`;
@@ -2215,9 +2451,7 @@ export const memberHeadText = (member) => `${REPORT_TYPE_WORDS[member.type]}: ${
  *  each member's head; an open member's lines too (a folded member shows its head alone). */
 export function itemVisibleText(item) {
   const lines = [];
-  const scope = item.scope.notAsked ? ` ${REPORT_ITEM_WORDS.notAsked}` : item.scope.askedUnknown
-    ? ` ${REPORT_ITEM_WORDS.askedUnknown}` : '';
-  lines.push(`${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(item.what.parts)}${scope}`);
+  lines.push(`${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(item.what.parts)}${scopeMarker(item.scope)}`);
   lines.push(...bodyLines(item));
   const where = placeWords(item);
   const marker = item.scope.asks.length && !item.where.some((w) => w.anchor === `ask-${item.scope.asks[0]}`)
@@ -2235,17 +2469,24 @@ export function itemVisibleText(item) {
   }
   return lines.join('\n');
 }
+/** D118 (a): the header's no-code line as plain text (the terminal prints it): the owner's sentence and its reason, the
+ *  items' line, then the folder, last, so no punctuation of Sonah's follows a path. */
+export function noCodeText(noCode) {
+  if (!plain(noCode)) return null;
+  return [noCode.words, ...(noCode.impact ? [noCode.impact] : []),
+    ...(noCode.folder ? [CODE_REPORT_WORDS.notReviewedFolder(noCode.folder)] : [])].join(' ');
+}
 /** The text of the header, the count line and your prompt as they show open (sections 1 to 3). */
 export function openText(model) {
   const { header, countLine, prompt } = model;
   const lines = [];
   if (header.title) lines.push(partsText(header.title.parts));
   lines.push(header.size.join(' · '));
+  if (header.noCode) lines.push(noCodeText(header.noCode));
   lines.push(header.runs.join(' '));
   if (header.reviewIncomplete.length || header.didNotCheck) lines.push([...header.reviewIncomplete,
     ...(header.didNotCheck ? [`${header.didNotCheck.lead} ${header.didNotCheck.phrases.join(' · ')}`
       + `${header.didNotCheck.more ? ` ${header.didNotCheck.more}` : ''}`] : [])].join(' '));
-  if (header.noCode) lines.push(header.noCode.join(' '));
   lines.push(`${countLine.tiers.map((t) => `${t.words} ${t.n}${t.folded ? ` ${REPORT_COUNT_WORDS.folded}` : ''}`).join(' · ')}`
     + ` · ${countLine.prompt}`);
   if (countLine.empty) lines.push(countLine.empty);

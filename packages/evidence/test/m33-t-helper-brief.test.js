@@ -82,8 +82,9 @@ test('M33 T the review names an encrypted brief in plain words, and never as a r
     'the recorder encrypted 1 brief that the agent gave a helper, so Sonah cannot show or check it');
   assert.equal(COVERAGE_SENTENCE.briefs_encrypted({ n: 3 }),
     'the recorder encrypted 3 briefs that the agent gave a helper, so Sonah cannot show or check them');
-  // A redacted brief keeps the cause it always had.
-  assert.deepEqual(coverageCauses(handOff(REDACTED).report), [['incomplete_inventory', { n: 1 }]]);
+  // A redacted brief is never named as encrypted. D119: it is a hand-off whose recorded input Sonah holds only in
+  // part, counted by its call (no longer summed into `incomplete_inventory` with other kinds).
+  assert.deepEqual(coverageCauses(handOff(REDACTED).report), [['call_inputs_unread', { n: 1 }]]);
 });
 
 test('M33 T the verified task name rides on the delegate event as a plain field, never as quotable source', () => {

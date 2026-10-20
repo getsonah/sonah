@@ -39,7 +39,7 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
   SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -389,7 +389,13 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.deepEqual(PREMISE_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ACCOUNT_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
-  assert.equal(story.STORY_VERSION, ONE_BOUND_READER_VERSIONS.story.after);
+  // D113 and D114 (0.3.0-beta.5) move it once more (SESSION_CHANGE_READER_VERSIONS: the session's own change).
+  assert.equal(SESSION_CHANGE_READER_VERSIONS.story.before, ONE_BOUND_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, SESSION_CHANGE_READER_VERSIONS.story.after);
+  // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
+  // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
+  // reader once.
+  assert.deepEqual(REPORT_TRUTH_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS);
   // Readers: the report .md and the page say what the challengers upheld, with the agent's own words.
   // D71 (a): said as what it is, never "shown for information".
   // D97: the page and the report .md: an edit against what you said that the agent told you about, and its words.

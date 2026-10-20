@@ -50,7 +50,12 @@ test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', ()
   // by identity (D107). In the same move (D110): the premise contract, a finding to verify, no second reviewer;
   // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level. D112 amended
   // (2026-10-18, unreleased, no version move): the fixture's Q1 names no place (quote null), so it is an item of its own.
-  assert.equal(STORY_VERSION, 'sonah.session-story/38');
+  // D113 and D114 once more (sonah.session-story/39, 0.3.0-beta.5): the session's own change, and the files changed
+  // outside it.
+  // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
+  // question's pointer only where code checked its tie. D122 (b) (the beta.5 integration, no version move: /39 is
+  // beta.5's one move): the fixture's refused read, a failure passed over, is in Must know (no refused-read default).
+  assert.equal(STORY_VERSION, 'sonah.session-story/39');
 });
 
 test('D97 (1): the .md has the report model\'s sections in order, with the page\'s counts, for every report shape', () => {
@@ -354,7 +359,7 @@ test('D97 (2a): no pings — mentions, issues and bare commit hashes in recorded
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/4', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/5', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });

@@ -67,6 +67,8 @@ const partsText = (parts) => (Array.isArray(parts) ? parts : []).map((p) => (p?.
 export function countLines(model) {
   const { countLine } = model;
   const lines = [`${countLine.tiers.map((t) => `${t.words} ${t.n}`).join(' · ')} · ${countLine.prompt}`];
+  // D113 amended: how many items are about code outside the evaluated session.
+  if (countLine.outside) lines.push(countLine.outside);
   if (countLine.empty) lines.push(countLine.empty);
   else if (countLine.labels.length) lines.push(`${REPORT_COUNT_WORDS.mustActLead} ${countLine.labels
     .map((l) => partsText(l.parts)).join(' · ')}${countLine.more ? ` ${REPORT_COUNT_WORDS.more(countLine.more)}` : ''}`);

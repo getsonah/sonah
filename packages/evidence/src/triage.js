@@ -17,10 +17,10 @@ import { REPORT_TIERS, TRIAGE_LEVELS, REPORT_ITEM_TYPES, TIER_BOUND_REASONS,
 /** The version of the tier table below (`ITEM_KIND_TABLE`): a change of any default, floor or ceiling is a new one. It
  *  is in the code step's run profile (code-pass.js `CODE_PASS_PROFILE`), so a table change never replays an old
  *  answer. /2 (D110): the kind `code_finding_unconfirmed`, a finding its check found to hold that Sonah could not
- *  confirm. In the same move (E1-F8, D112; owner, 2026-10-17: "default tiers only from recorder-typed operations"):
- *  every kind gains `refusedReadTier`, and a failure that the agent passed over defaults to Good to know when its call
- *  is a refused read by the recorder's own types. */
-export const TIER_TABLE_VERSION = 'sonah.tiers/2';
+ *  confirm. In the same move (E1-F8, D112): every kind gained `refusedReadTier`, a failure that the agent passed over
+ *  defaulting to Good to know when its call was a refused read. /3 (D122 (b), the owner, 2026-10-18): `refusedReadTier`
+ *  is gone; a failure that the agent passed over defaults to Must know, whatever its call. */
+export const TIER_TABLE_VERSION = 'sonah.tiers/3';
 
 const [MUST_ACT, MUST_KNOW, GOOD_TO_KNOW] = REPORT_TIERS;
 const [HIGH, MEDIUM, LOW] = TRIAGE_LEVELS;
@@ -32,15 +32,14 @@ export const LEVEL_TIER = Object.freeze({ [HIGH]: MUST_ACT, [MEDIUM]: MUST_KNOW,
 /** The tiers by rank, lowest first: a floor raises a lower tier, a ceiling lowers a higher one. */
 const RANK = Object.freeze({ [GOOD_TO_KNOW]: 0, [MUST_KNOW]: 1, [MUST_ACT]: 2 });
 
-const entry = (type, tier, { floor = null, ceiling = null, listed = false, uncheckedTier = null, tiedTier = null,
-  refusedReadTier = null } = {}) => Object.freeze({ type, tier, floor, ceiling, listed, uncheckedTier, tiedTier,
-  refusedReadTier });
+const entry = (type, tier, { floor = null, ceiling = null, listed = false, uncheckedTier = null, tiedTier = null } = {}) =>
+  Object.freeze({ type, tier, floor, ceiling, listed, uncheckedTier, tiedTier });
 /**
  * Each item kind (ledger.js REPORT_ITEM_KINDS): its type (the item's first word), its default tier, its floor and its
  * ceiling (null: none), whether it is only listed (no item unless the code review proposes medium or high; its default
  * tier is then null), for a code question with no check, its tier (`uncheckedTier`), for an item that a published
- * finding or question of the code review is tied to, its tier (`tiedTier`), and for an item whose call is a refused
- * read (`refusedReadTier`, below). Frozen literals, `TIER_TABLE_VERSION`. The bounds, by the owner's rules (D96):
+ * finding or question of the code review is tied to, its tier (`tiedTier`). Frozen literals, `TIER_TABLE_VERSION`. The
+ * bounds, by the owner's rules (D96):
  *   - an unmet ask, a contradicted claim, an edit against your words and a confirmed bug are never Good to know (floor
  *     Must know); a code finding is published only when its check found the same problem;
  *   - a contradiction the agent corrected or told you about, an edit it undid or told you about, and an earlier code
@@ -59,12 +58,8 @@ const entry = (type, tier, { floor = null, ceiling = null, listed = false, unche
  *   - a code finding Sonah could not confirm (D110: a premise of its check rests outside the repository and the
  *     language) is a Verify item, Good to know by default and never Must act (ceiling Must know): it rests on what
  *     Sonah could not check, ambiguous evidence, and precision ranks over recall;
- *   - a failure that the agent passed over defaults to Must know, and to Good to know when its call is a refused read
- *     (E1-F8, D112; owner, 2026-10-17: "a refused call of a read-only tool type passed over goes to Good to know"): the
- *     recorder typed a denial on it, other than a stop (ledger.js result class `did-not-run`, `user-rejected` included),
- *     and its tool writes nothing by type (ledger.js `writesNothing`: the slicer's read kind, or a command the recorder
- *     typed as only reading, searching or listing). A refused shell command is no read by type and keeps Must know; so
- *     does every write. The report model passes `refusedRead` only then. A decision not to act stays in Must know.
+ *   - a failure that the agent passed over defaults to Must know, whatever its call (D122 (b) removed D112's Good to know
+ *     for a refused read); a decision not to act stays in Must know.
  * "You did not ask for this." is never a bound. Pure data.
  */
 export const ITEM_KIND_TABLE = Object.freeze({
@@ -78,7 +73,7 @@ export const ITEM_KIND_TABLE = Object.freeze({
   code_contract: entry(FIX, MUST_ACT, { floor: MUST_KNOW }),
   written_contradicted: entry(FIX, MUST_KNOW, { floor: MUST_KNOW }),
   code_weak_test: entry(FIX, MUST_KNOW),
-  failure_passed_over: entry(VERIFY, MUST_KNOW, { refusedReadTier: GOOD_TO_KNOW }),
+  failure_passed_over: entry(VERIFY, MUST_KNOW),
   decision_not_acting: entry(DECIDE, MUST_KNOW),
   decision_unasked: entry(DECIDE, MUST_KNOW),
   code_question: entry(DECIDE, MUST_KNOW, { uncheckedTier: GOOD_TO_KNOW }),
@@ -116,22 +111,21 @@ export const TRIAGE_LIMITS = Object.freeze({ entries: 120, impactChars: 200, act
  * TRIAGE_LEVELS member, or null for none) inside the kind's bounds (`ITEM_KIND_TABLE`):
  * `{ default, proposed, final, bound }` — `default` the kind's tier (a code question with no check, `unchecked`: its
  * `uncheckedTier`; an item a published finding or question of the code review is tied to, `tied`: its `tiedTier`; a
- * listed kind: null; a failure whose call is a refused read, `refusedRead`: its `refusedReadTier`), `proposed` the
+ * listed kind: null), `proposed` the
  * level's tier or null, `final` the tier the item is shown in, `bound` null or the TIER_BOUND_REASONS member that moved
  * the proposal. A listed kind is an item only when the proposal is must know or must act: else `final` is null (no
  * item; the row stays in its list). `refused`: the item cites a call a permission rule or auto mode refused
  * (`PERMISSION_DENIALS`): never Must act. A proposal still moves an item whose default a flag set, inside the same
  * bounds. A level outside TRIAGE_LEVELS reads as none. An unknown kind throws. Pure.
  */
-export function boundTier(kind, level = null, { refused = false, unchecked = false, tied = false, refusedRead = false }
-  = {}) {
+export function boundTier(kind, level = null, { refused = false, unchecked = false, tied = false } = {}) {
   if (!Object.hasOwn(ITEM_KIND_TABLE, kind)) throw new TypeError(`not an item kind: ${String(kind)}`);
   const k = ITEM_KIND_TABLE[kind];
   const proposed = TRIAGE_LEVELS.includes(level) ? LEVEL_TIER[level] : null;
   if (k.listed && (proposed === null || proposed === GOOD_TO_KNOW))
     return { default: null, proposed, final: null, bound: null };
   const fallback = unchecked === true && k.uncheckedTier ? k.uncheckedTier : tied === true && k.tiedTier ? k.tiedTier
-    : refusedRead === true && k.refusedReadTier ? k.refusedReadTier : k.tier;
+    : k.tier;
   let final = proposed ?? fallback;
   let bound = null;
   if (k.floor && RANK[final] < RANK[k.floor]) { final = k.floor; bound = KIND_FLOOR; }

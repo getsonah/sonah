@@ -364,7 +364,7 @@ const OTHER_CAPTURE_LOSS_COUNTS = Object.freeze(['unsupported', 'missing', 'unma
  * counters, and the counted gap each one is declared as — `[capture key, code, channel, note]`, in
  * declaration order. One fixed table, so the codes and notes are never built at the call site.
  */
-const NATIVE_SHORTFALL_GAPS = Object.freeze([
+export const NATIVE_SHORTFALL_GAPS = Object.freeze([
   Object.freeze(['nativeInventoryShortfall', 'incomplete_inventory', 'actions',
     'native command, file or tool items do not account for every call the turn\'s code cells dispatched']),
   Object.freeze(['nativeCommandShortfall', 'command_outcome_unknown', 'observations',
@@ -566,6 +566,22 @@ export const WORKFLOW_RUN_GAP_NOTES = Object.freeze({
   workflow_run_entry_unread: 'entries of a workflow run directory that are not its journal, an agent recording or an '
     + 'agent meta file were not read or reviewed',
 });
+/** The closed notes of the calls whose recorded input Sonah holds only in part (each counted by call, naming each call's
+ *  event): text redaction withheld (an earlier Sonah's; D90 masks nothing now), a field boundary the recorder separator
+ *  hides, a payload with no validated fields, and a resumed workflow's script that this recording does not hold. D119
+ *  names them by one cause (review.js). */
+export const CALL_INPUT_GAP_NOTES = Object.freeze({
+  code_redacted: 'recorded code bodies contain redacted or omitted source text',
+  command_redacted: 'recorded command text was partly withheld by redaction',
+  input_redacted: 'recorded tool input was partly withheld by redaction',
+  tool_name_redacted: 'recorded tool name or input metadata was partly withheld by redaction',
+  input_ambiguous: 'a tool input contained the recorder field separator, so its exact field boundaries were not preserved',
+  input_unparsed: 'a tool input was recorded only as an unparsed payload, without validated fields',
+  workflow_script_unrecorded: 'a resumed workflow named an earlier script path but did not record that script text here',
+});
+/** The closed note of a linked helper whose own ledger declares its capture incomplete (counted with no count, naming
+ *  the hand-off's assignment event). D119 names it by its own cause (review.js). */
+export const CHILD_CAPTURE_INCOMPLETE_NOTE = 'the linked child session declares an incomplete capture of its own';
 /** `[note, gap code]` of every loss a run record may carry, in declaration order. */
 export const WORKFLOW_RUN_GAPS = Object.freeze([
   Object.freeze(['workflow_journal_missing', 'incomplete_inventory']),
@@ -3027,8 +3043,7 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
           && gap.count === capture[key] && gap.note === note));
     if (communicationOnly) continue;
     gaps.push({ code: 'incomplete_inventory', channel: 'children', scope: 'session', count: null,
-      eventIds: [transfer.assignmentEvent],
-      note: 'the linked child session declares an incomplete capture of its own' });
+      eventIds: [transfer.assignmentEvent], note: CHILD_CAPTURE_INCOMPLETE_NOTE });
   }
   // A capture that only knows it lost delegated work still has to say so. The test is whether
   // any gap NAMES that loss: a linked child's own `incomplete_inventory` is a different claim
@@ -3064,12 +3079,12 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     && (event.changes ?? []).some((change) => change.redacted === true)).map((event) => event.id);
   if (redactedCode.length) gaps.push({ code: 'incomplete_inventory', channel: 'code', scope: 'session',
     count: redactedCode.length, eventIds: redactedCode,
-    note: 'recorded code bodies contain redacted or omitted source text' });
+    note: CALL_INPUT_GAP_NOTES.code_redacted });
   const redactedCommands = (ledger.ledger ?? []).filter((act) => COMMAND_KINDS.includes(act.attempted ?? act.kind)
     && (marked(null, act.cmd) || !act.cmd && act.redacted === true)).map((act) => ids.act(act));
   if (redactedCommands.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions', scope: 'session',
     count: redactedCommands.length, eventIds: redactedCommands,
-    note: 'recorded command text was partly withheld by redaction' });
+    note: CALL_INPUT_GAP_NOTES.command_redacted });
   const redactedOtherInput = (ledger.ledger ?? []).filter((act) =>
     (act.attempted ?? act.kind) === 'other' && (act.inputRedacted === true
       || marked(null, act.argsExcerpt)
@@ -3077,26 +3092,26 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     .map((act) => ids.act(act));
   if (redactedOtherInput.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions', scope: 'session',
     count: redactedOtherInput.length, eventIds: redactedOtherInput,
-    note: 'recorded tool input was partly withheld by redaction' });
+    note: CALL_INPUT_GAP_NOTES.input_redacted });
   const redactedToolNames = (ledger.ledger ?? []).filter((act) => act.toolNameRedacted === true
     || act.inputMetadataRedacted === true).map((act) => ids.act(act));
   if (redactedToolNames.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions',
     scope: 'session', count: redactedToolNames.length, eventIds: redactedToolNames,
-    note: 'recorded tool name or input metadata was partly withheld by redaction' });
+    note: CALL_INPUT_GAP_NOTES.tool_name_redacted });
   const flagged = (flag) => (ledger.ledger ?? []).filter((act) => act[flag] === true)
     .map((act) => ids.act(act));
   const ambiguousOtherInput = flagged('inputBoundaryAmbiguous');
   if (ambiguousOtherInput.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions',
     scope: 'session', count: ambiguousOtherInput.length, eventIds: ambiguousOtherInput,
-    note: 'a tool input contained the recorder field separator, so its exact field boundaries were not preserved' });
+    note: CALL_INPUT_GAP_NOTES.input_ambiguous });
   const unparsedOtherInput = flagged('inputUnparsed');
   if (unparsedOtherInput.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions',
     scope: 'session', count: unparsedOtherInput.length, eventIds: unparsedOtherInput,
-    note: 'a tool input was recorded only as an unparsed payload, without validated fields' });
+    note: CALL_INPUT_GAP_NOTES.input_unparsed });
   const unresolvedWorkflowInput = flagged('inputUnresolved');
   if (unresolvedWorkflowInput.length) gaps.push({ code: 'incomplete_inventory', channel: 'actions',
     scope: 'session', count: unresolvedWorkflowInput.length, eventIds: unresolvedWorkflowInput,
-    note: 'a resumed workflow named an earlier script path but did not record that script text here' });
+    note: CALL_INPUT_GAP_NOTES.workflow_script_unrecorded });
   // A Workflow's launch stub is not its terminal result. Claude's later TaskOutput can prove
   // completion through a native nested status, but only after redaction has checked all IDs and
   // a unique later poll corroborates the launch and its own input. A running/timeout/error poll,

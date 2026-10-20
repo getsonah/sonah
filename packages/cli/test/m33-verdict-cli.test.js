@@ -58,7 +58,9 @@ test('D71 the exit code is Sonah\'s own run state, closed: complete 0, incomplet
 
 test('D71 the CLI says what of its own review ran, and prints no status', async () => {
   const completed = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
-  assert.equal(runStateLine(completed, 'initial'), "Sonah's review: complete (session review complete). initial review.");
+  // D118 (a): a session review with no code pass record reviewed no code, so "complete" names what is missing.
+  assert.equal(runStateLine(completed, 'initial'), "Sonah's review: complete, but no code was reviewed (session review "
+    + 'complete). initial review.');
   const failed = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => null });
   assert.equal(runStateLine(failed, 'cached'), "Sonah's review: incomplete (session review did not finish). cached review.");
   // D97 (S6, S5 review M2 before it): after the run state, the count line — counts from the items in their tiers,
@@ -121,8 +123,9 @@ test('M33 G2 a declared cause with no count is printed with the count of its dec
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
   // The causes are listed as the PR comment lists them, with no semicolon (S6).
+  // D119: the kinds no cause of their own names are counted by kind, said as what Sonah holds, never summed or "read".
   assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper · '
-    + 'at least 1 part of the evidence that Sonah read is incomplete.');
+    + 'Sonah holds 1 kind of evidence only in part.');
 });
 
 /** The delegated session plus the agent's own words: a claim the challengers can uphold. */

@@ -6,7 +6,8 @@
 // codex.js `labelCodexRecords`); these shape rules serve only where that structure IS the recorder's element format —
 // a prompt command's own elements (`recorderCommand`), the declared legacy fallback's "opens with an element"
 // (`startsWithElement`), and a modern Claude Code row with no origin that is only elements (a local command's own rows)
-// or a Codex rollout with no typed channel (`isWhollyElements`). The tag lists the role guessers read
+// or a Codex rollout with no typed channel (`isWhollyElements`), and (D120) the recorder's own caveat before a local
+// command (`isLocalCommandCaveat`), which with the output row it types closes a local command. The tag lists the role guessers read
 // (`SLASH_COMMAND_TAGS`, `LOCAL_COMMAND_OUTPUT_TAGS`, `EMBEDDED_CONTEXT_TAGS`) and their span reader
 // (`contextElementSpans`) are deleted with them. Pure: no I/O, no clock, no model.
 
@@ -151,4 +152,19 @@ export function recorderCommand(text) {
   const args = elements.find((element) => element.name === 'command-args');
   return { name: elements.find((element) => element.name === 'command-name').inner.trim(),
     args: args === undefined ? null : args.inner.trim() };
+}
+
+/**
+ * D120 (owner 2026-10-18, DF3 part 1): the element Claude Code writes its own caveat row as, just before a local command
+ * (a command the person runs in the harness itself; the recorder chains it between that caveat and its output, a
+ * `system` row it types with `LOCAL_COMMAND_OUTPUT_SUBTYPE`). The recorder's own structured format, read as structure
+ * and compared exactly; no command's name is read.
+ */
+export const RECORDER_LOCAL_COMMAND_CAVEAT = 'local-command-caveat';
+/** D120: the subtype Claude Code types a local command's output row with (a `system` row). */
+export const LOCAL_COMMAND_OUTPUT_SUBTYPE = 'local_command';
+/** D120: whether a text is only the recorder's local-command caveat: exactly one top-level element, of that name. */
+export function isLocalCommandCaveat(text) {
+  const elements = topLevelElements(String(text ?? '').trim());
+  return elements !== null && elements.length === 1 && elements[0].name === RECORDER_LOCAL_COMMAND_CAVEAT;
 }

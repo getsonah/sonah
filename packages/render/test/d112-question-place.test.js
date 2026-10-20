@@ -39,8 +39,10 @@ test('D112 amended: a question that names no place stays its own item at its own
   assert.equal(own.tier.final, 'must_know');
   const decision = itemsOf(model).find((x) => holds(x, 'decisions', 3));
   assert.deepEqual(decision.members, []);
-  // It still names the item it concerns, as an item of its own does.
-  assert.ok(own.where.some((w) => w.anchor === `item-${decision.n}`), JSON.stringify(own.where));
+  // D116: it names no item either. Its key names the decision, but no code checked that tie (it names no place), so
+  // the report prints no pointer from it (`concernsTied`).
+  assert.equal(own.where.some((w) => /^item-/.test(w.anchor ?? '')), false, JSON.stringify(own.where));
+  assert.deepEqual(own.related.items, []);
   // Every reader shows it as its own item.
   const page = renderSessionPage(session, report, repoFacts());
   assert.ok(page.includes(`id="item-${own.n}"`));

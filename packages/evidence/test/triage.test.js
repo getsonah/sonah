@@ -39,8 +39,9 @@ test('the report\'s vocabularies are closed, frozen and in their order', () => {
   assert.deepEqual(TIER_BOUND_REASONS, ['kind_floor', 'kind_ceiling', 'refused_call_ceiling']);
   assert.deepEqual(TRIAGE_ERRORS, ['triage_key_unknown', 'triage_key_repeated', 'triage_not_item', 'file_not_in_change',
     'where_ungrounded', 'item_withheld']);
-  // E1-F8 (D112): the checked ties that make a row a member of another row's item, and which row places an item.
-  assert.deepEqual(ledger.REPORT_GROUP_TIES, ['concerns', 'nested']);
+  // E1-F8 (D112): the checked ties that make a row a member of another row's item, and which row places an item. D112
+  // amended (2026-10-18): the `nested` tie is removed.
+  assert.deepEqual(ledger.REPORT_GROUP_TIES, ['concerns']);
   assert.deepEqual(ledger.REPORT_TIER_SOURCES, ['lead', 'member']);
   for (const list of [ledger.REPORT_GROUP_TIES, ledger.REPORT_TIER_SOURCES]) {
     assert.ok(Object.isFrozen(list));
@@ -61,24 +62,22 @@ test('the report\'s vocabularies are closed, frozen and in their order', () => {
 
 test('the tier table: every kind once, in display order, with its type and bounds as frozen literals', () => {
   // D110 (the premise contract): /2, a code finding with a premise that Sonah could not check; in the same move (D112,
-  // E1-F8), every kind's `refusedReadTier`.
-  assert.equal(TIER_TABLE_VERSION, 'sonah.tiers/2');
+  // E1-F8), every kind's `refusedReadTier`. /3 (D122 (b)): `refusedReadTier` removed.
+  assert.equal(TIER_TABLE_VERSION, 'sonah.tiers/3');
   assert.deepEqual(Object.keys(ITEM_KIND_TABLE), [...REPORT_ITEM_KINDS]);
   assert.ok(Object.isFrozen(ITEM_KIND_TABLE));
   const tiers = [...REPORT_TIERS, null];
   for (const [kind, k] of Object.entries(ITEM_KIND_TABLE)) {
     assert.ok(Object.isFrozen(k), kind);
-    assert.deepEqual(Object.keys(k), ['type', 'tier', 'floor', 'ceiling', 'listed', 'uncheckedTier', 'tiedTier',
-      'refusedReadTier'], kind);
+    assert.deepEqual(Object.keys(k), ['type', 'tier', 'floor', 'ceiling', 'listed', 'uncheckedTier', 'tiedTier'], kind);
     assert.ok(REPORT_ITEM_TYPES.includes(k.type), kind);
-    for (const field of ['tier', 'floor', 'ceiling', 'uncheckedTier', 'tiedTier', 'refusedReadTier'])
+    for (const field of ['tier', 'floor', 'ceiling', 'uncheckedTier', 'tiedTier'])
       assert.ok(tiers.includes(k[field]), `${kind}.${field}`);
     // A listed kind has no default tier; every other kind has one.
     assert.equal(k.tier === null, k.listed, kind);
   }
   const table = Object.fromEntries(Object.entries(ITEM_KIND_TABLE).map(([kind, k]) => [kind,
-    [k.type, k.tier, k.floor, k.ceiling, k.listed, k.uncheckedTier, ...(k.tiedTier === null ? [] : [k.tiedTier]),
-      ...(k.refusedReadTier === null ? [] : [{ refusedRead: k.refusedReadTier }])]]));
+    [k.type, k.tier, k.floor, k.ceiling, k.listed, k.uncheckedTier, ...(k.tiedTier === null ? [] : [k.tiedTier])]]));
   const A = 'must_act', K = 'must_know', G = 'good_to_know';
   assert.deepEqual(table, {
     ask_not_done: ['fix', A, K, null, false, null], ask_partly_done: ['fix', A, K, null, false, null],
@@ -86,8 +85,9 @@ test('the tier table: every kind once, in display order, with its type and bound
     code_claim_false: ['fix', A, K, null, false, null], edit_against_instruction: ['fix', A, K, null, false, null],
     code_bug: ['fix', A, K, null, false, null], code_contract: ['fix', A, K, null, false, null],
     written_contradicted: ['fix', K, K, null, false, null], code_weak_test: ['fix', K, null, null, false, null],
-    // E1-F8 (D112): Good to know when its call is a refused read by the recorder's types; a decision not to act stays.
-    failure_passed_over: ['verify', K, null, null, false, null, { refusedRead: G }],
+    // D122 (b): Must know whatever its call (E1-F8's Good to know for a refused read is removed); a decision not to act
+    // stays.
+    failure_passed_over: ['verify', K, null, null, false, null],
     decision_not_acting: ['decide', K, null, null, false, null],
     decision_unasked: ['decide', K, null, null, false, null], code_question: ['decide', K, null, null, false, G],
     // Owner decision 2026-10-16 (D96 amended): Good to know, Must know when the code review is tied to it.
@@ -142,21 +142,17 @@ test('boundTier: no proposal gives each kind its default tier, unbounded', () =>
   assert.deepEqual(boundTier('pivot'), { default: 'good_to_know', proposed: null, final: 'good_to_know', bound: null });
 });
 
-test('E1-F8 (D112): a failure passed over whose call is a refused read defaults to Good to know; nothing else moves', () => {
+test('D122 (b): a failure passed over defaults to Must know whatever its call; no refused-read default remains', () => {
   assert.deepEqual(boundTier('failure_passed_over'), { default: 'must_know', proposed: null, final: 'must_know',
     bound: null });
-  assert.deepEqual(boundTier('failure_passed_over', null, { refusedRead: true }), { default: 'good_to_know',
-    proposed: null, final: 'good_to_know', bound: null });
-  // The code review's proposal still moves it, inside the kind's bounds (it has none), and the refused-call ceiling still
-  // holds.
-  assert.deepEqual(boundTier('failure_passed_over', 'medium', { refusedRead: true }), { default: 'good_to_know',
-    proposed: 'must_know', final: 'must_know', bound: null });
-  assert.deepEqual(boundTier('failure_passed_over', 'high', { refusedRead: true, refused: true }),
-    { default: 'good_to_know', proposed: 'must_act', final: 'must_know', bound: 'refused_call_ceiling' });
-  // The flag moves no other kind: a decision not to act and a decision made without asking stay Must know.
-  for (const kind of Object.keys(ITEM_KIND_TABLE).filter((x) => x !== 'failure_passed_over'))
+  // The flag D112 read is gone: passing it moves no kind.
+  for (const kind of Object.keys(ITEM_KIND_TABLE))
     assert.deepEqual(boundTier(kind, null, { refusedRead: true }), boundTier(kind), kind);
-  assert.equal(boundTier('decision_not_acting', null, { refusedRead: true }).final, 'must_know');
+  // The code review's proposal still moves it, and the refused-call ceiling still holds.
+  assert.deepEqual(boundTier('failure_passed_over', 'low'), { default: 'must_know', proposed: 'good_to_know',
+    final: 'good_to_know', bound: null });
+  assert.deepEqual(boundTier('failure_passed_over', 'high', { refused: true }),
+    { default: 'must_know', proposed: 'must_act', final: 'must_know', bound: 'refused_call_ceiling' });
 });
 
 test('boundTier: a floor keeps an unmet ask, a confirmed bug and a contradicted claim out of Good to know', () => {

@@ -226,13 +226,16 @@ test('M34 labels: the route reads the slicer\'s labels, never tag names; the con
   // serve only the recorder's own element formats (a prompt command's elements, the legacy fallback's opening element,
   // and — M34 labels review, F5 — the call id a task notification carries). D98 (F1): and the one carrier rule of a task
   // notification, which reads the recorder's kind field and never a tag name. D99 (F1 guard): and the origin keys a
-  // known recorder writes beside that kind, which the recorder census reads to log any other one.
+  // known recorder writes beside that kind, which the recorder census reads to log any other one. D120: and the
+  // recorder's own caveat before a local command (one element of the recorder's format, on a row it flags `isMeta`) with
+  // the subtype it types that command's output with; no list of tag or command names decides a label.
   for (const name of ['EMBEDDED_CONTEXT_TAGS', 'contextElementSpans', 'SLASH_COMMAND_TAGS', 'slashCommandArgs',
     'LOCAL_COMMAND_OUTPUT_TAGS', 'isLocalCommandOutput', 'META_OPENINGS', 'CONTEXT_TAGS', 'HUMAN_REPLY_TAGS',
     'isHarnessContext', 'isHarnessContextSpans', 'humanReplyText']) assert.equal(context[name], undefined, name);
-  assert.deepEqual(Object.keys(context).sort(), ['NOTIFICATION_ORIGIN_KEYS', 'RECORDER_COMMAND_ELEMENTS',
-    'TASK_NOTIFICATION_KIND', 'claudeNotificationCarrier', 'isWhollyElements', 'notificationOriginOf', 'recorderCommand',
-    'recorderNotificationCallId', 'startsWithElement']);
+  assert.deepEqual(Object.keys(context).sort(), ['LOCAL_COMMAND_OUTPUT_SUBTYPE', 'NOTIFICATION_ORIGIN_KEYS',
+    'RECORDER_COMMAND_ELEMENTS', 'RECORDER_LOCAL_COMMAND_CAVEAT', 'TASK_NOTIFICATION_KIND', 'claudeNotificationCarrier',
+    'isLocalCommandCaveat', 'isWhollyElements', 'notificationOriginOf', 'recorderCommand', 'recorderNotificationCallId',
+    'startsWithElement']);
 });
 
 test('M33 N repair 2; M34 labels: a harness row is never "You said"; a human row is read whole, an attached file never', async (t) => {

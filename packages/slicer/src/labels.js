@@ -100,6 +100,10 @@ export const LABEL_BASIS = Object.freeze({
   /** A user row of a modern recorder with no origin, no flag and text that is only top-level elements: a local
    *  command's own rows. */
   untypedElements: 'untyped_elements',
+  /** D120: a row the recorder chained between its own local-command caveat (an `isMeta` row that is only its
+   *  `local-command-caveat` element) and that command's typed output (a `system` row of subtype `local_command`): a
+   *  command the person ran in the harness itself, never a message to the agent, whatever its own fields say. */
+  localCommand: 'local_command',
   /** Any other user row of a modern recorder with no origin and no flag — where Claude Code writes its interruption
    *  notice, which it does not type (`LABEL_GAPS.interruptUntyped`). Its words are never read. */
   untypedUserRow: 'untyped_user_row',

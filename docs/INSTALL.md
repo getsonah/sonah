@@ -4,9 +4,9 @@ This guide covers installing Sonah, checking your setup, reviewing a session, ch
 keeps things. [README.md](../README.md) has the short version; [PRIVACY.md](PRIVACY.md) says exactly what is sent and
 kept; [TROUBLESHOOTING.md](TROUBLESHOOTING.md) lists the common messages and their fixes.
 
-Sonah reviews the recording of a coding session and writes a checklist: what you asked and whether it was done, and
-what the agent decided on its own. It never gives a verdict on the agent's work: nothing it prints says the work is
-fine, needs a decision or failed. It never approves or merges anything.
+Sonah reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and
+what is wrong in the code. It never gives a verdict on the agent's work: nothing it prints says the work is fine, needs
+a decision or failed. It never approves or merges anything.
 
 ## Requirements
 
@@ -131,7 +131,9 @@ root), including a session started in a subfolder. Helper agents (the sub-agents
 session) are reviewed with their parent, never as separate sessions. Other choices:
 
 - `--choose N`: the Nth entry of `sonah sessions` (numbers shift when a newer session appears).
-- `--repo DIR`: another repository, for `sonah sessions` and `sonah review` alike.
+- `--repo DIR`: the sessions of another repository, for `sonah sessions` and `sonah review` alike. It only chooses the
+  session: the code review still reads the folder that the recording names as the session's working directory. To point
+  the code review at another repository, use `--code-repo DIR` (below).
 - A recording path: `sonah review /absolute/path/to/session.jsonl`. Required for Cursor:
   `ls -t ~/.cursor/projects/*/agent-transcripts/*.jsonl | head -1`.
 
@@ -147,6 +149,28 @@ Where Sonah looks:
   looks for its sign-in).
 
 Listing and dry runs make no model call and write nothing.
+
+### A repository that the recording does not show the session changing
+
+The code review reads the session's change where the recording shows its writes. A script that writes the paths it
+builds, a write after a `cd`, or a session that started in a folder that no git repository holds can change a
+repository with no write that Sonah sees. The first lines of the report then say that no code was reviewed, and why.
+Point the code review at that repository with `--code-repo` (since 0.3.0-beta.5):
+
+```sh
+sonah review --code-repo ~/code/app --format html --output ~/review.html
+```
+
+`DIR` is the repository's folder, or any folder in it; give `--code-repo` once for each repository. Sonah reads it as if
+the session had written there: its change runs from the commit where it stood when the session started, and holds the
+files that a recorded write could have changed there and the files whose last change came while the session ran (each
+marked as written by no recorded edit). The other files that differ there are outside the evaluated session. When the
+repository holds a file of the change, the code review and its checks read that folder too. The report names the
+repository with its count of files. A folder that is not there, or that no git repository holds, stops the review
+before anything is read or sent (`code_repo_not_found`, `code_repo_not_git`). The repository that holds the session's
+working directory is read by its own rule already, so giving it changes nothing that Sonah reads; the report says that
+you gave it. When no code was reviewed after all, the reason says what Sonah found in the repositories that you gave.
+Without `--code-repo`, nothing changes.
 
 ### What the review prints
 
@@ -198,8 +222,9 @@ checks their form, not their meaning. Sonah folds the evidence under each item, 
 
 Sonah puts each item in a section by its kind. The code review can propose high, medium or low for an item. Sonah
 keeps that proposal inside fixed bounds for the kind. For example, an unmet ask never goes to Good to know. A decision
-on how to do something that you asked goes to Good to know, unless a finding or question of the code review concerns
-it. Without the code review, each item stays in the section of its kind, and it shows no impact or action.
+on how to do something that you asked goes to Good to know, unless a finding of the code review concerns it. A question
+of the code review that concerns it moves it too, but only when the two name one place: the same recorded event, such
+as a message or an edit, or the same file. Without the code review, each item stays in the section of its kind, and it shows no impact or action.
 
 Sonah shows its reviewer only the start and the end of a long output (see PRIVACY.md). An item, an ask, a claim, a run
 or a decision that cites such an output carries a mark. The mark names the run or the place of the output, and the
@@ -399,10 +424,18 @@ last finished review would post, or says there is none yet.
 
 The code step (on unless you run `sonah config code-pass off` or add `--no-code-pass`; `--code-pass` turns it on for one
 review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. It runs
-with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: every file that
+with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: each file that
 differs from the commit the session started from (read with git, which it never writes to; with no git history to start
-from, the session's own recorded edits), each file's lines before and after, and a file git shows changed that no
-recorded edit wrote is marked so. It gives that change, each changed file whole, the lines the session read of files it
+from, the session's own recorded edits) that a recorded write of the session could have changed, or whose last change
+came while the session ran (a file git shows changed that no recorded edit wrote is then marked so), with its lines
+before and after. A file that differs but changed outside both (a later commit, a file already changed when the session
+began) is outside the evaluated session: it is never part of the change, the report names it apart with those words,
+and when the change holds a file to review the review agent is given it too, after the change and apart from it (the
+first part left out when the request is too large). A finding about such a file is marked "outside the evaluated
+session" and never tied to your asks or the agent's claims. A broken contract, a broken rule or a contradicted claim
+that a line the session changed causes is the session's finding even when it shows in such a file: it is not marked,
+and it keeps its ties. A check of a finding about such a file that fails or is too large to send leaves the coverage of
+the session's change as it is. It gives that change, each changed file whole, the lines the session read of files it
 left unchanged, your words, the project instruction and skill files the session loaded and its review of the session to
 a review agent: Claude Code with three read-only tools (Read, Grep and Glob) over the repository as it is now, for as
 many turns as it needs (up to 150). It cannot run or write anything. It opens any changed file it was not given whole
@@ -422,7 +455,23 @@ code review does not read as complete while any part of the change went unshown,
 during the review. A file that changed after the session's last recorded edit (a formatter, say) is shown with its
 change from where the session started, like any changed file, and the report says that Sonah cannot tell whether
 all of its lines are the agent's. When the working directory is a folder of a larger repository, git is asked about that folder
-only (paths that differ elsewhere are counted), and the agents may still read the whole repository. Each finding and
+and about the files the session wrote elsewhere in the repository (the other paths that differ elsewhere are counted),
+and the agents may still read the whole repository. A file the session wrote in another git repository, such as a
+sibling worktree, is part of the change too (since 0.3.0-beta.5), after the repository's files: its change runs from the
+commit where that repository stood when the session began, by the same rule as yours, and a file there that no recorded
+write of the session touched is part of it only when its last change came while the session ran (the other files that
+differ there are named apart, outside the evaluated session). Such a repository counts only when a file the session
+wrote there is there now and differs from that commit; the agents may read each such repository too. A repository that
+you give with `--code-repo` is read the same way, whatever the session wrote there (see "A repository that the
+recording does not show the session changing"). A file the session
+wrote in a folder that no git repository holds (a notes or temporary folder) is not reviewed: the report lists its
+folder with how many files the session wrote there. A write whose path holds a shell variable or command substitution
+that the recording does not expand (`cat > "$DIR/notes.md"`) names no file Sonah can find: it is counted apart, unless
+that spelling names a file or folder that is there (relative to the session's working folder, or where an absolute path
+points) or a file git lists as changed since the start commit (a file named with a `$`). A file
+the session wrote in a coding agent's home folder or Sonah's, or under a name from your home folder, is counted, not
+reviewed. When the session ran a shell command, the report says that Sonah does not yet
+see every edit made by helper agents or by scripts after a `cd`. Each finding and
 each question of the code review is an item of the report. What Sonah could not check lists what the code review did
 not cover and what its checks withheld. A claim that a finding shows false says so beside its status. The code review
 never changes that status. The code review also proposes a level for each item, and it writes one line for each changed
@@ -471,7 +520,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.4`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.5`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
@@ -484,6 +533,16 @@ can change between betas.
   never silently treated as the parent's work.
 - A file changed through the shell (`sed -i`, a heredoc) is recorded only as its command: there is no recorded edit of
   the file to show or check.
+- The code review reads the folder that the recording names as the session's working directory (and the other git
+  repositories that the session wrote to), not the folder that you run `sonah review` in, unless you add `--code-repo`.
+  It does not see what a script writes, or a write after a `cd`: a session that started in a folder that no git
+  repository holds and changed another repository only through a script gets no code reviewed, and the first lines say
+  why. Check that repository yourself with `git status` and `git diff`, or run the review again with `--code-repo` and
+  its folder. With `--code-repo`, a file there is part of the change only when its last change came while the session
+  ran (or a recorded write could have changed it): a file that the session changed and that changed again after it, or
+  whose last change kept an older time (a copy, a move), is outside the evaluated session. When the working directory
+  is a folder of a larger repository, giving that repository changes nothing that Sonah reads: a file that a script
+  changed elsewhere in it stays unread, and the report says so.
 - The code step reads the files as they are on this computer now. A recording from another computer, or a project
   whose files were deleted since, leaves it with nothing to read. The page and the terminal say so, and the exit code
   still follows the session review, unless you add `--code-pass`, which makes the code step's coverage count.

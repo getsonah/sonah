@@ -15,7 +15,10 @@
 //   I8  every accounting request carries at most `keys` items, each item in exactly one batch or past the cap; the
 //       contract's largest answer is at most half the output ceiling, computed from its maxima.
 //   I9  the page and the report .md depend only on the counts of items not examined or missing: the words, receipts and
-//       outcomes of examined entries change no byte, and no line says what the accounting examined.
+//       outcomes of examined entries change no byte, and no line says what the accounting examined. Amended by D125
+//       (2026-10-20, the owner: "Let's fix 1st"; amended, "go for option 3"): but a `holds` entry on an ask that the
+//       session review left not checked, which the ask's row notes, its status and every count as before
+//       (render/test/d125-code-holds.test.js); this file's asks are read done.
 //   I10 the coverage is never complete while an item in scope is not examined or missing.
 //   I11 the closed lists and the bounds are in the session run profile (the digest is m33-fast-profile-baseline's).
 //
@@ -31,6 +34,7 @@ import { runCodePass, codeSnapshotPlan, freezeCodeSnapshot, withCodePass, accoun
   CODE_ACCOUNT_SCHEMA, CODE_ACCOUNT_SYSTEM, CODE_ACCOUNT_LIMITS, CODE_ACCOUNT_VERSION, CODE_PASS_PROFILE,
   CODE_REVIEW_SYSTEM, CODE_REVIEW_SCHEMA, CODE_AGENT_LIMITS } from '../src/code-pass.js';
 import { codeDossier } from '../src/code-context.js';
+import { requestBeforeListedAsks } from './m33-integration-fixture.js';
 import { TOKEN_BYTES } from '../src/windows.js';
 import { reviewInputBytes } from '../src/challenge.js';
 import { CODE_REPORT_WORDS, codeFooterLines, codeCoverageLines, codeReviewCoverage, codeQuestionsLine }
@@ -124,7 +128,8 @@ test('D111: the accounting\'s contract, closed and bounded; its brief asks one e
     'inconsistent', 'batch_failed', 'too_large', 'over_review_limit']);
   assert.deepEqual(CODE_ACCOUNT_LIMITS, { keys: 30, calls: 4, receipts: 4, findings: 5, keyChars: 16, pathChars: 300,
     outputTokens: 128_000 });
-  assert.equal(CODE_ACCOUNT_VERSION, 'sonah.code-account/1');
+  // D114 (0.3.0-beta.5): /2, its request shows the person's asks as the session review lists them.
+  assert.equal(CODE_ACCOUNT_VERSION, 'sonah.code-account/2');
   assert.deepEqual(CODE_AGENT_LIMITS.account, { maxTurns: 80, timeoutMs: 30 * 60_000 });
   assert.deepEqual(CODE_ACCOUNT_SCHEMA.required, ['entries', 'findings']);
   const entry = CODE_ACCOUNT_SCHEMA.properties.entries;
@@ -137,8 +142,11 @@ test('D111: the accounting\'s contract, closed and bounded; its brief asks one e
   assert.doesNotMatch(CODE_ACCOUNT_SYSTEM, /footer|coverage|shown to|counted|publish|private/i);
   assert.match(CODE_ACCOUNT_SYSTEM, /Give no rating, score, rank or confidence\.$/);
   // F3b leaves the review's method text alone (its own measured change, later): the review agent's brief and contract
-  // are D110's, byte for byte.
-  assert.equal(sha(CODE_REVIEW_SYSTEM), '90ee94101097ea841108ba4a4049c09ea46b0ef1d2daf46052d67cd65a222fb1');
+  // are D110's, byte for byte. D114 (0.3.0-beta.5) moved its brief by the listed asks alone: rendered back
+  // (`requestBeforeListedAsks`), D110's.
+  assert.equal(sha(CODE_REVIEW_SYSTEM), 'ec27cbc9d64bafbaace4f51a422642f6c0d7a3c58d2e3dd12da651bf9acd52de');
+  assert.equal(sha(requestBeforeListedAsks({ system: CODE_REVIEW_SYSTEM }).system),
+    '90ee94101097ea841108ba4a4049c09ea46b0ef1d2daf46052d67cd65a222fb1');
   assert.equal(sha(JSON.stringify(CODE_REVIEW_SCHEMA)),
     '11eb71fd8a59b8e9f089ea6d437cb5de4b962e191ef8c01a622b4221c1f2751f');
   assert.doesNotMatch(CODE_REVIEW_SYSTEM, /account/i);

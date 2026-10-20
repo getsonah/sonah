@@ -158,3 +158,20 @@ test('the join writes codeLinks on a copy of a linked row only: status, receipts
   assert.deepEqual(again.requirements, unlinked.requirements);
   for (const bare of [null, { requirements: null }]) assert.equal(withAskCodeLinks(bare, session()), bare);
 });
+
+test('D113 amended: an item of the code step tagged outside the evaluated session links no ask, by any link, whatever else its record names', () => {
+  // Records a reader may be handed, each naming the first ask every way it can: a published finding (its leadsFrom, a
+  // trace step quoting the ask), a finding to verify (D110), a withheld finding and a question. Untagged, each links it.
+  const premiseRule = { premises: { confirm: 'holds-and-every-premise-repository-or-language' } };
+  const records = (tag) => {
+    const r = report({ findings: [finding('a', { leadsFrom: [ref(0)], trace: [step('I1', 'return [] for empty input')],
+      check: { verdict: 'holds', premises: [{ premise: 'SYNTHETIC', source: 'language', receipts: [] }] }, ...tag })],
+    withheld: [{ what: 'finding', reason: 'verify_refuted', text: 'SYNTHETIC withheld', leadsFrom: [ref(0)], ...tag }],
+    questions: [{ id: 'Q1', question: 'SYNTHETIC question?', concerns: ref(0), ...tag }] });
+    return { ...r, codePass: { ...r.codePass, version: premiseRule, unconfirmed: [finding('b', { leadsFrom: [ref(0)],
+      check: { verdict: 'holds', premises: [{ premise: 'SYNTHETIC', source: 'outside', receipts: [] }] }, ...tag })] } };
+  };
+  assert.deepEqual(askCodeLinks(records({}), session())[0].map((l) => l.link), ['leads_from', 'trace_quotes_ask',
+    'withheld_finding', 'question_concerns', 'unconfirmed_finding']);
+  assert.deepEqual(askCodeLinks(records({ outsideSession: true }), session()), [[], [], []]);
+});

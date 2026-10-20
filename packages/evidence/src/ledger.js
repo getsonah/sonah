@@ -116,11 +116,15 @@ export const RUN_FAILURE_CODES = Object.freeze([
  *  (before, both were `review_failed`).
  *  `config_invalid` (owner decision 2026-10-14): Sonah's settings file (cli/src/settings.js) cannot be read, and no
  *  `--code-pass` or `--no-code-pass` says whether the code step runs, so the review stops before it reads anything. */
+/** D124: the closed problems of a folder given with --code-repo (cli code-snapshot.js `codeRepoTop`): not there or not
+ *  a folder; in no git working tree. Each is a failure code the review prints by name (CLI_SAFE_ERROR_CODES). */
+export const CODE_REPO_PROBLEMS = Object.freeze(['code_repo_not_found', 'code_repo_not_git']);
 export const CLI_SAFE_ERROR_CODES = Object.freeze([
   'github_auth_missing', 'stale_revision', 'review_in_progress', 'review_state_invalid',
   'budget_exhausted', 'unsupported_backend', 'invalid_model', 'explicit_api_model_required',
   'anthropic_key_missing', 'session_not_found', 'output_exists',
   'output_folder_missing', 'output_folder_unwritable', 'config_invalid', 'state_dir_holds_root',
+  ...CODE_REPO_PROBLEMS,
 ]);
 
 // W3d-4: `unsettled` — a challenge item every pass voted on that was not settled (D58: ran,
@@ -2178,6 +2182,20 @@ export const GROUNDING_GATE_REASONS = Object.freeze({
   failure: Object.freeze([FAILURE_UNCHECKED_REASONS[0], FAILURE_UNCHECKED_REASONS[1]]),
 });
 /**
+ * D125 (its review, 2026-10-20): the reasons a not-checked ask may carry for the code review's `holds` verdict to be
+ * noted on its row (code-pass.js `askCodeHolds`; D125 amended, option 3: a note only, its status and every count as
+ * before), which also admits a row with no reason (the session review's own not checked: what would settle the ask was
+ * not in its window), by name from the closed list: the session review proposed the ask delivered, done or in part, and
+ * Sonah's quote gate refused only the evidence that it cited — not one exact quote of what its window showed
+ * (`deliverable_ungrounded`), or not recorded after the ask in the ask's session (`deliverable_not_after`). Every
+ * other reason is a check of Sonah's that speaks against the ask or did not settle it: the cited run did not complete,
+ * its end is unread or its write did not run; the session review proposed the ask not done or partly done
+ * (`shortfall_ungrounded`); the challenge refuted the status, did not settle it or did not run; or the row is code's own
+ * (`ask_unreviewed`). A verdict that no check of Sonah's challenged never reads over such a reason: ambiguous evidence is
+ * NONE.
+ */
+export const ASK_CODE_HOLDS_REASONS = Object.freeze([REQUIREMENT_UNCHECKED_REASONS[0], REQUIREMENT_UNCHECKED_REASONS[1]]);
+/**
  * D101: where a refused receipt's quote is, by the literal search alone — for the report, never for a reader:
  *   cited    in a source of the cited event, in the cited role, that the window showed
  *   shown    elsewhere in what the window showed (another event, or another role)
@@ -3489,10 +3507,14 @@ export const CODE_WITHHELD_ITEMS = Object.freeze(['finding', 'question']);
  *                         touches no line the trace quotes
  *   file_not_readable     the file named is not a readable text file of the repository (now, or at the start commit)
  *   out_of_scope          the anchor does not touch the change, and no step quotes a changed line where its kind allows
+ *   path_ambiguous        D122 (d): a relative path names an existing file in more than one place of the change (the
+ *                         working folder's repository when it holds a file of the change, and each other place that
+ *                         holds one: cli code-snapshot.js `createRepositoryReader`'s `name`), so it names none of them;
+ *                         also a file note's path (code-pass.js `fileNoteShape`)
  */
 export const CODE_ITEM_ERRORS = Object.freeze(['key_missing', 'key_outside_contract', 'value_outside_list',
   'text_over_limit', 'dossier_key_unknown', 'ask_key_required', 'claim_key_required', 'quote_ungrounded',
-  'anchor_off_quote', 'file_not_readable', 'out_of_scope']);
+  'anchor_off_quote', 'file_not_readable', 'out_of_scope', 'path_ambiguous']);
 /**
  * Why a checking agent's verdict is void (code-pass/7): named in its one re-ask, and kept as a `verify_unexecuted`
  * item's `cause`. Closed.
@@ -3510,6 +3532,36 @@ export const CODE_VOID_CAUSES = Object.freeze(['shape', 'receipt_ungrounded', 's
  *  review, or a request too large to send (code-pass/12: its minimum over the review's bound, `manifest.review.sent`
  *  false). */
 export const CODE_REVIEW_TERMINALS = Object.freeze(['answered', 'unusable', 'failed', 'not_sent']);
+/**
+ * D118 (a), the owner's go of 2026-10-18 ("cool go for it"): why the code step reviewed no code, as every reader's first
+ * screen says it (code-report.js `codeNotReviewedOf`). Closed; exactly one per report, chosen by code from the code
+ * pass's own record, never from a word.
+ *   step_off           the report holds no code pass record: the review ran without the code step
+ *   backend            the step did not run: its gap `code_step_backend` (it needs the claude-cli backend)
+ *   no_folder          the step did not run and names no other gap: it could read no working directory of the session
+ *   no_write           the change held no file to review: no recorded write of the session could have changed a file,
+ *                      and the session ran no shell command (the code pass record's `unseenEdits` is not set)
+ *   no_seen_write      (D123, the beta.5 end-to-end smoke) as `no_write`, but the session ran a shell command
+ *                      (`unseenEdits`): a script can write files that no recorded write names, so Sonah saw none it can
+ *                      read, never that the session wrote none
+ *   no_seen_write_given (D124's review) as `no_seen_write`, but the code pass record names a repository that the
+ *                      person gave with --code-repo (its base's or a place's `given`: code-pass.js `repositoriesGiven`),
+ *                      and Sonah found no file of the change there: its words never tell them to give one again
+ *   no_written_change  the change held no file to review: writes, none in the change, beside files that changed outside
+ *                      them (D113)
+ *   no_file            the change held no file to review, for any other reason
+ *   none_shown         the change held files, none with changed lines the step could show (each deleted with no
+ *                      hunks, binary, or outside the change block): no review request was made (`calls.review` 0)
+ *   too_large          the review request was not sent: its minimum was over the review's bound (code-pass/12)
+ *   no_answer          the request was sent, and its call shows no sign that it read it (code-pass.js
+ *                      `codeReviewAnswered`)
+ *   none_seen          the review answered, and the one tally holds every file of the change as not seen
+ *   unknown            (D122, a review low of D118) no review request was made, and the record is one an earlier code
+ *                      step wrote before it kept the request's manifest (`sonah.code-pass/12`), so it does not say why:
+ *                      its code step could also drop a request too large to send then
+ */
+export const CODE_NOT_REVIEWED_REASONS = Object.freeze(['step_off', 'backend', 'no_folder', 'no_write', 'no_seen_write',
+  'no_seen_write_given', 'no_written_change', 'no_file', 'none_shown', 'too_large', 'no_answer', 'none_seen', 'unknown']);
 /** The kinds of the session dossier's items (code-context.js `codeDossier`), built by code from the saved report. */
 export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pivot', 'failure',
   'edit_against_instruction']);
@@ -3751,10 +3803,10 @@ export const TIER_BOUND_REASONS = Object.freeze(['kind_floor', 'kind_ceiling', '
  *             receipt or anchor names) overlaps that item's place (render/report-model.js `placesOverlap`); one that
  *             names no place (quote null) stays an item. A question on an ask, and a question routed from a finding
  *             (`from: 'finding'`), are never members.
- *   nested    a decision whose stated receipt is nested in another decision's (`nestedReceipts`, D102: the same event,
- *             one quote holding the other); the decision with the longer quote leads the item.
+ * D112 amended (owner, 2026-10-18): the tie `nested` (a decision whose stated receipt is nested in another decision's)
+ * is removed.
  */
-export const REPORT_GROUP_TIES = Object.freeze(['concerns', 'nested']);
+export const REPORT_GROUP_TIES = Object.freeze(['concerns']);
 /**
  * E1-F8 (D112): which row places an item in its tier. Closed.
  *   lead    the item's own row

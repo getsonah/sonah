@@ -132,6 +132,9 @@ test('D82 step 10 the comment for a synthetic session review, word for word: no 
     '',
     'Sonah finished its review. It lists what you should check. It never says that the work is correct.',
     '',
+    // D118 (a): no code pass record: the first screen says no code was reviewed, and why (no folder: it is public).
+    'No code was reviewed\\. Reason: this review ran without the code review\\.',
+    '',
     'Not covered: the recorder shortened 1 message of yours · Sonah found no checked recording for 2 delegations to a '
       + 'helper.',
     '',

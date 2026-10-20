@@ -229,8 +229,9 @@ test('a dry run says whether the step runs and roughly what it adds, and sends n
   const on = await review(t, box, { root, argv: ['--dry-run'] });
   assert.equal(on.code, 0);
   assert.deepEqual(on.calls, []);
-  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode review: on \(the default\)\. It reviews the change with read-only access to the whole repository \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
-  assert.match(on.stdout, /^Code review: the change holds \d+ paths? that the session changed/m, 'and what it would read');
+  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  assert.match(on.stdout, /^Code review: the change holds \d+ paths? that a recorded write could have changed or that changed during the session/m,
+    'and what it would read');
   await assert.rejects(stat(box.env.SONAH_HOME), { code: 'ENOENT' }, 'a dry run writes no setting');
   await config(box, ['code-pass', 'off']);
   const off = await review(t, box, { root, argv: ['--dry-run'] });

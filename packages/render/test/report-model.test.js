@@ -14,7 +14,7 @@ import * as words from '../report-words.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { renderSessionPage } from '../session-page.js';
 import { REPORT_SHAPES, reportSession, triagedReport, untriagedReport, sessionOnlyReport, codePass3Report, codePass1Report,
-  codePass8Report, repoFacts, HEAD, START, REPORT_TEXT } from './report-fixture.js';
+  codePass8Report, sessionReviewOnlyReport, repoFacts, HEAD, START, REPORT_TEXT } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
 const modelOf = (shape, options = repoFacts()) => {
@@ -100,22 +100,33 @@ test('D97 (5): header line D counts from structure; line E stands exactly when t
   const a = modelOf(triagedReport);
   // The claims the claims list shows as not checked, with the one resting on a check that did not finish (its row says
   // so in its own words; Sonah did not check it either), and the written statements it shows as not checked.
-  assert.deepEqual(a.header.didNotCheck.phrases, ['1 ask', '1 ask that rests only on the agent\'s words', '3 claims',
-    '1 statement that the agent wrote into a file']);
+  // D115: the asks for which the session review cited only the agent's words, never that they rest on nothing else.
+  assert.deepEqual(a.header.didNotCheck.phrases, ['1 ask', '1 ask for which the session review cited only the agent\'s '
+    + 'words', '3 claims', '1 statement that the agent wrote into a file']);
   assert.equal(a.header.noCode, null);
   // What Sonah could not check names the same counts in the same terms: one term for one thing (S4).
   const facts = a.notChecked.facts.map((f) => textOf(f.parts));
   assert.ok(facts.includes('Sonah did not check 3 claims. The claims under What the agent did list them.'), facts.join('\n'));
   assert.ok(facts.includes('Sonah did not check 1 statement that the agent wrote into a file. The claims under What the '
     + 'agent did list it.'));
-  const c = modelOf(sessionOnlyReport);
-  assert.deepEqual(c.header.noCode, [words.REPORT_HEADER_WORDS.noCodeStep]);
+  // D118 (a): line E is the first screen's "No code was reviewed." with its one closed reason; with no code step that
+  // ran, the items' line beside it; a folder only where the code step looked in one.
+  const c = modelOf(sessionReviewOnlyReport);
+  assert.deepEqual(c.header.noCode, { reason: 'step_off', words: 'No code was reviewed. Reason: this review ran without '
+    + 'the code review.', folder: null, impact: words.REPORT_HEADER_WORDS.noCodeImpact });
+  // D122 (a review low of D118): a report that holds a finding of the retired combined route's code review and no code
+  // pass record is a combined review, whose run words name its code review: no line E, as the terminal and the PR
+  // comment say none (one definition, evidence code-report.js `reportNotReviewedOf`).
+  assert.equal(modelOf(sessionOnlyReport).header.noCode, null);
   // A code step that did not run: line E, with the code step's own reason.
   const session = reportSession();
   const notRun = { ...untriagedReport(session), codePass: { ran: false, gaps: [{ code: 'code_step_backend' }] } };
-  const model = reportModel(session, notRun, {});
-  assert.equal(model.header.noCode[0], words.REPORT_HEADER_WORDS.noCodeStep);
-  assert.match(model.header.noCode[1], /^The code review did not run\. It needs Claude Code/);
+  const model = reportModel(session, notRun, { folder: '/work/project' });
+  assert.deepEqual(model.header.noCode, { reason: 'backend', words: 'No code was reviewed. Reason: the code review '
+    + 'needs Claude Code, and this review used another backend.', folder: null,
+  impact: words.REPORT_HEADER_WORDS.noCodeImpact });
+  const noRoot = reportModel(session, { ...notRun, codePass: { ran: false } }, { folder: '/work/project' });
+  assert.deepEqual([noRoot.header.noCode.reason, noRoot.header.noCode.folder], ['no_folder', '/work/project']);
 });
 
 test('D96: the count of the code review\'s notes Sonah did not use counts only entries, never a list record or a kept entry', () => {
@@ -351,7 +362,8 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     // D109 (its review): the code step's counts are the change's, never what the recording changed.
     'Claude Code recording · a change of 1 file, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
-    'Sonah did not check: 1 ask · 1 ask that rests only on the agent\'s words',
+    // D115: what the session review cited, never that nothing else does the ask.
+    'Sonah did not check: 1 ask · 1 ask for which the session review cited only the agent\'s words',
     'Must act 2 · Must know 0 · Good to know 0 (folded) · Your prompt: 4 done, 1 partly done, 1 not checked',
     'Must act: fix the Retry-After unit · ask 2',
     'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
@@ -361,19 +373,19 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     'Sonah checked only the marked parts of your message.',
     'ask 2 · Partly done · See item 2.',
     'ask 5 · Not checked · Sonah did not find, word for word, the evidence that the session review cited for it.',
-    'ask 6 · Done · The session review cited only the agent\'s words for it. Sonah found no recorded result or change '
-      + 'for it.',
+    'ask 6 · Done · The session review cited the agent\'s words as what does it, not a recorded result or change.',
     // Item 1 is the bug that the code review rated high: inside a section, by final level first (D112), then by kind.
     '1 Fix: Retry-After gives the wait in milliseconds',
     'Impact on you: A client that obeys the header can stop calling your API for up to 17 hours.',
     'Action: Send the wait time in whole seconds.',
     'Where: src/middleware/rateLimit.ts:2 · ask 3',
   ].join('\n'));
-  // 7 + 14 + 15 + 16 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 24 + 8 + 19 + 8 + 5 words, line by line, by `wc -w` (D100: the
+  // 7 + 14 + 15 + 19 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 22 + 8 + 19 + 8 + 5 words, line by line, by `wc -w` (D100: the
   // line of an ask that rests only on the agent's words says what the session review cited, five words more; D109's
   // review: "a change of 1 file", two words more; D112: the first item is the bug with its impact and action, 18 words
-  // more than the partly done ask).
-  assert.equal(firstScreenWords(model), 242);
+  // more than the partly done ask; D115: the header names what the session review cited, three words more, and the
+  // ask's line says only that, two words fewer).
+  assert.equal(firstScreenWords(model), 243);
   assert.equal(firstScreenExcerptLines(model), 1);
   // The bug carries the code review's impact and action, and one excerpt of at most 8 lines.
   assert.equal(model.tiers.must_act[0].where[0].excerpt.lines.length, 1);
@@ -464,12 +476,13 @@ test('D97 (19): the D93 split — a done ask with a code finding is counted apar
   const notChecked = model.prompt.asks[4];
   const question = itemsOf(model).find((item) => item.kind === 'code_question' && textOf(item.what.parts)
     === 'Is a 429 body needed?');
-  // D101: the ask the quote gate lowered says which test refused its quote, with code's numbers.
+  // D101: the ask the quote gate lowered says which test refused its quote, with code's numbers. D116: the question
+  // whose key names this ask names no place (its quote is null), so no code checked the tie: no line names it.
   assert.deepEqual(notChecked.lines.map(textOf), [
     'The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.',
     'Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the '
-      + 'section What Sonah could not check.',
-    `The code review asks you about this ask. See item ${question.n}.`]);
+      + 'section What Sonah could not check.']);
+  assert.ok(question, 'the question is still an item of its own');
   // The agent's own word for a done ask is a fact line, counted in "Sonah did not check".
   assert.deepEqual(model.prompt.asks[2].lines.map(textOf), [words.REPORT_PROMPT_WORDS.agentOnly]);
 });
@@ -568,7 +581,11 @@ test('D97 (22): header line B — a deleted file HEAD lacks is committed, outsid
   const partial = triagedReport(session);
   partial.codePass.files[0] = { ...partial.codePass.files[0], added: 20 };
   delete partial.codePass.files[1].removed;
-  assert.equal(reportModel(session, partial, facts).header.size[1], '5 files changed, +13 −2', 'the recorded edits\' counts');
+  // D118 (c): the one list the Files section counts (with a git base, git's): its count, and no lines when the code
+  // step does not hold every file's (the recorded edits' lines are not the change's).
+  const partialModel = reportModel(session, partial, facts);
+  assert.equal(partialModel.header.size[1], 'a change of 5 files', 'the one list, with no lines');
+  assert.equal(partialModel.header.changeFiles, partialModel.did.files.total);
 });
 
 test('D97 (23): who said what — the code review\'s and the session review\'s words are set apart; the title is yours', () => {
@@ -603,7 +620,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/4 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/5 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -747,6 +764,8 @@ test('D97: a part of the session review with no id is named in words, never by a
   const model = modelOf(triagedReport);
   // R12: an ask with no id that maps to no ask of your prompt is counted with no number: "its ask 7" was the session
   // review's own list index, which the prompt table numbers differently.
+  // D115: the row has no text, a shape Sonah cannot read (session-story.js `readableRequirement`), so "could not read"
+  // stays true of it.
   assert.deepEqual(model.notChecked.unreadAsks, ['Sonah could not read 1 ask of the session review.']);
   assert.equal(/\bask \d/.test(JSON.stringify(model.notChecked.unreadAsks)), false);
   // One with an id is named by it; the ones with none are counted after it.
@@ -844,16 +863,27 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
   assert.deepEqual([tied.tier.default, tied.tier.final], ['must_know', 'must_know']);
   const contract = one(tiedModel, 'code_contract');
   assert.equal(tied.why, `Item ${contract.n} of the code review concerns it, so Sonah puts it in Must know.`);
-  // A question of the code review concerns it: the same.
+  // A question of the code review concerns it where code checked the tie (D116's review): the same. The fixture's Q2,
+  // routed from a finding, is anchored on a line of src/limiter.js, the file that the decision's edit wrote.
+  const routed = triagedReport(session);
+  routed.codePass.questions[1] = { ...routed.codePass.questions[1], concerns: { key: 'S11', kind: 'decision',
+    source: 'decisions', index: 2, id: routed.decisions[2].id } };
+  routed.codePass.triage.push({ ref: { question: 'Q2' }, level: 'medium', impact: 'A preflight uses up the limit.',
+    action: 'Decide whether preflights count.', label: 'decide on preflights', where: null });
+  const routedModel = reportModel(session, routed, repoFacts());
+  const fromFinding = one(routedModel, 'code_question_finding');
+  assert.equal(chose(routedModel).tier.final, 'must_know');
+  assert.equal(chose(routedModel).why, `Item ${fromFinding.n} of the code review concerns it, so Sonah puts it in Must `
+    + 'know.');
+  // D112 amended, D116's review: a question that names no place (Q1, quote null) is an item of its own, and its key
+  // ties nothing that code checked: the decision stays in Good to know, and no sentence names the question.
   const asked = triagedReport(session);
   asked.codePass.questions[0] = { ...asked.codePass.questions[0], concerns: { key: 'S11', kind: 'decision',
     source: 'decisions', index: 2, id: asked.decisions[2].id } };
   const askedModel = reportModel(session, asked, repoFacts());
-  assert.equal(chose(askedModel).tier.final, 'must_know');
-  // D112 amended: that question names no place (quote null), so it is an item of its own, and the why names it.
-  const question = byKind(askedModel, 'code_question').find((item) => item.rows[0].index === 0);
   assert.deepEqual(chose(askedModel).members, []);
-  assert.equal(chose(askedModel).why, `Item ${question.n} of the code review concerns it, so Sonah puts it in Must know.`);
+  assert.equal(chose(askedModel).tier.final, 'good_to_know');
+  assert.equal(chose(askedModel).why, 'Sonah puts a decision on how to do your ask in Good to know by default.');
   // D112: a question that quotes the decision's own statement shares its place, so it is inside the decision's item,
   // and the why names no item number.
   asked.codePass.questions[0] = { ...asked.codePass.questions[0], quote: asked.decisions[2].stated };

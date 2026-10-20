@@ -1,7 +1,7 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.4",
-  "description": "Code review for your agent's PRs: did you get what you asked for? Reviews the Claude Code or Codex session behind the change, locally.",
+  "version": "0.3.0-beta.5",
+  "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
     "claude-code",

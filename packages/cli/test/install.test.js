@@ -289,7 +289,8 @@ process.stdin.on('end', () => {
   // D71 (a): the review ran to completion, so it exits 0 — the real adapter's head-truncated write body is a recorder
   // limit, named in the output, never an exit — and no status is printed or written.
   const reviewed = await run(bin, [...args, '--format', 'html', '--output', output, '--no-open']);
-  assert.match(reviewed.stdout, /^Sonah's review: complete \(session review complete\)\./m);
+  // D118 (a): the code step is off by the setting, so "complete" names what is missing, and the next line says why.
+  assert.match(reviewed.stdout, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\.\nNo code was reviewed\. Reason: this review ran without the code review\./m);
   assert.match(reviewed.stdout, /^Not covered: /m);
   assert.ok(reviewed.stdout.includes(`Local page: ${output}`));
   assert.doesNotMatch(reviewed.stdout, /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/);
@@ -308,7 +309,7 @@ process.stdin.on('end', () => {
   // D60: the same review again re-runs every deterministic step, but every request is the same bytes, so each is
   // answered by its stored answer with no call.
   const again = await run(bin, args);
-  assert.match(again.stdout, /^Sonah's review: complete \(session review complete\)\./m);
+  assert.match(again.stdout, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\./m);
   assert.match(again.stdout, /^Model answers: (\d+) of \1 reused \(no call\)\.$/m);
   assert.equal(await readFile(callLog, 'utf8'), callsAfterReview, 'the same requests were not sent again');
 

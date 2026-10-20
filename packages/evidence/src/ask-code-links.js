@@ -90,15 +90,19 @@ function placed(session, receipt, cache) {
  * again from its stored check (code-pass.js `codePassFindings`, `codePassUnconfirmed`): a finding to verify links an
  * ask by its `leadsFrom` alone, and never as an attention link. `trace_quotes_ask` needs `session` (the loaded
  * recording the quotes ground in); with none, that link is never made.
- * A row that is not an object, or that the code step joined nothing to, gets an empty list. Pure.
+ * A row that is not an object, or that the code step joined nothing to, gets an empty list. D113 amended: a finding,
+ * a finding to verify, a withheld finding or a question tagged outside the evaluated session (`outsideSession`) links
+ * no ask, by any link (its record already names no row). Pure.
  */
 export function askCodeLinks(report, session = null) {
   const pass = plain(report?.codePass) ? report.codePass : null;
-  const findings = codePassFindings(report).filter((f) => typeof f.id === 'string');
-  const unconfirmed = codePassUnconfirmed(report).filter((f) => typeof f.id === 'string');
+  // D113 amended: an item of the code step outside the evaluated session (`outsideSession`) ties to no ask, by any link.
+  const own = (x) => !(plain(x) && x.outsideSession === true);
+  const findings = codePassFindings(report).filter((f) => typeof f.id === 'string' && own(f));
+  const unconfirmed = codePassUnconfirmed(report).filter((f) => typeof f.id === 'string' && own(f));
   const ids = new Set(findings.map((f) => f.id));
-  const withheld = list(pass?.withheld);
-  const questions = list(pass?.questions);
+  const withheld = list(pass?.withheld).map((w) => (own(w) ? w : null));
+  const questions = list(pass?.questions).map((q) => (own(q) ? q : null));
   const cache = new Map();
   const where = (receipt) => (session && typeof session.event === 'function' ? placed(session, receipt, cache) : null);
   return list(report?.requirements).map((row, index) => {

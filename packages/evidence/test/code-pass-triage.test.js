@@ -21,7 +21,7 @@ import { canonicalJson } from '../contracts/canonical.js';
 import { withheldWhy } from '../src/code-report.js';
 import { CODE_FILES, codeSession, dossierItems, reviewFinding, holds, allSound, verifiedFinding, batchItems,
   itemsEnded, fatesOf, sameFindingTwice, PARSE_QUOTE, repositoryPremise, accountsHold } from '../../cli/test/code-pass-fixture.js';
-import { verifyBriefBeforePremises } from './m33-integration-fixture.js';
+import { verifyBriefBeforePremises, requestBeforeListedAsks } from './m33-integration-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -571,10 +571,14 @@ test('triage: keeping a field apart moves no request byte — a repair names a t
     return seen;
   };
   const [byDefault, off] = [await requestsOf(undefined), await requestsOf(false)];
-  assert.equal(digestOf(off), REQUESTS_NOW);
-  assert.equal(digestOf(premisesBack(off)), REQUESTS_BEFORE_FIELDS_APART);
-  assert.equal(digestOf(byDefault), REQUESTS_NOW_WITH_WHOLE_FILES);
-  assert.equal(digestOf(premisesBack(byDefault)), REQUESTS_WITH_WHOLE_FILES);
+  // D114 (0.3.0-beta.5) moved every code-step request (the person's messages, the listed asks, the briefs and the change
+  // block's heading): rendered back (`requestBeforeListedAsks`), each is 0.3.0-beta.4's, byte for byte.
+  assert.equal(digestOf(off), REQUESTS_LISTED_ASKS);
+  assert.equal(digestOf(listedAsksBack(off)), REQUESTS_NOW);
+  assert.equal(digestOf(premisesBack(listedAsksBack(off))), REQUESTS_BEFORE_FIELDS_APART);
+  assert.equal(digestOf(byDefault), REQUESTS_LISTED_ASKS_WITH_WHOLE_FILES);
+  assert.equal(digestOf(listedAsksBack(byDefault)), REQUESTS_NOW_WITH_WHOLE_FILES);
+  assert.equal(digestOf(premisesBack(listedAsksBack(byDefault))), REQUESTS_WITH_WHOLE_FILES);
   assert.deepEqual(byDefault.map((r, at) => [r.system === (at < 2 ? CODE_REVIEW_SYSTEM_WHOLE_FILES : off[at].system),
     withoutPartB(r.prompt) === off[at].prompt, r.prompt === off[at].prompt]),
   [[true, true, false], [true, true, false], [true, true, true], [true, true, true]]);
@@ -586,6 +590,12 @@ const REQUESTS_NOW = '0544afb79a5c72cad53596287fe6c5ad1329de78aec4eb15105038314b
 const REQUESTS_WITH_WHOLE_FILES = '9ead345acdf83d1302f48f4f26bf53846f4c05b7907581ed9848540f0deab1a7';
 /** D110: those, the finding's checking agent's brief at code-verify/3. */
 const REQUESTS_NOW_WITH_WHOLE_FILES = '9a5832dd5c01bbcc406664e59bfbbb770b93b36ecab8c7a168ba8af69ac86332';
+/** D114: those, the person's messages and the listed asks in every request (code-pass/13, code-verify/4). */
+const REQUESTS_LISTED_ASKS = '02e12bdd29b7d137f83c2456e1be8dd9c9d05e3cd0b9fc1664d4d6fa21ee86c4';
+/** D114: those with part B on. */
+const REQUESTS_LISTED_ASKS_WITH_WHOLE_FILES = '54daebe7ff6256531f9e4b1809e9ccf67d542aa2d0915df0a4ae24e1ee03568f';
+/** D114: requests rendered back to 0.3.0-beta.4's (`requestBeforeListedAsks`). */
+const listedAsksBack = (requests) => requests.map(requestBeforeListedAsks);
 /** A digest of requests: each one's label, system prompt and prompt. */
 const digestOf = (requests) => sha(enc(JSON.stringify(requests.map((r) => [r.label, r.system ?? null, r.prompt ?? null]))));
 /** D110: requests with each finding's checking agent's brief rendered back to bucket B's (`verifyBriefBeforePremises`). */
@@ -869,13 +879,18 @@ test('triage: an entry that fails whole is named once in the repair, by its whol
   // requests (`sonah.code-pass/12`: every code-step request moved), run off; by default (D108: part B on), D105's with
   // part B's brief and blocks in the review's and the repair's. D110 moved the finding's checking request alone (its
   // brief, code-verify/3), and rendered back (`verifyBriefBeforePremises`) every request is bucket B's.
-  assert.equal(digestOf(seen), 'f440a5cbef483e34b7610ca08197ffc356aa4596d21c8816660fc1ca7fc00e61');
-  assert.equal(digestOf(premisesBack(seen)), '97eb6a6feecf29555d8ea2d74c9c164dceaa1f71e0b1b3cf850750cfd619a90c');
+  // D114 (0.3.0-beta.5) moved every request; rendered back (`requestBeforeListedAsks`), 0.3.0-beta.4's.
+  assert.equal(digestOf(seen), '98c3798ab13de78496bb13da73c3ede92abd3659995dc191324dc4a910e37dcf');
+  assert.equal(digestOf(listedAsksBack(seen)), 'f440a5cbef483e34b7610ca08197ffc356aa4596d21c8816660fc1ca7fc00e61');
+  assert.equal(digestOf(premisesBack(listedAsksBack(seen))),
+    '97eb6a6feecf29555d8ea2d74c9c164dceaa1f71e0b1b3cf850750cfd619a90c');
   const off = [];
   await run(agents({ seen: off, review: repairing({ triage: [entry('F1', { label: 'fix the empty input case right now',
     where: OFF_PLACE }), entry(UNASKED, { where: OFF_PLACE })] }), repair: refuse }), { wholeFiles: false });
-  assert.equal(digestOf(off), '58c1c4c3267a9b2a25135a3b5b55f5942d37e2540cf9b342d5c9deb2a4829dbf');
-  assert.equal(digestOf(premisesBack(off)), '74ff8405c5f9f69f56da61df396cc11fafee7b7fdd1c98acfbf87b772c8230be');
+  assert.equal(digestOf(off), '8eeaabb23864ace701bcb0c16d0f6af5675c477ba2ac1ac8ed2b1b9462729294');
+  assert.equal(digestOf(listedAsksBack(off)), '58c1c4c3267a9b2a25135a3b5b55f5942d37e2540cf9b342d5c9deb2a4829dbf');
+  assert.equal(digestOf(premisesBack(listedAsksBack(off))),
+    '74ff8405c5f9f69f56da61df396cc11fafee7b7fdd1c98acfbf87b772c8230be');
   assert.deepEqual(seen.map((r, at) => withoutPartB(r.prompt) === off[at].prompt), seen.map(() => true));
 });
 

@@ -49,6 +49,55 @@ export function displayPath(path, root) {
 export const HOME_SPELLED = /^(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%)(?:[/\\]|$)/i;
 
 /**
+ * The shell's expansion grammar in a recorded spelling (POSIX Shell Command Language 2.6.2 and 2.6.3): a parameter
+ * expansion — `$` before a name's first character, a digit, a special parameter or a brace (`$NAME`, `$1`, `$@`, `$$`,
+ * `${…}`) — or a command substitution (`$(…)`, a backquote). The shell replaced it when the command ran; the recording
+ * keeps the command as typed. Never a list of names.
+ */
+const SHELL_EXPANSION = /\$[A-Za-z_0-9{(@*#?!$-]|`/;
+/** The recorded operations that write a file, as the code step's plan reads them (code-pass.js `codeSnapshotPlan`). */
+const WRITE_OPERATIONS = Object.freeze(['write', 'edit', 'delete']);
+
+/**
+ * D117 amended and D118 (b), one rule since their integration (0.3.0-beta.5; the owner, 2026-10-18: "paths that hold an
+ * unexpanded $VARIABLE are never counted"): the recorded spellings of the paths that the session's writes could have
+ * changed (landed or unknown effect, as the code step's plan reads a write) and that the recording does not resolve, each
+ * once, in the order first written. A spelling is not resolved exactly when
+ *   (1) every such write of it was read by the slicer from a command's text (`shellWriteOf`, the parent link it writes):
+ *       a file tool's path is the path the tool used, so a `$` in it is a character of the name (a route file named
+ *       `$id.tsx`), and a spelling a file tool wrote once is a file;
+ *   (2) it holds the shell's expansion grammar (`SHELL_EXPANSION`), and is not spelled from the home folder
+ *       (`HOME_SPELLED`: D109 names that one from the home, and reads it first); and
+ *   (3) its literal spelling names no path that exists, resolved against the session's working folder: the recording
+ *       keeps a parsed write's spelling without the command's quoting, so a heredoc to 'app/routes/users.$id.tsx' wrote
+ *       that very name. Whether a path exists is a fact of the disk, which this module never reads: `literal` holds the
+ *       spellings that the code step's snapshot found naming a path (cli code-snapshot.js `readCodeSnapshot`), and its
+ *       record keeps them (`base.literal`, code-pass.js `literalOf`), so every other reader decides from that record.
+ *       With no such record (the code step off, or a record written before this rule), no spelling is known to name a
+ *       path, and (1) and (2) decide.
+ * Such a path names no file Sonah can place: never a file of the change or of the repository, nor one outside them; it is
+ * counted apart. The one list every reader reads: the code step's plan (code-pass.js `codeSnapshotPlan`), its snapshot's
+ * count (`base.unresolved`) and the story (render session-story.js), so the report model's header and Files section.
+ * Structure, the shell's grammar and the recorded fact only, never a variable's name. Pure.
+ */
+export function unresolvedShellPaths(session, { literal = [] } = {}) {
+  const named = new Set(list(literal));
+  const shellOnly = new Map();
+  const effectOf = effectReader(session);
+  for (const event of list(session?.events)) {
+    if (event?.kind !== 'invocation' || !WRITE_OPERATIONS.includes(event.operation)) continue;
+    if (!CHANGING_EFFECTS.includes(effectOf(event))) continue;
+    const shell = typeof event.shellWriteOf === 'string' && event.shellWriteOf !== '';
+    for (const change of list(event.changes)) {
+      const path = change?.path;
+      if (typeof path === 'string' && path) shellOnly.set(path, (shellOnly.get(path) ?? true) && shell);
+    }
+  }
+  return [...shellOnly].filter(([path, shell]) => shell && !HOME_SPELLED.test(path) && SHELL_EXPANSION.test(path)
+    && !named.has(path)).map(([path]) => path);
+}
+
+/**
  * Whether a path the code step names lies under the working directory, by its spelling: relative (`displayPath` made it
  * so), with no `..` step, not home-spelled. A recorded write outside it (absolute as recorded, or reached by `..`) is no
  * part of the change under review: it is counted (`outside_root`). Structure, not privacy (D90: every path may be
@@ -455,6 +504,14 @@ export const CHANGE_ROW_WORDS = Object.freeze({
  *  working directory (git's lists stop at it). Fixed words. */
 export const OUTSIDE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
   + 'commit outside the working directory: not part of the change reviewed';
+/** D113: what the table of contents says, by count only, of the paths in the working directory that differ from the
+ *  start commit and that no recorded write of the session touched (cli code-snapshot.js `sessionsOwnChange`): they
+ *  changed outside this session's recorded writes and are no part of the change. D113 amended (the owner, 2026-10-18:
+ *  "tag it by outside the evaluated session"): they are outside the evaluated session, said in those fixed words, and the
+ *  review request may show them in a block of their own after the change (code-pass.js `outsideBlock`). Fixed words. */
+export const ELSEWHERE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
+  + 'commit in the working directory, changed outside this session\'s recorded writes: outside the evaluated session, '
+  + 'not part of this change';
 
 const pad = (n) => (n === null || n === undefined ? '    ' : String(n).padStart(4, ' '));
 /** One hunk row as Pullfrog formats it: `| OLD | NEW | TYPE | code`. */
@@ -485,13 +542,15 @@ export const sectionBytes = (entry) => sectionLines(entry).reduce((sum, line) =>
  * type` when the block shows its hunks (a-b: the lines of this block they occupy, counted from the `## Files` line as
  * line 1), else the path with why not — each row's `notes` after it (the dossier keys whose events touch the path, …),
  * never removing or reordering a row; then, by count only, the paths git shows differing outside the working directory
- * (`outside`, OUTSIDE_ROW_WORDS); then `---` and each shown file's section (`sectionLines`). `entries`: `{ path, type,
- * hunks, shown, notes, why }` in table-of-contents order; `shown` false lists the path by `why` (a CHANGE_ROW_WORDS key).
- * Pure.
+ * (`outside`, OUTSIDE_ROW_WORDS) and (D113) those in it that changed outside this session's recorded writes
+ * (`elsewhere`, ELSEWHERE_ROW_WORDS); then `---` and each shown file's section (`sectionLines`). `entries`: `{ path,
+ * type, hunks, shown, notes, why }` in table-of-contents order; `shown` false lists the path by `why` (a CHANGE_ROW_WORDS
+ * key). Pure.
  */
-export function renderChange(entries, { outside = 0 } = {}) {
+export function renderChange(entries, { outside = 0, elsewhere = 0 } = {}) {
   const rows = list(entries);
-  const counted = outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : [];
+  const counted = [...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : []),
+    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere)] : [])];
   const placed = rows.filter((entry) => entry.shown);
   const out = [];
   const ranges = new Map();

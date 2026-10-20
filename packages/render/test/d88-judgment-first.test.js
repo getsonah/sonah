@@ -46,8 +46,10 @@ const FOLDED = 6;
 test('D88: the closed lists of counted and folded rows, in their order, one definition for every reader', () => {
   // An ask's status never contradicts Sonah's own findings: an ask read done or not checked that a finding of the code
   // review bears on is counted right after the asks shown not done or partly done (ask-code-status.test.js).
+  // D113 amended (its second review): the code review's findings about code outside the evaluated session, apart, last.
   assert.deepEqual(ATTENTION_ROWS, ['notActing', 'unasked', 'chose', 'whetherAsked', 'pivots', 'asksNotDone',
-    'asksCodeFinding', 'contradicted', 'codeContradicted', 'passedOver', 'forbidden', 'writtenContradicted', 'codeFindings']);
+    'asksCodeFinding', 'contradicted', 'codeContradicted', 'passedOver', 'forbidden', 'writtenContradicted', 'codeFindings',
+    'codeFindingsOutside']);
   assert.deepEqual(FOLDED_ROWS, ['asksNotChecked', 'claimsOpen', 'claimsIncomplete', 'failuresNotChecked', 'writtenOpen']);
   for (const list of [ATTENTION_ROWS, FOLDED_ROWS, ASK_ROW_KINDS, DECISION_ROW_KINDS, FOLDED_SECTION_WORDS,
     FOLDED_SECTION_WORDS.groups]) assert.ok(Object.isFrozen(list));

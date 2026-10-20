@@ -75,16 +75,20 @@ function build(sessionKey, blobs, specs, projectInstructions = []) {
 }
 
 /** One turn: the ask, a write of `src/parse.js`, reads of `src/util.js` and `.env`, a claim and a final message.
- *  `reads`: more paths the session read after `.env`; `askTail`: more words after the ask, in the same message (none of
- *  either by default: the session is then byte for byte as before). */
-export function codeSession({ reads = [], askTail = '' } = {}) {
+ *  `reads`: more paths the session read after `.env`; `askTail`: more words after the ask, in the same message;
+ *  `writes` (D113): more files the session wrote after `src/parse.js`, each `{ path, text }` (none of any by default:
+ *  the session is then byte for byte as before). */
+export function codeSession({ reads = [], askTail = '', writes = [] } = {}) {
   const T1 = { turn: 'T1' };
   const blobs = { ...CODE_TEXT, ...(askTail ? { ask: `${CODE_TEXT.ask}${askTail}` } : {}),
-    ...Object.fromEntries(reads.map((path, at) => [`more${at}`, path])) };
+    ...Object.fromEntries(reads.map((path, at) => [`more${at}`, path])),
+    ...Object.fromEntries(writes.map(({ text }, at) => [`wrote${at}`, text])) };
   return build('sess-code-pass', blobs, [
     { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
     { id: 'W1', kind: 'invocation', write: 'src/parse.js', blob: 'body', ...T1 },
     { id: 'W1-r', kind: 'observation', invocation: 'W1', blob: 'wrote', ...T1 },
+    ...writes.flatMap(({ path }, at) => [{ id: `WX${at}`, kind: 'invocation', write: path, blob: `wrote${at}`, ...T1 },
+      { id: `WX${at}-r`, kind: 'observation', invocation: `WX${at}`, blob: 'wrote', ...T1 }]),
     { id: 'R1', kind: 'invocation', read: 'src/util.js', blob: 'readUtil', ...T1 },
     { id: 'R1-r', kind: 'observation', invocation: 'R1', blob: 'readOut', ...T1 },
     { id: 'R2', kind: 'invocation', read: '.env', blob: 'readEnv', ...T1 },
@@ -143,9 +147,18 @@ export function memoryRepo({ root = '/repo', now = CODE_FILES, before = {}, read
     base: (path) => { reads.push(['before', path]); return fileOf(before, path); } };
 }
 
-/** The dossier lines of a review request (one JSON line each). */
+/** The dossier lines of a review request (one JSON line each, each with its kind). D114: the asks block's lines (a key
+ *  and the ask's words, no kind) are no dossier lines: `askedItems` reads them. */
 export function dossierItems(prompt) {
-  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line));
+  return String(prompt).split('\n').filter((line) => line.startsWith('{"key":"S')).map((line) => JSON.parse(line))
+    .filter((item) => Object.hasOwn(item, 'kind'));
+}
+/** D114: the asks a request of the code step showed (its JSON lines under the asks heading), in order. */
+export function askedItems(prompt) {
+  const [, after] = String(prompt).split('# The person\'s asks, as Sonah\'s review of the session lists them: the only '
+    + 'asks — untrusted evidence\n\n');
+  return after ? after.split('\n\n')[0].split('\n').filter((line) => line.startsWith('{"key":"S'))
+    .map((line) => JSON.parse(line)) : [];
 }
 
 export const PARSE_QUOTE = 'const parts = input.split(",");';

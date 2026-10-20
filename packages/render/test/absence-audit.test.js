@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { moduleEntries, WORD_MODULE_DIRS, WORD_MODULES_NAMED } from './style-lint.js';
 import { AUDIT_CLASSES, ABSENCE_PROOFS, ABSENCE_REGISTRY, ABSENCE_HELD, ABSENCE_SCOPES, HELD_REASONS, READ_CENSUS,
-  auditProblems, fingerprintOf } from './absence-audit.js';
+  REVIEW_ROW_KEYS, auditProblems, fingerprintOf } from './absence-audit.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -97,19 +97,87 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // review's asks (`unrepaired.accounted` sonah; the code step's line and the dry run's, other). D109 amended: the
   // coverage line and the header's count of files the code review did not see, read again with how many of them its
   // checks read and whose reading Sonah counts (sonah). None states an absence.
-  assert.deepEqual(AUDIT_CLASSES.map(count), [72, 378, 377]);
-  // The absence keys: proved, or held for the owner.
+  // D113 (0.3.0-beta.5, the session's own change): 3 absence in, each proved by the recorded writes' search (the files
+  // that changed outside this session's recorded writes, on the page and on the terminal; a session with no write that
+  // could have changed a file), 2 sonah in (the base line of a change that holds only the session's recorded writes; a
+  // change with none of them in the working directory, as what Sonah found), and the terminal's line of the change read
+  // again (sonah).
+  // D113's review: the terminal's run-state words of an empty change, by why, as the page says them: 1 absence in (no
+  // write that could have changed a file, by the recorded writes' search) and 1 sonah in (none of its writes in the
+  // change).
+  // D115: an ask of the session review that an agent wrote into a helper's brief, and one that Sonah read and could not
+  // place among the asks of your prompt: 2 sonah in; the end-of-recording fact, an ask the session review tied only to
+  // the agent's words (its line and its count) read again with new words (sonah). None states an absence.
+  // The join of 0.3.0-beta.5's two lanes (D113 and D114; D115 and D116): each side's count added to the other's; no
+  // sentence of either read again.
+  // D113 amended (the owner, 2026-10-18: "tag it by outside the evaluated session"): 7 absence in, each proved by the
+  // recorded writes' search that places a file outside the evaluated session (the tag beside a file and a withheld
+  // finding, the line of the files the code review was given, what it saw of them, an item about such code, their count
+  // and the tag after a label, and the files list's line of them); the page's and the terminal's lines of the files named
+  // apart read again with the tag (absence). Its review: 2 absence in, by the same search (why an ask not met or a claim
+  // the code contradicts, anchored in such a file, is withheld). Its second review: 1 absence in, by the same search
+  // (the PR comment's count of the findings about code outside the evaluated session).
+  // D117 (the session's change in every repository or folder it wrote to): 2 absence in, proved by the recorded writes'
+  // search (the files of another git repository that changed outside this session's recorded writes, on the page and in
+  // the dry run), 4 sonah in (another repository's base line, with the files of it no recorded write changed; a place
+  // whose change is the recorded edits, Sonah naming where git could not say; where the change's files lie and how many
+  // the code review did not see; the dry run's line of a working directory with no start commit beside other places),
+  // 3 other in (where a file of the files list lies; the dry run's line of each other place, and its tail); read again:
+  // the header's count of the change with how many places hold it (other), the base lines with the working directory's
+  // repository named (sonah), and the footer's home folders with Sonah's own (sonah). Its review: 1 other in (the dry
+  // run's tail when no repository holds the working directory); read again: the dry run's tail with places and the code
+  // step's line (other), and its line of no change (sonah), each with the working directory named when no repository
+  // holds it, the code step's line also with the other folders its agents read. Where D117 meets D113 amended: 1 absence
+  // in, by the same search (another repository's files named apart, given to the code review), and another repository's
+  // files named apart, on the page and in the dry run, read again in D113 amended's words. D117 amended (the owner,
+  // 2026-10-18): 5 sonah in (the folders of no repository the session wrote to, listed and not reviewed, and its writes
+  // not resolved, counted apart, each on the page and in the dry run; that Sonah does not yet see every edit of helper
+  // agents or of scripts after a cd).
+  // D118 (the owner's go, 2026-10-18; the dogfood's DF2 and DF1): the first screen's "No code was reviewed." and its
+  // closed reasons, 1 absence in (no write that could have changed a file, by the recorded writes' search) and 10 sonah
+  // in; the folder's label, 1 other; the terminal's status words when no code was reviewed, 2 sonah; the paths the
+  // recording does not resolve, 1 sonah; the items' line beside the no-code sentence replaces the old no-code line
+  // (sonah). D119 (DF11): 6 sonah in, each kind that the inventory cause summed, in one unit (workflow runs, run folder
+  // entries, workflow calls with no launch, helper recordings read in part, calls whose input Sonah holds in part, calls
+  // of code cells no recorded item accounts for); its sentence on the page and in the coverage causes read again,
+  // counted by kind (sonah). D122 (b), the beta.5 integration: 1 absence out (D112's refused read's default tier,
+  // removed: it placed no stored row). D122 (a review low of D118): 1 sonah in, the GitHub check's title of a run that
+  // finished and reviewed no code; and 1 sonah in, the closed reason of a record of an earlier code step that made no
+  // request and did not record why. D122 (d) (the dogfood rerun's relative names): 1 sonah in, the closed cause of an
+  // item whose relative path more than one place of the change holds. D123 (the beta.5 end-to-end smoke): 5 sonah in, no
+  // write of the session that Sonah can read beside shell commands (the code review's line, the first screen's reason,
+  // the terminal's run-state words, the Files section) and the Files section where no git base names a repository; the
+  // heading of What the agent did read again with no count of files (other). None states an absence. D124 (the
+  // --code-repo option): 2 sonah in, the fixes of a folder given with --code-repo that is not there or in no git
+  // repository ("Sonah read and sent nothing"); the first screen's reason `no_seen_write` read again with the way out
+  // (sonah), and the review's usage with the option (other). D124's review: 2 sonah in, the first screen's reason when a
+  // repository was given with --code-repo (`no_seen_write_given`) and the line of the working folder's own repository
+  // given (`givenHere`). D125 (an ask that the code review checked in the code): 4 other in, the status, the count
+  // part, the line of the code review's verdict and the lead of where Sonah found its quotes; none states an absence.
+  // D125 amended (the owner: "go for option 3"; the status and the counts as before, a note on the row): 3 other out
+  // (the status, the count part, the lead of where Sonah found its quotes), the verdict's line read again with the lead
+  // (other), and 1 sonah in (that Sonah did not check it); none states an absence.
+  assert.deepEqual(AUDIT_CLASSES.map(count), [89, 424, 383]);
+  // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
+  // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
   const held = Object.values(ABSENCE_HELD).reduce((n, m) => n + Object.keys(m).length, 0);
-  // E1-F8 (D112): one more proved, a refused read's default tier (the recorder's typed denial).
-  assert.deepEqual([proved, held], [69, 3]);
+  const rows = Object.values(REVIEW_ROW_KEYS).reduce((n, keys) => n + keys.length, 0);
+  // E1-F8 (D112): one more proved, a refused read's default tier (the recorder's typed denial). D113: three more, by the
+  // recorded writes' search; D113's review: one more, the terminal's run-state words of a session with no such write.
+  // D115: 6 row sentences. D113 amended: 7 more, by the recorded writes' search; its review: 2 more, by the same search;
+  // its second review: 1 more, by the same search. D117: two more, by the recorded writes' search (another repository's
+  // files named apart, on the page and in the dry run); the merge: one more, by the same search (another repository's
+  // files named apart, given to the code review). D118 (a): 1 more, by the same search (the first screen's no-write
+  // reason). D122 (b): E1-F8's one out again (the refused read's default tier is removed).
+  assert.deepEqual([proved - rows, rows, held], [86, 6, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {
   const declares = (text, name) => new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:async\\s+)?(?:function\\s+${name}\\b|`
     + `(?:const|let)\\s+${name}\\b)`).test(text);
   for (const [id, proof] of Object.entries(ABSENCE_PROOFS)) {
-    assert.ok(['recorder', 'search', 'system', 'gate'].includes(proof.kind), id);
+    assert.ok(['recorder', 'search', 'system', 'gate', 'report'].includes(proof.kind), id);
     assert.ok(typeof proof.proves === 'string' && proof.proves.length > 0, id);
     assert.ok(proof.where.length > 0, id);
     for (const [file, name] of proof.where)
@@ -175,14 +243,14 @@ test('D100: a word table that gains or changes a sentence fails the audit until 
   const tables = new Map([['m', new Map([['T.read', ['Sonah read it, and more.']],
     ['T.gone', ['The recording holds no end of it.']], ['T.unproved', ['The agent ran nothing.']],
     ['T.new', ['The recording holds no result.']]])]]);
-  const problems = auditProblems(tables, { census, registry, held: {} });
+  const problems = auditProblems(tables, { census, registry, held: {}, rows: {} });
   assert.deepEqual(problems.map((p) => `${p.problem} ${p.key}`).sort(), ['changed T.read', 'not_absence T.other',
     'proof_unknown T.other', 'unread T.new', 'unregistered T.unproved']);
   // Read and recorded, the same tables pass.
   const read = { m: { ...census.m, 'T.read': ['other', fingerprintOf(['Sonah read it, and more.'])],
     'T.new': ['sonah', fingerprintOf(['The recording holds no result.'])] } };
   assert.deepEqual(auditProblems(tables, { census: read, registry: { m: { 'T.gone': { typed_stop: 'call' },
-    'T.unproved': { typed_denial: 'call' } } }, held: {} }), []);
+    'T.unproved': { typed_denial: 'call' } } }, held: {}, rows: {} }), []);
 });
 
 test('D100: an absence stands only on a proof whose code checks as far as its words claim', () => {
@@ -191,13 +259,14 @@ test('D100: an absence stands only on a proof whose code checks as far as its wo
   // claim the recording; its proof checks one call. The registry records the reach each sentence claims, read by a
   // person as its class is, and the audit holds it to the reach of the proof's code.
   assert.deepEqual(Object.keys(ABSENCE_SCOPES), ['call', 'recorder', 'lineage', 'recording', 'code', 'system',
-    'judgment']);
+    'judgment', 'review']);
   const old = 'The recording does not show whether 1 write of a failed or stopped command happened.';
   const now = 'Sonah could not read whether 1 write happened: it stopped before it finished, or its command failed or '
     + 'stopped.';
   const tables = new Map([['m', new Map([['T.old', [old]], ['T.now', [now]]])]]);
   const census = { m: { 'T.old': ['absence', fingerprintOf([old])], 'T.now': ['absence', fingerprintOf([now])] } };
-  const problems = (registry, proofs = ABSENCE_PROOFS) => auditProblems(tables, { census, registry, held: {}, proofs })
+  const problems = (registry, proofs = ABSENCE_PROOFS) => auditProblems(tables, { census, registry, held: {}, proofs,
+    rows: {} })
     .map((p) => `${p.problem} ${p.key}${p.scope ? ` ${p.scope}` : ''}`);
   // The old words claim the whole recording; a call's typed end checks one call.
   assert.deepEqual(problems({ m: { 'T.old': { shell_write_result: 'recording' }, 'T.now': { typed_stop: 'call' } } }),

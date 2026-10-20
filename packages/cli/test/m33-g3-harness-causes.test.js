@@ -65,14 +65,18 @@ test('M33 G3 an exact cause is recorded as { n, atLeast: false }', async (t) => 
 test('M33 G3 a cause counted by its declarations is recorded as a lower bound, apart from an exact one', async (t) => {
   const summary = await run(t, sessionWith([
     { code: 'incomplete_inventory', channel: 'actions', scope: 'session', count: null, sessionKey: 'session', lossOrdinal: 0 },
+    { code: 'unsupported_message', channel: 'observations', scope: 'session', count: null, sessionKey: 'session',
+      lossOrdinal: 1 },
     { code: 'source_clipped', channel: 'commentary', scope: 'session', count: 4, sessionKey: 'session' },
   ]));
   // D71 (a): the summary carries no status; the review completed over the recorder's declared limits.
   assert.equal(summary.sessionReview, 'complete');
   assert.ok(!Object.hasOwn(summary, 'sessionStatus'));
+  // D119: `incomplete_inventory` counts kinds of declaration, each exact (one kind here), never a sum of their counts.
   assert.deepEqual(summary.coverageCauses, {
     delegations_unlinked: { n: 1, atLeast: false },
-    incomplete_inventory: { n: 1, atLeast: true },
+    incomplete_inventory: { n: 1, atLeast: false },
+    unsupported_message: { n: 1, atLeast: true },
     source_clipped: { n: 4, atLeast: false },
   });
   for (const counts of Object.values(summary.coverageCauses)) {

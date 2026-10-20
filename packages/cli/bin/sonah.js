@@ -103,8 +103,9 @@ if (cmd === 'review') {
 }
 
 /** What Sonah is, printed above the command table for --help. */
-const ABOUT = 'Sonah reviews a recorded AI coding session and writes a checklist of what to\n'
-  + 'check. It never says the work is right.';
+const ABOUT = 'Sonah reviews what your coding agent did, not just the diff: did it do what you\n'
+  + 'asked, what it decided on its own, and what is wrong in the code. It never says\n'
+  + 'the work is right.';
 
 /** The one command table, within 80 columns. Printed for --help, for an unknown command, and read by the help test.
  *  Each command's words start in one column; a command too long for it (or given as several lines, the later ones

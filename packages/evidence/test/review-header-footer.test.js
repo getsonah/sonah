@@ -71,8 +71,9 @@ test('F170 the header phrasebook is closed, and every gap code has a header caus
 
 // The channel and scope each producer declares the code on (sonah-ledger.js, ledger.js, code-review.js).
 const DECLARED = [
-  ['incomplete_inventory', { channel: 'actions', scope: 'session', count: null }, 'incomplete_inventory', atLeast(1)],
-  ['incomplete_inventory', { channel: 'children', scope: 'session', count: null, eventIds: ['D1'] }, 'incomplete_inventory', atLeast(1)],
+  // D119: `incomplete_inventory` counts kinds of declaration, exactly (here one kind each).
+  ['incomplete_inventory', { channel: 'actions', scope: 'session', count: null }, 'incomplete_inventory', 1],
+  ['incomplete_inventory', { channel: 'children', scope: 'session', count: null, eventIds: ['D1'] }, 'incomplete_inventory', 1],
   ['source_clipped', { channel: 'code', scope: 'session', count: 2, eventIds: ['A1', 'A2'] }, 'source_clipped', 2],
   ['source_clipped', { channel: 'commentary', scope: 'session', count: 1 }, 'source_clipped', 1],
   ['unsupported_message', { channel: 'commentary', scope: 'session', count: 3 }, 'unsupported_message', 3],

@@ -2,9 +2,9 @@
 
 Claude Code recording · a change of 5 files, +13 −2 · 6 commands · commit 1111111  
 After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The recording shows 3 commands after the agent's last edit as refused before they ran.  
-Sonah did not finish its review of this session. Sonah did not check: 1 ask · 1 ask that rests only on the agent's words · 3 claims · 1 statement that the agent wrote into a file
+Sonah did not finish its review of this session. Sonah did not check: 1 ask · 1 ask for which the session review cited only the agent's words · 3 claims · 1 statement that the agent wrote into a file
 
-Must act 9 · Must know 11 · Good to know 10 (folded) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
+Must act 9 · Must know 12 · Good to know 9 (folded) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
 Must act: [*fix the refill order*](#item-1) · [*check the forced push*](#item-2) · [ask 6](#item-3) and 6 more
 
 ### Your prompt (6 asks: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked)
@@ -13,9 +13,9 @@ Must act: [*fix the refill order*](#item-1) · [*check the forced push*](#item-2
 |---|---|---|
 | Done | “Add rate limiting to the API” | The code review found a problem here. See item 1. |
 | Not done | “Return 429 with a Retry-After header in seconds” | See item 5. |
-| Done | “Keep the auth checks before the limiter” | The session review cited only the agent's words for it. Sonah found no recorded result or change for it. |
+| Done | “Keep the auth checks before the limiter” | The session review cited the agent's words as what does it, not a recorded result or change. |
 | Partly done | “Do not change the CI config” | See item 4. |
-| Not checked | “Update the README” | The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it. Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. The code review asks you about this ask. See item 23. |
+| Not checked | “Update the README” | The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it. Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. |
 | Not done | “Also add a test for the limiter” | See item 3. |
 
 Sonah checked only the parts of your prompt that the table above lists.
@@ -169,7 +169,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-### Must know (11)
+### Must know (12)
 
 <a name="item-10"></a>**10 Decide:** The agent decided on *build output*: *clean dist*. You did not ask for this.  
 Impact on you: *The build output may be gone.*  
@@ -295,7 +295,18 @@ Where: run 2
 
 </details>
 
-<a name="item-19"></a>**19 Decide:** The agent decided not to act. About: *store*. Its decision: *no Redis*. You did not ask for this.  
+<a name="item-19"></a>**19 Verify:** A `read` call did not run: a permission rule refused it. The agent did not act on it or tell you.  
+Where: run 3
+
+<details><summary>Evidence · Why Must know</summary>
+
+- Did not run: a permission rule refused it
+- Sonah puts a failure that the agent passed over in Must know by default.
+- Item id: `df8c944c54fb`
+
+</details>
+
+<a name="item-20"></a>**20 Decide:** The agent decided not to act. About: *store*. Its decision: *no Redis*. You did not ask for this.  
 The agent said: “I will not add Redis, an in-process bucket is enough.”
 
 <details><summary>Evidence · Why Must know</summary>
@@ -305,8 +316,7 @@ The agent said: “I will not add Redis, an in-process bucket is enough.”
 
 </details>
 
-<a name="item-20"></a>**20 Decide:** *Should the limit be per client or global? The ask does not say.*  
-Where: item 26
+<a name="item-21"></a>**21 Decide:** *Should the limit be per client or global? The ask does not say.*
 
 <details><summary>Evidence · Why Must know</summary>
 
@@ -316,9 +326,9 @@ Where: item 26
 
 </details>
 
-<details><summary>Good to know (10)</summary>
+<details><summary>Good to know (9)</summary>
 
-<details><summary><a name="item-21"></a>21 Fix: <em>No test covers the 429 answer</em> · <code>src/limiter.js:5</code></summary>
+<details><summary><a name="item-22"></a>22 Fix: <em>No test covers the 429 answer</em> · <code>src/limiter.js:5</code></summary>
 
 Impact on you: *A wrong status code would still pass the tests.*  
 Action: *Add a test for the 429 answer.*  
@@ -338,23 +348,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<details><summary><a name="item-22"></a>22 Verify: A <code>read</code> call did not run: a permission rule refused it. The agent did not act on it or tell you. · run 3</summary>
-
-Where: run 3
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Did not run: a permission rule refused it
-- The recording marks this read as refused before it ran. Sonah puts such a read in Good to know by default.
-- Item id: `df8c944c54fb`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-23"></a>23 Decide: <em>Is a 429 body needed?</em> · ask 1</summary>
-
-Where: ask 1
+<details><summary><a name="item-23"></a>23 Decide: <em>Is a 429 body needed?</em></summary>
 
 <details><summary>Evidence · Why Good to know</summary>
 
@@ -488,7 +482,7 @@ The code review grouped these files by the ask that each one serves.
 
 **Ask 1**
 
-- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 5 → item 16 → item 21 → item 24 → item 27
+- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 5 → item 16 → item 22 → item 24 → item 27
 - `src/server.js` · changed · +1 −0 · *mounts the limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js → item 9 → item 26 → item 30
 
 **Ask 5**
@@ -504,7 +498,7 @@ The code review grouped these files by the ask that each one serves.
 
 - run 1 · `redis-server --version` · failed, exit code 1 · the agent acted on it
 - run 2 · `npm test` · failed, exit code 1 · the agent passed over it → item 18
-- run 3 · `read` · did not run: a permission rule refused it · the agent passed over it → item 22
+- run 3 · `read` · did not run: a permission rule refused it · the agent passed over it → item 19
 - run 4 · `rm -rf dist` · did not run: auto mode refused it
 - run 5 · `git push --force` · did not run: refused · the agent told you
 - run 6 · `curl -X POST https://example.invalid/deploy` · did not run: a permission rule refused it
@@ -522,7 +516,7 @@ The code review grouped these files by the ask that each one serves.
 
 #### What the agent said it did not do
 
-- “I will not add Redis, an in-process bucket is enough.” → item 19
+- “I will not add Redis, an in-process bucket is enough.” → item 20
 
 #### Decisions you settled
 
@@ -564,7 +558,7 @@ Sonah could not read 1 ask of the session review.
 
 ---
 
-Sonah 0.9.0 · sonah.report-model/4 · commit 1111111  
+Sonah 0.9.0 · sonah.report-model/5 · commit 1111111  
 Text in quotation marks is word for word from the recording.  
 Titles, questions, labels and file notes in italics are the code review's words.  
 Words in italics inside Sonah's sentences are the session review's words.  

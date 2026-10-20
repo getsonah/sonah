@@ -10,7 +10,8 @@ import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEA
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
-import { reportSession, triagedReport, sessionOnlyReport, repoFacts, HEAD } from './report-fixture.js';
+import { reportSession, triagedReport, sessionOnlyReport, sessionReviewOnlyReport, repoFacts, HEAD }
+  from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
 const SNAPSHOT = new URL('./snapshots/session-page-report.html', import.meta.url);
@@ -32,6 +33,7 @@ const modelOf = (shape = triagedReport, options = repoFacts()) => {
 
 test('D97: the synthetic report page renders exactly its snapshot', () => {
   // D112 amended (2026-10-18, unreleased, no version move): the fixture's Q1 names no place, so it is an item of its own.
+  // D122 (b) (no version move): the fixture's refused read, a failure passed over, is in Must know.
   assert.equal(page(), readFileSync(SNAPSHOT, 'utf8'));
 });
 
@@ -67,7 +69,11 @@ test('D97: the page is the report model in its order — header, count line, pro
   // what the code review saw short of whole (D105), and why no repaired version was checked, by identity (D107). In
   // the same move (D110): the premise contract, a finding to verify, no second reviewer; (D111) the accounting's footer
   // counts; and (D112) an item's members, and the order by final level.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/43');
+  // D113 and D114 once more (sonah.session-page/44, 0.3.0-beta.5): the session's own change, and the files changed
+  // outside it.
+  // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
+  // question's pointer only where code checked its tie.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/44');
 });
 
 test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {
@@ -197,8 +203,9 @@ test('D97 (23): the reviews\' words are set apart by source; the legend says who
   // The title is your words, in quotation marks.
   assert.match(html, /<p class="title-words"><q class="said">Add rate limiting to the API\.<\/q><\/p>/);
   // A review with no code step says so on the header, and shows no impact or action line.
-  const plain = page(sessionOnlyReport, {});
-  assert.match(plain, /Sonah did not review the code, so the items show no impact and no action\./);
+  const plain = page(sessionReviewOnlyReport, {});
+  // D118 (a): the owner's sentence and its one closed reason, first after your words.
+  assert.match(plain, /<p class="title-words">[^\n]*?<\/p><p class="meta no-code">No code was reviewed\. Reason: this review ran without the code review\. The items show no impact and no action\.<\/p>/);
   assert.equal(/Impact on you:|Action:/.test(plain), false);
 });
 

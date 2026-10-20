@@ -334,6 +334,14 @@ export function sessionOnlyReport(session = reportSession()) {
   return { ...rest, requirements, promises };
 }
 
+/** D122 (a review low of D118): a session review's report as one saves it with no code pass record — `sessionOnlyReport`
+ *  with none of the retired combined route's findings (`origin: 'code-review'`, which make its effective scope combined:
+ *  ledger.js `honestStatuses`) and the code coverage a session review records (`missing`). */
+export function sessionReviewOnlyReport(session = reportSession()) {
+  const c = sessionOnlyReport(session);
+  return { ...c, codeCoverage: 'missing', findings: c.findings.filter((f) => f.origin === 'session-review') };
+}
+
 /** (d) A code step of code-pass/3: questions with no `from`, `id` or `check`; `rejected`, `groups`, `votes`,
  *  `codeStatus`; rows marked `shown-in-code`. */
 export function codePass3Report(session = reportSession()) {

@@ -91,8 +91,11 @@ test('status fact readers: versions moved with the bytes', () => {
   // D104 moved it once more (sonah.session-story/37): the shown-in-part mark. Bucket B once more
   // (sonah.session-story/38): what the code review saw short of whole (D105), and why no repaired version was checked,
   // by identity (D107). In the same move (D110): the premise contract, a finding to verify, no second reviewer;
-  // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level.
-  assert.equal(STORY_VERSION, 'sonah.session-story/38');
+  // (D111) the accounting's footer counts; and (D112) an item's members, and the order by final level. D113 and D114
+  // once more (sonah.session-story/39, 0.3.0-beta.5): the session's own change, and the files changed outside it.
+  // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
+  // question's pointer only where code checked its tie.
+  assert.equal(STORY_VERSION, 'sonah.session-story/39');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -137,7 +140,11 @@ test('status fact readers: versions moved with the bytes', () => {
   // what the code review saw short of whole (D105), and why no repaired version was checked, by identity (D107). In
   // the same move (D110): the premise contract, a finding to verify, no second reviewer; (D111) the accounting's footer
   // counts; and (D112) an item's members, and the order by final level.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/43');
+  // D113 and D114 once more (sonah.session-page/44, 0.3.0-beta.5): the session's own change, and the files changed
+  // outside it.
+  // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
+  // question's pointer only where code checked its tie.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/44');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {

@@ -910,6 +910,36 @@ const MOVED_BY_ONE_BOUND = Object.freeze([
   { story: 'a765fd4d80844cc92229a36a3d371cac653e427fd4209cfc5a611aeb1cd78860' },
   { story: 'e0296e63490897859d00c9b65c7dfd8cbcfb4035704dc43085c4024d8f13c56d' },
   { story: 'fa4e5dc0d845aee0bb30c3908b2f8df291ddd9095269a0784dd1a9c7a1b3c80a' }]);
+/** 0.3.0-beta.5's one move of the story (story /39, report model /5): every case's story, by the end-of-recording
+ *  fact's words beside each ask not checked (D115: what the row cites, never what the recording holds before its end)
+ *  and the report model's version in its footer — nothing else (no ask of these cases is a helper's brief, and none
+ *  runs a code step, so no line of the code review shows (D113, D114) and no question points anywhere (D116)). On its
+ *  lane, D113 and D114 moved it by the footer alone; joined, each reader moves once, so this is the one value. Nothing
+ *  renders a story back, so every capture below carries it. No ledger, gap, request, label, window or window failure
+ *  moved. */
+const MOVED_BY_REPORT_TRUTH = Object.freeze([
+  { story: 'a0921b6cfc49f1ebfded9eee4ed08ed2de70a7a8c05a652da497df19d6305c4f' },
+  { story: '37c5724e57da584bfeffb2aef41f168e58ed31fd8f4a52293d597e46b285ebd1' },
+  { story: '81a4f1c99eb5af6c7e6118043738bf62b3805fc924dc1d247add460c3b7b31e8' }]);
+/** D118 (the owner's go of 2026-10-18; the dogfood's DF2 and DF1): every case's story, by these lines alone — the first
+ *  screen's "No code was reviewed." with its reason (`step_off`: no case runs a code step) and the items' line, right
+ *  after the size line, in place of the old no-code line after what Sonah did not check; and the size line's files
+ *  part, gone where the one list holds no file (D118 c: never "0 files changed"; the first case's holds files). The
+ *  story's version and the report model's do not move (each moved once since beta.4). No ledger, gap, request, label,
+ *  window or window failure moved. */
+const MOVED_BY_FIRST_SCREEN = Object.freeze([
+  { story: '8e256ea6d668d14eda837471d535de8b184ae0a509484f52b67bf0a8264d325f' },
+  { story: 'd9e0ae9da73efd42229198cfcfc8944c64b4c85db7e5238265bf98b6a64d8a6a' },
+  { story: '8bc4903488ab5e4913862d3fb73928da30fd26fdd66669ca47ab2788f849a6ef' }]);
+/** D119 (the owner's go of 2026-10-18; the dogfood's DF11, the "492" sentence): the story of the two cases that declare
+ *  kinds of evidence Sonah holds only in part, by those lines alone — the sentence that summed unlike units ("N parts of
+ *  the evidence that Sonah read are incomplete") is one sentence a kind, each count in one unit: the workflow runs whose
+ *  agents' recordings Sonah did not read, the workflow call with no launch recorded, and the other kinds counted by kind.
+ *  The first case declares none, so it keeps D118's bytes. No version moves; no ledger, gap, request, label, window or
+ *  window failure moved. */
+const MOVED_BY_EVIDENCE_KINDS = Object.freeze([{},
+  { story: '1e1fa884b2b3968770db50bfafcb5453589c467e77fa00f929b10e692b4dfc60' },
+  { story: '72847b86d93e5619d6369283358c67eff4b56a103fd04cbe9ed67ca827289dd6' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1023,13 +1053,17 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes; and once more (MOVED_BY_ABSENCE_AUDIT), by
   // the audit of absence sentences; and D101 once more (MOVED_BY_GROUNDING_CAUSES), by the report model's version; and
   // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer; and bucket B (D105 and D107)
-  // once more (MOVED_BY_ONE_BOUND), the same way.
+  // once more (MOVED_BY_ONE_BOUND), the same way; and 0.3.0-beta.5 (D113 to D116) once more (MOVED_BY_REPORT_TRUTH),
+  // by the end-of-recording fact's words and the model's version; and D118 once more (MOVED_BY_FIRST_SCREEN), by the
+  // first screen's no-code line and the size line's empty files part; and D119 once more where a case declares a kind
+  // of evidence held in part (MOVED_BY_EVIDENCE_KINDS), by that sentence said a kind at a time.
   const asksFixes = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
     ...MOVED_BY_D71_CHANNELS[at], ...MOVED_BY_D71_FIX[at], ...MOVED_BY_S7[at], ...MOVED_BY_REQUEST_STEPS[at],
     ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at], ...MOVED_BY_AGENTIC[at],
     ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at],
     ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at],
-    ...MOVED_BY_ONE_BOUND[at] }));
+    ...MOVED_BY_ONE_BOUND[at], ...MOVED_BY_REPORT_TRUTH[at], ...MOVED_BY_FIRST_SCREEN[at],
+    ...MOVED_BY_EVIDENCE_KINDS[at] }));
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: and once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

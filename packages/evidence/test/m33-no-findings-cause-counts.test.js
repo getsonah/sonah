@@ -34,22 +34,39 @@ const header = (report) => { const causes = coverageCauses(report);
 const counted = (counts) => Number.isSafeInteger(counts?.n) && counts.n > 0;
 
 test('M33 a cause whose one declaration states no count is counted by its declaration, as a lower bound', async () => {
-  const report = await review([{ code: 'incomplete_inventory', channel: 'actions', count: null }]);
+  // D119: `incomplete_inventory` is counted by kind now (below); a cause still summed keeps this rule.
+  const report = await review([{ code: 'unsupported_message', channel: 'observations', count: null }]);
   assert.equal(report.sessionReview, 'complete');
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 1, atLeast: true }]]);
-  assert.equal(header(report), 'Not covered: at least 1 part of the evidence that Sonah read is incomplete.');
+  assert.deepEqual(coverageCauses(report), [['unsupported_message', { n: 1, atLeast: true }]]);
+  assert.equal(header(report), 'Not covered: at least 1 record has a form that Sonah cannot read.');
   assert.doesNotMatch(header(report), /\bsome\b/, 'a count, never "some", beside NO_FINDINGS');
 });
 
 test('M33 several countless declarations of one cause are counted one each', async () => {
   const report = await review([
-    { code: 'incomplete_inventory', channel: 'actions', count: null },
-    { code: 'incomplete_inventory', channel: 'children', count: null, eventIds: ['A1'] },
+    { code: 'unsupported_message', channel: 'observations', count: null },
+    { code: 'unsupported_message', channel: 'commentary', count: null, eventIds: ['A1'] },
   ]);
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.deepEqual(coverageCauses(report), [['incomplete_inventory', { n: 2, atLeast: true }]]);
-  assert.match(header(report), /at least 2 parts of the evidence that Sonah read are incomplete/);
+  assert.deepEqual(coverageCauses(report), [['unsupported_message', { n: 2, atLeast: true }]]);
+  assert.match(header(report), /at least 2 records have a form that Sonah cannot read/);
+});
+
+test('D119: the inventory cause counts kinds of declaration, exactly, never the sum of their counts', async () => {
+  // One kind, with no count: one kind, exact; said as what Sonah holds, never as what it read.
+  const one = await review([{ code: 'incomplete_inventory', channel: 'actions', count: null }]);
+  assert.deepEqual(coverageCauses(one), [['incomplete_inventory', { n: 1 }]]);
+  assert.equal(header(one), 'Not covered: Sonah holds 1 kind of evidence only in part.');
+  // Two kinds (by channel and note), their counts of unlike units never summed; one kind declared twice counts once.
+  const two = await review([
+    { code: 'incomplete_inventory', channel: 'actions', count: null },
+    { code: 'incomplete_inventory', channel: 'children', count: 266, eventIds: ['A1'], note: 'a synthetic note' },
+    { code: 'incomplete_inventory', channel: 'children', count: 225, eventIds: ['A2'], note: 'a synthetic note' },
+  ]);
+  assert.deepEqual(coverageCauses(two), [['incomplete_inventory', { n: 2 }]]);
+  assert.match(header(two), /Sonah holds 2 kinds of evidence only in part/);
+  assert.doesNotMatch(header(two), /parts of the evidence|491|492|that Sonah read/);
 });
 
 test('M33 a counted and a countless declaration of one cause sum to a lower bound', async () => {

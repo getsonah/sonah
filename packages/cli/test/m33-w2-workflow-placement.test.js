@@ -437,6 +437,21 @@ const MOVED_BY_SEEN_IN_PART = Object.freeze({ story: '6b9c1c22f0c7f7be14efe09fdd
  *  model's /3, it is MOVED_BY_SEEN_IN_PART's, byte for byte). Nothing renders a story back, so every capture below
  *  carries it. No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_ONE_BOUND = Object.freeze({ story: 'c43076953b96f780661dd23efc880d74ad8fbb26994f5cff6b7f72c4bae68dbc' });
+/** 0.3.0-beta.5's one move of the story (story /39, report model /5): the story, by three lines alone — the
+ *  end-of-recording fact's words beside the ask not checked (D115: what the row cites); the two asks of the helper's
+ *  brief, which the story called asks that Sonah could not read, now named as asks that an agent wrote into a helper's
+ *  brief (code-context.js `askSourceOf` on the recording as a review loads it); and the report model's version in its
+ *  footer. The case runs no code step, so no line of the code review shows (D113, D114) and no question points
+ *  anywhere (D116). On its lane, D113 and D114 moved it by the footer alone; joined, each reader moves once, so this is
+ *  the one value. Nothing renders a story back, so every capture below carries it. No event, gap, request, label,
+ *  window or window failure moved. */
+const MOVED_BY_REPORT_TRUTH = Object.freeze({ story: 'e62f59c639b3dc948d75e10632d623c6e94abe797a106128ecac484a4d1d0396' });
+/** D118 (the owner's go of 2026-10-18; the dogfood's DF2): the story, by one line alone — the first screen's "No code
+ *  was reviewed." with its reason, right after the size line (the case runs no code step: its reason `step_off`, beside
+ *  the items' line), in place of the old no-code line after what Sonah did not check. The case declares no kind of
+ *  evidence that D119 splits, and its one list holds files, so nothing else moves. The story's version and the report
+ *  model's do not move (each moved once since beta.4). No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_FIRST_SCREEN = Object.freeze({ story: '14c55c450096b8d44b008865abcd4a60d5e6755f161c5128105afb13b1fa21a3' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
@@ -451,7 +466,8 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
     ...MOVED_BY_M36_FORMAT, ...MOVED_BY_M36_CONVERSATION, ...MOVED_BY_D71, ...MOVED_BY_D71_BRIEF, ...MOVED_BY_D71_CHANNELS,
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
     ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
-    ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND }));
+    ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND,
+    ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN }));
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
   // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more
@@ -459,7 +475,9 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   // once more (MOVED_BY_RELEASE_CHECK), by the release check's render fixes; and once more (MOVED_BY_ABSENCE_AUDIT), by
   // the audit of absence sentences; and D101 once more (MOVED_BY_GROUNDING_CAUSES), by the report model's version; and
   // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer; and bucket B (D105 and D107)
-  // once more (MOVED_BY_ONE_BOUND), the same way.
+  // once more (MOVED_BY_ONE_BOUND), the same way; and 0.3.0-beta.5 (D113 to D116) once more (MOVED_BY_REPORT_TRUTH),
+  // by the fact's words, the asks of a helper's brief named so, and the model's version; and D118 once more
+  // (MOVED_BY_FIRST_SCREEN), by the first screen's no-code line.
   // W2: moved once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): moved once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: moved once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.
