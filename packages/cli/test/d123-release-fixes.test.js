@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { runSessionReviewCommand, RUN_STATE_WORDS, coverageSummaryLine, runStateLine }
+import { runSessionReviewCommand, RUN_STATE_WORDS, runStateLine }
   from '../src/session-review-command.js';
 import { CODE_REPORT_WORDS, codeNotReviewedOf, codeCoverageLines, reportNotReviewedOf }
   from '../../evidence/src/code-report.js';
@@ -220,22 +220,14 @@ test('D123 (2) docs/TROUBLESHOOTING.md: every reason has its row, none advises r
   assert.doesNotMatch(doc, /run the review from (that|the) folder/i);
 });
 
-test('D123 (3): a session review\'s coverage line never names the pull request\'s code review; a combined review still '
-  + 'does', () => {
+test('D123 (3): a session review\'s run state line never names the pull request\'s code review; a combined review still '
+  + 'does (D133\'s review: the coverage line that said the same parts is off the terminal)', () => {
   const pass = { ran: true, coverage: 'complete', gaps: [], files: [], base: { kind: 'git', commit: 'b'.repeat(40),
     written: 1, changedOutside: [] }, withheld: [], footer: [] };
   const session = { pr: null, reviewScope: 'session-only', coverage: 'complete', sessionReview: 'complete',
     codeCoverage: 'missing', findings: [], codePass: pass };
-  assert.doesNotMatch(coverageSummaryLine(session), /\bcode (missing|complete|partial)\b/);
-  assert.match(coverageSummaryLine(session), /code pass /);
-  assert.doesNotMatch(coverageSummaryLine({ ...session, codePass: undefined }), /\bcode missing\b/);
-  // The run-state line and the coverage line name the same parts.
-  for (const scope of ['session-only', 'combined']) {
-    const report = { ...session, reviewScope: scope };
-    assert.equal(/\bcode (missing|complete|partial)\b/.test(coverageSummaryLine(report)),
-      /pull request review/.test(runStateLine(report)), scope);
-  }
-  assert.match(coverageSummaryLine({ ...session, reviewScope: 'combined', codeCoverage: 'complete' }), /^Coverage: code complete;/);
+  assert.equal(/pull request review/.test(runStateLine(session)), false);
+  assert.equal(/pull request review/.test(runStateLine({ ...session, reviewScope: 'combined' })), true);
 });
 
 // D123's review: the release note and INSTALL say what the code does. (a) Where the code review did not run (off, another

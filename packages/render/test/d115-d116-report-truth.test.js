@@ -79,7 +79,8 @@ function truthReport(session) {
         deliverable: R('observation', 'R2-r', 'notes: three parts') }],
     promises: [], decisions: [], findings: [], failures: [], pivots: [], writtenClaims: [] };
 }
-const askLines = (model) => model.prompt.asks.map((ask) => ask.lines.map(textOf));
+// D133 (R2): an ask's lines, its open ones and then its own fold's, as a reader who opens the fold reads them.
+const askLines = (model) => model.prompt.asks.map((ask) => [...ask.lines, ...ask.folded].map(textOf));
 
 test('D115: an ask tied only to the agent\'s words is said as what the session review cited, by one predicate', () => {
   const session = truthSession();
@@ -95,8 +96,8 @@ test('D115: an ask tied only to the agent\'s words is said as what the session r
   // The header counts the same asks, by the same predicate, in the same terms.
   const shown = lines.filter((l) => l.includes(REPORT_PROMPT_WORDS.agentOnly)).length;
   assert.equal(shown, 1);
-  assert.ok(model.header.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.agentOnly(shown)),
-    JSON.stringify(model.header.didNotCheck.phrases));
+  assert.ok(model.notChecked.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.agentOnly(shown)),
+    JSON.stringify(model.notChecked.didNotCheck.phrases));
   // No sentence of the report says that Sonah found no result or change: no code searched for one.
   const md = renderReportMarkdown(session, truthReport(session), {});
   assert.doesNotMatch(md, /found no recorded result or change|rests? only on the agent's words/);

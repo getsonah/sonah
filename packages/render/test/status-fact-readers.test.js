@@ -95,7 +95,10 @@ test('status fact readers: versions moved with the bytes', () => {
   // once more (sonah.session-story/39, 0.3.0-beta.5): the session's own change, and the files changed outside it.
   // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
   // question's pointer only where code checked its tie.
-  assert.equal(STORY_VERSION, 'sonah.session-story/39');
+  // D126 and D127 once more (sonah.session-story/40, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, each compaction among your messages, and the first compaction after an ask. In the same move (D129, C7):
+  // the footer says what the review cost.
+  assert.equal(STORY_VERSION, 'sonah.session-story/40');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -144,7 +147,10 @@ test('status fact readers: versions moved with the bytes', () => {
   // outside it.
   // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
   // question's pointer only where code checked its tie.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/44');
+  // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
+  // cost.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/45');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {

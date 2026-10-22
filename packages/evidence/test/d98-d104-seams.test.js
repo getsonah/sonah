@@ -186,7 +186,7 @@ test('D101 beside D104: a quote in the cut part reads not found there, and the s
     // The readers: the ask's line says the cause's words; the run's failure row shows the mark; what Sonah could not
     // check counts the result. Neither replaces the other, on the page and in the .md alike.
     const model = reportModel(s, report, {});
-    const askLines = model.prompt.asks.map((a) => a.lines.map((line) => line.map((part) => part.text).join('')));
+    const askLines = model.prompt.asks.map((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join('')));
     assert.ok(askLines.some((lines) => lines.includes(asSentence(NOT_FOUND))), JSON.stringify(askLines));
     const run = model.did.runs.shown.find((r) => r.text === 'npm test');
     assert.ok(run, JSON.stringify(model.did.runs.shown.map((r) => r.text)));
@@ -236,7 +236,7 @@ test('D99 inside D102: a re-asked copy that cites an end Sonah could not read ne
     assert.deepEqual([lowered.status, lowered.reason, lowered.cause], ['not-checked', 'check_end_unread', undefined]);
     const words = checklistReasonWords(lowered, 'requirement');
     assert.equal(words, CHECKLIST_REQUIREMENT_REASON_WORDS.check_end_unread);
-    const lines = reportModel(both.s, both.report, {}).prompt.asks.flatMap((a) => a.lines)
+    const lines = reportModel(both.s, both.report, {}).prompt.asks.flatMap((a) => [...a.lines, ...a.folded])
       .map((line) => line.map((part) => part.text).join(''));
     assert.ok(lines.includes(asSentence(words)), JSON.stringify(lines));
     // The server's run is never a failure row of the re-asked window: its end was not read, so it did not fail.

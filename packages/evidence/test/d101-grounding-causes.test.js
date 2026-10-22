@@ -269,7 +269,7 @@ test('D101: through the whole review, the report\'s rows carry the cause; the re
     // The readers: the ask's line names the failed test and code's numbers.
     const words = 'The session review quoted 133 characters, more than the 120 that Sonah checks, so Sonah did not check it.';
     const model = reportModel(session, report, {});
-    const askLines = model.prompt.asks.flatMap((a) => a.lines.map((line) => line.map((part) => part.text).join('')));
+    const askLines = model.prompt.asks.flatMap((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join('')));
     assert.ok(askLines.includes(words), JSON.stringify(askLines));
     const page = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) });
     const md = renderReportMarkdown(session, report, {});
@@ -428,7 +428,7 @@ async function cutReview(t, deliverables) {
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge });
   const model = reportModel(session, report, {});
   return { session, events, report, rowOf: (ask) => report.requirements.find((r) => r.instruction?.quote === ask),
-    lines: model.prompt.asks.flatMap((a) => a.lines.map((line) => line.map((part) => part.text).join(''))),
+    lines: model.prompt.asks.flatMap((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join(''))),
     page: renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) }), md: renderReportMarkdown(session, report, {}) };
 }
 const asSentence = (words) => `${words[0].toUpperCase()}${words.slice(1)}.`;

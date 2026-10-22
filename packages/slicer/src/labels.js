@@ -76,6 +76,10 @@ export const LABEL_BASIS = Object.freeze({
    *  attachment rows, reaches a row labelled `human` (the prompt it was submitted with, or a queued prompt): an
    *  @-mention. Any other such attachment (a file restored after a compaction, one attached mid-turn) is harness. */
   attachedFile: 'attached_file',
+  /** D127 (A19): such an attachment whose chain reaches a message that the latest compaction before it kept (its
+   *  boundary row's `compactMetadata.preservedMessages`): Claude Code restoring the kept message's context after the
+   *  compaction, never a file the person attached. Harness. */
+  compactionRestored: 'compaction_restored',
   /** An AskUserQuestion result whose typed sidecar records the human's answers. */
   askAnswer: 'ask_answer',
   /** A tool result the recorder typed `toolDenialKind: user-rejected`, in a session a human submitted to. */
@@ -220,6 +224,13 @@ export const RECORDER_CENSUS_REASONS = Object.freeze({
   /** A Codex row of a shape its reader does not know (each counted `unsupported` row), by its carrier
    *  (CODEX_SHAPE_CARRIERS). */
   codexShapeMiss: 'codex_shape_miss',
+  // ---- D128 ----
+  /** A Claude row of a form no list of the reader names (records.js: a row type, an attachment type or a system
+   *  subtype it does not list, or a listed one with a key it does not list), read by its structure as harness context
+   *  because nothing unlisted on it can hold session content (records.js `canHoldSessionContent`): counted, never a
+   *  loss, by its kind (`key`: `attachment.<type>`, `system.<subtype>` or its row type) and its row's recorder version,
+   *  so a new recorder form shows on the day it is first recorded. */
+  rowReadByStructure: 'row_read_by_structure',
 });
 /** D99 (F1 guard): a recorder key the census logs by its name, when it has a key's shape; any other is counted with no
  *  name. */

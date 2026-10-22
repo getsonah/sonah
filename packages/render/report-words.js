@@ -8,6 +8,9 @@
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const verb = (n, one, many) => (n === 1 ? one : many);
+/** A count with a comma between each group of three digits (`967,925`): code-unit work on the digits, never the
+ *  locale's, so the bytes are the same on every machine. */
+const digits = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /** The report's three tiers, by REPORT_TIERS member: the section headings. */
 export const REPORT_TIER_WORDS = Object.freeze({ must_act: 'Must act', must_know: 'Must know',
@@ -45,6 +48,17 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   unclearAfterEdit: (n) => `After the agent's last edit, ${plural(n, 'command')} failed or the harness refused `
     + `${verb(n, 'it', 'them')}. The recorder does not mark which.`,
   reviewIncomplete: 'Sonah did not finish its review of this session.',
+  // D126 (N0) and D127 (B10d): beside the title, a session that opens on a compaction (the session's `continued`): the
+  // recordings Sonah read it from, or that Sonah did not read the part before it (the reason is with what Sonah could
+  // not check).
+  continued: (n) => `Sonah read this session from ${n + 1} recordings. Claude Code began each later one after a `
+    + 'compaction.',
+  continuedUnread: 'This session continues from an earlier part that Sonah did not read. Your messages from that part '
+    + 'are not in this review.',
+  // D133 (R2): what Sonah could not check is said in its fold, with its counts. Beside the title, the short neutral
+  // line of a session whose earlier part Sonah did not read; `continuedUnread`, word for word, is in the fold What
+  // Sonah could not check (report-model.js REPORT_FOLD_CHOICES `continuedUnread`).
+  continuedPart: 'This session continues from an earlier part.',
   notCheckedLead: 'Sonah did not check:',
   // D118 (a): beside the first screen's "No code was reviewed." (evidence code-report.js CODE_REPORT_WORDS.notReviewed),
   // with no code step that ran: the code step writes each item's impact and action, so none shows one.
@@ -111,7 +125,10 @@ export const REPORT_COUNT_WORDS = Object.freeze({
   noAsk: 'Your prompt: Sonah found no ask to check.',
   mustActLead: 'Must act:',
   more: (n) => `and ${n} more`,
-  emptyTiers: 'Sonah found nothing for Must act or Must know. This does not mean that the work is correct.',
+  // D133 (R2): the count line says what Sonah found; the sentence after it (`notCorrect`) is in the fold What Sonah
+  // could not check, said word for word as it was said here.
+  emptyTiers: 'Sonah found nothing for Must act or Must know.',
+  notCorrect: 'This does not mean that the work is correct.',
   // D113 amended (2026-10-18; the owner: "tag it by outside the evaluated session"): how many items of the tiers are
   // about code outside the evaluated session (report-model.js `scopeOf`'s `outsideSession`), and the tag after the label
   // of each such item that Must act names.
@@ -328,6 +345,13 @@ export const REPORT_PROMPT_WORDS = Object.freeze({
   unconfirmedFinding: (n) => `The code review found a problem here. Sonah could not check all of its premises.${n
     === null ? '' : ` See item ${n}.`}`,
   unlocated: "Sonah could not find these words in your message. These are the session review's words.",
+  // D127 (B10d): each compaction of the agent's context, at its place among your messages, numbered in session order,
+  // with what the recorder typed: how many of its tokens the agent's context dropped, of how many (`compacted.before`
+  // minus `compacted.after`). With no typed count, the compaction alone.
+  compaction: (n, dropped = null, before = null) => `Compaction ${n}: Claude Code compacted the agent's context here`
+    + `${dropped === null || before === null ? '' : ` and dropped ${digits(dropped)} of its ${digits(before)} tokens`}.`,
+  // D127 (N1): an ask of a message recorded before a compaction, by the first compaction after it.
+  beforeCompaction: (n) => `Before compaction ${n}.`,
   overlaps: (m) => `Overlaps ask ${m}.`,
   attached: (n) => `You attached ${plural(n, 'file')}.`,
   fromAttached: 'Sonah found these words in a file that you attached.',
@@ -537,6 +561,21 @@ export const REPORT_TRIM_WORDS = Object.freeze({
   pageWhole: 'The HTML page holds every part.',
 });
 
+/** D129 (C7): each usage limit the `claude` CLI reports (cli review-judge.js RATE_LIMIT_WINDOWS), in the footer's words. */
+export const REPORT_LIMIT_WORDS = Object.freeze({ five_hour: 'five-hour usage', seven_day: 'seven-day usage',
+  seven_day_overage_included: 'seven-day usage with extra usage', other: 'usage under another limit' });
+
+/** D129, D132: what the calls used and took, and (only when given) their list cost, after the sentence of the calls. */
+function callsUsed({ calls, inputTokens, outputTokens, wallMs, costUsd }) {
+  if (calls === 0) return '';
+  const minutes = wallMs < 60_000 ? 'less than 1 minute' : `${Math.round(wallMs / 60_000)} `
+    + `${Math.round(wallMs / 60_000) === 1 ? 'minute' : 'minutes'}`;
+  const them = calls === 1 ? 'The call' : 'The calls';
+  const used = inputTokens !== null && outputTokens !== null
+    ? ` ${them} used ${inputTokens} input tokens and ${outputTokens} output tokens in ${minutes}.` : ` ${them} took ${minutes}.`;
+  return `${used}${costUsd === null ? '' : ` At list prices, ${calls === 1 ? 'it' : 'they'} cost $${costUsd.toFixed(2)}.`}`;
+}
+
 /** The footer (D97). */
 export const REPORT_FOOTER_WORDS = Object.freeze({
   provenance: (version, model, short) => `Sonah ${version} · ${model}${short ? ` · commit ${short}` : ''}`,
@@ -552,6 +591,33 @@ export const REPORT_FOOTER_WORDS = Object.freeze({
   answerReport: "REPORT is the file report.private.json in ~/.sonah/session-reviews/<SHA-256 of the recording's "
     + 'path>/review/, or in <--state-dir>/review/.',
   answerCommand: (hash) => `sonah decision accept|change|clarify ${hash} ROW_ID --report REPORT --reason "YOUR REASON"`,
+  /** D129 (C7): what this run of the review cost, from its run record (report-model.js `usageOf`): the model calls and
+   *  the code review's part of them, the tokens and the time, and how far each usage limit of your plan moved while it
+   *  ran. A run that reused stored answers made fewer calls: each run says its own. D132 (R3 b): the list cost, only
+   *  when report-model.js FOOTER_LIST_COST says so (`costUsd`; null otherwise). */
+  usage: ({ calls, codeCalls = null, inputTokens = null, outputTokens = null, wallMs, windows = [], costUsd = null } = {}) => {
+    const made = calls === 0 ? 'In this run, Sonah made no model calls.'
+      : `In this run, Sonah made ${calls} model ${calls === 1 ? 'call' : 'calls'}${codeCalls === null ? ''
+        : `, and the code review made ${codeCalls} of them`}.`;
+    const limits = windows.map(({ name, first, last }) => ` Your ${REPORT_LIMIT_WORDS[name] ?? REPORT_LIMIT_WORDS.other} `
+      + `went from ${first}% to ${last}% of its limit.`).join('');
+    return `${made}${callsUsed({ calls, inputTokens, outputTokens, wallMs, costUsd })}${limits}`;
+  },
+  /** D132 (R3 b): what the whole review cost, over the runs its state folder keeps that made model calls (a review
+   *  stopped and resumed; a replay of stored answers makes none and is not counted): the runs, the model calls and the
+   *  code review's part of them, the tokens and the time summed, and how far each usage limit of your plan rose in all,
+   *  the sum of each run's rise; one run that made them, when this run made none, is an earlier run; the list cost only
+   *  when report-model.js FOOTER_LIST_COST says so. */
+  usageRuns: ({ runs, calls, codeCalls = null, inputTokens = null, outputTokens = null, wallMs, windows = [],
+    costUsd = null } = {}) => {
+    const model = `model ${calls === 1 ? 'call' : 'calls'}`;
+    const code = codeCalls === null ? '' : `, and the code review made ${codeCalls} of them`;
+    const made = runs === 1 ? `This review made ${calls} ${model} in an earlier run${code}.`
+      : `Over its ${runs} runs, this review made ${calls} ${model}${code}.`;
+    const limits = windows.map(({ name, rise }) => ` Your ${REPORT_LIMIT_WORDS[name] ?? REPORT_LIMIT_WORDS.other} `
+      + `rose by ${rise}% of its limit ${runs === 1 ? 'in that run' : 'over these runs'}.`).join('');
+    return `${made}${callsUsed({ calls, inputTokens, outputTokens, wallMs, costUsd })}${limits}`;
+  },
 });
 
 /** Your earlier answer to a row (`sonah decision`), by its verb. */
@@ -632,6 +698,7 @@ export const STYLE_KINDS = Object.freeze({
   'REPORT_HEADER_WORDS.notCheckedLead': 'label',
   REPORT_RESULT_PARTS: 'fragment', REPORT_NOT_CHECKED_PARTS: 'fragment',
   REPORT_COUNT_WORDS: 'fragment', 'REPORT_COUNT_WORDS.emptyTiers': 'notice', 'REPORT_COUNT_WORDS.outside': 'notice',
+  'REPORT_COUNT_WORDS.notCorrect': 'notice',
   REPORT_PROMPT_PARTS: 'fragment',
   REPORT_SECTION_WORDS: 'heading', 'REPORT_SECTION_WORDS.noAskMessages': 'notice',
   REPORT_ITEM_WORDS: 'label', 'REPORT_ITEM_WORDS.notAsked': 'notice', 'REPORT_ITEM_WORDS.askedUnknown': 'notice',
@@ -665,7 +732,7 @@ export const STYLE_KINDS = Object.freeze({
   REPORT_SEEN_WORDS: 'notice', 'REPORT_SEEN_WORDS.label': 'label', 'REPORT_SEEN_WORDS.lead': 'fragment',
   'REPORT_SEEN_WORDS.ofRun': 'fragment', 'REPORT_SEEN_WORDS.atEvent': 'fragment', 'REPORT_SEEN_WORDS.aResult': 'fragment',
   REPORT_TRIM_WORDS: 'notice',
-  REPORT_FOOTER_WORDS: 'notice', 'REPORT_FOOTER_WORDS.provenance': 'fragment',
+  REPORT_FOOTER_WORDS: 'notice', 'REPORT_FOOTER_WORDS.provenance': 'fragment', REPORT_LIMIT_WORDS: 'fragment',
   'REPORT_FOOTER_WORDS.answerCommand': 'fragment',
   REPORT_ANSWER_WORDS: 'notice', REPORT_CAUSE_WORDS: 'fragment', REPORT_GAP_WORDS: 'fragment',
   REPORT_COLUMN_REASON_WORDS: 'description',
@@ -718,6 +785,9 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_PROMPT_WORDS.unconfirmedFinding': [[null], [5]],
   'REPORT_PROMPT_WORDS.attached': [[1], [2]], 'REPORT_PROMPT_WORDS.pasted': [[1, 0], [2, 1]],
   'REPORT_PROMPT_WORDS.askLine': [[3]], 'REPORT_PROMPT_WORDS.codeHolds': [[1], [2]],
+  'REPORT_PROMPT_WORDS.compaction': [[1, 956_238, 967_925], [2, null, null], [3, 12, 400]],
+  'REPORT_PROMPT_WORDS.beforeCompaction': [[1], [2]],
+  'REPORT_HEADER_WORDS.continued': [[1], [3]],
   'REPORT_DID_WORDS.askGroup': [[1]], 'REPORT_DID_WORDS.moreFiles': [[1], [4]],
   'REPORT_DID_WORDS.outsideSession': [[1], [248]],
   'REPORT_DID_WORDS.outside': [[1, ''], [2, 'a.md, b.md'], [5, 'a.md, b.md, c.md', 2]], 'REPORT_DID_WORDS.unconfirmed': [[1], [2]],
@@ -756,6 +826,19 @@ export const STYLE_FIXTURES = Object.freeze({
       bytes: 50 }]],
   'REPORT_FOOTER_WORDS.provenance': [['1.0.0', 'sonah.report-model/2', '1a2b3c4'], ['1.0.0', 'sonah.report-model/2', null]],
   'REPORT_FOOTER_WORDS.answerCommand': [['0'.repeat(64)]],
+  'REPORT_FOOTER_WORDS.usage': [[{ calls: 41, codeCalls: 12, inputTokens: 3_112_640, outputTokens: 52_100,
+    wallMs: 412_000, windows: [{ name: 'five_hour', first: 3, last: 22 }, { name: 'seven_day', first: 16, last: 25 },
+      { name: 'seven_day_overage_included', first: 1, last: 2 }, { name: 'other', first: 40, last: 41 }] }],
+  [{ calls: 1, codeCalls: null, inputTokens: null, outputTokens: null, wallMs: 30_000, windows: [] }],
+  [{ calls: 0, codeCalls: null, inputTokens: 0, outputTokens: 0, wallMs: 1_000, windows: [] }],
+  [{ calls: 2, codeCalls: null, inputTokens: 30, outputTokens: 4, wallMs: 90_000, windows: [], costUsd: 0.5 }]],
+  'REPORT_FOOTER_WORDS.usageRuns': [[{ runs: 2, calls: 122, codeCalls: null, inputTokens: 40_300_000, outputTokens: 803_000,
+    wallMs: 1_560_000, windows: [{ name: 'five_hour', rise: 89 }, { name: 'seven_day', rise: 15 }] }],
+  [{ runs: 3, calls: 41, codeCalls: 12, inputTokens: null, outputTokens: null, wallMs: 412_000, windows: [],
+    costUsd: 12.345 }],
+  [{ runs: 1, calls: 1, codeCalls: null, inputTokens: 20, outputTokens: 3, wallMs: 30_000,
+    windows: [{ name: 'five_hour', rise: 2 }] }],
+  [{ runs: 1, calls: 7, codeCalls: 2, inputTokens: null, outputTokens: null, wallMs: 90_000, windows: [] }]],
   ...each('REPORT_CAUSE_WORDS', REPORT_CAUSE_WORDS, [[{ n: 1, m: 3 }], [{ n: 2, m: 5, atLeast: true }]]),
 });
 /** Allowed exceptions, counted by the linter: a product name holds a glossary term. */

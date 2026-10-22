@@ -65,27 +65,83 @@ export function chargedInputBytes(request) {
     text);
 }
 
-/** `--code-model`: the part of a review whose calls, bytes and tokens the usage line also counts on their own (`wrap`
- *  and `record` given it), the code step's. */
+/** The code step's part of a review: the calls, bytes and tokens that the usage line and the run record also count on
+ *  their own (`wrap` and `record` given it). D129: tallied and shown whenever the code step runs, `--code-model` or
+ *  not. */
 export const CODE_STEP_PART = 'code';
+
+/** D129 (C7): the version of the usage record a review keeps in its run record (`report.instrument.usage`,
+ *  `usageRecord`). */
+export const REVIEW_USAGE_VERSION = 'sonah.review-usage/1';
+
+/** D129: the input tokens of one attempt's `usage` as the CLI reports them, split: `uncached` (`input_tokens`),
+ *  `cacheWrite` (`cache_creation_input_tokens`) and `cacheRead` (`cache_read_input_tokens`), each a count, an absent
+ *  cache field 0, and `total` their sum; null when the input is not reported as counts. The Codex CLI's `input_tokens`
+ *  already holds what it read from its cache: its split is null and its total is `input_tokens`, as before. */
+function inputSplitOf(metadata) {
+  const usage = metadata?.usage;
+  if (!count(usage?.input_tokens)) return null;
+  if (metadata?.backend === 'codex-cli') return { total: usage.input_tokens, split: null };
+  const write = usage.cache_creation_input_tokens, read = usage.cache_read_input_tokens;
+  if (![write, read].every((value) => value === undefined || count(value))) return null;
+  const split = { uncached: usage.input_tokens, cacheWrite: write ?? 0, cacheRead: read ?? 0 };
+  const total = split.uncached + split.cacheWrite + split.cacheRead;
+  return count(total) ? { total, split } : null;
+}
+
+/** One tally of attempts: the whole review's, or the code step's part of it. */
+function createTally() {
+  return { calls: 0, inputBytes: 0, inputTokens: 0, inputReportedCalls: 0, outputTokens: 0, outputReportedCalls: 0,
+    uncached: 0, cacheWrite: 0, cacheRead: 0, splitReportedCalls: 0, costUsd: 0, costReportedCalls: 0,
+    firstStart: null, lastEnd: null };
+}
+function addAttempt(tally, metadata, input) {
+  if (Number.isFinite(metadata?.costUsd) && metadata.costUsd >= 0) { tally.costUsd += metadata.costUsd; tally.costReportedCalls++; }
+  if (input !== null && count(tally.inputTokens + input.total)) {
+    tally.inputTokens += input.total; tally.inputReportedCalls++;
+    if (input.split && count(tally.uncached + input.split.uncached) && count(tally.cacheWrite + input.split.cacheWrite)
+      && count(tally.cacheRead + input.split.cacheRead)) {
+      tally.uncached += input.split.uncached; tally.cacheWrite += input.split.cacheWrite;
+      tally.cacheRead += input.split.cacheRead; tally.splitReportedCalls++;
+    }
+  }
+  const output = metadata?.usage?.output_tokens;
+  if (count(output) && count(tally.outputTokens + output)) { tally.outputTokens += output; tally.outputReportedCalls++; }
+}
+/** D129: a tally as the run record keeps it: counts and numbers only, each total null when no attempt reported it. */
+function tallyRecord(tally) {
+  const known = (total, reported) => (tally.calls === 0 || reported > 0 ? total : null);
+  return { calls: tally.calls, inputBytes: tally.inputBytes,
+    inputTokens: known(tally.inputTokens, tally.inputReportedCalls), inputReportedCalls: tally.inputReportedCalls,
+    inputSplit: tally.splitReportedCalls > 0 ? { uncached: tally.uncached, cacheWrite: tally.cacheWrite,
+      cacheRead: tally.cacheRead, reportedCalls: tally.splitReportedCalls } : null,
+    outputTokens: known(tally.outputTokens, tally.outputReportedCalls), outputReportedCalls: tally.outputReportedCalls,
+    costUsd: known(Math.round(tally.costUsd * 1e6) / 1e6, tally.costReportedCalls),
+    costReportedCalls: tally.costReportedCalls };
+}
+
+/** D129: a reading's change in words, `0.16 to 0.25` (two decimals, as a fraction of the limit). */
+const reading = (value) => (Math.round(value * 100) / 100).toFixed(2);
 
 /** record receives the transport's single onResult callback for each physical attempt;
  * wrap surrounds the physical transport, inside the exact-answer cache. Never pass this
  * admission signal to the transport: it is for the engine's next windows and requests.
- * `--code-model`: a transport wrapped, and its attempts recorded, with `CODE_STEP_PART` are also tallied on their own,
- * and `summaryLine({ codeModel, sessionModel })` then adds the code step's model and share. With neither, as before. */
+ * A transport wrapped, and its attempts recorded, with `CODE_STEP_PART` are also tallied on their own (the code step's
+ * part). D129 (C7): `usageRecord()` is the review's usage as its run record keeps it, and `summaryLine` says it: the
+ * calls, the input tokens with their split, the output tokens, the list cost the CLI states, the wall time, the usage
+ * limits' readings from the first that reported to the last, and the code step's part whenever the code step runs. */
 export function createReviewBudget(options = {}, { now = () => performance.now() } = {}) {
   const limits = normalizeReviewBudget({ ...options });
   const started = now(), admission = new AbortController();
-  let calls = 0, inputBytes = 0, reportedCalls = 0, inputTokens = 0, outputTokens = 0;
-  // The code step's share of the counts above, when its calls are on their own model (`--code-model`).
-  const code = { calls: 0, inputBytes: 0, inputTokens: 0, outputTokens: 0, inputReportedCalls: 0, outputReportedCalls: 0 };
+  const whole = createTally(), code = createTally();
+  let reportedCalls = 0;
   // M44: `rateLimit` is the latest attempt's closed rate-limit record that reported a utilization; `utilization`
   // its highest (highestUtilization), which `--stop-at-utilization` compares.
-  let inputReportedCalls = 0, outputReportedCalls = 0, utilization = null, rateLimit = null, reason = null;
-  // The agent transport: attempts of agent requests (their metadata carries `agentRun`) and the turns they report; and
-  // the cost every attempt that states one reports (the CLI's `total_cost_usd`, at list price).
-  let agentCalls = 0, turns = 0, turnsReportedCalls = 0, costUsd = 0, costReportedCalls = 0;
+  let utilization = null, rateLimit = null, reason = null;
+  // D129: each usage limit's first and last reading, in the order the attempts reported them.
+  const windows = {};
+  // The agent transport: attempts of agent requests (their metadata carries `agentRun`) and the turns they report.
+  let agentCalls = 0, turns = 0, turnsReportedCalls = 0;
   const pause = value => { reason ??= value; admission.abort(); };
   const record = (metadata, part = null) => {
     reportedCalls++;
@@ -94,68 +150,88 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
       const reported = metadata.agentRun.numTurns;
       if (count(reported) && count(turns + reported)) { turns += reported; turnsReportedCalls++; }
     }
-    if (Number.isFinite(metadata?.costUsd) && metadata.costUsd >= 0) { costUsd += metadata.costUsd; costReportedCalls++; }
-    const usage = metadata?.usage;
+    const input = inputSplitOf(metadata);
+    addAttempt(whole, metadata, input);
     // The code step's share is never more than the whole, so it is a count whenever the whole is.
-    const ofCode = part === CODE_STEP_PART;
-    if (count(usage?.input_tokens)) {
-      const extra = metadata?.backend === 'codex-cli' ? []
-        : [usage.cache_creation_input_tokens, usage.cache_read_input_tokens].filter(value => value !== undefined);
-      const total = usage.input_tokens + extra.reduce((sum, value) => sum + (count(value) ? value : 0), 0);
-      if (extra.every(count) && count(total) && count(inputTokens + total)) {
-        inputTokens += total; inputReportedCalls++;
-        if (ofCode) { code.inputTokens += total; code.inputReportedCalls++; }
-      }
-    }
-    if (count(usage?.output_tokens) && count(outputTokens + usage.output_tokens)) {
-      outputTokens += usage.output_tokens; outputReportedCalls++;
-      if (ofCode) { code.outputTokens += usage.output_tokens; code.outputReportedCalls++; }
-    }
+    if (part === CODE_STEP_PART) { addAttempt(code, metadata, input); code.lastEnd = now(); }
     const latest = highestUtilization(metadata?.rateLimit);
     if (latest !== null) {
       utilization = latest; rateLimit = rateLimitRecordOf(metadata.rateLimit);
+      for (const [window, value] of Object.entries(rateLimit?.windows ?? {})) {
+        windows[window] ??= { first: value, last: value };
+        windows[window].last = value;
+      }
       if (limits.stopAtUtilization !== null && latest >= limits.stopAtUtilization) pause(UTILIZATION);
     }
   };
-  const snapshot = () => ({ calls, inputBytes, reportedCalls,
-    inputTokens: calls === 0 || inputReportedCalls > 0 ? inputTokens : null,
-    outputTokens: calls === 0 || outputReportedCalls > 0 ? outputTokens : null,
-    inputReportedCalls, outputReportedCalls, utilization, windows: rateLimit?.windows ?? null, reason,
+  const elapsed = () => Math.max(0, Math.round(now() - started));
+  const snapshot = () => ({ calls: whole.calls, inputBytes: whole.inputBytes, reportedCalls,
+    inputTokens: whole.calls === 0 || whole.inputReportedCalls > 0 ? whole.inputTokens : null,
+    outputTokens: whole.calls === 0 || whole.outputReportedCalls > 0 ? whole.outputTokens : null,
+    inputReportedCalls: whole.inputReportedCalls, outputReportedCalls: whole.outputReportedCalls, utilization,
+    windows: rateLimit?.windows ?? null, reason,
     agentCalls, turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null, turnsReportedCalls,
-    costUsd: calls === 0 || costReportedCalls > 0 ? costUsd : null, costReportedCalls,
-    elapsedMs: Math.max(0, Math.round(now() - started)),
+    costUsd: whole.calls === 0 || whole.costReportedCalls > 0 ? whole.costUsd : null,
+    costReportedCalls: whole.costReportedCalls, elapsedMs: elapsed(),
     limits: { maxCalls: limits.maxCalls, maxInputBytes: limits.maxInputBytes, stopAtUtilization: limits.stopAtUtilization } });
+  /** D129 (C7): the review's usage as its run record keeps it (REVIEW_USAGE_VERSION): the whole review's tally, its
+   *  agent calls and turns, its wall time, each usage limit's first and last reading (RATE_LIMIT_WINDOWS names, in that
+   *  order; null when none reported one), and the code step's part (`code`, with its own wall time from its first call
+   *  to its last answer; null when the code step made no call). Counts and numbers only. */
+  const usageRecord = () => {
+    const limitsRead = RATE_LIMIT_WINDOWS.filter((window) => Object.hasOwn(windows, window));
+    return { version: REVIEW_USAGE_VERSION, ...tallyRecord(whole), reportedCalls, agentCalls,
+      turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null, wallMs: elapsed(),
+      windows: limitsRead.length ? Object.fromEntries(limitsRead.map((window) => [window, { ...windows[window] }])) : null,
+      code: code.calls === 0 ? null : { ...tallyRecord(code),
+        wallMs: code.firstStart !== null && code.lastEnd !== null ? Math.max(0, Math.round(code.lastEnd - code.firstStart))
+          : null } };
+  };
   return {
-    signal: admission.signal, record, snapshot,
+    signal: admission.signal, record, snapshot, usageRecord,
     wrap: (transport, part = null) => async (request, ...args) => {
       const bytes = chargedInputBytes(request);
-      if (reason === null && limits.maxCalls !== null && calls >= limits.maxCalls) pause(MAX_CALLS);
-      if (reason === null && limits.maxInputBytes !== null && inputBytes + bytes > limits.maxInputBytes) pause(MAX_INPUT_BYTES);
+      if (reason === null && limits.maxCalls !== null && whole.calls >= limits.maxCalls) pause(MAX_CALLS);
+      if (reason === null && limits.maxInputBytes !== null && whole.inputBytes + bytes > limits.maxInputBytes) pause(MAX_INPUT_BYTES);
       if (reason !== null) throw failure(BUDGET_EXHAUSTED);
       // Reserve before calling the transport or yielding: concurrent requests cannot overspend.
-      calls++; inputBytes += bytes;
-      if (part === CODE_STEP_PART) { code.calls++; code.inputBytes += bytes; }
+      whole.calls++; whole.inputBytes += bytes;
+      if (part === CODE_STEP_PART) { code.calls++; code.inputBytes += bytes; code.firstStart ??= now(); }
       return transport(request, ...args);
     },
-    summaryLine: ({ codeModel = null, sessionModel = null } = {}) => {
-      const state = snapshot();
-      const tokens = (total, reported, of = calls) => total === null ? `not reported (0/${of} calls reported)`
-        : `${total} (${reported}/${of} calls reported)`;
+    /** The usage line. `codeStep`: the code step ran in this review, so its part is said even when it made no call;
+     *  `codeModel` (`--code-model`) names its model, and `sessionModel` the session's beside it. */
+    summaryLine: ({ codeModel = null, sessionModel = null, codeStep = false } = {}) => {
+      const state = usageRecord();
+      const tokens = (total, reported, of, more = '') => total === null ? `not reported (0/${of} calls reported)`
+        : `${total} (${reported}/${of} calls reported${more})`;
+      // D129: the input tokens, with their split where the CLI reported one.
+      const input = (tally) => tokens(tally.inputTokens, tally.inputReportedCalls, tally.calls, tally.inputSplit === null
+        ? '' : `: ${tally.inputSplit.uncached} uncached, ${tally.inputSplit.cacheWrite} written to the cache, `
+          + `${tally.inputSplit.cacheRead} read from the cache`);
+      const cost = (tally) => (tally.costUsd === null ? `not reported (0/${tally.calls} calls reported)`
+        : `$${tally.costUsd.toFixed(2)} (${tally.costReportedCalls}/${tally.calls} calls reported)`);
       // The agent transport: the turns its agents took, only when an agent request ran.
       const agentTurns = agentCalls === 0 ? ''
         : `agent turns ${state.turns === null ? 'not reported' : state.turns} (${turnsReportedCalls}/${agentCalls} agent calls `
           + 'reported); ';
-      const line = `Review usage: ${calls} calls; ${inputBytes} input bytes; input tokens ${tokens(state.inputTokens, inputReportedCalls)}; `
-        + `output tokens ${tokens(state.outputTokens, outputReportedCalls)}; ${agentTurns}wall ${state.elapsedMs} ms; `
-        + `utilization ${utilizationWords(rateLimit)}.`;
-      if (typeof codeModel !== 'string' || !codeModel) return line;
-      // --code-model: the code step's model and its share of the calls, bytes and tokens above (the session's model
-      // beside it, when given). Model ids the reviewer's settings accepted, counts and fixed words only.
-      const known = (total, reported) => (code.calls === 0 || reported > 0 ? total : null);
-      const session = typeof sessionModel === 'string' && sessionModel ? ` (the session on ${sessionModel})` : '';
-      return `${line} Code step on ${codeModel}${session}: ${code.calls} of these calls; ${code.inputBytes} input bytes; `
-        + `input tokens ${tokens(known(code.inputTokens, code.inputReportedCalls), code.inputReportedCalls, code.calls)}; `
-        + `output tokens ${tokens(known(code.outputTokens, code.outputReportedCalls), code.outputReportedCalls, code.calls)}.`;
+      // D129: each usage limit from its first reading to its last.
+      const moved = state.windows === null ? '' : `; limits from first to last reading: ${Object.entries(state.windows)
+        .map(([window, { first, last }]) => `${RATE_LIMIT_WINDOW_WORDS[window]} ${reading(first)} to ${reading(last)}`)
+        .join(', ')}`;
+      const line = `Review usage: ${state.calls} calls; ${state.inputBytes} input bytes; input tokens ${input(state)}; `
+        + `output tokens ${tokens(state.outputTokens, state.outputReportedCalls, state.calls)}; ${agentTurns}`
+        + `list cost ${cost(state)}; wall ${state.wallMs} ms; utilization ${utilizationWords(rateLimit)}${moved}.`;
+      const named = typeof codeModel === 'string' && codeModel;
+      if (!named && !codeStep && code.calls === 0) return line;
+      // The code step's part of the calls, bytes, tokens and cost above, and its own wall time (its model, and the
+      // session's beside it, with --code-model). Model ids the reviewer's settings accepted, counts and fixed words only.
+      const part = state.code ?? tallyRecord(code);
+      const session = named && typeof sessionModel === 'string' && sessionModel ? ` (the session on ${sessionModel})` : '';
+      return `${line} Code step${named ? ` on ${codeModel}${session}` : ''}: ${part.calls} of these calls; `
+        + `${part.inputBytes} input bytes; input tokens ${input(part)}; `
+        + `output tokens ${tokens(part.outputTokens, part.outputReportedCalls, part.calls)}; `
+        + `list cost ${cost(part)}${state.code?.wallMs != null ? `; wall ${state.code.wallMs} ms` : ''}.`;
     },
     pauseLine: () => reason === null ? null : `Review stopped where you asked (${reason}). Run the same command again to resume: `
       + 'stored answers are kept and nothing is asked twice.',

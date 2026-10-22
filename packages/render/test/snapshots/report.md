@@ -2,41 +2,10 @@
 
 Claude Code recording · a change of 5 files, +13 −2 · 6 commands · commit 1111111  
 After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The recording shows 3 commands after the agent's last edit as refused before they ran.  
-Sonah did not finish its review of this session. Sonah did not check: 1 ask · 1 ask for which the session review cited only the agent's words · 3 claims · 1 statement that the agent wrote into a file
+Sonah did not finish its review of this session.
 
 Must act 9 · Must know 12 · Good to know 9 (folded) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
-Must act: [*fix the refill order*](#item-1) · [*check the forced push*](#item-2) · [ask 6](#item-3) and 6 more
-
-### Your prompt (6 asks: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked)
-
-| Status | You asked | Sonah's note |
-|---|---|---|
-| Done | “Add rate limiting to the API” | The code review found a problem here. See item 1. |
-| Not done | “Return 429 with a Retry-After header in seconds” | See item 5. |
-| Done | “Keep the auth checks before the limiter” | The session review cited the agent's words as what does it, not a recorded result or change. |
-| Partly done | “Do not change the CI config” | See item 4. |
-| Not checked | “Update the README” | The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it. Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. |
-| Not done | “Also add a test for the limiter” | See item 3. |
-
-Sonah checked only the parts of your prompt that the table above lists.
-
-<details><summary>Your whole message (30 words)</summary>
-
-> Add rate limiting to the API. Return 429 with a Retry-After header in seconds. Keep the auth checks before the limiter. Do not change the CI config. Update the README.
-
-</details>
-
-<details><summary>Your whole message (7 words)</summary>
-
-> Also add a test for the limiter.
-
-</details>
-
-<details><summary>Sonah found no ask in 1 more message.</summary>
-
-> Thanks, that is all.
-
-</details>
+Must act: [*fix the refill order*](#item-1) · [*check the forced push*](#item-2) · [a false claim (item 3)](#item-3) and 6 more
 
 ### Must act (9)
 
@@ -70,7 +39,33 @@ Action: *Check the remote branch.*
 
 </details>
 
-<a name="item-3"></a>**3 Fix:** The agent did not do ask 6.  
+<a name="item-3"></a>**3 Verify:** A recorded result contradicts a claim of the agent's.  
+“The limiter uses Redis.”  
+Where: the claims list
+
+<details><summary>Evidence · Why Must act</summary>
+
+- A recorded result shows: “connect ECONNREFUSED”
+- Sonah puts a contradicted claim in Must act by default.
+- Item id: `hhhhhhhhhhhh`
+
+</details>
+
+<a name="item-4"></a>**4 Fix:** The agent acted against something that you said.  
+You said: “Do not change the CI config”  
+Where: `.github/workflows/ci.yml`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
+
+<details><summary>Evidence · Why Must act</summary>
+
+- The agent wrote: “run: npm test --silent”
+- Sonah puts an edit against your words in Must act by default.
+- Item id: `jjjjjjjjjjjj`
+
+</details>
+
+<a name="item-5"></a>**5 Fix:** The agent did not do ask 6.  
 “Also add a test for the limiter”  
 Where: ask 6
 
@@ -82,7 +77,7 @@ Where: ask 6
 
 </details>
 
-<a name="item-4"></a>**4 Fix:** The agent did only part of ask 4.  
+<a name="item-6"></a>**6 Fix:** The agent did only part of ask 4.  
 “Do not change the CI config”  
 Where: ask 4 · `.github/workflows/ci.yml`
 
@@ -97,7 +92,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-5"></a>**5 Fix:** *Retry-After is sent in milliseconds*  
+<a name="item-7"></a>**7 Fix:** *Retry-After is sent in milliseconds*  
 Where: `src/limiter.js:5` · ask 2
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L5
@@ -112,19 +107,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-6"></a>**6 Verify:** A recorded result contradicts a claim of the agent's.  
-“The limiter uses Redis.”  
-Where: the claims list
-
-<details><summary>Evidence · Why Must act</summary>
-
-- A recorded result shows: “connect ECONNREFUSED”
-- Sonah puts a contradicted claim in Must act by default.
-- Item id: `hhhhhhhhhhhh`
-
-</details>
-
-<a name="item-7"></a>**7 Fix:** *The CI change is still there*  
+<a name="item-8"></a>**8 Fix:** *The CI change is still there*  
 The agent said: “I reverted the CI change.”  
 Where: `.github/workflows/ci.yml:1`
 
@@ -137,20 +120,6 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 - Its check: It traced the finding and found the same problem. *The refill runs once, before any request.*
 - Sonah puts a claim that the code contradicts in Must act by default.
 - Item id: `rrrrrrrrrrrr`
-
-</details>
-
-<a name="item-8"></a>**8 Fix:** The agent acted against something that you said.  
-You said: “Do not change the CI config”  
-Where: `.github/workflows/ci.yml`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
-
-<details><summary>Evidence · Why Must act</summary>
-
-- The agent wrote: “run: npm test --silent”
-- Sonah puts an edit against your words in Must act by default.
-- Item id: `jjjjjjjjjjjj`
 
 </details>
 
@@ -326,6 +295,37 @@ The agent said: “I will not add Redis, an in-process bucket is enough.”
 
 </details>
 
+### Your prompt (6 asks: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked)
+
+| Status | You asked | Sonah's note |
+|---|---|---|
+| Done | “Add rate limiting to the API” | The code review found a problem here. See item 1. |
+| Not done | “Return 429 with a Retry-After header in seconds” | See item 7. |
+| Done | “Keep the auth checks before the limiter” | <details><summary>Evidence</summary>The session review cited the agent's words as what does it, not a recorded result or change.</details> |
+| Partly done | “Do not change the CI config” | See item 6. |
+| Not checked | “Update the README” | Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. <details><summary>Evidence</summary>The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.</details> |
+| Not done | “Also add a test for the limiter” | See item 5. |
+
+Sonah checked only the parts of your prompt that the table above lists.
+
+<details><summary>Your whole message (30 words)</summary>
+
+> Add rate limiting to the API. Return 429 with a Retry-After header in seconds. Keep the auth checks before the limiter. Do not change the CI config. Update the README.
+
+</details>
+
+<details><summary>Your whole message (7 words)</summary>
+
+> Also add a test for the limiter.
+
+</details>
+
+<details><summary>Sonah found no ask in 1 more message.</summary>
+
+> Thanks, that is all.
+
+</details>
+
 <details><summary>Good to know (9)</summary>
 
 <details><summary><a name="item-22"></a>22 Fix: <em>No test covers the 429 answer</em> · <code>src/limiter.js:5</code></summary>
@@ -388,7 +388,7 @@ The agent said: “I am switching to an in-process token bucket”
 
 </details>
 
-<details><summary><a name="item-26"></a>26 Read: The agent decided on <em>limit per client</em>: <em>ten requests</em>. Sonah could not check whether you asked for this. · <code>src/server.js</code></summary>
+<details><summary><a name="item-26"></a>26 Read: The agent decided on <em>limit per client</em>: <em>ten requests</em>. · <code>src/server.js</code></summary>
 
 Where: `src/server.js`
 
@@ -396,6 +396,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 <details><summary>Evidence · Why Good to know</summary>
 
+- Sonah could not check whether you asked for this.
 - Sonah does not hold all your earlier messages in full, so it could not check if one covered it.
 - Sonah puts a decision that Sonah could not tie to an ask in Good to know by default.
 - Item id: `444444444444`
@@ -482,7 +483,7 @@ The code review grouped these files by the ask that each one serves.
 
 **Ask 1**
 
-- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 5 → item 16 → item 22 → item 24 → item 27
+- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 7 → item 16 → item 22 → item 24 → item 27
 - `src/server.js` · changed · +1 −0 · *mounts the limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js → item 9 → item 26 → item 30
 
 **Ask 5**
@@ -491,7 +492,7 @@ The code review grouped these files by the ask that each one serves.
 
 **No ask that the code review named**
 
-- `.github/workflows/ci.yml` · changed · +1 −1 · *runs the tests silently* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml → item 4 → item 7 → item 8 → item 28 → item 29
+- `.github/workflows/ci.yml` · changed · +1 −1 · *runs the tests silently* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml → item 4 → item 6 → item 8 → item 28 → item 29
 - `docs/limits.md` · new · +1 −0 · *documents the full answer* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/docs/limits.md → item 17
 
 #### Runs, from the recording, in order
@@ -511,8 +512,8 @@ The code review grouped these files by the ask that each one serves.
 - contradicted → item 17 “The limiter answers with 503 when it is full.” · written into `docs/limits.md`
 - not checked → item 13 “all tests pass”
 - not checked “rate limiting works”
-- contradicted → item 6 “The limiter uses Redis.”
-- contradicted by the code review → item 7 “I reverted the CI change.”
+- contradicted → item 3 “The limiter uses Redis.”
+- contradicted by the code review → item 8 “I reverted the CI change.”
 
 #### What the agent said it did not do
 
@@ -525,6 +526,8 @@ The code review grouped these files by the ask that each one serves.
 </details>
 
 <details><summary>What Sonah could not check (6 facts)</summary>
+
+- Sonah did not check: 1 ask · 1 ask for which the session review cited only the agent's words · 3 claims · 1 statement that the agent wrote into a file
 
 #### The session review
 
@@ -558,7 +561,7 @@ Sonah could not read 1 ask of the session review.
 
 ---
 
-Sonah 0.9.0 · sonah.report-model/5 · commit 1111111  
+Sonah 0.9.0 · sonah.report-model/6 · commit 1111111  
 Text in quotation marks is word for word from the recording.  
 Titles, questions, labels and file notes in italics are the code review's words.  
 Words in italics inside Sonah's sentences are the session review's words.  

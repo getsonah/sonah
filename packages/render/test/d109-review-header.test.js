@@ -68,8 +68,8 @@ test('D109 review: the header, the files that the agent changed and the coverage
   assert.ok(model.header.size.includes(REPORT_HEADER_WORDS.change(6)), JSON.stringify(model.header.size));
   assert.equal(REPORT_HEADER_WORDS.change(6), 'a change of 6 files');
   // The header's files not seen: the two writes the review did not read, a part of the six.
-  assert.ok(model.header.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.unseenFiles(2)),
-    JSON.stringify(model.header.didNotCheck));
+  assert.ok(model.notChecked.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.unseenFiles(2)),
+    JSON.stringify(model.notChecked.didNotCheck));
   assert.equal(REPORT_NOT_CHECKED_PARTS.unseenFiles(2), '2 files of the change that the code review did not see');
   const coverage = codeCoverageLines(r.codePass)[0];
   assert.equal(coverage, W.files(6, [['whole', 2], ['hunks_only', 2]], 2));

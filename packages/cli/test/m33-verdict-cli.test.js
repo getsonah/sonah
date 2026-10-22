@@ -11,7 +11,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Session } from '../../evidence/src/session.js';
 import { runReview } from '../../evidence/src/run-review.js';
 import { REVIEW_RUN_STATES } from '../../evidence/src/ledger.js';
-import { REVIEW_RUN_EXIT_CODES, reviewExitCode, runStateLine, notCoveredLine } from '../src/session-review-command.js';
+import { REVIEW_RUN_EXIT_CODES, reviewExitCode, runStateLine } from '../src/session-review-command.js';
 import { countLines } from '../src/report-output.js';
 import { reportModel } from '../../render/report-model.js';
 import { REPORT_COUNT_WORDS } from '../../render/report-words.js';
@@ -79,16 +79,23 @@ test('D71 the CLI says what of its own review ran, and prints no status', async 
     assert.doesNotMatch(line, STATUS_WORDS);
 });
 
-test('M33 wherever the coverage is partial, every declared cause is printed with its count', async () => {
-  const report = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
+/** D133's review: the coverage causes as What Sonah could not check says them (the terminal's "Not covered" line, which
+ *  said them before D133, is gone): each cause's fact, in order. */
+const causesOf = (session, report) => reportModel(session, report, {}).notChecked.facts.filter((f) => f.cause === true)
+  .map((f) => f.parts.map((p) => p.text).join(''));
+
+test('M33 wherever the coverage is partial, every declared cause is said with its count', async () => {
+  const session = delegatedSession();
+  const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper.');
-  // D71 (a): the line follows the coverage, never a status; a complete coverage prints none.
-  assert.equal(notCoveredLine({ ...report, sessionStatus: 'UNCHECKED', reviewStatus: 'UNCHECKED', codeStatus: 'UNCHECKED' }),
-    'Not covered: Sonah found no checked recording for 1 delegation to a helper.');
-  assert.equal(notCoveredLine({ ...report, coverage: 'complete', codeCoverage: 'missing' }), null);
-  assert.doesNotMatch(notCoveredLine(report), STATUS_WORDS);
-  assert.doesNotMatch(notCoveredLine(report), new RegExp(SENTINEL));
+  assert.deepEqual(causesOf(session, report), ['Sonah found no checked recording for 1 delegation to a helper.']);
+  // D71 (a): the causes follow the coverage, never a status.
+  assert.deepEqual(causesOf(session, { ...report, sessionStatus: 'UNCHECKED', reviewStatus: 'UNCHECKED',
+    codeStatus: 'UNCHECKED' }), ['Sonah found no checked recording for 1 delegation to a helper.']);
+  for (const line of causesOf(session, report)) {
+    assert.doesNotMatch(line, STATUS_WORDS);
+    assert.doesNotMatch(line, new RegExp(SENTINEL));
+  }
 });
 
 test('M33 the harness summary reports a completed review with its causes and counts only, and no status (D71)', async (t) => {
@@ -122,10 +129,9 @@ test('M33 G2 a declared cause with no count is printed with the count of its dec
     sessionKey: 'session', lossOrdinal: 0 }];
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', judge: async () => EMPTY });
   assert.equal(report.sessionStatus, 'NO_FINDINGS');
-  // The causes are listed as the PR comment lists them, with no semicolon (S6).
   // D119: the kinds no cause of their own names are counted by kind, said as what Sonah holds, never summed or "read".
-  assert.equal(notCoveredLine(report), 'Not covered: Sonah found no checked recording for 1 delegation to a helper · '
-    + 'Sonah holds 1 kind of evidence only in part.');
+  assert.deepEqual(causesOf(session, report), ['Sonah found no checked recording for 1 delegation to a helper.',
+    'Sonah holds 1 kind of evidence only in part, so it cannot check all of it.']);
 });
 
 /** The delegated session plus the agent's own words: a claim the challengers can uphold. */

@@ -139,7 +139,8 @@ test('success and failure usage count; missing usage stays unreported with direc
   assert.equal(state.calls, 3); assert.equal(state.reportedCalls, 3);
   assert.equal(state.inputTokens, 12); assert.equal(state.inputReportedCalls, 2);
   assert.equal(state.outputTokens, 0); assert.equal(state.outputReportedCalls, 1);
-  assert.match(budget.summaryLine(), /input tokens 12 \(2\/3 calls reported\)/);
+  // D129: with their split, as the CLI reported it (no cache field here: 0 each).
+  assert.match(budget.summaryLine(), /input tokens 12 \(2\/3 calls reported: 12 uncached, 0 written to the cache, 0 read from the cache\)/);
   assert.match(budget.summaryLine(), /output tokens 0 \(1\/3 calls reported\)/);
   const unknown = createReviewBudget();
   await unknown.wrap(async () => ({}))(request);

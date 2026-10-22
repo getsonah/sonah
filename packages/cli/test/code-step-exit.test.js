@@ -76,7 +76,9 @@ test('release review: the code step on by default never makes the exit code non-
     assert.equal(run.code, 0, format);
     assert.match(run.out, /^Code review: on \(the default\)\./m);
     assert.ok(run.out.includes(`Sonah's review: complete (session review complete, ${SHORT}${APART}).`), run.out);
-    assert.match(run.out, /^Coverage: .*code pass partial/m);
+    // D133 (R2): the run state line says that the code review did not cover all of the change; the coverage line is
+    // off the terminal, its causes in the page's and the .md's fold.
+    assert.doesNotMatch(run.out, /^Coverage: /m);
     assert.ok(run.written.includes(STORY_CODE_WORDS.coverage.partial), format);
   }
   // Nothing to read (the session changed and read no file): exit 0, said as such. D113: said plainly, as no write of

@@ -291,7 +291,9 @@ process.stdin.on('end', () => {
   const reviewed = await run(bin, [...args, '--format', 'html', '--output', output, '--no-open']);
   // D118 (a): the code step is off by the setting, so "complete" names what is missing, and the next line says why.
   assert.match(reviewed.stdout, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\.\nNo code was reviewed\. Reason: this review ran without the code review\./m);
-  assert.match(reviewed.stdout, /^Not covered: /m);
+  // D133 (R2; the owner, 2026-10-22: quiet, folded, never false): the causes are in the page's fold What Sonah could not
+  // check, no longer on a "Not covered" line of the terminal; the exit code is as before.
+  assert.doesNotMatch(reviewed.stdout, /^(?:Not covered|Coverage): /m);
   assert.ok(reviewed.stdout.includes(`Local page: ${output}`));
   assert.doesNotMatch(reviewed.stdout, /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/);
   const written = await readFile(output, 'utf8');

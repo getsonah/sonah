@@ -226,6 +226,25 @@ function recordedJson(value) {
 /** A recorded `structuredPatch` with at least one entry (an empty list records no change). */
 const recordedPatch = (value) => (Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null);
 
+/**
+ * D127 (B10d, the owner's go of 2026-10-22). The recorder's typed facts of one compaction, on the mark of a Claude Code
+ * `compact_boundary` row that records its `compactMetadata` (the row that records the compaction; its summary row's mark
+ * carries none): `{ compacted: { trigger?, before?, after? } }` — `trigger` when `compactMetadata.trigger` is `auto` or
+ * `manual`, and the agent's context in tokens before and after it (`preTokens`, `postTokens`) when each is a safe
+ * integer >= 0 (an empty object when it types none of them). Any other compaction mark carries nothing, so its bytes are
+ * as before. Never a word of the summary.
+ */
+function compactedOf(rec) {
+  const d = rec?.raw;
+  if ((rec?.adapter ?? 'claude') !== 'claude' || !plain(d) || d.type !== 'system' || d.subtype !== 'compact_boundary'
+    || !plain(d.compactMetadata)) return {};
+  const metadata = d.compactMetadata;
+  const count = (value) => Number.isSafeInteger(value) && value >= 0;
+  return { compacted: { ...(['auto', 'manual'].includes(metadata.trigger) ? { trigger: metadata.trigger } : {}),
+    ...(count(metadata.preTokens) ? { before: metadata.preTokens } : {}),
+    ...(count(metadata.postTokens) ? { after: metadata.postTokens } : {}) } };
+}
+
 function visibleTaskIdAgrees(text, nativeId) {
   if (typeof text !== 'string') return false;
   const labels = [...text.matchAll(/\btask[ _-]?id\s*[:=]/gi)];
@@ -910,7 +929,8 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
 
     // C-01 event identity: a mark that becomes an event is named by its own row (event-identity.js).
     if (rec.kind === 'compaction') {
-      marks.push({ turn, kind: 'compaction', identity: rowIdentity(rec, recordIndex, null, IDENTITY_SUBS.compaction) });
+      marks.push({ turn, kind: 'compaction', identity: rowIdentity(rec, recordIndex, null, IDENTITY_SUBS.compaction),
+        ...compactedOf(rec) });
       continue;
     }
     // C-02 M33 (4): an adapter's typed interrupt row (Codex `turn_aborted`) carries no text and

@@ -40,6 +40,10 @@ import { RATE_LIMIT_STATUSES, RATE_LIMIT_TYPES, RATE_LIMIT_WINDOWS, REVIEW_CANCE
 
 export const WINDOW_CHECKPOINT_SCHEMA = 'sonah.window-checkpoint/1';
 export const SESSION_REVIEW_PROGRESS_SCHEMA = 'sonah.session-review-progress/1';
+/** D129's review: the version of the store's record of what each run of the review cost (`usage.private.json`, the
+ *  store's `appendUsageRun`). */
+export const REVIEW_USAGE_RUNS_SCHEMA = 'sonah.review-usage-runs/1';
+const USAGE_RUNS_FILE = 'usage.private.json';
 const SESSION_ONLY = runProfile('session-only').reviewScope;
 /** Where a non-regular entry found at a record's name is moved, inside the records' directory. */
 const DISCARDED = '.discarded';
@@ -311,6 +315,38 @@ export async function readSessionReviewProgress(directory) {
   return { ...progress, state: INTERRUPTED, failure: REVIEW_INTERRUPTED };
 }
 
+// ---- what each run cost ----------------------------------------------------------------------------------
+/** D129's review: one run's entry — its usage record (review-budget.js `usageRecord`), the budget stop it ended at
+ *  (REVIEW_BUDGET_REASONS) or null, and the closed code it failed with or null. D132's review (finding 4): and, since
+ *  then, `identity`, what the run asked with — its backend, its model and the code step's own model (null without
+ *  --code-model) — so that only runs that could share answers are summed. An entry written before has none. */
+const USAGE_RUN_FIELDS = Object.freeze(['usage', 'paused', 'failure']);
+const IDENTITY_FIELDS = Object.freeze(['backend', 'model', 'codeModel']);
+const optionalName = (value) => value === null || (typeof value === 'string' && value.length > 0 && value.length <= 200);
+export const usageRunIdentityValid = (identity) => exactKeys(identity, IDENTITY_FIELDS)
+  && typeof identity.backend === 'string' && identity.backend.length > 0 && identity.backend.length <= 64
+  && optionalName(identity.model) && optionalName(identity.codeModel);
+const usageRunValid = (run) => (exactKeys(run, USAGE_RUN_FIELDS)
+  || (exactKeys(run, [...USAGE_RUN_FIELDS, 'identity']) && usageRunIdentityValid(run.identity))) && plainObject(run.usage)
+  && typeof run.usage.version === 'string' && (run.paused === null || typeof run.paused === 'string')
+  && (run.failure === null || typeof run.failure === 'string');
+/** D132's review (finding 4): whether two runs asked with the same backend, model and code model; an entry with no
+ *  identity matches none. */
+export const sameRunIdentity = (a, b) => usageRunIdentityValid(a) && usageRunIdentityValid(b)
+  && IDENTITY_FIELDS.every((key) => a[key] === b[key]);
+/** The store's runs (`{ runs }`), none when there is no file, or none with the closed reason the file was not read. */
+async function readUsageRunsFile(directory) {
+  const read = await readPrivate(join(directory, USAGE_RUNS_FILE));
+  if (read.absent) return { runs: [] };
+  if (read.discard) return { runs: [], discard: read.discard };
+  const parsed = strictJson(read.text);
+  if (!parsed.json) return { runs: [], discard: UNREADABLE };
+  if (!parsed.strict || !exactKeys(parsed.value, ['schema', 'runs']) || parsed.value.schema !== REVIEW_USAGE_RUNS_SCHEMA
+    || !Array.isArray(parsed.value.runs) || !parsed.value.runs.every(usageRunValid))
+    return { runs: [], discard: SCHEMA_INVALID };
+  return { runs: parsed.value.runs };
+}
+
 // ---- the store ------------------------------------------------------------------------------------------
 /**
  * One session review's private directory. `lock()` takes the same single-file exclusive lock a PR
@@ -356,6 +392,18 @@ export function createSessionReviewStore(directory) {
     },
     writeWindow: (record) => writePrivate(windows, `${record.windowKey}.json`, JSON.stringify(record)),
     saveReport: (report) => writePrivate(directory, 'report.private.json', JSON.stringify(report)),
+    /** D129's review: every run's cost, in the order the runs ended (`{ runs }`; none when there is no record). */
+    readUsageRuns: () => readUsageRunsFile(directory),
+    /** D129's review: add one run's entry (`{ usage, paused, failure }`) to the store's record of what each run cost,
+     *  under the caller's lock. A record that cannot be read is moved aside, never deleted, and a new one begun. */
+    async appendUsageRun(run) {
+      if (!usageRunValid(run)) throw new TypeError('A run\'s cost is its usage record, its stop and its failure');
+      await prepare();
+      const prior = await readUsageRunsFile(directory);
+      if (prior.discard) await moveAside(directory, USAGE_RUNS_FILE);
+      await writePrivate(directory, USAGE_RUNS_FILE, JSON.stringify({ schema: REVIEW_USAGE_RUNS_SCHEMA,
+        runs: [...prior.runs, run] }));
+    },
   };
 }
 
@@ -384,7 +432,7 @@ export function createSessionReviewStore(directory) {
  */
 export async function reviewSession({ session, judge, answerCache, store, backend, model, signal = null,
   onProgress = () => {}, onWindowRecord = () => {}, servedModelTally = () => null, concurrency = undefined,
-  speedProfile = undefined, rateLimitTally = null, census = null }) {
+  speedProfile = undefined, rateLimitTally = null, census = null, usage = null }) {
   if (typeof backend !== 'string' || !backend || typeof model !== 'string' || !model)
     throw new TypeError('A session review is keyed by the backend and model that answer');
   const { name: speed, windowConcurrency } = reviewSpeedProfile(speedProfile);
@@ -474,7 +522,10 @@ export async function reviewSession({ session, judge, answerCache, store, backen
         recordsDiscarded: ordered(CHECKPOINT_DISCARD_REASONS, discarded), stateChanged },
         // D99 (F1 guard): the recorder census of the recordings this review read (session-evidence.js
         // `recorderCensusOf`): counts by closed reason and recorder version, kept in the run record only.
-        ...(census !== null && typeof census === 'object' ? { recorderCensus: census } : {}) };
+        ...(census !== null && typeof census === 'object' ? { recorderCensus: census } : {}),
+        // D129 (C7): what the review cost (`usage`, the caller's review-budget.js `usageRecord`), when no code step
+        // follows it: the code step's own record carries the whole review's then (`reviewCodePass`).
+        ...(typeof usage === 'function' ? { usage: usage() } : {}) };
       // The recording is rebuilt from the recording; it is never stored beside the report.
       const { session: omitted, ...saved } = report;
       await store.saveReport(saved);
@@ -537,7 +588,7 @@ function codeStepReader(snapshot, bound) {
  * (ledger.js `reviewRunState`).
  */
 export async function reviewCodePass({ session, report, snapshot, judge, answerCache, store, backend,
-  speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null }) {
+  speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null, usage = null }) {
   const { name: speed } = reviewSpeedProfile(speedProfile);
   const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
   const memo = memoizeJudge(boundedJudge(judge, () => {}, { signal, speedProfile: speed, reviewScope: SESSION_ONLY,
@@ -570,6 +621,9 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
     const joined = withAskCodeLinks(withCodePass(report, { ...result, codePass }), session);
     joined.codePass = { ...joined.codePass, ...(typeof model === 'string' && model ? { model } : {}),
       required: required !== false, answers: memo.answers };
+    // D129 (C7): what the whole review cost, the session review and the code step (`usage`, the caller's
+    // review-budget.js `usageRecord`), taken after the step's last call, in the run record.
+    if (typeof usage === 'function') joined.instrument = { ...joined.instrument, usage: usage() };
     if (typeof answerCache?.prune === 'function') await answerCache.prune();
     const { session: omitted, ...saved } = joined;
     await store.saveReport(saved);

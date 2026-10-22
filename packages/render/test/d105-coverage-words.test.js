@@ -111,8 +111,8 @@ test('D105: a request too large to send is said so — never "saw", never a call
   }
   assert.equal(codeUnseenFiles(r.codePass), 4);
   const model = reportModel(codeSession(), r, {});
-  assert.ok(model.header.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.unseenFiles(4)),
-    JSON.stringify(model.header.didNotCheck));
+  assert.ok(model.notChecked.didNotCheck.phrases.includes(REPORT_NOT_CHECKED_PARTS.unseenFiles(4)),
+    JSON.stringify(model.notChecked.didNotCheck));
 });
 
 test('D105: a report written before (no manifest) reads as before — no seen line, its footer as it was', () => {

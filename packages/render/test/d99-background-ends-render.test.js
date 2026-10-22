@@ -29,9 +29,11 @@ function model(failures = [], { unchecked = false } = {}) {
 const textOf = (parts) => parts.map((p) => p.text).join('');
 
 test('D99 F1 guard: the header counts an unread end apart, and never as a run with no recorded end', () => {
-  const { header } = model();
+  const { header, notChecked } = model();
+  // D133 (R2): the part that says what Sonah could not read is in What Sonah could not check, with its count.
   assert.deepEqual(header.runs, ['After its last edit, the agent ran 3 commands.',
-    'Results: 1 has no recorded end, 1 stopped before it finished, for 1 Sonah could not read whether or how it ended.']);
+    'Results: 1 has no recorded end, 1 stopped before it finished.']);
+  assert.ok(notChecked.quiet.includes('Results: for 1 Sonah could not read whether or how it ended.'), notChecked.quiet);
 });
 
 test('D99 F1 guard: the Runs list says what Sonah read of each run\'s end', () => {
@@ -60,11 +62,12 @@ test('D99 (review of A1b): a run no later record is shown to mention says Sonah 
   // The slicer marks a run `unchecked` where no later mention is established (its id only in rows before its launch, an
   // id no search is sound for, a file it could not read again): the Runs list claims no later mention for it, and the
   // header counts it with the other runs whose end Sonah could not read, in words true of both.
-  const { header, did } = model([], { unchecked: true });
+  const { header, did, notChecked } = model([], { unchecked: true });
   assert.deepEqual(did.runs.shown.map((run) => run.outcome).slice(1), [
     'later records mention this run, but Sonah could not read whether or how it ended',
     'stopped before it finished',
     'Sonah could not check whether the recording holds an end of this run']);
   assert.deepEqual(header.runs, ['After its last edit, the agent ran 4 commands.',
-    'Results: 1 has no recorded end, 1 stopped before it finished, for 2 Sonah could not read whether or how they ended.']);
+    'Results: 1 has no recorded end, 1 stopped before it finished.']);
+  assert.ok(notChecked.quiet.includes('Results: for 2 Sonah could not read whether or how they ended.'));
 });

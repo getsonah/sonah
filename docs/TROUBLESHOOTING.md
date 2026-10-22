@@ -179,7 +179,7 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | In a folder, Sonah did not review files that changed outside this session's recorded writes. They are outside the evaluated session / In a folder, files that changed outside this session's recorded writes are outside the evaluated session | In another git repository the session wrote to, these files differ from that repository's commit, but no write that the recording shows touched them, and the file system's modification time does not place their last change while the session ran: another agent's or your own work there, before or after the session. Sonah names them (the first 10, then how many more). As in your working directory, they are outside the evaluated session: with a change of the session's own to review, Sonah gives them to the code review apart from it if there is room in its input (the second line), else it does not review them (the first). A file there that changed while the session ran is part of the change instead, marked as one that no recorded edit wrote. |
   | The session wrote N files in folders that no git repository holds. Sonah lists them and did not review them | Not a gap in the change: these files lie outside every git repository (a notes folder, an agent's scratch folder, your home folder). Sonah does not review them, its agents do not read those folders, and they do not change the coverage. It names each folder (the first 10, then how many more) with how many files the session wrote there; the footer counts them with the other paths it did not review. |
   | writes of the session name paths with an unexpanded shell variable or command substitution | A shell command of the session wrote to a path such as `$DIR/notes.md` or `$(pwd)/x.md`. The recording holds the command as typed, not what the shell expanded it to, so Sonah cannot tell which file it wrote. It counts these writes apart and does not review them. A path that a file tool (Write, Edit) wrote is taken as it is spelled, even with a `$` in its name, and so is a path that, spelled as recorded, names a file or folder that is there (a relative path in the session's working folder, an absolute path where it points), or a file that git lists as changed since the start commit, such as one the session deleted (the recording keeps no quotes: a route file `app/routes/users.$id.tsx` that a shell command wrote is a file of the change). |
-  | Sonah does not yet see every edit made by helper agents or by scripts after a cd | The session ran a shell command. A script can write files after a `cd` into another folder, where Sonah cannot place its writes, and Sonah does not yet read every helper agent's own edits. So the change the code review had can miss some of them: review such edits yourself. Shown on the page, in the .md and on the terminal's code review line. |
+  | Sonah does not yet see every edit made by helper agents or by scripts after a cd | The session ran a shell command. A script can write files after a `cd` into another folder, where Sonah cannot place its writes, and Sonah does not yet read every helper agent's own edits. So the change the code review had can miss some of them: review such edits yourself. Shown in the code review's part of What Sonah could not check, on the page and in the .md (since 0.3.0-beta.6 no longer on the terminal's code review line). |
   | files whose change Sonah left out of the code review's input for room | The change is larger than one request holds (about 400 KB of lines): Sonah left the largest changes out, and the agent was told to read those files itself. |
   | files changed after the session's last recorded edit | Not a gap: a file the session wrote changed again afterwards (a formatter, a script, your own edit). Its change from where the session started was shown and reviewed, but some of its lines now may not be the agent's. |
   | Sonah did not review files that changed outside this session's recorded writes | These files differ from the commit where the session started, but no write that the recording shows touched them, and the file system's modification time does not place their last change while the session ran: a later commit, your own edit, or a file already changed before the session began. They are outside the evaluated session, and the line says so. Sonah names them (the first 10, then how many more). This line shows when no code review ran or answered: with a change of the session's own to review, Sonah gives them to the code review apart from it if there is room in its input, and the next row's line shows instead. A file that a command of the session deleted or moved (a moved file keeps its old time, and a deleted file has none), or changed and that changed again later, is among them too: review those yourself. |
@@ -278,11 +278,11 @@ It then prints `Review window N/M finished` as each part completes. There are no
 
 **`The code review found that it holds in the code`** (a note on a "Not checked" ask under "Your prompt")
 : The session review could not check this ask in the recording, and the code review's item-by-item check found in the
-  code that it holds. The note follows the session review's reason, names the lines where Sonah found each quote of that
-  check word for word in the files as they are now, and ends "Sonah did not check whether it holds." Open the file at
-  those lines to check it yourself. Sonah did not check the code review's verdict, so the ask still reads "Not checked",
-  and every count (the header's "Sonah did not check", the count line, What Sonah could not check and the pull request
-  comment) counts it as not checked. The code can also do an ask that the agent did not do in this session. An ask that
+  code that it holds. The note names the lines where Sonah found each quote of that check word for word in the files as
+  they are now. The row's own fold holds the session review's reason and "Sonah did not check whether it holds." (since
+  0.3.0-beta.6; before, both were on the row). Open the file at those lines to check it yourself. Sonah did not check
+  the code review's verdict, so the ask still reads "Not checked", and every count (the count line, the "Sonah did not
+  check" line in What Sonah could not check, and the pull request comment) counts it as not checked. The code can also do an ask that the agent did not do in this session. An ask that
   the code review ties to a finding, a question or a withheld finding has no such note and keeps its line. Neither does
   an ask that one of Sonah's own checks speaks against or did not settle (its cited run or write did not run to its end
   or Sonah could not read its end, Sonah's check refuted or did not settle its status, or Sonah did not find the part
@@ -301,8 +301,8 @@ It then prints `Review window N/M finished` as each part completes. There are no
   before you post it, because it quotes your session as the recording holds it.
 
 **`The report is more than 60,000 bytes, the limit that Sonah sets for a GitHub comment.`**
-: Sonah never shortens the header, the count line or the table of your prompt. It keeps the open lines of the Must act
-  and Must know items whole too. Here these parts alone are longer than the limit, so Sonah prints no `gh` command. Open
+: Sonah never shortens the header, the count line, the counts of your prompt or its asks that are not done. It keeps
+  the open lines of the Must act and Must know items whole too. Here these parts alone are longer than the limit, so Sonah prints no `gh` command. Open
   the page, or post a part of the .md yourself.
 
 **`Commit 1a2b3c4 is not on origin yet.`**
@@ -329,10 +329,13 @@ It then prints `Review window N/M finished` as each part completes. There are no
 **`Sonah saved the page, but could not open it.`**
 : Open the printed path in your browser. Use `--no-open` on a machine with no browser.
 
-**The output names "adapter gaps", "Not covered: ...", "Known gaps" (`--dry-run`) or "no checked recording" for a helper**
+**What Sonah could not check lists "no checked recording" for a helper, or another limit; `--dry-run` names "Known gaps"; the pull request comment has a "Not covered: ..." line**
 : These are limits of the recording, not failures of the review: a helper agent's recording was not found beside its
-  parent, a command recorded no exit status, and so on. They do not make the review incomplete. Keep helper recordings
-  where your agent wrote them (Claude Code: `<session>/subagents/` beside the session file).
+  parent, a command recorded no exit status, and so on. They do not make the review incomplete. Since 0.3.0-beta.6 the
+  terminal no longer prints them (before, on its "Coverage: ..." and "Not covered: ..." lines): each one, with its
+  count, is in the fold What Sonah could not check of the page and the .md, also when Sonah shortens the .md, and the
+  exit code is the same. Keep helper
+  recordings where your agent wrote them (Claude Code: `<session>/subagents/` beside the session file).
 
 **`Review could not complete: review_failed.`** (exit 3)
 : Something Sonah did not expect, for example a `--repo` folder that does not exist or a `~/.sonah` folder you do not

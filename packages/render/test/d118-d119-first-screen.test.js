@@ -21,7 +21,7 @@ import { coverageCauses, COVERAGE_SENTENCE } from '../../evidence/src/review.js'
 import { WORKFLOW_RUN_GAP_NOTES, WORKFLOW_GAP_NOTES, CALL_INPUT_GAP_NOTES }
   from '../../evidence/adapters/sonah-ledger.js';
 import { publicCommentText, createPublicationPlan, CHECK_TITLES } from '../../github/publication.js';
-import { runStateLine, coverageSummaryLine, notCoveredLine } from '../../cli/src/session-review-command.js';
+import { runStateLine } from '../../cli/src/session-review-command.js';
 import { readCodeSnapshot } from '../../cli/src/code-snapshot.js';
 import { codeSession } from '../../cli/test/code-pass-fixture.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -245,14 +245,8 @@ test('D122 (review lows of D118): one definition of "no code was reviewed", read
     'Sonah finished its advisory review');
 });
 
-test('D118 (a): the coverage line never says "code pass complete" for a code pass that reviewed no code', () => {
-  for (const [reason, codePass] of CASES) {
-    if (codePass === undefined) continue;
-    const line = coverageSummaryLine(report(codePass)) ?? '';
-    if (reason && codePass.coverage === 'complete') assert.match(line, /code pass reviewed no code/, reason);
-    assert.equal(/code pass complete/.test(line), !reason && codePass.coverage === 'complete', String(reason));
-  }
-});
+// D133's review: the terminal's coverage line (D118 (a)'s "code pass reviewed no code" there) is gone; the run state
+// line says it (the D118 (a) tests above).
 
 /** A heredoc write the slicer parsed from a command (`shellWriteOf` names it), as d80-failed-writes.test.js builds one. */
 function shellWrite(b, id, of, path, body) {
@@ -420,7 +414,9 @@ test('D119: the evidence Sonah holds in part is said one kind at a time, each in
   assert.deepEqual(causes.workflow_calls_unlaunched, { n: 1 });
   assert.deepEqual(causes.call_inputs_unread, { n: 3 });
   assert.deepEqual(causes.incomplete_inventory, { n: 1 });
-  const line = notCoveredLine(r);
+  // D133's review: the causes as What Sonah could not check says them (the terminal's "Not covered" line is gone).
+  const line = reportModel(codeSession(), r, {}).notChecked.facts.filter((f) => f.cause === true)
+    .map((f) => f.parts.map((p) => p.text).join('')).join(' · ');
   assert.ok(line.includes('Sonah did not read 28 workflow runs or the recordings of their agents'), line);
   assert.ok(line.includes('Sonah did not read 225 other entries in the folders of workflow runs'), line);
   assert.ok(line.includes('Sonah holds 1 kind of evidence only in part'), line);

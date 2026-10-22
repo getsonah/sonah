@@ -94,9 +94,11 @@ test('F204 the notes come from one closed table, and the recorder\'s note is unc
   // not record. M34 labels: H2's and M5's actor notes are deleted with their fallbacks; the label gaps that replace them
   // have their own closed table (LABEL_GAP_NOTES, test/m34-labels-adapter.test.js).
   // Gain I: and the two nontext notes, the located one (a human message that carried an image) and the unplaced one
-  // (the literal the adapter always wrote).
-  assert.deepEqual(Object.keys(notes).sort(), ['capped_before_review', 'nontext_attached', 'nontext_unplaced',
-    'recorder_shortened', 'redaction_withheld', 'refusal_session_unknown', 'refusal_untyped',
+  // (the literal the adapter always wrote). D126 (N0): and one for each reason Sonah did not read the part before the
+  // compaction a session opens on (the slicer's CONTINUED_REASONS).
+  assert.deepEqual(Object.keys(notes).sort(), ['capped_before_review', 'earlier_recording_ambiguous',
+    'earlier_recording_cycle', 'earlier_recording_missing', 'earlier_recording_unread', 'nontext_attached',
+    'nontext_unplaced', 'recorder_shortened', 'redaction_withheld', 'refusal_session_unknown', 'refusal_untyped',
     'stripped_before_review']);
   assert.equal(notes.nontext_unplaced,
     'human input contained nontext blocks that this reviewer could not read');

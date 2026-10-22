@@ -12,7 +12,6 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
   RUN_FAILURE_CODES, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
-import { COVERAGE_SENTENCE, coverageCauses } from '../../evidence/src/review.js';
 import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILE_NAMES, reviewSpeedProfile, requestBoundOf } from '../../evidence/src/review-profiles.js';
 import { sessionPage } from '../../render/session-page.js';
@@ -20,7 +19,6 @@ import { renderReportMarkdown } from '../../render/session-story.js';
 import { reportModel, noCodeText } from '../../render/report-model.js';
 import { targetPath } from '../../github/client.js';
 import { GITHUB_ERROR_CODES } from '../../github/errors.js';
-import { PUBLICATION_WORDS } from '../../github/publication.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
 import { createAnswerCache } from './answer-cache.js';
 import { claudeProjectsDir, harnessHomePlaces } from './claude-home.js';
@@ -29,7 +27,8 @@ import { loadRecordedSessionWithHash } from './recorded-session.js';
 import { openLocalPage, presentLocalPage } from './local-page.js';
 import { attestableModel, createReviewJudge, reviewJudgeConfig, selectedContextWindow, rateLimitRecordOf } from './review-judge.js';
 import { discoverSessions } from './session-discovery.js';
-import { createSessionReviewStore, dryRunReplay, reviewCodePass, reviewSession } from './session-review.js';
+import { createSessionReviewStore, dryRunReplay, reviewCodePass, reviewSession, sameRunIdentity }
+  from './session-review.js';
 import { codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES } from '../../evidence/src/ledger.js';
 import { CODE_ACCOUNT_LIMITS, CODE_OUTSIDE_STATES, agentsRead, placesOf, foldersOf, unresolvedOf }
@@ -268,6 +267,13 @@ export const ANSWER_REUSE_WORDS = Object.freeze({
   session: (reused, total) => `Model answers: ${reused} of ${total} reused (no call).`,
   code: (reused, total) => `Code review answers: ${reused} of ${total} reused (no call).`,
 });
+/** D126 (N0): the line after the recording's, for a session that opens on a compaction (the session's `continued`):
+ *  how many earlier recordings Sonah reads with it, or that it could not read the part before it. */
+export const CONTINUED_RECORDING_WORDS = Object.freeze({
+  read: (n) => `The session continues ${n === 1 ? 'an earlier recording' : `${n} earlier recordings`} in this folder. `
+    + `Sonah reads ${n === 1 ? 'it' : 'them'} with it.`,
+  unread: 'The session opens on a compaction. Sonah could not read the part before it, and the report says why.',
+});
 /** What the review prints when the system refuses Sonah access to the folder it runs in (`process.cwd()` fails with
  *  EPERM: macOS keeps a terminal without access out of ~/Documents, ~/Desktop and ~/Downloads), and the fix. `refused`
  *  names the folder only when Sonah can tell which folder it is (`shellFolderOf`), else null. */
@@ -286,7 +292,7 @@ const fixOf = (code) => (Object.hasOwn(REVIEW_FIX_WORDS, code) ? REVIEW_FIX_WORD
  *  lines are fragments: each line of the help is read as it stands. */
 export const STYLE_KINDS = Object.freeze({
   sessionReviewUsage: 'fragment', REVIEW_FIX_WORDS: 'notice', REVIEW_FIX_DEFAULT: 'notice', NO_SESSION_WORDS: 'notice',
-  ANSWER_REUSE_WORDS: 'notice', WORKING_FOLDER_WORDS: 'notice',
+  ANSWER_REUSE_WORDS: 'notice', WORKING_FOLDER_WORDS: 'notice', CONTINUED_RECORDING_WORDS: 'notice',
   SAVED_COMMENT_WORDS: 'description', 'SAVED_COMMENT_WORDS.target': 'label', 'SAVED_COMMENT_WORDS.noReview': 'fragment',
   'SAVED_COMMENT_WORDS.unreadable': 'fragment',
   RUN_STATE_WORDS: 'fragment', 'RUN_STATE_WORDS.line': 'notice', CODE_STEP_SOURCE_WORDS: 'fragment',
@@ -298,6 +304,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'SAVED_COMMENT_WORDS.target': [['owner/repo', 7]],
   'NO_SESSION_WORDS.searched': [['/folder/one', '/folder/two']],
   'ANSWER_REUSE_WORDS.session': [[1, 2], [5, 5]], 'ANSWER_REUSE_WORDS.code': [[0, 3], [3, 3]],
+  'CONTINUED_RECORDING_WORDS.read': [[1], [2]],
   'WORKING_FOLDER_WORDS.refused': [['/folder/project'], [null]],
   'SAVED_COMMENT_WORDS.none': [['PR comment for owner/repo#7', 'this recording has no finished review yet'],
     ['PR comment for owner/repo#7', 'Sonah could not read the last saved review of this recording']],
@@ -332,9 +339,7 @@ export const STYLE_FIXTURES = Object.freeze({
 export const STYLE_ALLOW = Object.freeze({ ...Object.fromEntries(['CODE_PASS_NO_ROOT', 'CODE_SNAPSHOT_WORDS.gitBase',
   'CODE_SNAPSHOT_WORDS.noBaseHere',
   'CODE_STEP_SOURCE_WORDS.config', 'REPLAY_UNREAD', 'REVIEW_FIX_WORDS.config_invalid', 'WORKING_FOLDER_WORDS.fix']
-  .map((key) => [key, ['technical-noun']])),
-  // D118 (a): the coverage line names each part by the report's field, as its other parts do ("code pass complete").
-  'RUN_STATE_WORDS.codePassNoCode': ['quoted-term'] });
+  .map((key) => [key, ['technical-noun']])) });
 
 /** What a review writes in its state folder (`--state-dir`, else `session-reviews/<digest>` in Sonah's home), and
  *  nothing else there: the stored session answers, the review's record (and its lock), the code step's stored answers,
@@ -415,6 +420,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   let budget = null, reviewStarted = false;
   // --code-model: the models the usage line names (the code step's and the session's); none otherwise.
   let usageModels = undefined;
+  // D129's review: the store that keeps what each run cost, and the closed code this run failed with.
+  let usageStore = null, failedWith = null;
+  // D132's review (finding 4): what this run asks with (backend, model, code model), kept with its cost.
+  let runIdentity = null;
   try {
     budget = createReviewBudget(options);
     setMaxListeners(REVIEW_SIGNAL_MAX_LISTENERS, budget.signal);
@@ -476,6 +485,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       claudeProjects: roots.claude, sessionKey: 'session' });
     const { session, hash } = loaded;
     stdout.write(`Recording: ${file} (${adapter ?? session.adapter}).\n`);
+    // D126 (N0): a session that opens on a compaction, read with the recordings it continues, or not.
+    const continued = session.continued ?? null;
+    if (continued?.earlier > 0) stdout.write(`${CONTINUED_RECORDING_WORDS.read(continued.earlier)}\n`);
+    if (continued?.unread) stdout.write(`${CONTINUED_RECORDING_WORDS.unread}\n`);
     const backend = options.backend ?? env.SONAH_REVIEW_BACKEND ?? 'claude-cli';
     // Owner decision 2026-10-10: no default limits; say up front how long the review should take, from its own plan
     // (D84 (4) a: the time only; each window's first request size sets it). A window whose request is over the review's
@@ -498,8 +511,13 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // project folder named like one of its entries out of sight: the code step refuses it, before anything is read.
     if (codeStep.on && backend === 'claude-cli' && typeof loaded.cwd === 'string' && isAbsolute(loaded.cwd)
         && options.stateDir && await placeHolds(state, loaded.cwd)) throw failure('state_dir_holds_root');
+    // D126 (N0): a session read with the recordings it continues starts where the first of them starts (D113's window);
+    // any other is given the recording alone, as before.
+    const startRecording = Array.isArray(loaded.recordings) && loaded.recordings.length > 1
+      && typeof loaded.recordings[0] === 'string' ? loaded.recordings[0] : null;
     const snapshot = !codeStep.on ? null : backend === 'claude-cli' ? await readCode(session, { root: loaded.cwd ?? null,
-      maxBytes: bound, recording: file, own: [...STATE_FOLDER_ENTRIES.map((entry) => join(resolve(state), entry)),
+      maxBytes: bound, recording: file, ...(startRecording ? { startRecording } : {}),
+      own: [...STATE_FOLDER_ENTRIES.map((entry) => join(resolve(state), entry)),
         resolve(sonahHome)],
       harnessHomes: harnessHomePlaces({ env, home }), ...(codeRepos.length ? { codeRepos } : {}) })
       : CODE_STEP_BACKEND_SNAPSHOT;
@@ -554,6 +572,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // --code-model (or SONAH_CODE_MODEL): the code step's own model, checked as the session's is, before any call; with
     // neither, null, and the code step runs on the session's model and transport, as before.
     const codeConfig = codeJudgeConfig(env, { backend, codeModel: codeModelOf(codeStep, options, env) });
+    runIdentity = { backend, model: typeof config.model === 'string' && config.model ? config.model : null,
+      codeModel: typeof codeConfig?.model === 'string' && codeConfig.model ? codeConfig.model : null };
     if (signal?.aborted) throw failure('review_interrupted');
     // Same admission facts as the existing session harness: one successful transport report,
     // attested Claude identity, and the requested context window when the model has a selector.
@@ -563,7 +583,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       stdout.write(`${estimateOf(planWindowRequests({ session, reviewScope: 'session-only', backend, speedProfile: options.profile }))}\n`);
     stdout.write(`${codeStepLine(codeStep, snapshot)}\n`);
     reviewStarted = true;
+    usageStore = createSessionReviewStore(join(state, STATE_REVIEW));
     if (codeConfig) usageModels = { codeModel: codeConfig.model, sessionModel: config.model };
+    // D129 (C7): the code step's part of the usage line is said whenever the step asks, --code-model or not.
+    if (codeStepAsks(snapshot)) usageModels = { ...usageModels, codeStep: true };
     const onResultOf = (part) => (metadata) => {
       budget.record(metadata, part);
       latestRateLimit = rateLimitRecordOf(metadata?.rateLimit) ?? latestRateLimit;
@@ -603,6 +626,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
         store: createSessionReviewStore(join(state, STATE_REVIEW)),
         speedProfile: options.profile, concurrency: options.concurrency, signal: admission.signal,
         rateLimitTally: () => latestRateLimit, census: loaded.census ?? null,
+        // D129 (C7): the review's cost in its run record; with the code step on, the code step's record carries it.
+        ...(snapshot ? {} : { usage: () => budget.usageRecord() }),
         onWindowRecord: (event) => stderr.write(`Review window ${event.window}/${event.of} finished\n`) });
     } finally {
       signal?.removeEventListener('abort', abort);
@@ -622,7 +647,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
         signal: admission.signal, answerCache: createAnswerCache(join(state, STATE_CODE_PASS, 'answers'),
           { ...(codeConfig ?? config), repoState: snapshot.repoState ?? null }),
         store: createSessionReviewStore(join(state, STATE_REVIEW)),
-        ...(codeConfig ? { model: codeConfig.model } : {}) }));
+        ...(codeConfig ? { model: codeConfig.model } : {}), usage: () => budget.usageRecord() }));
     }
     // D97: the repository's facts for the report's code links (local git only, from the code step's snapshot), and
     // the count line in place of the attention lines. D118 (a): the folder the code step looked in (its snapshot's, or
@@ -631,14 +656,23 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     const facts = snapshot ? await readRepoFacts({ snapshot, codePass: report.codePass })
       : { repo: null, github: undefined };
     const folder = snapshot?.root === true && typeof snapshot.dir === 'string' ? snapshot.dir : loaded.cwd ?? null;
+    // D132 (R3 b): what each earlier run of this review cost, as its state folder keeps them (this run's is added in the
+    // `finally` below), so the footer gives the whole review's cost; none when the record cannot be read. D132's review
+    // (finding 4): only the runs that asked with this run's backend, model and code model, which could share answers.
+    const earlierRuns = (await usageStore.readUsageRuns().catch(() => ({ runs: [] }))).runs
+      .filter((run) => sameRunIdentity(run.identity, runIdentity)).map((run) => run.usage);
     const linkFacts = { repo: facts.repo, ...(facts.github !== undefined ? { github: facts.github } : {}),
-      sonahVersion: await sonahVersionOf(), ...(folder ? { folder } : {}) };
+      sonahVersion: await sonahVersionOf(), ...(folder ? { folder } : {}), ...(earlierRuns.length ? { earlierRuns } : {}) };
     const reportView = reportModel(session, report, linkFacts);
     stdout.write(`${runStateLine(report)}\n`);
     // D118 (a): no code reviewed, said on the terminal's first screen as the page and the report say it.
     if (reportView.header.noCode) stdout.write(`${noCodeText(reportView.header.noCode)}\n`);
-    for (const line of [coverageSummaryLine(report), notCoveredLine(report), windowCompletionLine(report.instrument?.windowCompletion)])
-      if (line) stdout.write(`${line}\n`);
+    // D133 (R2): what Sonah could not check is said in its fold, with its counts. The terminal no longer prints the
+    // coverage and "Not covered" lines (their functions are gone since D133's review); every cause they named, with
+    // its count, is in the page's and the report's fold What Sonah could not check, also in a shortened report, and the
+    // exit code is as before (`reviewExitCode`).
+    const windows = windowCompletionLine(report.instrument?.windowCompletion);
+    if (windows) stdout.write(`${windows}\n`);
     for (const line of countLines(reportView)) stdout.write(`${line}\n`);
     const answers = report.instrument?.answers;
     if (answers) stdout.write(`${ANSWER_REUSE_WORDS.session(answers.reused, answers.calls + answers.reused)}\n`);
@@ -677,6 +711,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     const allowed = [...CLI_SAFE_ERROR_CODES, ...JUDGE_FAILURE_CODES, ...RUN_FAILURE_CODES, ...GITHUB_ERROR_CODES];
     const code = admissionFailure ?? (error?.code === 'EEXIST' ? 'output_exists'
       : allowed.includes(error?.code) ? error.code : 'review_failed');
+    failedWith = code;
     stderr.write(`Review could not complete: ${code}.\nFix: ${fixOf(code)}\n`);
     const toolFailure = ['review_failed', 'model_unavailable'];
     return RUN_FAILURE_CODES.includes(code) || toolFailure.includes(code) ? 3 : 2;
@@ -687,8 +722,24 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       stdout.write(`${budget.summaryLine(usageModels)}\n`);
       const paused = budget.pauseLine();
       if (paused) stdout.write(`${paused}\n`);
+      // D129's review: what this run cost is kept in the review's state folder however it ended — finished, stopped at a
+      // budget, interrupted or failed — beside each earlier run's, so a review resumed over several runs keeps them all.
+      await keepRunUsage(usageStore, { usage: budget.usageRecord(), paused: budget.snapshot().reason,
+        failure: failedWith, ...(runIdentity ? { identity: runIdentity } : {}) });
     }
   }
+}
+
+/** D129's review: add this run's cost to its store's record (session-review.js `appendUsageRun`), under the store's
+ *  lock. Best effort: a store another run holds, or one that cannot be written, keeps no entry for this run, and the
+ *  usage line the run printed still says it. */
+async function keepRunUsage(store, run) {
+  let release = null;
+  try {
+    release = await store.lock();
+    await store.appendUsageRun(run);
+  } catch { /* the usage line says it */ }
+  finally { await release?.().catch(() => {}); }
 }
 
 /**
@@ -795,8 +846,6 @@ export const RUN_STATE_WORDS = Object.freeze({
   // D118 (a), the owner's go of 2026-10-18 (the dogfood's DF2): a status word never says "complete" without naming
   // what is missing. A review that ran to the end and reviewed no code (evidence code-report.js `codeNotReviewedOf`).
   completeNoCode: 'complete, but no code was reviewed',
-  // The coverage line's part for a code pass whose own coverage is complete and that reviewed no code.
-  codePassNoCode: 'code pass reviewed no code',
 });
 
 /** D71 (a): the first line the review command prints — whether Sonah's own review ran, and of what. Counts and fixed
@@ -857,76 +906,6 @@ const linkedFiles = (codePass) => (Array.isArray(codePass?.files) ? codePass.fil
   && typeof f.path === 'string' && !CODE_OUTSIDE_STATES.includes(f.state) && (typeof f.sha256 === 'string' || f.type === 'deleted'
   || f.state === 'deleted')).map((f) => f.path);
 
-/**
- * Every declared cause of what the review could not cover, with its count, in the renderer's code-owned sentences —
- * fixed words and integers only, never a gap note, path or quote. D71 (a): shown whenever the coverage is short of
- * complete (before D71, only beside a NO_FINDINGS status); null when it is complete. The PR comment's line, in its
- * words (github/publication.js PUBLICATION_WORDS).
- */
-export function notCoveredLine(report) {
-  if (report?.coverage === 'complete' && report?.codeCoverage !== 'partial') return null;
-  let causes = [];
-  try { causes = coverageCauses(report); } catch { causes = []; }
-  if (causes.length)
-    return PUBLICATION_WORDS.notCovered(causes.map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)));
-  return report?.coverage === 'partial' ? PUBLICATION_WORDS.noCause : null;
-}
-
-/** A counts-only CLI summary. Every printed word is fixed here, and every printed value is a
- * closed coverage state or a validated count; recording paths, gap notes and model text stay out. */
-export function coverageSummaryLine(report) {
-  const states = new Set(['complete', 'partial', 'missing']);
-  const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
-  const parts = [];
-  // D123 (the beta.5 end-to-end smoke): the pull request's own code review (`codeCoverage`, an earlier route) is a part
-  // only where `runStateLine` names it: a review whose effective scope is not session-only. A session review has no
-  // such review, so "code missing" beside "code pass complete" said that its code review was missing.
-  let honest = null;
-  try { honest = honestStatuses({ ...report, findings: Array.isArray(report?.findings) ? report.findings : [] }); }
-  catch { honest = null; }
-  if (honest?.reviewScope !== 'session-only' && states.has(report?.codeCoverage))
-    parts.push(`code ${report.codeCoverage}`);
-  if (report?.coverage === 'complete') parts.push('session complete');
-  else if (report?.coverage === 'missing') parts.push(report?.hasSessionEvidence === false
-    ? 'session evidence unavailable (no linked recording)' : 'session evidence unavailable (no complete session review)');
-  else if (report?.coverage === 'partial') {
-    const gaps = Array.isArray(report?.session?.adapterGaps) ? report.session.adapterGaps : [];
-    const observations = gaps.filter((gap) => gap?.code === 'incomplete_inventory'
-      && gap?.channel === 'observations' && gap?.scope === 'session');
-    const n = observations.every((gap) => isCount(gap.count))
-      ? observations.reduce((sum, gap) => sum + gap.count, 0) : null;
-    const cause = observations.length
-      ? `including ${Number.isSafeInteger(n) && n > 0 ? `${n} action result${n === 1 ? '' : 's'}` : 'action result evidence'} missing, withheld, or unlinked`
-      : 'see report for the unchecked scope';
-    parts.push(`session evidence incomplete (${cause})`);
-  }
-
-  // D87: the code pass's own coverage, when it ran (`report.codePass`). D118 (a): never "complete" for a code pass that
-  // reviewed no code (evidence code-report.js `codeNotReviewedOf`).
-  if (states.has(report?.codePass?.coverage)) parts.push(report.codePass.coverage === 'complete'
-    && reportNotReviewedOf(report) !== null ? RUN_STATE_WORDS.codePassNoCode : `code pass ${report.codePass.coverage}`);
-
-  const files = report?.codeCoverageFacts;
-  const placed = files?.placed;
-  if (Array.isArray(placed) && isCount(files?.snapshotFiles) && files.snapshotFiles > 0
-      && placed.length <= files.snapshotFiles
-      && placed.every((path) => typeof path === 'string' && path.length > 0)
-      && new Set(placed).size === placed.length)
-    parts.push(`files ${placed.length}/${files.snapshotFiles}`);
-
-  const windows = report?.instrument?.windowCompletion;
-  if (isCount(windows?.complete) && isCount(windows?.windows) && windows.windows > 0
-      && windows.complete <= windows.windows)
-    parts.push(`windows ${windows.complete}/${windows.windows}`);
-
-  if (Array.isArray(report?.session?.adapterGaps)
-      && report.session.adapterGaps.length > 0
-      && report.session.adapterGaps.every((gap) => gap !== null && typeof gap === 'object' && !Array.isArray(gap)))
-    parts.push(`adapter gaps ${report.session.adapterGaps.length}`);
-
-  return parts.length ? `Coverage: ${parts.join('; ')}.` : null;
-}
-
 /** Owner decision 2026-10-14: where the code step's setting for this review came from (settings.js
  *  CODE_PASS_SOURCES), in the words the code step's line gives it. */
 export const CODE_STEP_SOURCE_WORDS = Object.freeze({ flag: Object.freeze({ on: '--code-pass', off: '--no-code-pass' }),
@@ -985,13 +964,13 @@ export function codeStepLine({ on, source } = {}, snapshot = null) {
   // before), and the folders the agents read beside the repository's top folder.
   const repository = snapshot?.root !== true || snapshot.repository !== false;
   // D117 amended (the owner: "the page says plainly that edits made by helper agents or by scripts after cd are not seen
-  // yet"): the page's one fixed sentence, when the session ran a shell command or delegated work (code-pass.js
-  // `mayMissEdits`, read by the snapshot).
-  const unseen = snapshot?.root === true && snapshot.unseenEdits === true ? ` ${CODE_REPORT_WORDS.unseenEdits}` : '';
-  if (snapshot !== null && !codeStepAsks(snapshot)) return `${W.noChange(why, repository)}${unseen} ${W.turnOff}`;
+  // yet"): the page's one fixed sentence (CODE_REPORT_WORDS `unseenEdits`), when the session ran a shell command or
+  // delegated work. D133 (R2; the owner, 2026-10-22): said in the code review's fold of the page and the report only, no
+  // longer on this line.
+  if (snapshot !== null && !codeStepAsks(snapshot)) return `${W.noChange(why, repository)} ${W.turnOff}`;
   const folders = snapshot?.root === true && Array.isArray(snapshot.folders) ? snapshot.folders
     .filter((folder) => typeof folder === 'string' && folder !== snapshot.top).length : 0;
-  return `${W.on(why, folders, repository)}${unseen} ${W.turnOff}`;
+  return `${W.on(why, folders, repository)} ${W.turnOff}`;
 }
 
 /** D87: what the CLI says when the code step has no working directory to read the session's files under. */

@@ -940,6 +940,31 @@ const MOVED_BY_FIRST_SCREEN = Object.freeze([
 const MOVED_BY_EVIDENCE_KINDS = Object.freeze([{},
   { story: '1e1fa884b2b3968770db50bfafcb5453589c467e77fa00f929b10e692b4dfc60' },
   { story: '72847b86d93e5619d6369283358c67eff4b56a103fd04cbe9ed67ca827289dd6' }]);
+/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): every
+ *  case's story, by the report model's version in its footer alone (`sonah.report-model/6`; with
+ *  the version set back to /5 every case renders D119's bytes): no case opens on a compaction or holds one, and these
+ *  reports carry no run record of what the review cost, so the footer says nothing of it. No ledger, gap, request,
+ *  label, window or window failure moved. */
+const MOVED_BY_BETA6_READERS = Object.freeze([
+  { story: 'c3d9c82968f098be388b7bbf1599ed30aab23d8ff2e8387a0f934669ddb5132e' },
+  { story: 'f910a65575544ae4f8613099481d09458cd8d1a52f681b177c7d5f879bb02c5e' },
+  { story: 'c5a7a60608ca6f66bf5037c6ed95ca362c84a4a7d087ae85cacc53c521548fc8' }]);
+/** D131 (R1, B12; the owner: "Must act comes first"): every case's story, by its sections' order alone —
+ *  Must act and Must know before your prompt. No case has more than 30 asks or is shortened. No ledger, gap, request,
+ *  label, window or window failure moved. */
+const MOVED_BY_MUST_FIRST = Object.freeze([
+  { story: '29d6a047f09c9243d32f3c81cfc1f7476b3eb524749dd99482adfa36129d2025' },
+  { story: '3c2c0e90e646f75449dbb769eda9ee8f752cd24226726e05f4040ce7a3c021d5' },
+  { story: 'ecb158cd049b1727f1ba2a6f82ee6b92b5b15be7addc0c2d2533cc76d10b3c89' }]);
+/** D133 (R2, the owner's guidance of 2026-10-22: quiet, folded, never false): every case's story, by lines that move
+ *  alone, each word for word — those of these that the case holds: the header's line about what Sonah did not check, the count line's second sentence, the
+ *  results Sonah could not read, an ask's reason and a decision's "Sonah could not check whether you asked for this." —
+ *  into What Sonah could not check, the row's own fold or the item's evidence fold. No status word or count changes. No
+ *  ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_QUIET = Object.freeze([
+  { story: '45eeb3adbb0a83113307139d5e08a834ad16076fd4a426ee27887eff63fabc59' },
+  { story: '2870a3a637e24371836d273d40b7f4ca483efe4d0ceee01c0d120fbcbe129862' },
+  { story: '6f81b499733d3b512bf8234c41504434ff6124645149333400069a37cf1e565b' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1056,14 +1081,17 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // once more (MOVED_BY_ONE_BOUND), the same way; and 0.3.0-beta.5 (D113 to D116) once more (MOVED_BY_REPORT_TRUTH),
   // by the end-of-recording fact's words and the model's version; and D118 once more (MOVED_BY_FIRST_SCREEN), by the
   // first screen's no-code line and the size line's empty files part; and D119 once more where a case declares a kind
-  // of evidence held in part (MOVED_BY_EVIDENCE_KINDS), by that sentence said a kind at a time.
+  // of evidence held in part (MOVED_BY_EVIDENCE_KINDS), by that sentence said a kind at a time; and D126, D127 and D129
+  // once more, in one move (MOVED_BY_BETA6_READERS), by the report model's version in the footer; and D131 once more
+  // (MOVED_BY_MUST_FIRST), by its sections' order; and D133 once more (MOVED_BY_QUIET), by the lines about what Sonah
+  // could not check moving into their folds.
   const asksFixes = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
     ...MOVED_BY_D71_CHANNELS[at], ...MOVED_BY_D71_FIX[at], ...MOVED_BY_S7[at], ...MOVED_BY_REQUEST_STEPS[at],
     ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at], ...MOVED_BY_AGENTIC[at],
     ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at],
     ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at],
     ...MOVED_BY_ONE_BOUND[at], ...MOVED_BY_REPORT_TRUTH[at], ...MOVED_BY_FIRST_SCREEN[at],
-    ...MOVED_BY_EVIDENCE_KINDS[at] }));
+    ...MOVED_BY_EVIDENCE_KINDS[at], ...MOVED_BY_BETA6_READERS[at], ...MOVED_BY_MUST_FIRST[at], ...MOVED_BY_QUIET[at] }));
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: and once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

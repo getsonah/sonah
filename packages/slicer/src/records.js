@@ -68,8 +68,9 @@ const validAgentId = (value) => typeof value === 'string' && value.length > 0 &&
  * (`readClaudeSession`), never as an instructions loss. A row labelled the human's, a peer's or an observation, or
  * carrying a label gap (the legacy recorder's, `legacy_recorder`), keeps its class (fail closed). Before this rule,
  * such harness rows were declared instructions lost.
- * Any other type, payload key, row key or value shape stays unclassified (fail closed).
- * Key sets are the known ones (Claude Code 2.1.121–2.1.296); nothing is inferred from values.
+ * Any other type, payload key, row key or value shape is read by its structure (D128, `structuralAttachment` below):
+ * harness context, or the listed type's class, when nothing unlisted can hold session content; else unclassified
+ * (fail closed). Key sets are the known ones (Claude Code 2.1.121–2.1.296); nothing is inferred from values.
  * D72 (2026-10-09, M43 reader): from 2.1.286 the recorder adds keys the reader did not list, and every row carrying
  * them was unclassified (attachment rows of 2.1.286, 2.1.289 and 2.1.293): the
  * row keys `renderedRole` and `renderedBesideToolResult` (CLAUDE_RENDERED_ROLES below), the `queued_command` payload
@@ -171,9 +172,100 @@ function rowAgent(row) {
   return row.isSidechain === true && validAgentId(row.agentId)
     ? { ok: true, agentId: row.agentId } : { ok: false, agentId: null };
 }
-/** A Claude attachment row: its class and the agentId it carries, or null (unclassified). */
+/**
+ * D128 (A05+B23+D6; the owner, 2026-10-22: "go with your recommendations"): a Claude row of a form no list in this file
+ * names — a row type, an attachment type or a system subtype the reader does not list, or a listed one with a key it
+ * does not list or without one it lists — is read by its structure, never by its name. The parts of the row that no
+ * list names are tested for whether they can hold session content (`canHoldSessionContent`): a string that is not a
+ * token (more than CLAUDE_TOKEN_MAX_LENGTH UTF-16 code units, or any white space), a value or a key alike (D128's review:
+ * the recorder keys free text too, as a question's answers by the question), a key of the recorder's own conversation
+ * carriers (CLAUDE_CONTENT_CARRIERS), or an object whose `type` is one of the recorder's content blocks
+ * (CLAUDE_CONTENT_BLOCK_TYPES), at any depth. A row whose unlisted parts cannot hold session content is harness context:
+ * counted (`harnessContextRows`, never a loss; a listed attachment type keeps its own class) and named by its kind and
+ * recorder version in the recorder census (`meta.structuralRows`; labels.js RECORDER_CENSUS_REASONS.rowReadByStructure).
+ * A row whose unlisted parts can stays unclassified (`unclassifiedRows`, fail closed): a new row that carries message
+ * text under a new key still marks the recording incomplete. What stays strict: a queued command (its class rests on its
+ * typed `commandMode`, and a human's queued words ride on it), an attachment row's envelope and rendering facts, and a
+ * row that carries a message channel. An attachment's `rendered` blocks are the recorder's rendering of its payload for
+ * the model: the payload is tested, its rendering is not (D128 judgment call 1). A token can still be one word of a
+ * person's (D128 judgment call 6: no structure tells `commit` from `acceptEdits`); a row that holds only such words reads
+ * as harness context.
+ *
+ * CLAUDE_TOKEN_MAX_LENGTH: 64, the length of a SHA-256 digest in hex, the longest identifier a recorder row was seen to
+ * carry (2.1.303's request digests); a uuid is 36 and a timestamp 24. A frozen literal, never fitted per repository.
+ */
+export const CLAUDE_TOKEN_MAX_LENGTH = 64;
+/** D128: the recorder's own conversation carriers — the keys a turn's words, calls or results ride on (`message`, and
+ *  the alternate carriers this reader already refuses on a conversation row, below). */
+export const CLAUDE_CONTENT_CARRIERS = Object.freeze(['message', 'content', 'body', 'payload', 'tool']);
+/** D128: the recorder's content block types (a message's `content` blocks, as the API names them). */
+export const CLAUDE_CONTENT_BLOCK_TYPES = Object.freeze(['text', 'image', 'document', 'audio', 'tool_use',
+  'tool_result', 'thinking', 'redacted_thinking']);
+/** D128: the row envelope — the recorder's identity facts on a row. A scalar under one of these keys is never tested
+ *  (a working directory may hold a space); an object or an array under one is. */
+const CLAUDE_ROW_ENVELOPE = Object.freeze(['cwd', 'entrypoint', 'gitBranch', 'isSidechain', 'parentUuid', 'sessionId',
+  'timestamp', 'type', 'userType', 'uuid', 'version', 'slug', 'agentId']);
+const WHITE_SPACE = /\s/u;
+const isToken = (value) => value.length <= CLAUDE_TOKEN_MAX_LENGTH && !WHITE_SPACE.test(value);
+/**
+ * D128: whether a JSON value can hold session content, by structure alone: a string that is not a token, an object with
+ * a key that is not a token (D128's review) or a key in CLAUDE_CONTENT_CARRIERS, or an object whose `type` is in
+ * CLAUDE_CONTENT_BLOCK_TYPES, at any depth. A number, a boolean, null, a token, and arrays and objects of them keyed by
+ * tokens cannot. Pure; iterative, so depth costs no stack.
+ */
+export function canHoldSessionContent(value) {
+  const stack = [value];
+  while (stack.length) {
+    const next = stack.pop();
+    if (typeof next === 'string') { if (!isToken(next)) return true; continue; }
+    if (next === null || typeof next !== 'object') continue;
+    if (Array.isArray(next)) { for (const item of next) stack.push(item); continue; }
+    if (CLAUDE_CONTENT_CARRIERS.some((key) => Object.hasOwn(next, key))
+      || CLAUDE_CONTENT_BLOCK_TYPES.includes(next.type)) return true;
+    for (const [key, item] of Object.entries(next)) { if (!isToken(key)) return true; stack.push(item); }
+  }
+  return false;
+}
+/** D128: whether any `[key, value]` pair can hold session content: its key is a conversation carrier or not a token, or
+ *  its value can (`canHoldSessionContent`). */
+const unlistedHoldContent = (pairs) => pairs.some(([key, value]) => CLAUDE_CONTENT_CARRIERS.includes(key)
+  || !isToken(key) || canHoldSessionContent(value));
+/** D128: a row of a type this reader does not list (not a conversation row, an attachment, a queue operation or a listed
+ *  metadata row, which the caller tries first), read by its structure: harness context when nothing beside its envelope
+ *  can hold session content, else null (unclassified). Its kind is its row type. */
+function claudeOtherRow(row) {
+  if (typeof row.type !== 'string' || KEPT_TYPES.has(row.type) || row.type === 'attachment') return null;
+  const unlisted = Object.entries(row).filter(([key, value]) => !(CLAUDE_ROW_ENVELOPE.includes(key)
+    && (value === null || typeof value !== 'object')));
+  if (unlistedHoldContent(unlisted)) return null;
+  const agent = rowAgent(row);
+  return agent.ok ? { cls: H, agentId: agent.agentId, structural: row.type } : null;
+}
+/** A Claude attachment row: its class and the agentId it carries, or null (unclassified). D128: one of a listed form
+ *  (`listedAttachment`), else one read by its structure (`structuralAttachment`). */
 function claudeAttachment(row) {
   if (row.type !== 'attachment' || row.userType !== 'external' || typeof row.isSidechain !== 'boolean') return null;
+  return listedAttachment(row) ?? structuralAttachment(row);
+}
+/** D128: an attachment row that no listed form fits, read by its structure: the payload keys its type does not list
+ *  (every key but `type` for a type not listed) and the row keys no attachment row lists. Harness context, or the listed
+ *  type's own class, when none of them can hold session content; else null. Never a queued command (above); the
+ *  rendering facts and the agentId are checked as for a listed row. Its kind is `attachment.<type>`. */
+function structuralAttachment(row) {
+  const item = row.attachment;
+  if (!plainObject(item) || typeof item.type !== 'string' || item.type === 'queued_command') return null;
+  if (!renderedBlocks(row.rendered) || (row.slug !== undefined && typeof row.slug !== 'string')
+    || !renderedFacts(row)) return null;
+  const known = Object.hasOwn(CLAUDE_ATTACHMENTS, item.type) ? CLAUDE_ATTACHMENTS[item.type] : null;
+  const listed = known ? [...known.required, ...known.optional] : ['type'];
+  const rowListed = [...ATTACHMENT_ROW_KEYS, ...ATTACHMENT_ROW_OPTIONAL];
+  if (unlistedHoldContent([...Object.entries(item).filter(([key]) => !listed.includes(key)),
+    ...Object.entries(row).filter(([key]) => !rowListed.includes(key))])) return null;
+  const agent = rowAgent(row);
+  return agent.ok ? { cls: known ? known.cls : H, agentId: agent.agentId, structural: `attachment.${item.type}` } : null;
+}
+/** An attachment row of a listed form: its class and the agentId it carries, or null. */
+function listedAttachment(row) {
   const item = row.attachment;
   const known = plainObject(item) && typeof item.type === 'string' && Object.hasOwn(CLAUDE_ATTACHMENTS, item.type)
     ? CLAUDE_ATTACHMENTS[item.type] : null;
@@ -201,8 +293,22 @@ function claudeAttachment(row) {
  *  retract messages, so they stay unclassified. */
 const SYSTEM_ROW_KEYS = Object.freeze(['cwd', 'entrypoint', 'gitBranch', 'isSidechain', 'parentUuid',
   'sessionId', 'timestamp', 'type', 'userType', 'uuid', 'version', 'subtype']);
+/** A system row that is no conversation: the API retry notice, else (D128) one read by its structure — harness context
+ *  when nothing beside its envelope can hold session content (`content` is a carrier: an `informational`, a
+ *  `local_command` output or a `model_refusal_*` row stays unclassified), else null. Its kind is `system.<subtype>`. */
 function claudeSystemNotice(row) {
-  if (row.type !== 'system' || row.subtype !== 'api_error' || typeof row.isSidechain !== 'boolean') return null;
+  if (row.type !== 'system' || typeof row.isSidechain !== 'boolean') return null;
+  const notice = apiErrorNotice(row);
+  if (notice) return notice;
+  const unlisted = Object.entries(row).filter(([key, value]) => !(CLAUDE_ROW_ENVELOPE.includes(key)
+    && (value === null || typeof value !== 'object')));
+  if (unlistedHoldContent(unlisted)) return null;
+  const agent = rowAgent(row);
+  return agent.ok ? { cls: H, agentId: agent.agentId,
+    structural: typeof row.subtype === 'string' ? `system.${row.subtype}` : 'system' } : null;
+}
+function apiErrorNotice(row) {
+  if (row.subtype !== 'api_error') return null;
   if (!keySet(row, [...SYSTEM_ROW_KEYS, 'error', 'level', 'maxRetries', 'retryAttempt', 'retryInMs'],
     ['slug', 'source', 'agentId'])) return null;
   if (!plainObject(row.error) || typeof row.level !== 'string'
@@ -294,19 +400,47 @@ function knownMetadataRow(row) {
 }
 const isOrdinaryScaffoldRow = (row) => knownMechanicalAttachment(row) || knownQueueRow(row)
   || knownMetadataRow(row);
+/** The alternate carriers a conversation or system row may not carry: a turn moved into one is not read. */
+const ALTERNATE_CARRIERS = Object.freeze(['body', 'content', 'payload', 'tool']);
+/** A system row the reader keeps as a record and classifies neither way: a `stop_hook_summary` with no alternate carrier
+ *  and no message content. */
+const keptSystemRow = (row) => row.type === 'system' && row.subtype === 'stop_hook_summary'
+  && !ALTERNATE_CARRIERS.some((key) => Object.hasOwn(row, key))
+  && typeof row.message?.content !== 'string' && !Array.isArray(row.message?.content);
 
+/** A `user` or `assistant` row whose turn the reader cannot read where it reads one: a user row with no content, a role
+ *  that is not its type, or an alternate carrier (unclassified). */
+const driftedTurn = (row) => (row.type === 'user' || row.type === 'assistant')
+  && (row.type === 'user' && row.message?.content == null
+    || row.message?.role != null && row.message.role !== row.type
+    || ALTERNATE_CARRIERS.some((key) => Object.hasOwn(row, key)));
+/** D128's review: whether the reader keeps this Claude row as a record and counts it neither way (no harness context, no
+ *  declared loss, not unclassified): a compaction marker, a `user` or `assistant` row that is not drifted
+ *  (`driftedTurn`), or an ordinary `stop_hook_summary` (`keptSystemRow`). As a main recording's reader reads it (a
+ *  helper's row in a parent's recording is skipped by its kind). Pure. */
+export function claudeRecordRow(row) {
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+  if (isCompactionMarker(row)) return true;
+  if (row.type === 'user' || row.type === 'assistant') return !driftedTurn(row);
+  return keptSystemRow(row);
+}
 /**
  * C-03 M33 D: how this reader classifies one Claude row outside the conversation turns — pure, so
  * tests and count-only probes can name a row's class without reading a recording. Returns
  * `{cls, agentId}` for a typed attachment or system notice (`cls` from CLAUDE_ROW_CLASSES; an agentId
  * still has to equal the recording's own child identity), `{cls: 'metadata', agentId: null}` for
  * recording bookkeeping (`metadata`: scaffold, not counted, as before M33 D), or null (unclassified).
+ * D128: a row read by its structure carries `structural`, its kind (`attachment.<type>`, `system.<subtype>` or its row
+ * type), beside its class. D128's review: a row the reader keeps as a record and does not classify (a conversation row,
+ * a compaction marker, an ordinary `stop_hook_summary`) is not one this names: null, as before D128, so a probe that
+ * counts what this returns counts what the reader does (`claudeRecordRow` says which rows those are).
  */
 export function claudeRowClass(row) {
-  if (row === null || typeof row !== 'object' || Array.isArray(row)) return null;
+  if (row === null || typeof row !== 'object' || Array.isArray(row) || claudeRecordRow(row)) return null;
   const typed = claudeAttachment(row) ?? claudeSystemNotice(row);
   if (typed) return typed;
-  return knownQueueRow(row) || knownMetadataRow(row) ? { cls: CLAUDE_ROW_CLASSES.metadata, agentId: null } : null;
+  if (knownQueueRow(row) || knownMetadataRow(row)) return { cls: CLAUDE_ROW_CLASSES.metadata, agentId: null };
+  return claudeOtherRow(row);
 }
 
 /**
@@ -316,7 +450,7 @@ export function claudeRowClass(row) {
  * @returns {Promise<{records: object[], meta: object, corrupt: number}>}
  */
 export async function readSession(file, { sidechainAsMain = undefined, childRecording = false,
-  noForkChildProof = null } = {}) {
+  noForkChildProof = null, throughUuid = null } = {}) {
   // Codex rollouts are a different schema entirely. Route before parsing, not after failing.
   const { isCodexRollout, readCodexSession } = await import('./codex.js');
   if (isCodexRollout(file)) return readCodexSession(file, { childRecording, noForkChildProof });
@@ -324,7 +458,7 @@ export async function readSession(file, { sidechainAsMain = undefined, childReco
   // omitted tool outputs). Route by their session-dir convention, same idea as the rollout check.
   const { isCursorSession, readCursorSession } = await import('./cursor.js');
   if (isCursorSession(file)) return readCursorSession(file);
-  const claude = await readClaudeSession(file, { sidechainAsMain, childRecording });
+  const claude = await readClaudeSession(file, { sidechainAsMain, childRecording, throughUuid });
   // Imported rollouts may lose the native filename/path convention. A short Codex file used
   // to produce zero Claude records without reaching the >=10-row unknown-schema threshold.
   if (claude.records.length === 0 && await hasCodexRows(file))
@@ -350,8 +484,10 @@ async function hasCodexRows(file) {
 
 /** A row's recorded `uuid` (a non-empty string), or null. */
 const rowUuid = (d) => (typeof d?.uuid === 'string' && d.uuid ? d.uuid : null);
+/** Code-unit order (never locale-aware). */
+const cmpUnits = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-async function readClaudeSession(file, { sidechainAsMain = undefined, childRecording = false } = {}) {
+async function readClaudeSession(file, { sidechainAsMain = undefined, childRecording = false, throughUuid = null } = {}) {
   const identity = recordingIdentity('claude');
   const records = [];
   // M34 labels: every row is labelled once, in recorded order (`claudeLabeller`); a row that becomes a record carries its
@@ -380,7 +516,14 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   // C-03 M33 D: harness-context rows, counted and never read; per-agentId tallies await the end.
   let harnessContextRows = 0;
   const pendingByAgent = new Map();
-  const classify = ({ cls, agentId }) => {
+  // D128: each row read by its structure, by its kind and its row's recorder version (the recorder census).
+  const structuralRows = new Map();
+  const readByStructure = (kind, d) => {
+    const key = JSON.stringify([kind, typeof d.version === 'string' ? d.version : null]);
+    structuralRows.set(key, (structuralRows.get(key) ?? 0) + 1);
+  };
+  const classify = ({ cls, agentId, structural }, d) => {
+    if (typeof structural === 'string') readByStructure(structural, d);
     if (agentId !== null) {
       const pending = pendingByAgent.get(agentId) ?? { harness: 0, instructions: 0, observations: 0 };
       pending[cls === H ? 'harness' : cls]++;
@@ -394,7 +537,13 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
     crlfDelay: Infinity,
   });
 
+  // D126 (N0): an earlier recording of a session that opens on a compaction is read through the row the compaction
+  // links to (`throughUuid`, the boundary's `logicalParentUuid`) and no further: what follows it there is the later
+  // recording's to read. `meta.through` says whether that row was found.
+  const through = typeof throughUuid === 'string' && throughUuid ? throughUuid : null;
+  let reached = false;
   for await (const line of rl) {
+    if (reached) break;
     lineNo++;
     if (!line.trim()) continue;
 
@@ -415,6 +564,7 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
     if (duplicateJsonKeys(line)) { corrupt++; identity.observe(d, { repeatedKeys: true }); continue; }
 
     identity.observe(d);
+    if (through !== null && d.uuid === through) reached = true;
     // Session-level facts land on whichever record carries them first.
     if (meta.sessionId === null && typeof d.sessionId === 'string') meta.sessionId = d.sessionId;
     if (meta.cwd === null && typeof d.cwd === 'string') meta.cwd = d.cwd;
@@ -429,8 +579,14 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
       // The parent does not claim the child's known conversation rows. An unfamiliar row
       // may itself be the only record of a future child tool, however; silently skipping it
       // would certify the parent's source as complete without proof of that child's schema.
-      if (!KEPT_TYPES.has(d.type) && !isOrdinaryScaffoldRow(d) && !isCompactionMarker(d))
-        unclassifiedRows++;
+      // D128: a row read by its structure that can hold no session content is no unknown scope either.
+      if (!KEPT_TYPES.has(d.type) && !isCompactionMarker(d)) {
+        const attached = claudeAttachment(d);
+        const scaffold = attached?.cls === H ? attached : knownQueueRow(d) || knownMetadataRow(d) ? {}
+          : claudeOtherRow(d);
+        if (!scaffold) unclassifiedRows++;
+        else if (typeof scaffold.structural === 'string') readByStructure(scaffold.structural, d);
+      }
       continue;
     }
 
@@ -461,11 +617,14 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
       // C-03 M33 D: a typed Claude attachment is harness context (counted scaffold) or a declared
       // loss on its own channel; a row carrying an agentId waits for the recording's own identity.
       const attached = channels.length ? null : claudeAttachment(d);
+      // D128: a row of a type no list names, read by its structure (`claudeOtherRow`).
+      const other = channels.length || attached || isOrdinaryScaffoldRow(d) ? null : claudeOtherRow(d);
       if (attached) {
         // Release fix 3b: an instructions-class row its label gives to the harness (no gap) is harness context.
         classify(attached.cls === I && label?.label === LABELS.harness && !Object.hasOwn(label, 'gap')
-          ? { ...attached, cls: H } : attached);
-      } else if ((!channels.length && !isOrdinaryScaffoldRow(d))
+          ? { ...attached, cls: H } : attached, d);
+      } else if (other) classify(other, d);
+      else if ((!channels.length && !isOrdinaryScaffoldRow(d))
         || (channels.length && Object.hasOwn(d, 'body'))) {
         // A future row or separate body can carry any T/A/O channel. In a mixed file, the
         // zero-record unknown-schema guard cannot see this one row; declare unknown scope.
@@ -502,18 +661,10 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
 
     // A familiar row type alone does not mean its payload was read. Claude can move a
     // user/assistant turn into a new top-level carrier while leaving type unchanged.
-    const message = d.message;
-    const content = message?.content;
-    const alternateCarrier = ['body', 'content', 'payload', 'tool']
-      .some((key) => Object.hasOwn(d, key));
-    if ((d.type === 'user' || d.type === 'assistant')
-      && (d.type === 'user' && content == null
-        || message?.role != null && message.role !== d.type
-        || alternateCarrier)) unclassifiedRows++;
-    if (d.type === 'system' && (d.subtype !== 'stop_hook_summary'
-      || alternateCarrier || typeof content === 'string' || Array.isArray(content))) {
+    if (driftedTurn(d)) unclassifiedRows++;
+    if (d.type === 'system' && !keptSystemRow(d)) {
       const notice = claudeSystemNotice(d);
-      if (notice) classify(notice);
+      if (notice) classify(notice, d);
       else unclassifiedRows++;
     }
 
@@ -531,6 +682,13 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   meta.labelled = counted;
   // D99 (F1 guard): how many lines this read took, so a second read of the file (background-ends.js) reads the same.
   meta.lines = lineNo;
+  if (through !== null) meta.through = reached;
+  // D128: the rows read by their structure, `{ kind, version, count }` in code-unit order (the recorder census); only
+  // when there is one.
+  if (structuralRows.size) meta.structuralRows = [...structuralRows].map(([key, count]) => {
+    const [kind, version] = JSON.parse(key);
+    return { kind, version, count };
+  }).sort((a, b) => cmpUnits(a.kind, b.kind) || cmpUnits(a.version ?? '', b.version ?? ''));
   // M34 labels review (F7): a helper's recording by its rows (the first row that records `isSidechain` records true).
   if (firstSidechain === true) meta.helperRows = true;
   // C-03 M33 D: a classified row that carried an agentId is this recording's own only when that
@@ -899,8 +1057,10 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  *   attachment `queued_command` of a human prompt → human + queued; a task notification (`claudeNotificationCarrier`, the
  *              rule every reader of the fact reads) → observation; an @-mentioned
  *              file, directory or PDF on the main thread whose recorded `parentUuid` chain (through attachment rows)
- *              reaches the human's own submission → human + attached; any other (a file the recorder restored after a
- *              compaction, one attached mid-turn) → harness.
+ *              reaches the human's own submission → human + attached, unless (D127, A19) the latest compaction before
+ *              it lists that submission among the messages it kept (`preservedMessages`) → harness
+ *              (`compaction_restored`); any other (a file the recorder restored after a compaction, one attached
+ *              mid-turn) → harness.
  *   user       `isCompactSummary` → harness + compaction; a tool result → observation, or human + answer (an
  *              AskUserQuestion result with its typed answer sidecar) or human + refusal (`toolDenialKind:
  *              user-rejected`; observation again in a session no human submitted); otherwise, in order:
@@ -966,11 +1126,25 @@ export function claudeLabeller() {
       const row = rows.get(at);
       const human = row.value !== null && row.value.label === L.human
         && !(row.value.markers ?? []).some((marker) => marker === M.answer || marker === M.refusal);
-      if (human) return true;
-      if (!row.attachment) return false;
+      if (human) return at;
+      if (!row.attachment) return null;
       at = row.parent;
     }
-    return false;
+    return null;
+  };
+  /**
+   * D127 (A19, the owner's go of 2026-10-22). The messages the latest compaction kept: the recorded uuids its boundary
+   * row lists in `compactMetadata.preservedMessages` (`uuids` and `allUuids`), or null before any compaction. A message
+   * the compaction kept was submitted before it; a file attachment recorded after the compaction whose chain reaches that
+   * message is Claude Code restoring the kept message's context in a recording that continues the session, never a file
+   * the person attached: it is the harness's. Structure only: the boundary's typed fields and the recorded uuid chain.
+   */
+  let keptByCompaction = null;
+  const keptOf = (d) => {
+    const listed = plain(d.compactMetadata) && plain(d.compactMetadata.preservedMessages)
+      ? d.compactMetadata.preservedMessages : {};
+    return new Set(['uuids', 'allUuids'].flatMap((key) => (Array.isArray(listed[key]) ? listed[key] : []))
+      .filter((uuid) => typeof uuid === 'string' && uuid));
   };
 
   /** A human value for a user row, with the markers its structure gives it. */
@@ -1090,9 +1264,11 @@ export function claudeLabeller() {
       return value(L.harness, B.attachmentRow);
     }
     // M34 labels review (F1): an @-mention only when its recorded chain hangs from the human's submission; a file the
-    // recorder restored after a compaction, or attached mid-turn, is harness.
-    if (ATTACHED_TYPES.includes(item.type) && d.isSidechain === false && submittedWithHuman(d))
-      return value(L.human, B.attachedFile, { markers: [M.attached] });
+    // recorder restored after a compaction, or attached mid-turn, is harness. D127 (A19): and only when that submission
+    // is not one that the latest compaction before it kept (`keptByCompaction`).
+    const submission = ATTACHED_TYPES.includes(item.type) && d.isSidechain === false ? submittedWithHuman(d) : null;
+    if (submission !== null) return keptByCompaction?.has(submission)
+      ? value(L.harness, B.compactionRestored) : value(L.human, B.attachedFile, { markers: [M.attached] });
     return value(L.harness, B.attachmentRow);
   };
 
@@ -1143,6 +1319,7 @@ export function claudeLabeller() {
     }
     if (d.type === 'system') {
       if (d.subtype === LOCAL_COMMAND_OUTPUT_SUBTYPE) settleLocalCommand(d);
+      if (d.subtype === 'compact_boundary') keptByCompaction = keptOf(d);
       return isCompactionMarker(d) ? value(L.harness, B.compactBoundary, { markers: [M.compaction] })
         : value(L.harness, B.systemRow);
     }

@@ -144,13 +144,14 @@ test('the page: a done ask a finding bears on keeps its status word, and its lin
   // D100: the words of an ask that rests only on the agent's words name what the session review cited (an apostrophe,
   // escaped on the page).
   const agentOnly = REPORT_PROMPT_WORDS.agentOnly.replaceAll("'", '&#39;');
-  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${agentOnly} · ${REPORT_PROMPT_WORDS.codeFinding(notMet)}`);
+  // D133 (R2): what the session review cited is in the row's own fold, after its open lines.
+  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${REPORT_PROMPT_WORDS.codeFinding(notMet)} · Evidence${agentOnly}`);
   assert.match(page, new RegExp(`<mark class="ask s-doneCode" id="ask-1"><span class="tag">Done</span>`));
   // A not-checked ask whose words a finding's trace quotes: its status as it was, and the line.
   assert.ok(askLineOf(page, 3).startsWith('ask 3 · Not checked · '));
   assert.ok(askLineOf(page, 3).endsWith(REPORT_PROMPT_WORDS.codeFinding(weak)));
   // The question about request 3's ask: a line, linked to the question's item, never a count.
-  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${agentOnly} · ${REPORT_PROMPT_WORDS.codeQuestion(question)}`);
+  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${REPORT_PROMPT_WORDS.codeQuestion(question)} · Evidence${agentOnly}`);
   // Without the links (an earlier build's report) no ask has such a line.
   const before = pageOf(unlinked(joined()));
   assert.equal(before.includes(REPORT_PROMPT_WORDS.codeFinding(notMet)), false);
@@ -172,8 +173,9 @@ test('the report .md: the line beside the ask; its status stays the session revi
   // D97: the prompt table keeps the session review's status and says what the code review found, by the item's number.
   const story = renderReportMarkdown(session(), joined());
   const model = modelOf(joined());
-  assert.ok(story.includes(`\n| Done | “${escapeSource(A1)}” | ${REPORT_PROMPT_WORDS.agentOnly} `
-    + `${REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, NOT_MET))} |`), story);
+  // D133 (R2): what the session review cited is in the row's own fold, after the line.
+  assert.ok(story.includes(`\n| Done | “${escapeSource(A1)}” | ${REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, NOT_MET))} `
+    + `<details><summary>Evidence</summary>${REPORT_PROMPT_WORDS.agentOnly}</details> |`), story);
   assert.ok(story.includes(`\n| Not checked | “${escapeSource(A3)}” |`));
   assert.ok(story.includes(REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, WEAK))));
 });

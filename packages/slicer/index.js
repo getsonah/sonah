@@ -16,9 +16,11 @@ import { INTER_AGENT_COUNTS, INTER_AGENT_LOSS_COUNTS } from './src/inter-agent.j
 import { WORKFLOW_LIMITS, safeSessionId } from './src/workflow-runs.js';
 import { codexOwnTaskPath } from './src/child-links.js';
 import { recordingHome } from './src/before.js';
+import { CONTINUED_REASONS } from './src/continued.js';
 
 export { SCHEMA_VERSION };
 export { NATIVE_ID, IDENTITY_SUB, IDENTITY_SUBS, IDENTITY_KEYS } from './src/event-identity.js';
+export { CONTINUED_REASONS, CONTINUED_LIMITS } from './src/continued.js';
 export * from './src/outcome.js';
 
 /**
@@ -72,15 +74,66 @@ function countedGap(ledger) {
 }
 
 /**
+ * D126 (N0): the cut of a session that opens on a compaction (`opts.through`), or null for any other lineage. An array
+ * aligned with the files: for each earlier recording the `uuid` of the row it is read through (the row its successor's
+ * compaction links to), and null for the last recording, which is read whole. Anything else is no cut a caller of this
+ * stage writes: it throws, so a session is never read with its copies twice.
+ */
+function continuedThrough(through, count) {
+  if (through === undefined || through === null) return null;
+  if (!Array.isArray(through) || through.length !== count || through.at(-1) !== null
+    || !through.slice(0, -1).every((uuid) => typeof uuid === 'string' && uuid.length > 0))
+    throw new Error('The continued session cut could not be verified');
+  return through;
+}
+
+/**
  * @param {string[]} files  one lineage, oldest first
- * @param {{cwd?: string, sidechainAsMain?: boolean, lineageFiles?: string[]}} opts
+ * @param {{cwd?: string, sidechainAsMain?: boolean, lineageFiles?: string[], through?: Array<string|null>,
+ *   continuedUnread?: string}} opts
  *   `lineageFiles` names the sources in the ledger when the paths on disk are not their identity
  *   — an Entire checkpoint's blobs are materialised to a scratch directory, and recording that
  *   directory would put a random string inside a hashed structure (M89). Same length and order
  *   as `files`, or it is ignored.
+ *   D126 (N0): `through` marks a session that opens on a compaction, read with the recordings it continues (oldest
+ *   first; see `continuedThrough`), and `continuedUnread` names why its earliest part was not read (CONTINUED_REASONS),
+ *   when the IO layer could not read it. With `through`, each earlier recording is read through its row; a row of a
+ *   later recording whose `uuid` an earlier one holds (the kept messages, copied after the compaction) is read once, at
+ *   its first place; each join is the compaction the later recording records with its own boundary row, so no join mark
+ *   is added; and `lineage.continued` says how many earlier recordings were read and, when one was not, why. An earlier
+ *   recording whose row the read did not find (it changed since it was found) is not read, nor any before it: that part
+ *   is `earlier_recording_unread`. Without `through`, every byte is as before.
  * @returns {Promise<Ledger>}
  */
-export async function sliceLineage(files, opts = {}) {
+export async function sliceLineage(allFiles, opts = {}) {
+  const cut = continuedThrough(opts.through, allFiles.length);
+  let unread = null;
+  if (cut && opts.continuedUnread != null) {
+    if (!Object.values(CONTINUED_REASONS).includes(opts.continuedUnread))
+      throw new Error('The continued session reason could not be verified');
+    unread = opts.continuedUnread;
+  }
+  const reads = [];
+  for (const file of allFiles) {
+    const at = reads.length;
+    reads.push(await readSession(file, {
+      // M34 labels: a helper's recording is read whole by its own structure (records.js), never by its path.
+      sidechainAsMain: opts.sidechainAsMain,
+      childRecording: opts.childRecording ?? false,
+      noForkChildProof: allFiles.length === 1 ? opts.noForkChildProof ?? null : null,
+      ...(cut && cut[at] !== null ? { throughUuid: cut[at] } : {}),
+    }));
+  }
+  // D126 (N0): an earlier recording whose row was not found is not read, and neither is any recording before it.
+  let first = 0;
+  if (cut) for (const [i, read] of reads.entries()) {
+    if (cut[i] !== null && read.meta?.through !== true) { first = i + 1; unread = CONTINUED_REASONS.unread; }
+  }
+  const files = allFiles.slice(first);
+  const named = Array.isArray(opts.lineageFiles) && opts.lineageFiles.length === allFiles.length
+    ? opts.lineageFiles.slice(first) : null;
+  // D126 (N0): the uuids the earlier recordings of a continued session hold, so a later copy is read once.
+  const heldUuids = cut ? new Set() : null;
   const all = [];
   const meta = { sessionId: null, cwd: opts.cwd ?? null, version: null, gitBranch: null };
   let corrupt = 0;
@@ -99,18 +152,20 @@ export async function sliceLineage(files, opts = {}) {
   // its recorder version (the recorder census).
   const lineCounts = [];
   const codexShapeMisses = [];
-  for (const [i, file] of files.entries()) {
-    const { records, meta: m, corrupt: c, unknownSchema } = await readSession(file, {
-      // M34 labels: a helper's recording is read whole by its own structure (records.js), never by its path.
-      sidechainAsMain: opts.sidechainAsMain,
-      childRecording: opts.childRecording ?? false,
-      noForkChildProof: files.length === 1 ? opts.noForkChildProof ?? null : null,
-    });
+  // D128: each Claude file's rows read by their structure, by kind and recorder version (the recorder census).
+  const structuralRows = [];
+  for (const [i, read] of reads.slice(first).entries()) {
+    const { records: own, meta: m, corrupt: c, unknownSchema } = read;
+    // D126 (N0): a row an earlier recording of the continued session holds is that recording's row, read there.
+    const uuidOf = (record) => (typeof record.raw?.uuid === 'string' && record.raw.uuid ? record.raw.uuid : null);
+    const records = heldUuids ? own.filter((record) => !heldUuids.has(uuidOf(record))) : own;
+    if (heldUuids) for (const record of records) if (uuidOf(record) !== null) heldUuids.add(uuidOf(record));
     corrupt += c;
     lineCounts.push(Number.isSafeInteger(m.lines) ? m.lines : null);
     if (m.shapeMisses && typeof m.shapeMisses === 'object')
       for (const [carrier, count] of Object.entries(m.shapeMisses))
         codexShapeMisses.push({ carrier, count, version: m.version ?? null });
+    if (Array.isArray(m.structuralRows)) structuralRows.push(...m.structuralRows);
     if (m.helperRows === true) helperRows = true;
     sources.push(m.sourceIdentity ?? { adapter: m.agent ?? 'unknown', identityConflict: true });
     if (unknownSchema) unknownSchemaFiles++;
@@ -164,7 +219,9 @@ export async function sliceLineage(files, opts = {}) {
     for (const k of ['sessionId', 'cwd', 'version', 'gitBranch']) {
       if (meta[k] == null && m[k] != null) meta[k] = m[k];
     }
-    if (i > 0) boundaries.push({ at: all.length, source: i }); // file join == compaction boundary
+    // File join == compaction boundary. D126 (N0): in a continued session the later recording records that compaction
+    // with its own boundary row, which marks it.
+    if (i > 0 && !cut) boundaries.push({ at: all.length, source: i });
     all.push(...records.map(record => ({ ...record, source: i, adapter: m.agent ?? 'claude' })));
     unrecorded.push(...(Array.isArray(m.labelled) ? m.labelled : []));
   }
@@ -204,8 +261,7 @@ export async function sliceLineage(files, opts = {}) {
     outcomes: opts.outcomes ?? null, claudeLocators: opts.claudeLocators === true,
     // D69 (b): the recording's home, from the path form its recorder wrote it at — the recording's own name
     // (`lineageFiles`, when the bytes were read from a copy) — never from its contents; null fails closed.
-    home: recordingHome(Array.isArray(opts.lineageFiles) && opts.lineageFiles.length === files.length
-      ? opts.lineageFiles : files) });
+    home: recordingHome(named ?? files) });
   // D99 (F1 guard): a background run whose end was not read says "no end" only when the recording proves it holds none
   // (background-ends.js); every other one is marked: a Bash or Workflow launch on its event (`backgroundEnd`), an Agent
   // launch on its entry of the delivery side channel (`endUnread`, `endUnchecked`). Review of A1b: `unread` only where a
@@ -365,10 +421,11 @@ export async function sliceLineage(files, opts = {}) {
     schemaVersion: SCHEMA_VERSION,
     lineage: {
       rootSessionId: meta.sessionId,
-      files: Array.isArray(opts.lineageFiles) && opts.lineageFiles.length === files.length
-        ? [...opts.lineageFiles] : files,
+      files: named ? [...named] : files,
       compactionBoundaries: marks.filter((m) => m.kind === 'compaction').map((m) => m.turn),
       ...(helper ? { role: LINEAGE_ROLES.helper } : {}),
+      // D126 (N0): only a session that opens on a compaction says so, so every other ledger keeps its bytes.
+      ...(cut ? { continued: { earlier: files.length - 1, ...(unread ? { unread } : {}) } } : {}),
     },
     cwd: meta.cwd,
     ask,
@@ -396,7 +453,7 @@ export async function sliceLineage(files, opts = {}) {
     // D99 (F1 guard): the recorder census, likewise only for the loader that asks (cli/src/session-evidence.js), which
     // keeps it for the run record and drops it: no ledger keeps it, so no ledger byte moves for it.
     ...(opts.recorderCensus === true ? { recorderCensus: recorderCensusOf({ records: all, counted: unrecorded, events,
-      backgroundRuns, ends, launchMisses, codexShapeMisses }) } : {}),
+      backgroundRuns, ends, launchMisses, codexShapeMisses, structuralRows }) } : {}),
     ...(delegations.length ? { delegations } : {}),
     ...(capture ? { capture } : {}),
     dropped: [

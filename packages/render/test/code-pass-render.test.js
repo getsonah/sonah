@@ -28,7 +28,8 @@ import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER
   REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS,
   GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COMPACTION_READER_VERSIONS,
+  COST_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
@@ -421,8 +422,10 @@ test('agentic code step: a review question with no session receipt shows its que
   assert.ok(!pageItem.includes('<q class="said">') && !/null|undefined/.test(pageItem), pageItem);
   const story = mdOf(r);
   const at = story.indexOf(`<a name="item-${asked.n}"></a>`);
-  const block = story.slice(at, story.indexOf('<a name="item-', at + 1) === -1 ? undefined
-    : story.indexOf('<a name="item-', at + 1));
+  // The item's block ends at the next item or the next section (D131: your prompt follows Must act and Must know).
+  const ends = [story.indexOf('<a name="item-', at + 1), story.indexOf('\n### ', at), story.indexOf('<details><summary>Your prompt', at)]
+    .filter((i) => i > at);
+  const block = story.slice(at, ends.length ? Math.min(...ends) : undefined);
   assert.ok(block.includes('*SYNTHETIC should the input be split on commas?*'), block);
   assert.ok(!block.includes('“') && !/null|undefined/.test(block), block);
 });
@@ -752,13 +755,16 @@ test('agentic code step: an ask with a fact shows the fact, then its code check 
   for (const outcome of ['contradicted-by-code']) {
     const r = only(codeCheck(outcome));
     const item = askLine(renderSessionPage(codeSession(), r));
+    // D133 (R2): the code check on the row's open line; the fact (why the ask is not checked) in the row's own fold.
     const fact = item.indexOf(esc(pageFact));
     const code = item.indexOf(contradicts);
-    assert.ok(fact > 0 && code > fact, `${outcome}: the fact, then the code check`);
+    const folded = item.indexOf('<details class="row-evidence">');
+    assert.ok(code > 0 && folded > code && fact > folded, `${outcome}: the code check, then the fact in the fold`);
     assert.equal(item.split(esc(pageFact)).length, 2, `${outcome}: the fact once`);
     // The report .md: the ask's row in your prompt says the fact, then the code check, in the page's words.
     const row = mdOf(r).split('\n').find((l) => l.startsWith('| Not checked | '));
-    assert.ok(row && row.indexOf(pageFact) > 0 && row.indexOf(contradicts) > row.indexOf(pageFact), row);
+    assert.ok(row && row.indexOf(contradicts) > 0 && row.indexOf(pageFact) > row.indexOf('<details>')
+      && row.indexOf('<details>') > row.indexOf(contradicts), row);
   }
   // An earlier report's "not checked in the code" or "shown in the code" (or no code check at all): no code check on the
   // row.
@@ -862,8 +868,17 @@ test('agentic code step: the page and the story moved once, one link after the r
   // D113 and D114 (0.3.0-beta.5): each once more (SESSION_CHANGE_READER_VERSIONS), one link after 0.3.0-beta.4's.
   assert.deepEqual([SESSION_CHANGE_READER_VERSIONS.page.before, SESSION_CHANGE_READER_VERSIONS.story.before],
     [ONE_BOUND_READER_VERSIONS.page.after, ONE_BOUND_READER_VERSIONS.story.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [SESSION_CHANGE_READER_VERSIONS.page.after,
-    SESSION_CHANGE_READER_VERSIONS.story.after]);
+  // D126 and D127 (0.3.0-beta.6): each once more (COMPACTION_READER_VERSIONS), one link after 0.3.0-beta.5's.
+  assert.deepEqual([COMPACTION_READER_VERSIONS.page.before, COMPACTION_READER_VERSIONS.story.before],
+    [SESSION_CHANGE_READER_VERSIONS.page.after, SESSION_CHANGE_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [COMPACTION_READER_VERSIONS.page.after,
+    COMPACTION_READER_VERSIONS.story.after]);
+  // D129 (C7, 0.3.0-beta.6): each once more (COST_READER_VERSIONS), one link after 0.3.0-beta.5's.
+  assert.deepEqual([COST_READER_VERSIONS.page.before, COST_READER_VERSIONS.story.before],
+    [SESSION_CHANGE_READER_VERSIONS.page.after, SESSION_CHANGE_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [COST_READER_VERSIONS.page.after, COST_READER_VERSIONS.story.after]);
+  // D126 and D127 meet D129 in the same move (the beta.6 integration): 0.3.0-beta.6 moves each reader once.
+  assert.deepEqual(COST_READER_VERSIONS, COMPACTION_READER_VERSIONS);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

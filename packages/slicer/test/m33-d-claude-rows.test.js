@@ -10,7 +10,10 @@
 //                      2026-10-01: a queued prompt is now also read as a human instruction; its row
 //                      stays counted for the readers of `ask` alone.)
 //   anything else    — an unknown type, an unknown payload key, an unknown row key, a wrong value
-//                      type: unclassified, exactly as before (fail closed).
+//                      type: unclassified, exactly as before (fail closed). D128 amends this: such a row is read
+//                      by its structure, and is harness context when nothing the lists do not name on it can hold
+//                      session content (no string but a token, no conversation carrier, no content block); it stays
+//                      unclassified when something can.
 //
 // Every row here is synthetic and mirrors only the recorder's key sets; no real
 // recording is read.
@@ -106,14 +109,15 @@ test('M33 D: every known harness-context attachment is scaffold, counted, and de
 });
 
 test('M33 D: a harness attachment with an unknown payload key, row key or rendered shape stays unclassified', async (t) => {
+  // D128: each unlisted part here can hold session content (a content block, a conversation carrier, words), or the
+  // envelope or rendering facts are not the recorder's, or the row is a queued command.
   const drift = [
-    attachment({ type: 'total_tokens_reminder', text: 'x', toolUse: { name: 'Edit' } }),   // new payload key
+    attachment({ type: 'total_tokens_reminder', text: 'x', toolUse: { type: 'tool_use', name: 'Edit' } }),   // new payload key
     attachment({ type: 'date', date: 'x' }, { body: { role: 'user', content: 'x' } }),     // new row carrier
     attachment({ type: 'model', identity: 'm', text: 'x' }, { rendered: [{ content: 'x', tool: 'Edit' }] }),
     attachment({ type: 'model', identity: 'm', text: 'x' }, { rendered: 'x' }),
-    attachment({ type: 'future_context', text: 'x' }),                                      // unknown type
+    attachment({ type: 'future_context', text: 'Words of a future context.' }),             // unknown type
     attachment({ type: 'date', date: 'x' }, { userType: 'internal' }),
-    attachment({ type: 'date' }),                                                            // missing key
     attachment({ type: 'queued_command', commandMode: 'prompt', prompt: 'x' }, { renderedInHumanTurn: 'x' }),
     attachment({ type: 'queued_command', commandMode: 'prompt', prompt: 'x' }, { renderedInHumanTurn: true }),
     attachment({ type: 'queued_command', commandMode: 'prompt', prompt: 'x' }, { renderedInHumanTurn: [{ content: 'x', tool: 'y' }] }),
@@ -125,6 +129,19 @@ test('M33 D: a harness attachment with an unknown payload key, row key or render
   assert.equal(parsed.meta.capture.harnessContextRows, undefined);
   assert.ok((await gapsOf(file)).some((gap) => gap.channel === 'identity'
     && gap.code === 'unsupported_message' && gap.count === drift.length));
+
+  // D128: the same kinds of drift with nothing that can hold session content are read by their structure.
+  const structural = [
+    attachment({ type: 'total_tokens_reminder', text: 'x', toolUse: { name: 'Edit' } }),   // a key of tokens
+    attachment({ type: 'future_context', count: 3, id: 'a-1' }),                            // a type of numbers and tokens
+    attachment({ type: 'date' }),                                                            // a missing key
+  ];
+  const read = await readSession(await recording(t, conversation(...structural)));
+  assert.equal(read.meta.capture.unclassifiedRows, undefined);
+  assert.equal(read.meta.capture.harnessContextRows, structural.length);
+  assert.deepEqual(read.meta.structuralRows, [{ kind: 'attachment.date', version: '2.1.260', count: 1 },
+    { kind: 'attachment.future_context', version: '2.1.260', count: 1 },
+    { kind: 'attachment.total_tokens_reminder', version: '2.1.260', count: 1 }]);
 });
 
 test('M33 D: a child row may carry agentId only when it is the recording\'s own single child identity', async (t) => {
@@ -169,7 +186,10 @@ test('M33 D: known recording metadata rows are scaffold like the rows already kn
   ];
   const other = await recording(t, conversation(...drifted));
   const read = await readSession(other);
-  assert.equal(read.meta.capture.unclassifiedRows, 2);
+  // D128: the bridge row's key set is not listed, but it holds only tokens: read by its structure, harness context.
+  // The dequeue's `content` is a conversation carrier: unclassified.
+  assert.equal(read.meta.capture.unclassifiedRows, 1);
+  assert.equal(read.meta.capture.harnessContextRows, 1);
   assert.equal(read.meta.capture.unsupportedRowChannels.instructions, 1);
 });
 
@@ -184,12 +204,18 @@ test('M33 D: an API retry notice is a counted system notice; other new system su
 
   const unknown = [
     retry({ content: 'x' }),                         // a content carrier
-    retry({ error: 'x' }),                           // not the typed error object
+    retry({ error: 'An error written as words.' }),  // not the typed error object, and words
     row({ type: 'system', subtype: 'informational', content: 'x', isMeta: false, level: 'info', slug: 's' }),
     row({ type: 'system', subtype: 'model_refusal_fallback', content: 'x', isMeta: true, level: 'info' }),
   ];
   const other = await recording(t, conversation(...unknown));
   assert.equal((await readSession(other)).meta.capture.unclassifiedRows, unknown.length);
+  // D128: a new subtype with nothing that can hold session content is read by its structure.
+  const timed = await readSession(await recording(t, conversation(row({ type: 'system', subtype: 'turn_duration',
+    durationMs: 1200, messageCount: 4, isMeta: false }))));
+  assert.equal(timed.meta.capture.unclassifiedRows, undefined);
+  assert.equal(timed.meta.capture.harnessContextRows, 1);
+  assert.deepEqual(timed.meta.structuralRows, [{ kind: 'system.turn_duration', version: '2.1.260', count: 1 }]);
 });
 
 test('M33 D: content-bearing attachments are declared on their own channel, never read and never on identity', async (t) => {
@@ -257,7 +283,13 @@ test('M33 D: the row classifier is pure and closed', () => {
   assert.deepEqual(claudeRowClass(attachment({ type: 'queued_command', commandMode: 'task-notification', prompt: 'x' })),
     { cls: CLAUDE_ROW_CLASSES.observations, agentId: null });
   assert.deepEqual(claudeRowClass({ type: 'last-prompt', leafUuid: 'x', sessionId: SESSION }), { cls: CLAUDE_ROW_CLASSES.metadata, agentId: null });
-  for (const value of [null, [], 'x', attachment({ type: 'date', date: 'x', extra: 1 }), { type: 'future-row' }])
+  for (const value of [null, [], 'x', attachment({ type: 'date', date: 'x', extra: 'two words' }),
+    { type: 'future-row', note: 'two words' }, { type: 'future-row', message: {} }])
     assert.equal(claudeRowClass(value), null);
+  // D128: read by its structure when nothing unlisted can hold session content.
+  assert.deepEqual(claudeRowClass(attachment({ type: 'date', date: 'x', extra: 1 })),
+    { cls: CLAUDE_ROW_CLASSES.harness, agentId: null, structural: 'attachment.date' });
+  assert.deepEqual(claudeRowClass({ type: 'future-row' }), { cls: CLAUDE_ROW_CLASSES.harness, agentId: null,
+    structural: 'future-row' });
   assert.ok(Object.isFrozen(CLAUDE_ROW_CLASSES));
 });

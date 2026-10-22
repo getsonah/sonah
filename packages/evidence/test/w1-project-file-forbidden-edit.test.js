@@ -106,7 +106,10 @@ test('W1 B: the versions, the contract and the brief', () => {
   // once more (sonah.session-story/39, 0.3.0-beta.5): the session's own change, and the files changed outside it.
   // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
   // question's pointer only where code checked its tie.
-  assert.equal(STORY_VERSION, 'sonah.session-story/39');
+  // D126 and D127 once more (sonah.session-story/40, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, each compaction among your messages, and the first compaction after an ask. In the same move (D129, C7):
+  // the footer says what the review cost.
+  assert.equal(STORY_VERSION, 'sonah.session-story/40');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -136,7 +139,10 @@ test('W1 B: the versions, the contract and the brief', () => {
   // outside it.
   // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
   // question's pointer only where code checked its tie.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/44');
+  // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
+  // cost.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/45');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes

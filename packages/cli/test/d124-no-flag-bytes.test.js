@@ -7,6 +7,7 @@
 // the tree before D124 gives (commit f731f368, this file run there unchanged). The one move by design: the S1 shape's
 // reason (`no_seen_write`) now ends with the way out, `--code-repo`, which is taken out before its report is digested.
 // A later change that moves these bytes on purpose records the new digests here with the decision that moved them.
+// D129 renders its moves back instead (the cost sentence and the readers' versions), so the digests stay D124's.
 //
 // Throwaway folders and repositories, synthetic sessions, a deterministic fake reviewer: no recording, no model, no
 // network. Every commit date and every file time that a rule reads is fixed.
@@ -20,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { runSessionReviewCommand } from '../src/session-review-command.js';
 import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
+import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
 
 const START = '2030-01-01T00:00:00.000Z';
@@ -33,6 +35,8 @@ const NO_ROWS = () => ({ decisions: [], pivots: [], claims: [], requirements: []
 const digest = (text) => createHash('sha256').update(text).digest('hex').slice(0, 16);
 /** The options `readCode` was given before D124, by name. */
 const READ_CODE_OPTIONS = ['harnessHomes', 'maxBytes', 'own', 'recording', 'root'];
+/** The package's version, which the .md's footer names (the tree before D124 named 0.3.0-beta.5). */
+const PACKAGE_VERSION = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')).version;
 
 async function folder(t, name) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), `sonah-d124b-${name}-`)));
@@ -123,16 +127,52 @@ async function digestsOf(t, shape) {
   const escaped = (path) => path.replace(/[\\`*_[\]|]/g, '\\$&');
   const named = (text) => text.split(run).join('<run>').split(base).join('<base>').split(escaped(run)).join('<run>')
     .split(escaped(base)).join('<base>');
-  // The one move by design (D124): the S1 shape's reason ends with the way out.
-  const before = (text) => text.replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '');
+  // The one move by design (D124): the S1 shape's reason ends with the way out. 0.3.0-beta.6 moved the readers'
+  // versions once (D126 and D127, COMPACTION_READER_VERSIONS; D129, COST_READER_VERSIONS: the same move): a session with
+  // no compaction renders as before but for them. D129 (C7) rendered back too: the footer's sentence of what this run
+  // cost, which nothing else moves here. Each release renders back too: the footer's version is put back to the one that
+  // the tree before D124 named, so a new version moves no digest.
+  const before = (text) => text.replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
+    .replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '')
+    .replace(/<p>In this run, Sonah made [^<]*<\/p>/g, '').replace(/In this run, Sonah made [^\n]*  \n/g, '')
+    .replaceAll('sonah.report-model/6', 'sonah.report-model/5').replaceAll('sonah.session-page/45', 'sonah.session-page/44')
+    .replaceAll('sonah.session-story/40', 'sonah.session-story/39');
+  // D131 (R1, B12) rendered back: Must act and Must know before your prompt is the order's one move; the prompt is put
+  // back before them, on the page and in the .md, and nothing else moves.
+  const pageOrder = (html) => {
+    const [act, prompt, good] = ['<section class="part tier" id="must-act">', '<section class="card-ui part" id="prompt">',
+      '<details class="part tier fold-tier" id="good-to-know">'].map((marker) => html.indexOf(marker));
+    return html.slice(0, act) + html.slice(prompt, good - 1) + '\n' + html.slice(act, prompt - 1) + html.slice(good);
+  };
+  const mdOrder = (md) => {
+    const [act, prompt, good] = ['### Must act (', '### Your prompt (', '<details><summary>Good to know (']
+      .map((marker) => md.indexOf(marker));
+    return md.slice(0, act) + md.slice(prompt, good) + md.slice(act, prompt) + md.slice(good);
+  };
+  // D131 and D133's merged review rendered back: in the .md, the note that Sonah could not find an ask's words in your
+  // message is put back on the row's open notes (after a "found in a file that you attached" note), out of the row's
+  // fold, which then goes when it holds nothing else. Nothing else moves.
+  const UNLOCATED = REPORT_PROMPT_WORDS.unlocated.replace(/'/g, '\\\'');
+  const unlocatedBack = (md) => md.split('\n').map((line) => {
+    const fold = '<details><summary>Evidence</summary>';
+    if (!line.startsWith('| ') || !line.includes(`${fold}${UNLOCATED}`) && !line.includes(`${fold}${REPORT_PROMPT_WORDS.unlocated}`)) return line;
+    const said = line.includes(`${fold}${UNLOCATED}`) ? UNLOCATED : REPORT_PROMPT_WORDS.unlocated;
+    let out = line.replace(` ${fold}${said}</details>`, '').replace(`${fold}${said}</details>`, '')
+      .replace(`${fold}${said} `, fold);
+    const cells = out.split(' | ');
+    const attached = REPORT_PROMPT_WORDS.fromAttached;
+    cells[2] = cells[2].startsWith(attached) ? `${attached} ${said}${cells[2].slice(attached.length)}` : `${said} ${cells[2]}`;
+    out = cells.join(' | ').replace(/ {2}\|$/, ' |');
+    return out;
+  }).join('\n');
   const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
   const requests = calls.map((r) => JSON.stringify([r.label ?? null, r.system ?? null, r.prompt ?? null,
     r.agent ? [r.agent.root, r.agent.addDirs] : null]));
   return { read: read.map(([, options]) => Object.keys(options).sort()),
     given: [JSON.stringify(report), ...requests].some((text) => text.includes('"given"')),
     requests: digest(named(requests.join('\n'))),
-    md: digest(named(before(await readFile(join(run, 'story.md'), 'utf8')))),
-    page: digest(named(before(renderSessionPage(session, report, { folder: recorded })))),
+    md: digest(named(before(mdOrder(unlocatedBack(await readFile(join(run, 'story.md'), 'utf8')))))),
+    page: digest(named(before(pageOrder(renderSessionPage(session, report, { folder: recorded }))))),
     labels: calls.map((r) => r.label ?? null) };
 }
 
@@ -146,10 +186,12 @@ test('D124: without --code-repo, the requests and the report of each shape are b
   }
   assert.deepEqual(Object.fromEntries(Object.entries(got).map(([shape, { requests, md, page, labels }]) =>
     [shape, { requests, md, page, labels }])), {
-    ordinary: { requests: '3c472f0b2f284287', md: 'a09fe0c69d03cc64', page: 'a02f1faa4ffc40c8',
+    // D133 (R2): the readers' lines about what Sonah could not check moved into their folds (the .md and the page only);
+    // no request moved.
+    ordinary: { requests: '3c472f0b2f284287', md: 'dc0a8516eeda471b', page: 'c4f2596aa9e740b8',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    sibling: { requests: '1d3c67aaf360cf88', md: 'b1812c72b1ab876d', page: 'c343233d8e955682',
+    sibling: { requests: '1d3c67aaf360cf88', md: '0494b0af596c3eb2', page: '6bf1bef7ecc2418a',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    script: { requests: 'afe064acbf3c9007', md: 'ca1b2f9c65a8b4d6', page: '24575f4cfcd62511', labels: ['narrative:w1'] },
+    script: { requests: 'afe064acbf3c9007', md: '3f561852160daaea', page: '36d515d60bfa22fc', labels: ['narrative:w1'] },
   });
 });

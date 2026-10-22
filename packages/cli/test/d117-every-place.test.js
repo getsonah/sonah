@@ -1210,8 +1210,9 @@ test('D117 amended (its second review, low): two spellings of one file outside t
   assert.deepEqual(snapshot.base.folders, [{ at: C, written: 1 }]);
 });
 
-test('D117 amended, D122 (c): the one fixed sentence that Sonah does not yet see every edit of helper agents or of scripts '
-  + 'after a cd is said on the page, in the .md and on the terminal when the session ran a shell command, and only then',
+test('D117 amended, D122 (c), D133: the one fixed sentence that Sonah does not yet see every edit of helper agents or of '
+  + 'scripts after a cd is said on the page and in the .md (no longer on the terminal) when the session ran a shell '
+  + 'command, and only then',
 async (t) => {
   const { A, B, C, home } = await workspace(t);
   const recording = await recordingAt(t);
@@ -1221,7 +1222,10 @@ async (t) => {
   assert.equal(run.report.codePass.unseenEdits, true);
   const text = plainText(run.written);
   assert.ok(text.includes(W.unseenEdits), text);
-  assert.ok(run.out.includes(` ${W.unseenEdits} ${CODE_STEP_WORDS.turnOff}`), run.out);
+  // D133 (R2; the owner, 2026-10-22: quiet, folded, never false): the terminal's "Code review: on" line no longer says
+  // it; the page's and the .md's code review fold do.
+  assert.ok(!run.out.includes(W.unseenEdits), run.out);
+  assert.ok(run.out.includes(CODE_STEP_WORDS.turnOff), run.out);
   // D122 (c): delegated work alone, or a Workflow call alone, with no command, is no trigger: the trigger is the shell
   // command alone.
   const delegated = await readCodeSnapshot(buildCodeSession('s-del', CODE_TEXT, [
@@ -1230,7 +1234,6 @@ async (t) => {
     { id: 'D1', kind: 'invocation', callKey: 'D1', tool: 'Task', operation: 'delegate', paths: [], command: [], input: [],
       changes: [], ...T1 }]), { root: A, maxBytes: 1_000_000, recording });
   assert.equal(delegated.unseenEdits, undefined);
-  assert.ok(!codeStepLine({ on: true, source: 'flag' }, delegated).includes(W.unseenEdits));
   const workflow = await readCodeSnapshot(buildCodeSession('s-wf', CODE_TEXT, [
     { id: 'I1', kind: 'instruction', blob: 'ask', ...T1 },
     { id: 'W1', kind: 'invocation', write: 'src/parse.js', blob: 'body', ...T1 },
@@ -1247,9 +1250,9 @@ async (t) => {
   assert.equal(refused.unseenEdits, undefined);
   const quiet = await readCodeSnapshot(sessionWriting('s-quiet', writes), { root: A, maxBytes: 1_000_000, recording });
   assert.equal(quiet.unseenEdits, undefined);
-  assert.ok(!codeStepLine({ on: true, source: 'flag' }, quiet).includes(W.unseenEdits));
-  // With no change to review, the terminal still says it.
-  assert.ok(codeStepLine({ on: true, source: 'flag' }, { ...both, files: [] }).includes(W.unseenEdits));
+  // D133's review: the code step line never says it (the end-to-end run above), so its negatives here are gone; the
+  // snapshot's `unseenEdits` pins the trigger, and the code review's fold says it (code-report.js `codeWritesLines`,
+  // also with an empty change).
   assert.ok(B && C);
 });
 

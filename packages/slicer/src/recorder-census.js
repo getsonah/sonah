@@ -28,15 +28,17 @@ import { notificationOriginOf, NOTIFICATION_ORIGIN_KEYS } from './harness-contex
  *   entries   `{ reason, kind?, carrier?, key?, version, count }`, in code-unit order: each untyped notice; each origin
  *             key beside a notice's kind that no known recorder writes (`key`); each Bash result whose background id
  *             registered no launch (by each sidecar key the reader does not know, `key`); each run whose end is unread,
- *             by the run's kind (`kind`, BACKGROUND_RUN_KINDS: Workflow and Agent runs too); and each Codex shape miss
- *             by its carrier (`carrier`).
+ *             by the run's kind (`kind`, BACKGROUND_RUN_KINDS: Workflow and Agent runs too); each Codex shape miss
+ *             by its carrier (`carrier`); and (D128) each Claude row read by its structure, by its kind (`key`).
  * `records` are the lineage's records (labelled), `counted` the labels of its rows that are no record (`{uuid, value,
  * version}`, records.js `meta.labelled`), `events` its ledger, `backgroundRuns` and `ends` the runs the
  * absence search read and its verdict for each (background-ends.js), `launchMisses` the launches that registered none
- * (events.js), `codexShapeMisses` each Codex file's misses by carrier. Null when there is nothing to count.
+ * (events.js), `codexShapeMisses` each Codex file's misses by carrier, and (D128) `structuralRows` each Claude file's rows
+ * read by their structure, `{ kind, version, count }` (records.js `meta.structuralRows`), each an entry
+ * `row_read_by_structure` with its kind as `key`. Null when there is nothing to count.
  */
 export function recorderCensusOf({ records, counted = [], events, backgroundRuns, ends, launchMisses,
-  codexShapeMisses }) {
+  codexShapeMisses, structuralRows = [] }) {
   const R = RECORDER_CENSUS_REASONS;
   const tally = new Map();
   const count = (reason, version, { n = 1, kind = null, carrier = null, name = null } = {}) => {
@@ -92,6 +94,8 @@ export function recorderCensusOf({ records, counted = [], events, backgroundRuns
     if (ends[i] !== null) count(ends[i], run.version, { kind: run.kind });
   for (const { carrier, count: n, version } of codexShapeMisses)
     if (Number.isSafeInteger(n) && n > 0) count(R.codexShapeMiss, version, { n, carrier });
+  for (const { kind, count: n, version } of structuralRows)
+    if (Number.isSafeInteger(n) && n > 0) count(R.rowReadByStructure, version, { n, name: kind });
   const entries = [...tally].map(([key, n]) => {
     const [reason, kind, carrier, name, version] = JSON.parse(key);
     return { reason, ...(kind !== null ? { kind } : {}), ...(carrier !== null ? { carrier } : {}),

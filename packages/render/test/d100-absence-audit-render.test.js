@@ -47,16 +47,18 @@ function session({ background = false } = {}) {
 test('D100: a command Sonah read no result of is said as what Sonah found, never as having no recorded end', () => {
   const s = session();
   const model = reportModel(s, { windowResults: window(s) }, {});
-  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 1 command.',
-    'Results: for 1 Sonah found no result.']);
+  // D133 (R2): what Sonah could not read of a run is said in What Sonah could not check, with its count.
+  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 1 command.']);
+  assert.ok(model.notChecked.quiet.includes('Results: for 1 Sonah found no result.'), model.notChecked.quiet);
   assert.deepEqual(model.did.runs.shown.map((run) => run.outcome), ['Sonah found no result of it']);
 });
 
 test('D100: "no recorded end" stays only for a background run whose recording the slicer proved holds none', () => {
   const s = session({ background: true });
   const model = reportModel(s, { windowResults: window(s) }, {});
-  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 3 commands.',
-    'Results: 1 has no recorded end, for 1 Sonah found no result, for 1 Sonah could not read whether or how it ended.']);
+  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 3 commands.', 'Results: 1 has no recorded end.']);
+  assert.ok(model.notChecked.quiet.includes('Results: for 1 Sonah found no result, for 1 Sonah could not read whether or '
+    + 'how it ended.'), model.notChecked.quiet);
   assert.deepEqual(model.did.runs.shown.map((run) => run.outcome), ['Sonah found no result of it',
     'later records mention this run, but Sonah could not read whether or how it ended',
     'started in the background, no end recorded']);
@@ -128,8 +130,9 @@ test('D100: a run that its notice typed completed reads as what Sonah read, neve
   const model = reportModel(s, { windowResults: window(s) }, {});
   assert.deepEqual(model.did.runs.shown.map((run) => run.outcome), ['completed, Sonah read no exit code',
     'completed, Sonah read no exit code']);
-  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 2 commands.',
-    'Results: 2 completed with no exit code that Sonah read.']);
+  assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 2 commands.']);
+  assert.ok(model.notChecked.quiet.includes('Results: 2 completed with no exit code that Sonah read.'),
+    model.notChecked.quiet);
 });
 
 // ---- a recorder that types no refusal: its result text can still say which ----------------------------------------

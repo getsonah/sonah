@@ -92,19 +92,30 @@ const noteMd = (places) => `${REPORT_PROMPT_WORDS.codeHolds(places.length)} ${pl
   .reduce((out, p, at) => `${out}${at ? (at === places.length - 1 ? ' and ' : ', ') : ''}${p}`, '')}). `
   + REPORT_PROMPT_WORDS.codeHoldsUnchecked;
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Each surface with the note taken out: on the page a line ` · <note>` of its ask's list item, in the .md the note
- *  after its row's other words. What is left must be byte for byte the surface without the verdict. */
-const NOTE_PAGE = new RegExp(` · ${escape(REPORT_PROMPT_WORDS.codeHolds(1)).replace('its quote', 'its quotes?')} `
-  + `(?:<code>[^<]*</code>(?:, | and )?)+\\)\\. ${escape(REPORT_PROMPT_WORDS.codeHoldsUnchecked)}`, 'g');
-const NOTE_MD_BODY = `${escape(REPORT_PROMPT_WORDS.codeHolds(1)).replace('its quote', 'its quotes?')} `
-  + `(?:\`[^\`]*\`(?:, | and )?)+\\)\\. ${escape(REPORT_PROMPT_WORDS.codeHoldsUnchecked)}`;
-/** In the .md: after the row's other words with its space, or alone in its cell (the cell's own spaces kept). */
-const NOTE_MD = new RegExp(`(?<=\\| )${NOTE_MD_BODY}|(?<!\\|) ${NOTE_MD_BODY}`, 'g');
+/** D133 (R2): the note is two parts — the code review's verdict and where Sonah found its quotes, on the row's open
+ *  line, and that Sonah did not check it, in the row's own fold after the session review's reason. Each surface with the
+ *  note taken out: on the page the line ` · <verdict>` and the fold's paragraph, in the .md the verdict after its row's
+ *  other words and the sentence in the row's fold; a fold left empty goes with it. What is left must be byte for byte
+ *  the surface without the verdict. */
+const VERDICT = escape(REPORT_PROMPT_WORDS.codeHolds(1)).replace('its quote', 'its quotes?');
+const UNCHECKED = escape(REPORT_PROMPT_WORDS.codeHoldsUnchecked);
+const NOTE_PAGE = new RegExp(` · ${VERDICT} (?:<code>[^<]*</code>(?:, | and )?)+\\)\\.`, 'g');
+const NOTE_PAGE_FOLD = new RegExp(`<p class="note">${UNCHECKED}</p>`, 'g');
+const NOTE_MD = new RegExp(`${VERDICT} (?:\`[^\`]*\`(?:, | and )?)+\\)\\.`, 'g');
+const NOTE_MD_FOLD = new RegExp(` ${UNCHECKED}(?=</details>)|(?<=<summary>Evidence</summary>)${UNCHECKED}`, 'g');
 /** The page lists a marked ask only when it has a line (session-page.js), so an item left with its status alone, and a
  *  list left empty, go with the note. */
-const withoutNote = (s) => ({ ...s, md: s.md.replace(NOTE_MD, ''), page: s.page.replace(NOTE_PAGE, '')
+const withoutNote = (s) => ({ ...s, md: s.md.replace(new RegExp(`${NOTE_MD.source} `, 'g'), '').replace(NOTE_MD_FOLD, '')
+  .replaceAll('<details><summary>Evidence</summary></details>', ''),
+page: s.page.replace(NOTE_PAGE, '').replace(NOTE_PAGE_FOLD, '')
+  .replaceAll(' · <details class="row-evidence"><summary>Evidence</summary></details>', '')
   .replace(/<li>ask \d+ · <span class="tag s-[A-Za-z]+">[^<]*<\/span><\/li>\n/g, '')
   .replace('<ul class="rows ask-lines"></ul>', '') });
+/** D133 (R2): a row of the .md's asks table with the note: the verdict, then the row's fold with the reason (if any)
+ *  and that Sonah did not check it. */
+const noteRowMd = (places, reason = null) => `${REPORT_PROMPT_WORDS.codeHolds(places.length)} ${places.map((p) => `\`${p}\``)
+  .reduce((out, p, at) => `${out}${at ? (at === places.length - 1 ? ' and ' : ', ') : ''}${p}`, '')}). `
+  + `<details><summary>Evidence</summary>${reason ? `${reason} ` : ''}${REPORT_PROMPT_WORDS.codeHoldsUnchecked}</details>`;
 /** The report with every `holds` entry made `outside` (an examined outcome that renders no byte, D111 I9). */
 const asOutside = (r) => ({ ...r, codePass: { ...r.codePass, account: { ...r.codePass.account,
   entries: r.codePass.account.entries.map((e) => (e.fate === 'holds' ? { ...e, fate: 'outside' } : e)) } } });
@@ -123,7 +134,7 @@ test('D125 amended, S1\'s shape: the three asks the session review left not chec
     ['done', 'Done'], ['done', 'Done']]);
   assert.deepEqual(model.prompt.parts, ['3 done', '4 not checked']);
   // The header's and the footer's count of the asks that Sonah did not check: all four.
-  assert.deepEqual(model.header.didNotCheck.phrases.slice(0, 1), ['4 asks']);
+  assert.deepEqual(model.notChecked.didNotCheck.phrases.slice(0, 1), ['4 asks']);
   const s = surfaces(r);
   assert.ok(s.md.includes(`${REPORT_HEADER_WORDS.notCheckedLead} 4 asks · `), s.md);
   assert.ok(s.md.includes(REPORT_NOT_CHECKED_WORDS.asksThere(4)));
@@ -135,17 +146,19 @@ test('D125 amended, S1\'s shape: the three asks the session review left not chec
   // file:line; the page's mark says "Not checked".
   for (const [n, rc] of [[1, MONEY], [2, CART], [4, README]]) {
     const at = `${rc.path}:${rc.startLine}`;
-    assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[n - 1])}” | ${UNGROUNDED} ${noteMd([at])} |`),
+    // D133 (R2): the verdict on the row's open line; the reason and that Sonah did not check it in the row's own fold.
+    assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[n - 1])}” | ${noteRowMd([at], UNGROUNDED)} |`),
       `ask ${n}\n${s.md}`);
-    assert.equal(askLineOf(s.page, n), `ask ${n} · Not checked · ${UNGROUNDED} · ${REPORT_PROMPT_WORDS.codeHolds(1)} `
-      + `${at}). ${REPORT_PROMPT_WORDS.codeHoldsUnchecked}`);
+    assert.equal(askLineOf(s.page, n), `ask ${n} · Not checked · ${REPORT_PROMPT_WORDS.codeHolds(1)} `
+      + `${at}). · Evidence${UNGROUNDED}${REPORT_PROMPT_WORDS.codeHoldsUnchecked}`);
     assert.match(s.page, new RegExp(`<mark class="ask s-notChecked" id="ask-${n}"><span class="tag">Not checked</span>`));
-    assert.deepEqual(model.prompt.asks[n - 1].lines.length, 2, `ask ${n}: the reason, then the note`);
+    assert.deepEqual([model.prompt.asks[n - 1].lines.length, model.prompt.asks[n - 1].folded.length], [1, 2],
+      `ask ${n}: the verdict; the reason, then that Sonah did not check it`);
   }
   // Ask 3, done and held: Done, as before, no note; ask 5, outside: Not checked, as before, no note.
   assert.ok(s.md.includes(`\n| Done | “${escapeSource(ASKS[2])}” |`));
-  assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[4])}” | The session review's own check on it did not `
-    + 'settle. |'), s.md);
+  assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[4])}” | <details><summary>Evidence</summary>The `
+    + 'session review\'s own check on it did not settle.</details> |'), s.md);
   assert.equal(s.md.match(NOTE_MD).length, 3);
   // The PR comment: the folded line counts them among the rows that Sonah could not check, as before.
   assert.equal(checklistRowCounts(r).asksNotChecked, 4);
@@ -168,7 +181,7 @@ test('D125 amended: the words of the note', () => {
   // A row with no reason (the session review's own not checked): the note is its first line.
   const r = s1({ rows: { 0: { reason: null } } });
   const md = mdOf(r);
-  assert.ok(md.includes(`\n| Not checked | “${escapeSource(ASKS[0])}” | ${noteMd([`${MONEY.path}:5`])} |`), md);
+  assert.ok(md.includes(`\n| Not checked | “${escapeSource(ASKS[0])}” | ${noteRowMd([`${MONEY.path}:5`])} |`), md);
   assert.deepEqual(withoutNote(surfaces(r)), surfaces(asOutside(r)));
 });
 
@@ -176,7 +189,7 @@ test('D125: several quotes are each named once, in their order', () => {
   const twice = s1({ entries: null, fates: {} });
   twice.codePass.account.entries[0] = entry(0, 'holds', [MONEY, TESTS, MONEY, { ...CART, startLine: 20, endLine: 22 }]);
   const md = mdOf(twice);
-  assert.ok(md.includes(noteMd([`${MONEY.path}:5`, `${TESTS.path}:26`, `${CART.path}:20-22`])), md);
+  assert.ok(md.includes(noteRowMd([`${MONEY.path}:5`, `${TESTS.path}:26`, `${CART.path}:20-22`], UNGROUNDED)), md);
   assert.ok(md.includes(`${REPORT_PROMPT_WORDS.codeHolds(3)} \`${MONEY.path}:5\`, \`${TESTS.path}:26\` and `
     + `\`${CART.path}:20-22\`). `), md);
   assert.deepEqual(withoutNote(surfaces(twice)), surfaces(asOutside(twice)));
@@ -286,7 +299,7 @@ test('D125\'s review: a verdict that quotes the start commit is no line of the c
     entries: r.codePass.account.entries.map((e, i) => (i < 2 ? { ...e, fate: 'outside' } : e)) } } };
   assert.deepEqual(surfaces(r), surfaces(outside));
   const md = mdOf(r);
-  assert.ok(md.includes(noteMd([`${README.path}:7`])), md);
+  assert.ok(md.includes(noteRowMd([`${README.path}:7`], UNGROUNDED)), md);
   assert.equal(md.match(NOTE_MD).length, 1);
   assert.ok(!md.includes(`${MONEY.path}:5`) && !md.includes(`${CART.path}:22`), md);
 });

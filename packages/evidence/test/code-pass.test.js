@@ -53,7 +53,8 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   REPAIR_MERGE_READER_VERSIONS, PREMISE_VERSIONS, PREMISE_READER_VERSIONS, profileBeforePremises, ACCOUNT_VERSIONS,
   ACCOUNT_READER_VERSIONS, profileBeforeAccount, ONE_ITEM_VERSIONS, ONE_ITEM_READER_VERSIONS, profileBeforeOneItem,
   SESSION_CHANGE_VERSIONS, SESSION_CHANGE_READER_VERSIONS, LISTED_ASKS_VERSIONS, profileBeforeSessionChange,
-  profileBeforeListedAsks, REPORT_TRUTH_READER_VERSIONS, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
+  profileBeforeListedAsks, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
+  COMPACTION_READER_VERSIONS,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace }
   from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
@@ -331,8 +332,18 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual([SESSION_CHANGE_READER_VERSIONS.page.before, SESSION_CHANGE_READER_VERSIONS.story.before,
     SESSION_CHANGE_READER_VERSIONS.model.before], [ONE_BOUND_READER_VERSIONS.page.after,
     ONE_BOUND_READER_VERSIONS.story.after, ONE_BOUND_READER_VERSIONS.model.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [SESSION_CHANGE_READER_VERSIONS.page.after,
+  // D126 and D127 (0.3.0-beta.6): each reader once more, one link after 0.3.0-beta.5's.
+  assert.deepEqual([COMPACTION_READER_VERSIONS.page.before, COMPACTION_READER_VERSIONS.story.before,
+    COMPACTION_READER_VERSIONS.model.before], [SESSION_CHANGE_READER_VERSIONS.page.after,
     SESSION_CHANGE_READER_VERSIONS.story.after, SESSION_CHANGE_READER_VERSIONS.model.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [COMPACTION_READER_VERSIONS.page.after,
+    COMPACTION_READER_VERSIONS.story.after, COMPACTION_READER_VERSIONS.model.after]);
+  // D129 (C7, 0.3.0-beta.6): each reader once more (COST_READER_VERSIONS), one link after 0.3.0-beta.5's.
+  assert.deepEqual([COST_READER_VERSIONS.page.before, COST_READER_VERSIONS.story.before,
+    COST_READER_VERSIONS.model.before], [SESSION_CHANGE_READER_VERSIONS.page.after,
+    SESSION_CHANGE_READER_VERSIONS.story.after, SESSION_CHANGE_READER_VERSIONS.model.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [COST_READER_VERSIONS.page.after,
+    COST_READER_VERSIONS.story.after, COST_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

@@ -11,7 +11,7 @@ is wrong in the code.**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/getsonah/sonah/assets/review-dark.png">
-  <img width="800" alt="The first screen of a Sonah review: the asks of your prompt with their status, then the Must know items" src="https://raw.githubusercontent.com/getsonah/sonah/assets/review-light.png">
+  <img width="800" alt="The first screen of a Sonah review: the count line, then the Must act and Must know items" src="https://raw.githubusercontent.com/getsonah/sonah/assets/review-light.png">
 </picture>
 
 </div>
@@ -129,20 +129,9 @@ lists the messages and exit codes.
 If the reviewer's provider did not run the agent, the session goes to that provider for the first time.
 [Privacy](docs/PRIVACY.md) says exactly what each request holds and what Sonah keeps under `~/.sonah`.
 
-## Status and known limits
-
-- A beta: commands, the page and the files under `~/.sonah` can change between betas.
-- The code review does not yet see every edit made by helper agents or by scripts after a `cd`. When the session ran
-  a shell command, the report says so. `--code-repo DIR` points the code review at a repository that such a command
-  changed.
-- The code review reads the files as they are on this computer now.
-- Sonah can miss a decision or put one in the wrong section. Check the items that matter against their evidence.
-
-The full list is in the [guide](docs/INSTALL.md#known-limits).
-
 ## Docs
 
-- [Install and usage guide](docs/INSTALL.md)
+- [Install and usage guide](docs/INSTALL.md), with the [known limits](docs/INSTALL.md#known-limits) of this beta
 - [Privacy](docs/PRIVACY.md)
 - [Troubleshooting and exit codes](docs/TROUBLESHOOTING.md)
 - [Contributing](CONTRIBUTING.md) &nbsp;&bull;&nbsp; [Security](SECURITY.md)

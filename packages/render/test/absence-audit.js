@@ -59,6 +59,14 @@ export const ABSENCE_PROOFS = Object.freeze({
     ['packages/evidence/src/session.js', 'REFUSED_DENIALS']],
   scopes: Object.freeze(['call']),
   proves: 'did not run, refused before it ran: only a call whose recorder typed a denial kind of the closed list on it' }),
+  // D127 (B10d): a compaction of the agent's context and the tokens it dropped, as the recorder typed them on the
+  // compaction's own boundary row.
+  typed_compaction: Object.freeze({ kind: 'recorder', where: [['packages/slicer/src/events.js', 'compactedOf'],
+    ['packages/render/report-model.js', 'compactionsOf']],
+  scopes: Object.freeze(['call']),
+  proves: 'compacted the agent\'s context here and dropped N of its M tokens: only a Claude Code compaction boundary row '
+    + '(`compact_boundary`), at its place, with the counts that row typed (`preTokens`, `postTokens`), N their difference; '
+    + 'with no typed counts, the compaction alone' }),
   typed_stop: Object.freeze({ kind: 'recorder', where: [['packages/evidence/src/ledger.js', 'STOPPED_OUTCOME_FORMS'],
     ['packages/evidence/src/session.js', 'STOPPED_DENIALS'], ['packages/slicer/src/events.js',
       'STOPPED_NOTIFICATION_STATUSES']],
@@ -317,6 +325,8 @@ export const ABSENCE_REGISTRY = Object.freeze({
     'shellWriteWords': Object.freeze({ typed_stop: 'call' }),
   }),
   'packages/render/report-words.js': Object.freeze({
+    // D127 (B10d): what the agent's context dropped at a compaction, only from the counts its boundary row typed.
+    'REPORT_PROMPT_WORDS.compaction': Object.freeze({ typed_compaction: 'call' }),
     'REPORT_DID_WORDS.unconfirmed': Object.freeze({ typed_stop: 'call' }),
     // D113 amended: an item about code outside the evaluated session, their count, the count line's tag, and the files
     // list's line of the files outside it, each by the recorded writes' search that places a file outside it.
@@ -508,6 +518,11 @@ export const READ_CENSUS = Object.freeze({
     'COVERAGE_SENTENCE.instructions_refusal_untyped': ['absence', 'ccf39be7ee81f5d9'],
     'COVERAGE_SENTENCE.instructions_refusal_session_unknown': ['sonah', 'b7c48c1a65f8104f'],
     'COVERAGE_SENTENCE.human_interaction_unknown': ['sonah', 'cb453e799a389055'],
+    // D126 (N0): the part before the compaction a session opens on, not read, by its reason: what Sonah found or read.
+    'COVERAGE_SENTENCE.instructions_earlier_missing': ['sonah', 'de5ca22ade904b2e'],
+    'COVERAGE_SENTENCE.instructions_earlier_ambiguous': ['sonah', '16a809c3c73116a1'],
+    'COVERAGE_SENTENCE.instructions_earlier_unread': ['sonah', '2222a9a70e84c46e'],
+    'COVERAGE_SENTENCE.instructions_earlier_cycle': ['sonah', 'e90240ebf1d7d2b1'],
     'COVERAGE_SENTENCE.delegations_unlinked': ['sonah', 'c7fa1ecccbb9512d'],
     'COVERAGE_SENTENCE.delegations_ambiguous': ['other', '95ec1fd508dac8ec'],
     'COVERAGE_SENTENCE.briefs_encrypted': ['sonah', '824470e81ba95794'],
@@ -863,7 +878,9 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_COUNT_WORDS.noAsk': ['sonah', '58298dae5aab9785'],
     'REPORT_COUNT_WORDS.mustActLead': ['other', '611791d7de1d8842'],
     'REPORT_COUNT_WORDS.more': ['other', '5c111c59c74a1ee5'],
-    'REPORT_COUNT_WORDS.emptyTiers': ['sonah', '0f95c28c9650b9d7'],
+    'REPORT_COUNT_WORDS.emptyTiers': ['sonah', '14f0f366acaf5dd3'],
+    // D133 (R2): the sentence after it, read apart: a caution about what the count means, no negative fact.
+    'REPORT_COUNT_WORDS.notCorrect': ['other', 'fcafa7052216299a'],
     // D113 amended: the items about code outside the evaluated session, and the tag after a label.
     'REPORT_COUNT_WORDS.outside': ['absence', '93f1e899d8f79762'],
     'REPORT_COUNT_WORDS.outsideLabel': ['absence', '7e6c2bbb92dde9b4'],
@@ -922,6 +939,14 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_FOOTER_WORDS.answerParts': ['other', 'c681158a1d865db6'],
     'REPORT_FOOTER_WORDS.answerReport': ['other', 'b210fe8609f5d5d8'],
     'REPORT_FOOTER_WORDS.answerCommand': ['other', '313e31623bbe4e33'],
+    // D129 (C7): what the review cost, from its run record: Sonah's own calls ("no model calls" is a fact about Sonah's
+    // run, counted by its usage record, never about the recording), and the usage limits in the footer's words.
+    'REPORT_FOOTER_WORDS.usage': ['sonah', '553686bfb5517f32'],
+    'REPORT_FOOTER_WORDS.usageRuns': ['sonah', 'b273121b8f901e0b'],
+    'REPORT_LIMIT_WORDS.five_hour': ['other', '4e7d3a6498490fef'],
+    'REPORT_LIMIT_WORDS.seven_day': ['other', 'e890697bda076c04'],
+    'REPORT_LIMIT_WORDS.seven_day_overage_included': ['other', 'a74fcf9a8eca5fce'],
+    'REPORT_LIMIT_WORDS.other': ['other', '40215e47340331fa'],
     'REPORT_GAP_WORDS.decide_unsettled': ['sonah', 'de3fd39258dc57fd'],
     'REPORT_GAP_WORDS.window_incomplete': ['sonah', '101361227c116acd'],
     'REPORT_GAP_WORDS.proposal_unreadable': ['sonah', 'daaf5fa1428b2eda'],
@@ -945,6 +970,11 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_HEADER_WORDS.refusedAfterEdit': ['absence', '5e6c4d590d662069'],
     'REPORT_HEADER_WORDS.unclearAfterEdit': ['absence', '3b9c67b43008d512'],
     'REPORT_HEADER_WORDS.reviewIncomplete': ['sonah', 'ec3c29ad8c9232fe'],
+    // D126 and D127 (B10d): beside the title, the recordings Sonah read (positive), or the part Sonah did not read.
+    'REPORT_HEADER_WORDS.continued': ['other', '25655e7f09aa92c0'],
+    'REPORT_HEADER_WORDS.continuedUnread': ['sonah', '5f8f9db7a1439996'],
+    // D133 (R2): the short line beside the title when Sonah did not read the earlier part: a positive fact of the session.
+    'REPORT_HEADER_WORDS.continuedPart': ['other', '4d6387e20e796633'],
     'REPORT_HEADER_WORDS.notCheckedLead': ['sonah', '4788f4a16b3c8c4b'],
     // D118 (a): beside the first screen's no-code sentence, with no code step that ran.
     'REPORT_HEADER_WORDS.noCodeImpact': ['sonah', 'e6fdf4bf5a94c92c'],
@@ -1131,6 +1161,10 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_PROMPT_WORDS.codeQuestion': ['other', '21c63dd35a8687e8'],
     'REPORT_PROMPT_WORDS.unconfirmedFinding': ['sonah', '451d10f2209f6498'],
     'REPORT_PROMPT_WORDS.unlocated': ['sonah', 'fd27786aa4c8e19a'],
+    // D127 (B10d): a compaction and what the agent's context dropped, by the recorder's typed counts (an absence of
+    // context, proved by the boundary row's own fields: `typed_compaction`); (N1) the first compaction after an ask.
+    'REPORT_PROMPT_WORDS.compaction': ['absence', '2d6859831346bada'],
+    'REPORT_PROMPT_WORDS.beforeCompaction': ['other', '1eb65a657887ad9d'],
     'REPORT_PROMPT_WORDS.overlaps': ['other', 'a7571bff01830fc0'],
     'REPORT_PROMPT_WORDS.attached': ['other', '9a2b0d1cdcb085ca'],
     'REPORT_PROMPT_WORDS.fromAttached': ['other', '2362d327532118df'],
@@ -1238,8 +1272,10 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_MD_WORDS.asked': ['other', '578519a132112999'],
     'REPORT_MD_WORDS.note': ['other', 'ee5ea001172c297b'],
     'REPORT_MD_WORDS.coverage': ['sonah', '2013715cf24a38c2'],
+    'REPORT_MD_WORDS.coverageAsks': ['sonah', 'f5f4439820f5ccfd'],
     'REPORT_MD_WORDS.wholeMessage': ['other', '00b4f7fc18e54f33'],
     'REPORT_MD_WORDS.messageStart': ['other', '711b9c14727341f0'],
+    'REPORT_MD_WORDS.messagesNotShown': ['sonah', '25c9c78ad65d2828'],
     'REPORT_MD_WORDS.kindCount': ['other', '63dff3734a86266e'],
   }),
   'packages/cli/src/local-page.js': Object.freeze({
@@ -1317,6 +1353,9 @@ export const READ_CENSUS = Object.freeze({
     'DRY_RUN_WORDS.recording': ['other', 'faf6a93fbfc23e22'],
     'DRY_RUN_WORDS.knownGaps': ['other', '2d0dece166b5589a'],
     'NO_SESSION_WORDS.none': ['sonah', 'b143ef6bcbb11f34'],
+    // D126 (N0): the terminal's line for a session that opens on a compaction: read with it (positive), or not.
+    'CONTINUED_RECORDING_WORDS.read': ['other', '0e3eac7f48152cc1'],
+    'CONTINUED_RECORDING_WORDS.unread': ['sonah', '1fb595c0b36980b7'],
     'NO_SESSION_WORDS.searched': ['other', 'fbf2517f1fbe8e5d'],
     'NO_SESSION_WORDS.elsewhere': ['other', '3bce1f48db9eb58a'],
     'REPLAY_UNREAD': ['sonah', '83ff3f1c4300db5b'],
@@ -1381,7 +1420,6 @@ export const READ_CENSUS = Object.freeze({
     'RUN_STATE_WORDS.line': ['other', 'b0e55fef6089b94b'],
     // D118 (a): "complete" names what is missing when no code was reviewed.
     'RUN_STATE_WORDS.completeNoCode': ['sonah', 'ba41b87cd3f54d11'],
-    'RUN_STATE_WORDS.codePassNoCode': ['sonah', 'b6806498d55183d4'],
     'SAVED_COMMENT_WORDS.target': ['other', 'cfe20223aa010bfa'],
     'SAVED_COMMENT_WORDS.after': ['other', 'c67533d523fb1496'],
     'SAVED_COMMENT_WORDS.none': ['sonah', '93cdb2c5db23843f'],

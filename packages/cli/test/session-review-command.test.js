@@ -100,7 +100,9 @@ test('session physical-call pause retains narrative and resumes only unanswered 
       cache_creation_input_tokens: 2, output_tokens: 3 } } }) }), 3);
   assert.equal(calls.length, 1);
   assert.match(out.chunks.stdout, /Review usage: 1 calls/);
-  assert.match(out.chunks.stdout, /input tokens 17 \(1\/1 calls reported\)/);
+  // D129: with the split the CLI reported (10 uncached, 2 written to the cache, 5 read from it).
+  assert.match(out.chunks.stdout,
+    /input tokens 17 \(1\/1 calls reported: 10 uncached, 2 written to the cache, 5 read from the cache\)/);
   assert.match(out.chunks.stdout, /output tokens 3 \(1\/1 calls reported\)/);
   assert.match(out.chunks.stdout, /Review stopped where you asked \(max_calls\)/);
   // D84 (4) a: the estimate is a rough time only.
@@ -246,7 +248,12 @@ test('explicit synthetic recording uses actual loader and engine, defaults to Cl
   const html = await readFile(first, 'utf8');
   assert.match(html, /^<!doctype html>/i); assert.match(html, /Content-Security-Policy/);
   assert.match(html, /Read the synthetic file/);
-  assert.equal(await readFile(second, 'utf8'), html);
+  // D129: each run's footer says what the review cost: the first run its own calls; D132 (R3 b, and its review's finding
+  // 4): the resumed one, which made none, the whole review's, the earlier run's calls. All else is the same.
+  const again = await readFile(second, 'utf8');
+  assert.match(html, new RegExp(`<p>In this run, Sonah made ${sent} model calls?\\. `));
+  assert.match(again, new RegExp(`<p>This review made ${sent} model calls? in an earlier run\\. `));
+  assert.equal(withoutRunCost(again), withoutRunCost(html));
   assert.equal((await stat(first)).mode & 0o777, 0o600);
   const progress = JSON.parse(await readFile(join(stateOf(input), 'review', 'progress.json'), 'utf8'));
   assert.equal(progress.attempt, 2); assert.equal(progress.calls.live, 0); assert.ok(progress.calls.reused > 0);
@@ -443,8 +450,17 @@ test('D69 f (g) an answer recorded with `sonah decision` is shown under its deci
   assert.equal(stdout, `recorded: change ${short}\n`);
   const after = await page('after.html');
   assert.match(after, /<p class="note answer"><span class="label">Your answer:<\/span> You asked to change it\. <span class="answer-reason">Read the other file\.<\/span><\/p>/);
-  assert.equal(after.replace(/<p class="note answer">.*?<\/p>/, ''), before, 'the answer changes nothing else');
+  // D129: the footer's cost of each run is that run's own.
+  assert.equal(withoutRunCost(after.replace(/<p class="note answer">.*?<\/p>/, '')), withoutRunCost(before),
+    'the answer changes nothing else');
 });
+
+/** D129 (C7): a page without its footer's sentence of what that run of the review cost (D132: or the whole review). */
+function withoutRunCost(html) {
+  const out = html.replace(/<p>(?:In this run, Sonah made|Over its \d+ runs, this review made|This review made) [^<]*<\/p>/, '');
+  assert.notEqual(out, html, 'the page says what the run cost');
+  return out;
+}
 
 // ---- D82 step 10: the count-only PR comment, moved onto the session review ------------------------------------
 const COMMENT = ['--github', 'example/demo', '--pr', '7', '--post-comment', '--format', 'html'];

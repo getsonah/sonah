@@ -452,6 +452,21 @@ const MOVED_BY_REPORT_TRUTH = Object.freeze({ story: 'e62f59c639b3dc948d75e10632
  *  evidence that D119 splits, and its one list holds files, so nothing else moves. The story's version and the report
  *  model's do not move (each moved once since beta.4). No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_FIRST_SCREEN = Object.freeze({ story: '14c55c450096b8d44b008865abcd4a60d5e6755f161c5128105afb13b1fa21a3' });
+/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): the
+ *  story, by the report model's version in its footer alone (`sonah.report-model/6`; with the version set back to /5 it
+ *  renders D118's bytes): the case neither opens on a compaction nor holds one, and the report carries no run record of
+ *  what the review cost, so the footer says nothing of it. No event, gap, request, label, window or window failure
+ *  moved. */
+const MOVED_BY_BETA6_READERS = Object.freeze({ story: 'bc3f9154fb377c41a102759312c43e74273831fe9c3734c85d18f138def9c8c3' });
+/** D131 (R1, B12): the story, by its sections' order alone (Must act and Must know before your prompt). No event, gap,
+ *  request, label, window or window failure moved. */
+const MOVED_BY_MUST_FIRST = Object.freeze({ story: '43f7aeb2a7457b880dc0de51a47338f4f7d19847cbf0d3bdacd0269aaafb08f4' });
+/** D133 (R2, the owner's guidance of 2026-10-22: quiet, folded, never false): the story, by lines that move alone, each
+ *  word for word — the header's "Sonah did not check: 1 ask" line and the count line's second sentence into What Sonah
+ *  could not check (shown uncounted), the ask's reason into its row's own fold, and each decision's "Sonah could
+ *  not check whether you asked for this." from its head into its evidence fold. No status word or count of the case
+ *  changes. No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_QUIET = Object.freeze({ story: 'f5e80e33da8fae0bdd936ccb928cb4d766465fd8203ffe5ae3e649b557e61df9' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
@@ -467,7 +482,7 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
     ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
     ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND,
-    ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN }));
+    ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN, ...MOVED_BY_BETA6_READERS, ...MOVED_BY_MUST_FIRST, ...MOVED_BY_QUIET }));
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
   // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more
@@ -477,10 +492,10 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   // D104 once more (MOVED_BY_SEEN_IN_PART), by the report model's version in the footer; and bucket B (D105 and D107)
   // once more (MOVED_BY_ONE_BOUND), the same way; and 0.3.0-beta.5 (D113 to D116) once more (MOVED_BY_REPORT_TRUTH),
   // by the fact's words, the asks of a helper's brief named so, and the model's version; and D118 once more
-  // (MOVED_BY_FIRST_SCREEN), by the first screen's no-code line.
-  // W2: moved once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
-  // W3 F1(b): moved once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
-  // The fix review: moved once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.
+  // (MOVED_BY_FIRST_SCREEN), by the first screen's no-code line; and D126, D127 and D129 once more, in one move
+  // (MOVED_BY_BETA6_READERS), by the report model's version in the footer; and D131 once more (MOVED_BY_MUST_FIRST), by
+  // its sections' order; and D133 once more (MOVED_BY_QUIET), by the lines about what Sonah could not check moving into
+  // their folds.
   assert.deepEqual(current, asksFixes.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
     ...MOVED_BY_FIX_REVIEW })), 'as the code sends them');
   assert.deepEqual(await captureReceivedCases(modulesBeforeFixReview(modules)),

@@ -39,7 +39,8 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
   SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COMPACTION_READER_VERSIONS,
+  COST_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -391,7 +392,12 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.deepEqual(ONE_ITEM_READER_VERSIONS, ONE_BOUND_READER_VERSIONS);
   // D113 and D114 (0.3.0-beta.5) move it once more (SESSION_CHANGE_READER_VERSIONS: the session's own change).
   assert.equal(SESSION_CHANGE_READER_VERSIONS.story.before, ONE_BOUND_READER_VERSIONS.story.after);
-  assert.equal(story.STORY_VERSION, SESSION_CHANGE_READER_VERSIONS.story.after);
+  // D126 and D127 (0.3.0-beta.6) move it once more (COMPACTION_READER_VERSIONS: a session that opens on a compaction).
+  assert.equal(COMPACTION_READER_VERSIONS.story.before, SESSION_CHANGE_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, COMPACTION_READER_VERSIONS.story.after);
+  // D129 (C7, 0.3.0-beta.6) moves it once more (COST_READER_VERSIONS: the footer says what the review cost).
+  assert.equal(COST_READER_VERSIONS.story.before, SESSION_CHANGE_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, COST_READER_VERSIONS.story.after);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

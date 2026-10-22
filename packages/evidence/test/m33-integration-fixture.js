@@ -1962,6 +1962,15 @@ export const REPORT_TRUTH_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/43', after: 'sonah.session-page/44' }),
   story: Object.freeze({ before: 'sonah.session-story/38', after: 'sonah.session-story/39' }),
 });
+/** D129 (C7; the owner, 2026-10-22: "go with your recommendations"): the readers it moved,
+ *  once each from 0.3.0-beta.5 (`REPORT_TRUTH_READER_VERSIONS`): the footer says what the review cost, read from its run
+ *  record (report-model.js `usageOf`). No request, profile or stored answer moved. 0.3.0-beta.6 moves each reader once:
+ *  another change of beta.6 that moves a reader rides this same move. */
+export const COST_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/5', after: 'sonah.report-model/6' }),
+  page: Object.freeze({ before: 'sonah.session-page/44', after: 'sonah.session-page/45' }),
+  story: Object.freeze({ before: 'sonah.session-story/39', after: 'sonah.session-story/40' }),
+});
 /** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
  *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
  *  applies it first. D113 (0.3.0-beta.5): it applies `profileBeforeSessionChange` first. */
@@ -1991,6 +2000,17 @@ export const SESSION_CHANGE_READER_VERSIONS = Object.freeze({
   model: Object.freeze({ before: 'sonah.report-model/4', after: 'sonah.report-model/5' }),
   page: Object.freeze({ before: 'sonah.session-page/43', after: 'sonah.session-page/44' }),
   story: Object.freeze({ before: 'sonah.session-story/38', after: 'sonah.session-story/39' }),
+});
+/** D126 and D127 (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): the
+ *  readers they moved, once each from 0.3.0-beta.5, one link after D113's (`SESSION_CHANGE_READER_VERSIONS`): beside
+ *  the title, the recordings a session that opens on a compaction was read from (or the part Sonah did not read), each
+ *  compaction of the agent's context among your messages (B10d), and the first compaction after an ask (N1). No
+ *  request, run profile or stored answer moved. Joined into 0.3.0-beta.6, each reader moves once: this is the same move
+ *  as D129's (`COST_READER_VERSIONS`). */
+export const COMPACTION_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/5', after: 'sonah.report-model/6' }),
+  page: Object.freeze({ before: 'sonah.session-page/44', after: 'sonah.session-page/45' }),
+  story: Object.freeze({ before: 'sonah.session-story/39', after: 'sonah.session-story/40' }),
 });
 /** A run profile with D113's version rendered back to D112's (`SESSION_CHANGE_VERSIONS`); anything else untouched.
  *  `profileBeforeOneItem` applies it first. It applies `profileBeforeListedAsks` first. */

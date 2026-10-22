@@ -37,10 +37,11 @@ test('D97: the synthetic report page renders exactly its snapshot', () => {
   assert.equal(page(), readFileSync(SNAPSHOT, 'utf8'));
 });
 
-test('D97: the page is the report model in its order — header, count line, prompt, Must act, Must know, then the folds', () => {
+test('D97, D131: the page is the report model in its order — header, count line, Must act, Must know, prompt, then the folds', () => {
   const html = page();
   const at = (marker) => { const i = html.indexOf(marker); assert.ok(i >= 0, marker); return i; };
-  const order = ['id="review-title"', 'class="count"', 'id="prompt"', 'id="must-act"', 'id="must-know"',
+  // D131 (R1, B12): Must act and Must know before your prompt, on every page (report-model.js `promptAfterTiers`).
+  const order = ['id="review-title"', 'class="count"', 'id="must-act"', 'id="must-know"', 'id="prompt"',
     'id="good-to-know"', 'id="did"', 'id="not-checked"', 'class="foot"'].map(at);
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
   // Must act and Must know are open sections; Good to know, what the agent did and what Sonah could not check are
@@ -73,7 +74,10 @@ test('D97: the page is the report model in its order — header, count line, pro
   // outside it.
   // In the same move (D115 and D116): a row of the session review in words no wider than the field it rests on, and a
   // question's pointer only where code checked its tie.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/44');
+  // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
+  // cost.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/45');
 });
 
 test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {
@@ -177,7 +181,7 @@ test('D97 (14): a page past its bound folds the evidence first, then cuts the li
   // The evidence folds of Good to know, then of Must act and Must know: said once in each place the trim happens.
   assert.equal(said(REPORT_TRIM_WORDS.trimmed), 2);
   // The lists of what the agent did are cut, and so is the list of messages that hold no ask: said once in each place.
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="must-act"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
   const did = html.slice(html.indexOf('id="did"'), html.indexOf('id="not-checked"'));
   assert.equal(said(REPORT_TRIM_WORDS.listsTrimmed), 2);
   assert.equal([prompt, did].map((part) => part.split(REPORT_TRIM_WORDS.listsTrimmed).length - 1).join(), '1,1');
@@ -314,7 +318,7 @@ test('ported (D69 f): a long message is shown in part with its marks, folded who
     { text: 'item 11', instruction: r('instruction', 'I1', 'change the module named part11 carefully'), status: 'done' },
     { text: 'item 0', instruction: r('instruction', 'I1', 'change the module named part0 carefully'), status: 'done' },
     { text: 'second half', instruction: r('instruction', 'I2', 'Second half of it.'), status: 'not-checked' }] }, {});
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="must-act"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
   // The start, then the whole message folded with its line breaks; each ask's id given once.
   assert.match(prompt, /<details class="whole"><summary>Show the whole message<\/summary><p class="message">Please do these things:\n- item 0/);
   assert.equal((prompt.match(/id="ask-1"/g) ?? []).length, 1);
@@ -468,7 +472,7 @@ test('ported (M33 Y): the page bound is hard — long messages keep their start,
   assert.ok(Buffer.byteLength(html, 'utf8') <= PAGE_LIMITS.maxBytes, `${Buffer.byteLength(html, 'utf8')} bytes`);
   // A long message is shown only in part: its start, with the cut said; the trim is said once, where it happens.
   assert.doesNotMatch(html, /<details class="whole"/, 'a long message is shown only in part');
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="must-act"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
   assert.equal(html.split(REPORT_TRIM_WORDS.messagesTrimmed).length - 1, 1);
   assert.ok(prompt.includes(REPORT_TRIM_WORDS.messagesTrimmed));
   // Every ask has its place once: the start ones marked, the end ones listed with their words.

@@ -118,7 +118,10 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // counts; and (D112) an item's members, and the order by final level. D113 and D114 once more (sonah.session-page/44,
   // 0.3.0-beta.5): the session's own change, and the files changed outside it.
   // In the same move (D115): a row of the session review in words no wider than its field.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/44', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
+  // cost.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/45', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -147,7 +150,10 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D113 and D114 once more (sonah.session-story/39, 0.3.0-beta.5): the session's own change, and the files changed
   // outside it.
   // In the same move (D115): a row of the session review in words no wider than its field.
-  assert.equal(STORY_VERSION, 'sonah.session-story/39', 'renumbered later: /18 is D84\'s masking');
+  // D126 and D127 once more (sonah.session-story/40, 0.3.0-beta.6): the line beside the title for a session that opens on a
+  // compaction, each compaction among your messages, and the first compaction after an ask. In the same move (D129, C7):
+  // the footer says what the review cost.
+  assert.equal(STORY_VERSION, 'sonah.session-story/40', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote

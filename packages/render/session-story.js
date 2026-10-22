@@ -2,8 +2,9 @@
 // (`gh pr comment --body-file <file>`, which posts on the pull request of the current branch and which the person
 // runs: Sonah posts nothing). It renders the report model
 // (report-model.js `reportModel`), the one the HTML page renders: the same sections, in the same order, with the same
-// numbers and counts — the header and the count line, your prompt as a table, then Must act, Must know, Good to know
-// (folded), what the agent did (folded), what Sonah could not check (folded) and the footer. This file also holds the
+// numbers and counts — the header and the count line, Must act, Must know, your prompt as a table (D131: after Must act
+// and Must know, folded on a long session), Good to know (folded), what the agent did (folded), what Sonah could not
+// check (folded) and the footer. This file also holds the
 // facts both readers read from the recording (`storyFacts`: your messages and the asks the review tied to them, the
 // steps, the changed files with their line counts, the commands) and the small text helpers they share.
 //
@@ -24,8 +25,8 @@
 //      is a code span too (`backtickPieces`; the page shows it as `<code>`): inside it GitHub pings, links and renders
 //      nothing. No script, no image, no colour, no alert box.
 //   3. Bounded: at most `REPORT_MD_LIMITS.maxBytes` UTF-8 bytes, below GitHub's comment limit. Past it, the report is
-//      shortened in a fixed order and says so once; the header, the count line, the prompt table and the visible lines
-//      of Must act and Must know are never shortened.
+//      shortened in a fixed order and says so once; the header, the count line, the prompt's counts and its rows of asks
+//      that are not done, and the visible lines of Must act and Must know are never shortened (D131).
 //   4. Code links only to GitHub commit permalinks the report model built from validated local git facts (D97), each a
 //      bare URL on its own line, so GitHub shows the code; where there is none, the stored excerpt is a fence.
 //
@@ -42,7 +43,7 @@ import { DISCLOSURE_REASONS, REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, 
 import { escapeSource } from '../evidence/src/review.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
 import { INTER_AGENT_GAP_NOTES } from '../evidence/adapters/sonah-ledger.js';
-import { reportModel, REPORT_LIMITS, scopeMarker, folderNameOf } from './report-model.js';
+import { reportModel, REPORT_LIMITS, scopeMarker, foldNotes, folderNameOf, promptAfterTiers } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS } from './report-words.js';
@@ -74,8 +75,15 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  move (D115, the owner: "for the hn5, start work now"): the session review's rows in words no wider than the field
  *  each rests on, and (D116) a question's pointer to an item or an ask only where code checked its tie, as the page
  *  says them. And (D125, the owner: "Let's fix 1st"; amended, "go for option 3"): the note on a not-checked ask that the
- *  code review found to hold in the code, as the page says it. */
-export const STORY_VERSION = 'sonah.session-story/39';
+ *  code review found to hold in the code, as the page says it. /40 (0.3.0-beta.6, one move from 0.3.0-beta.5's /39).
+ *  D126 and D127: the line beside the title for a session that opens on a compaction, each compaction among your
+ *  messages, and in the asks table the first compaction after an ask, as the page says them. D129 (C7): the footer says
+ *  what the review cost, from its run record, as the page says it. D131 (R1, B12), in the same move: Must act and Must
+ *  know before your prompt, a long session's prompt folded after them, and the shortening order below
+ *  (`MD_TRIM_STEPS`), which cuts your prompt's done asks and your messages, then the lists, before any evidence of Must
+ *  act or Must know, and prints no evidence fold with nothing in it. D133 (R2): the lines about what Sonah could not
+ *  check folded as the page folds them, and the asks table cut once at each compaction under one line that names it. */
+export const STORY_VERSION = 'sonah.session-story/40';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -820,16 +828,20 @@ export const REPORT_MD_LIMITS = Object.freeze({ maxBytes: 60_000, askWords: 12, 
 export const REPORT_MD_WORDS = Object.freeze({
   status: 'Status', asked: 'You asked', note: "Sonah's note",
   coverage: 'Sonah checked only the parts of your prompt that the table above lists.',
+  // D131's review: when the table does not show every ask (a shortened report keeps the asks that are not done).
+  coverageAsks: 'Sonah checked only the parts of your prompt that its asks name.',
   wholeMessage: (n) => `Your whole message (${n} ${n === 1 ? 'word' : 'words'})`,
   messageStart: (n) => `The start of your message (${n} ${n === 1 ? 'word' : 'words'} in all)`,
+  // D131 (R1): a shortened report counts your messages instead of showing them.
+  messagesNotShown: (n) => `Sonah does not show your ${n} ${n === 1 ? 'message' : 'messages'} here.`,
   kindCount: (kind, n) => `${kind}: ${n}`,
 });
 /** How the style linter (packages/render/test/style-lint.js) reads this file's word table. */
 export const STYLE_KINDS = Object.freeze({ REPORT_MD_WORDS: 'heading', 'REPORT_MD_WORDS.kindCount': 'fragment',
-  'REPORT_MD_WORDS.coverage': 'notice' });
+  'REPORT_MD_WORDS.coverage': 'notice', 'REPORT_MD_WORDS.coverageAsks': 'notice' });
 /** The arguments each function of the table is rendered with for the linter: one and many. */
 export const STYLE_FIXTURES = Object.freeze({ 'REPORT_MD_WORDS.wholeMessage': [[1], [42]],
-  'REPORT_MD_WORDS.messageStart': [[1], [42]],
+  'REPORT_MD_WORDS.messageStart': [[1], [42]], 'REPORT_MD_WORDS.messagesNotShown': [[1], [42]],
   'REPORT_MD_WORDS.kindCount': [['A change of approach', 1], ['A corrected claim', 3]] });
 
 /** A token GitHub would turn into a ping or a link in a comment, in Markdown text that `escapeSource` escaped: another
@@ -978,7 +990,8 @@ function headerBlocks(model) {
   const noCode = header.noCode ? [[mdOwn(header.noCode.words), ...(header.noCode.impact ? [mdOwn(header.noCode.impact)]
     : []), ...(header.noCode.folder ? [mdOwnNaming(CODE_REPORT_WORDS.notReviewedFolder, [header.noCode.folder])] : [])]
     .join(' ')] : [];
-  const lines = [mdOwn(header.size.join(' · ')), ...noCode,
+  // D126 (N0) and D127 (B10d): a session that opens on a compaction says so first, beside the title.
+  const lines = [...(header.continued ? [mdOwn(header.continued)] : []), mdOwn(header.size.join(' · ')), ...noCode,
     ...(header.noLinks.length ? [mdOwn(header.noLinks.join(' '))] : []),
     ...(header.runs.length ? [mdOwn(header.runs.join(' '))] : [])];
   const notChecked = [...header.reviewIncomplete];
@@ -1017,22 +1030,58 @@ const wordCount = (message) => message.segments.map((s) => (s.join || s.sonah ? 
 
 function promptSection(model, trim, notice) {
   const { prompt } = model;
-  const blocks = [`### ${mdOwn(REPORT_SECTION_WORDS.promptCounted(prompt.asks.length, prompt.parts.join(', ')))}`];
-  if (notice) blocks.push(mdOwn(notice));
+  const heading = REPORT_SECTION_WORDS.promptCounted(prompt.asks.length, prompt.parts.join(', '));
+  // D131 (R1): a long session's prompt is folded, its count in the fold's summary.
+  const folded = prompt.folded === true;
+  const blocks = folded ? [] : [`### ${mdOwn(heading)}`];
+  // Folded, the shortening is said above the fold, where it shows.
+  if (notice && !folded) blocks.push(mdOwn(notice));
+  // D131 (R1): when the report must be shortened, before any evidence of Must act or Must know, your prompt keeps its
+  // counts (the heading) and the table the rows of the asks that are not done (every row but `done`), and each says how
+  // many it does not show; your messages, which you hold, are counted, not shown.
+  const kept = trim.askRows ? prompt.asks.filter((ask) => ask.state !== 'done') : prompt.asks;
   if (!prompt.asks.length) blocks.push(mdOwn(REPORT_COUNT_WORDS.noAsk));
   else {
-    const rows = prompt.asks.map((ask) => {
+    const row = (ask) => {
       const message = prompt.messages.find((m) => m.asks.includes(ask.n));
+      // D133 (R2): a row's folded lines (the model's `folded`) in its own evidence fold, after its open notes; and (its
+      // review) that Sonah could not find the ask's words in your message, which the page says once for the message,
+      // first in that fold, never on each open row.
+      const inFold = [...(message?.unlocated.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.unlocated)] : []),
+        ...ask.folded.map(partsMd)];
+      const folded = inFold.length ? [`<details><summary>${escHtml(REPORT_ITEM_WORDS.evidence)}</summary>`
+        + `${inFold.join(' ')}</details>`] : [];
       const notes = [...(message?.attachedAsks.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.fromAttached)] : []),
-        ...(message?.unlocated.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.unlocated)] : []), ...ask.lines.map(partsMd)];
+        ...ask.lines.map(partsMd), ...folded];
       return `| ${cell(mdOwn(ask.status))} | ${cell(askWordsMd(ask))} | ${cell(notes.join(' '))} |`;
-    });
-    blocks.push([`| ${mdOwn(REPORT_MD_WORDS.status)} | ${mdOwn(REPORT_MD_WORDS.asked)} | ${mdOwn(REPORT_MD_WORDS.note)} |`,
-      '|---|---|---|', ...rows].join('\n'));
-    // Nothing in a message below is marked: the table names what Sonah checked, once.
-    blocks.push(mdOwn(REPORT_MD_WORDS.coverage));
+    };
+    const head = [`| ${mdOwn(REPORT_MD_WORDS.status)} | ${mdOwn(REPORT_MD_WORDS.asked)} | ${mdOwn(REPORT_MD_WORDS.note)} |`,
+      '|---|---|---|'];
+    // D127 (N1), D133 (R2): the asks given before a compaction say which compaction came first after them in one line
+    // above them, once for each compaction, not on each row: the table is cut where that compaction changes. D131: of
+    // the rows the table keeps (`kept`).
+    const runs = [];
+    for (const ask of kept) {
+      const at = Number.isSafeInteger(ask.compaction) ? ask.compaction : null;
+      if (runs.length && runs.at(-1).at === at) runs.at(-1).asks.push(ask);
+      else runs.push({ at, asks: [ask] });
+    }
+    for (const { at, asks } of runs) {
+      if (at !== null) blocks.push(mdOwn(REPORT_PROMPT_WORDS.beforeCompaction(at)));
+      blocks.push([...head, ...asks.map(row)].join('\n'));
+    }
+    if (kept.length < prompt.asks.length) blocks.push(mdOwn(REPORT_NOT_CHECKED_WORDS.rowsNotShown(prompt.asks.length
+      - kept.length)));
+    // Nothing in a message below is marked: the table names what Sonah checked, once; (D131's review) a table that
+    // does not show every ask says it by the asks, which the heading counts.
+    blocks.push(mdOwn(kept.length === prompt.asks.length ? REPORT_MD_WORDS.coverage : REPORT_MD_WORDS.coverageAsks));
   }
+  // D127 (B10d): each compaction at its place among your messages: before the first message recorded after it.
+  const compactions = Array.isArray(prompt.compactions) ? prompt.compactions : [];
+  let next = 0;
   for (const m of prompt.messages) {
+    while (next < compactions.length && compactions[next].afterMessage < m.k) blocks.push(mdOwn(compactions[next++].words));
+    if (trim.askRows) continue;
     if (m.attached) blocks.push(mdOwn(REPORT_PROMPT_WORDS.attached(m.attached)));
     if (m.pasted) blocks.push(mdOwn(m.pasted));
     // A message cut to its start says so in its fold's summary, which keeps the whole message's count.
@@ -1040,10 +1089,15 @@ function promptSection(model, trim, notice) {
       wordCount(m));
     blocks.push(fold(escHtml(summary), [messageBlock(m, trim.messages)]));
   }
-  if (prompt.emptyMessages.length) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.noAskMessages(prompt.emptyMessages.length)),
+  while (next < compactions.length) blocks.push(mdOwn(compactions[next++].words));
+  const messages = prompt.messages.length + prompt.emptyMessages.length;
+  if (trim.askRows && messages) blocks.push(mdOwn(REPORT_MD_WORDS.messagesNotShown(messages)));
+  else if (prompt.emptyMessages.length) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.noAskMessages(prompt.emptyMessages.length)),
     prompt.emptyMessages.flatMap((m) => [messageBlock(m, trim.messages), m.pasted ? mdOwn(m.pasted) : null])));
-  const shortened = trim.messages && [...prompt.messages, ...prompt.emptyMessages].some(longMessage);
-  return { text: blocks.join('\n\n'), shortened };
+  const shortened = (trim.messages && [...prompt.messages, ...prompt.emptyMessages].some(longMessage))
+    || (trim.askRows && (kept.length < prompt.asks.length || messages > 0));
+  return { text: folded ? [...(notice ? [mdOwn(notice)] : []), fold(escHtml(heading), blocks)].join('\n\n')
+    : blocks.join('\n\n'), shortened };
 }
 
 function whereMd(item) {
@@ -1055,10 +1109,15 @@ function whereMd(item) {
     ? [mdOwn(REPORT_ITEM_WORDS.asked(asks[0]))] : [];
   return places.length || marker.length ? `${mdOwn(REPORT_ITEM_WORDS.where)} ${[...places, ...marker].join(' · ')}` : null;
 }
-function evidenceFold(item, trimmed) {
+function evidenceFold(item, trimmed, keepNotes = true) {
+  // D133 (R2): what Sonah could not check of the item, first in its fold (`foldNotes`); kept when the fold of a Must act
+  // or Must know item is shortened (`keepNotes`), as it was kept on the item's visible lines before. Good to know, a
+  // fold itself and the first evidence that the .md cuts, keeps no shortened fold (where D131 meets D133). D131 (R1):
+  // an evidence fold is printed only with something in it, never empty; the report says once that it was shortened.
+  const notes = foldNotes(item).map((t) => `- ${mdOwn(t)}`);
   const summary = escHtml(`${REPORT_ITEM_WORDS.evidence} · ${REPORT_ITEM_WORDS.why(REPORT_TIER_WORDS[item.tier.final])}`);
-  if (trimmed) return fold(summary, []);
-  const lines = item.evidence.map((e) => `- ${e.label ? `${mdOwn(e.label)} ` : ''}${partsMd(e.parts)}`);
+  if (trimmed) return keepNotes && notes.length ? fold(summary, [notes.join('\n')]) : null;
+  const lines = [...notes, ...item.evidence.map((e) => `- ${e.label ? `${mdOwn(e.label)} ` : ''}${partsMd(e.parts)}`)];
   for (const reason of new Set(item.where.map((w) => w.noLink).filter(Boolean))) lines.push(`- ${mdOwn(reason)}`);
   lines.push(`- ${mdOwn(item.why)}`);
   if (item.rowId) lines.push(`- ${mdOwn(REPORT_ITEM_WORDS.rowId)} ${codeSpan(shortId(item.rowId))}`);
@@ -1075,9 +1134,8 @@ const itemHead = (item, render) => {
 };
 /** An item or a member's lines (D97, D112) after `lines` (its head, when shown): each permalink on its own line, the
  *  excerpt as a fence when its place has no permalink, then its evidence, folded. */
-function entryMd(item, lines, { evidence = false, excerpts = false } = {}) {
+function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = true } = {}) {
   if (item.quote) lines.push(`${item.quoteLabel ? `${mdOwn(item.quoteLabel)} ` : ''}${partMd(item.quote)}`);
-  else if (item.quoteMissing) lines.push(mdOwn(REPORT_ITEM_WORDS.quoteMissing));
   // D110: each premise of an item to verify that Sonah could not check, in its check's words.
   for (const parts of Array.isArray(item.restsOutside) ? item.restsOutside : [])
     lines.push(`${mdOwn(REPORT_ITEM_WORDS.restsOutside)} ${partsMd(parts)}`);
@@ -1091,22 +1149,24 @@ function entryMd(item, lines, { evidence = false, excerpts = false } = {}) {
   const first = item.where[0];
   const fence = !first?.url && first?.excerpt?.lines?.length ? first.excerpt : null;
   if (fence && !excerpts) blocks.push(fenced(fence));
-  blocks.push(evidenceFold(item, evidence));
+  blocks.push(evidenceFold(item, evidence, keepNotes));
   return { text: blocks.filter(Boolean).join('\n\n'), fenced: fence !== null };
 }
 /** An item (D97): its visible lines in order (with its head unless the fold's summary shows it), then (D112) the line
  *  that counts its members and each member: its type word, what it is and its own tier word, then its lines, inside a
  *  fold when the report model folds it. */
-function itemMd(item, { head = true, evidence = false, excerpts = false } = {}) {
-  const own = entryMd(item, head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [], { evidence, excerpts });
+function itemMd(item, { head = true, evidence = false, excerpts = false, keepNotes = true } = {}) {
+  const own = entryMd(item, head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [], { evidence, excerpts,
+    keepNotes });
   const members = list(item.members);
   if (!members.length) return own;
   const blocks = [own.text, mdOwn(REPORT_ITEM_WORDS.members(members.length))];
   let fencedAny = own.fenced;
   for (const m of members) {
     const tier = REPORT_TIER_WORDS[m.tier.final];
-    const one = m.folded ? entryMd(m, [], { evidence, excerpts })
-      : entryMd(m, [`**${mdOwn(REPORT_TYPE_WORDS[m.type])}:** ${partsMd(m.what.parts)} · ${mdOwn(tier)}`], { evidence, excerpts });
+    const one = m.folded ? entryMd(m, [], { evidence, excerpts, keepNotes })
+      : entryMd(m, [`**${mdOwn(REPORT_TYPE_WORDS[m.type])}:** ${partsMd(m.what.parts)} · ${mdOwn(tier)}`], { evidence, excerpts,
+        keepNotes });
     fencedAny = fencedAny || one.fenced;
     blocks.push(m.folded ? fold(`${escHtml(REPORT_TYPE_WORDS[m.type])}: ${partsHtml(m.what.parts)} · ${escHtml(tier)}`,
       [one.text]) : one.text);
@@ -1135,7 +1195,12 @@ function goodToKnowSection(model, trim, notice) {
   }
   const rendered = items.map((item) => {
     const where = item.where.slice(0, 1).map((w) => (w.anchor ? escHtml(w.text) : `<code>${escHtml(placeText(w))}</code>`));
-    const one = itemMd(item, { head: false, evidence: trim.gtkEvidence, excerpts: trim.excerpts });
+    const one = itemMd(item, { head: false, evidence: trim.gtkEvidence, excerpts: trim.excerpts, keepNotes: false });
+    // D131 (R1): an item with nothing left to fold (no visible line, its evidence shortened) is its head alone, never
+    // an empty fold.
+    if (!one.text) return { fenced: false, text: `<a name="item-${item.n}"></a>${itemHead(item, 'md')}`
+      + `${item.where.length ? ` · ${item.where[0].anchor ? mdOwn(item.where[0].text) : codeSpan(placeText(item.where[0]))}`
+        : ''}` };
     return { fenced: one.fenced, text: fold(`<a name="item-${item.n}"></a>${itemHead(item, 'html')}`
       + `${where.length ? ` · ${where[0]}` : ''}`, [one.text]) };
   });
@@ -1240,11 +1305,18 @@ function notCheckedSection(model, trim, notice) {
   const summary = escHtml(REPORT_SECTION_WORDS.notCheckedCounted(nc.total));
   const blocks = notice ? [mdOwn(notice)] : [];
   const counted = (n) => (n ? mdOwn(REPORT_NOT_CHECKED_WORDS.rowsNotShown(n)) : null);
-  const session = nc.facts.filter((f) => f.group !== 'code');
+  // D133 (R2's review): the coverage causes (`cause`), which no other output says since the terminal stopped printing
+  // its "Not covered" line, are listed whole also when the fold's lists are shortened to counts; the rest is counted.
+  const session = nc.facts.filter((f) => f.group !== 'code' && !(trim.notCheckedCounts && f.cause === true));
+  const causes = trim.notCheckedCounts ? nc.facts.filter((f) => f.group !== 'code' && f.cause === true) : [];
   const code = nc.facts.filter((f) => f.group === 'code');
   const listed = (facts) => (facts.length ? (trim.notCheckedCounts ? counted(facts.length)
     : facts.map((f) => `- ${partsMd(f.parts)}`).join('\n')) : null);
-  blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.sessionReview)}`, mdOwn(nc.lead), listed(session));
+  // D133 (R2): the first screen's lines about what Sonah could not check, word for word, first; never shortened, as they
+  // were never shortened on the first screen.
+  if (nc.quiet.length) blocks.push(nc.quiet.map((t) => `- ${mdOwn(t)}`).join('\n'));
+  blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.sessionReview)}`, mdOwn(nc.lead),
+    causes.length ? causes.map((f) => `- ${partsMd(f.parts)}`).join('\n') : null, listed(session));
   if (nc.code.length || code.length || nc.withheldTotal) {
     blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.codeReview)}`, ...nc.code.map(partsMd), listed(code));
     if (nc.withheldTotal) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.withheld(nc.withheldTotal)), trim.notCheckedCounts
@@ -1260,20 +1332,24 @@ function notCheckedSection(model, trim, notice) {
 
 function footerBlocks(model) {
   const { footer } = model;
-  return ['---', [footer.provenance, ...footer.legend, footer.triageLegend, REPORT_FOOTER_WORDS.youMeans, footer.share]
-    .filter(Boolean).map(mdOwn).join(BR)];
+  // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it.
+  return ['---', [footer.provenance, footer.usage, ...footer.legend, footer.triageLegend, REPORT_FOOTER_WORDS.youMeans,
+    footer.share].filter(Boolean).map(mdOwn).join(BR)];
 }
 
 /**
- * What each composition shortens, in order (D97), until the report fits `maxBytes`: nothing; your messages keep their
- * first `messageChars` characters (your own words, which you hold; the page cuts them first too); then the evidence
- * folds of Good to know keep their summary only; then those of Must know, then of Must act; then the lists of what the
- * agent did keep their counts only; then those of what Sonah could not check; then the code excerpts give way to their
- * place (`path:line`, on the Where line); last, Good to know becomes counts by kind. The header, the count line, the
- * prompt table and the visible lines of Must act and Must know are never shortened.
+ * What each composition shortens, in order (D97, D131), until the report fits `maxBytes`: nothing; your messages keep
+ * their first `messageChars` characters (your own words, which you hold; the page cuts them first too); then the
+ * evidence folds of Good to know are left out; then (D131, R1) your prompt keeps its counts and the rows of the asks
+ * that are not done, and your messages are counted, not shown; then the lists of what the agent did keep their counts
+ * only; then those of what Sonah could not check; then the code excerpts give way to their place (`path:line`, on the
+ * Where line); then Good to know becomes counts by kind; last of all (D131's review), the evidence folds of Must know are
+ * left out, then those of Must act: they are the verbatim proof. The header, the count line, the prompt's counts and its rows of asks not done, and the visible lines
+ * of Must act and Must know are never shortened. An evidence fold that is left out is not printed (never a fold with
+ * nothing in it), and the report says once that it was shortened.
  */
-const MD_TRIM_STEPS = Object.freeze(['messages', 'gtkEvidence', 'knowEvidence', 'actEvidence', 'didCounts',
-  'notCheckedCounts', 'excerpts', 'gtkCounts']);
+const MD_TRIM_STEPS = Object.freeze(['messages', 'gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts',
+  'excerpts', 'gtkCounts', 'knowEvidence', 'actEvidence']);
 function* mdCompositions() {
   let trim = Object.fromEntries(MD_TRIM_STEPS.map((step) => [step, false]));
   yield trim;
@@ -1283,8 +1359,10 @@ function* mdCompositions() {
 /** One composition of the report: its sections in order, the shortening said once (`notice`, Sonah's sentence), at the
  *  top of the first section this composition shortened. */
 function composeMd(model, trim, notice) {
-  const sections = [(said) => promptSection(model, trim, said),
-    (said) => tierSection(model, 'must_act', trim, said), (said) => tierSection(model, 'must_know', trim, said),
+  // D131 (R1, B12): Must act and Must know before your prompt (report-model.js `promptAfterTiers`).
+  const prompt = (said) => promptSection(model, trim, said);
+  const must = [(said) => tierSection(model, 'must_act', trim, said), (said) => tierSection(model, 'must_know', trim, said)];
+  const sections = [...(promptAfterTiers(model) ? [...must, prompt] : [prompt, ...must]),
     (said) => goodToKnowSection(model, trim, said), (said) => didSection(model, trim, said),
     (said) => notCheckedSection(model, trim, said)];
   const rendered = sections.map((section) => section(null));

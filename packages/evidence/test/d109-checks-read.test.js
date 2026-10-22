@@ -89,8 +89,8 @@ test('D109 amended: the report model\'s first screen and its coverage line carry
   const model = reportModel(new Session({ sessionKey: 'session', events: [] }), { reviewScope: 'session-only',
     requirements: [], decisions: [], codePass: p }, {});
   const said = (parts) => parts.map((part) => part.text).join('');
-  assert.ok(model.header.didNotCheck.phrases.includes('2 files of the change that the code review did not see (its checks '
-    + 'read both)'), JSON.stringify(model.header.didNotCheck));
+  assert.ok(model.notChecked.didNotCheck.phrases.includes('2 files of the change that the code review did not see (its checks '
+    + 'read both)'), JSON.stringify(model.notChecked.didNotCheck));
   assert.ok(model.notChecked.code.map(said).includes(`${codeCoverageLines(p)[0]}`), JSON.stringify(model.notChecked.code
     .map(said)));
 });

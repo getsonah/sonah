@@ -148,6 +148,11 @@ Where Sonah looks:
   keep the layout and set `CODEX_HOME` to the folder above `sessions` (this also changes where the Codex reviewer
   looks for its sign-in).
 
+A Claude Code session that you resumed after a compaction continues in a new recording, which opens on that
+compaction. When you give or choose such a recording, Sonah also reads the recordings it continues, in the same folder,
+oldest first, as one session: the terminal says how many. If Sonah cannot find or read the earlier part, the report says
+so and why.
+
 Listing and dry runs make no model call and write nothing.
 
 ### A repository that the recording does not show the session changing
@@ -182,20 +187,38 @@ Before the first model call, an estimate:
 A *window* is one part of the session (a run of your messages and what the agent did after them), reviewed in requests
 of its own; four windows are reviewed at a time (`--concurrency N` sets up to twelve, or up to three with `--profile
 standard`). The report does not show windows. As each window finishes, `Review window N/M finished` appears. At the
-end, Sonah prints whether its own review completed. It names the parts that it could not cover, with the reason. Then
-it prints the count line and the Must act items, how many answers it reused, and a usage line:
+end, Sonah prints whether its own review completed, and which part of it did not finish. What Sonah could not check,
+cause by cause with its counts, is in the fold What Sonah could not check, on the page and in the .md. Then it prints
+the count line and the Must act items, how many answers it reused, and a usage line:
 
-> Review usage: 41 calls; 3112640 input bytes; input tokens ... ; output tokens ... ; wall 412000 ms; utilization 0.57
-> (five-hour 0.57, seven-day 0.18).
+> Review usage: 41 calls; 3112640 input bytes; input tokens ... (41/41 calls reported: ... uncached, ... written to the
+> cache, ... read from the cache); output tokens ... ; list cost $... (41/41 calls reported); wall 412000 ms;
+> utilization 0.57 (five-hour 0.57, seven-day 0.18); limits from first to last reading: five-hour 0.38 to 0.57,
+> seven-day 0.16 to 0.18. Code step: 12 of these calls; ...
 
-Calls count every attempt, retries included; answers reused from an earlier run cost nothing. The figures are what
-your provider reported, not a price: what a call costs depends on your own plan. `utilization` is how much of your
-Claude plan's usage limits the latest call that reported it had used, as a fraction (0.57 is 57%): first the highest,
-then each limit the `claude` CLI reported (five-hour, seven-day, and on some accounts seven-day with extra usage; a
-limit Sonah does not know by name is shown as `other limit`). An older `claude` reports one figure, shown alone. The
-Codex CLI and the API report none: `utilization not reported`. When the code step's agents ran, the line also gives
-their `agent turns`; their input bytes count only the requests Sonah sent them, while what they read as they worked is
-in the input tokens your provider reported.
+Calls count every attempt, retries included; answers reused from an earlier run cost nothing. The token figures are
+what your provider reported. The input tokens are split as the `claude` CLI reports them: those read fresh, those
+written to the cache, and those read from it (the Codex CLI reports no split). The list cost is the price that the
+`claude` CLI states for each call: what you pay depends on your own plan, and a subscription is not charged per call.
+`utilization` is how much of your Claude plan's usage limits the latest call that reported it had used, as a fraction
+(0.57 is 57%): first the highest, then each limit the `claude` CLI reported (five-hour, seven-day, and on some
+accounts seven-day with extra usage; a limit Sonah does not know by name is shown as `other limit`). Then each limit
+goes from the first call that reported it to the last, so you see how much of it this run used (from its first
+answer, so the first call's own share is not in it). An older `claude` reports one figure, shown alone. The Codex CLI
+and the API report none: `utilization not reported`. When the code review runs, the line ends with its part of the
+calls, bytes, tokens and list cost, and its own time (`Code step on MODEL` when `--code-model` names its model). When
+the code step's agents ran, the line also gives their `agent turns`; their input bytes count only the requests Sonah
+sent them, while what they read as they worked is in the input tokens your provider reported.
+
+The report's footer says the same in plain words: the model calls and the code review's part of them, the tokens, the
+time and how far each usage limit moved. For a review that ran once, these are that run's. For a review that you
+stopped and resumed, the footer gives the whole review over the runs that its state folder keeps and that made model
+calls with the same backend, model and code model: the calls, tokens and time summed, and how far each usage limit
+rose in all. A run on stored answers alone makes no call and is not counted. The footer gives no list price; the usage
+line does. Sonah keeps these figures in its record of the review (`report.private.json` under the review's state
+folder, as `instrument.usage`), as counts only. Beside it, `usage.private.json` keeps the figures of every run, one
+entry each, also when a run stopped where you asked, was interrupted or failed, so a review that you resume over
+several runs keeps what each run cost.
 
 ### Reading the result
 
@@ -207,18 +230,28 @@ light or dark as your system shows. Sonah also writes the same report in Markdow
 The report has this order:
 
 1. A header. It says what the work was and how large the change is. It counts the commands that the agent ran after
-   its last edit, by their results. It also says what Sonah did not check.
+   its last edit, and how they ended. For a session continued after a compaction, it says how many recordings Sonah
+   read, or that the session continues from an earlier part.
 2. A count line. It counts the items in each section, and the asks of each status.
-3. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
-   code review concerns it.
-4. Must act, Must know and Good to know: the items. Sonah folds Good to know.
-5. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
+3. Must act and Must know: the items that need you, first.
+4. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
+   code review concerns it. Each compaction of the agent's context shows between your messages, with how many tokens
+   it dropped. An ask's row has its own small fold: why Sonah did not check the ask, or that the session review cited
+   only the agent's words for it. In the .md, the asks table is cut at each compaction, under one line "Before
+   compaction N." above the asks that you gave before it. When your prompt holds more than 30 asks, Sonah folds it,
+   and its heading keeps the count of each status.
+5. Good to know, folded.
+6. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
    results. It also lists the claims, what the agent said it did not do, and the decisions that you settled.
-6. What Sonah could not check, folded.
+7. What Sonah could not check, folded. Its first lines say what Sonah did not check, the results that Sonah could not
+   read, and, for a session continued after a compaction, that Sonah did not read the earlier part. It lists each
+   limit of the recording with its count, also when Sonah shortens the .md. The legend at the end says that Sonah
+   checked only the marked parts of your message.
 
 Each item starts with its type: Fix, Decide, Read or Verify. Then it says what the item is and where it is. With the
 code review, the item also says the impact on you and one action. These two lines are the code review's words. Sonah
-checks their form, not their meaning. Sonah folds the evidence under each item, with the reason for its section.
+checks their form, not their meaning. Sonah folds the evidence under each item, with the reason for its section. The
+fold also says first when Sonah did not find the item's quote, or could not check whether you asked for it.
 
 Sonah puts each item in a section by its kind. The code review can propose high, medium or low for an item. Sonah
 keeps that proposal inside fixed bounds for the kind. For example, an unmet ask never goes to Good to know. A decision
@@ -232,8 +265,9 @@ lines that Sonah left out. For a file read, it also names the lines of the file.
 what Sonah left out, and nothing more: it does not say what those lines would change. What Sonah could not check
 counts these outputs.
 
-When Must act and Must know are both empty, the report says so. This does not mean that the work is correct. Nothing in
-the report proves the absence of bugs, or that Sonah found every decision.
+When Must act and Must know are both empty, the report says so, and its fold What Sonah could not check adds that this
+does not mean that the work is correct. Nothing in the report proves the absence of bugs, or that Sonah found every
+decision.
 
 ### Posting the report on your pull request
 
@@ -246,12 +280,15 @@ gh pr comment --body-file review.md
 With no pull request number, `gh` posts on the pull request of your current branch. To post on another pull request,
 put its number after `comment`. Sonah posts nothing itself. When it can, Sonah keeps the .md within 60,000 bytes, so
 it fits in a GitHub comment. To fit, it takes these steps in order, and stops as soon as the .md fits. First, it shows
-only the start of your long messages. Then it empties the evidence folds of Good to know, then of Must know, then of
-Must act. Then it counts the rows of the lists in What the agent did, then in What Sonah could not check, and shows the
-counts in place of the rows. Then it leaves out the code excerpts. Last, it shows Good to know as a count of each kind
-of item. It says so at the top of the first part that it shortened. It never
-shortens the header, the count line or the table of your prompt. It keeps the open lines of the Must act and Must know
-items whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
+only the start of your long messages. Then it leaves out the evidence folds of Good to know. Then the table of your
+prompt keeps the asks that are not done, and Sonah counts your messages in place of showing them. Then it counts the
+rows of the lists in What the agent did, then in What Sonah could not check, and shows the counts in place of the rows;
+What Sonah could not check still lists its first lines and each limit of the recording, with its count. Then it leaves
+out the code excerpts. Then it shows Good to know as a count of each kind of item. Last of all, it
+leaves out the evidence folds of Must know, then of Must act; a fold keeps only what Sonah could not check of its item,
+when there is something. It says so at the top of the first part that it shortened. It never
+shortens the header, the count line, the counts of your prompt or its asks that are not done. It keeps the open lines
+of the Must act and Must know items whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
 prints no `gh` command (see TROUBLESHOOTING.md). The .md pings no one. Sonah puts a mention, an issue number or a commit
 hash from the recording in a code span. In the .md, "you" means the person who ran the agent.
 
@@ -520,7 +557,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.5`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.6`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
@@ -531,8 +568,15 @@ can change between betas.
   estimate printed before the first call is the best guide.
 - Work done by a helper agent is reviewed only when its recording is found beside the parent's. A missing one is named,
   never silently treated as the parent's work.
+- For a session continued after a compaction, Sonah looks for the earlier recordings only in the folder of the one you
+  review. An earlier recording that is no longer there is named as missing. Compactions in Codex and Cursor recordings
+  are not shown.
 - A file changed through the shell (`sed -i`, a heredoc) is recorded only as its command: there is no recorded edit of
   the file to show or check.
+- Sonah reads a kind of Claude Code row that it does not know by its structure. A new row that holds a single word of
+  yours, such as `commit`, counts as the harness's own context. A few kinds of row with text are not read, such as the
+  output of a command that you ran in Claude Code itself; a session that holds one is said to have incomplete
+  evidence.
 - The code review reads the folder that the recording names as the session's working directory (and the other git
   repositories that the session wrote to), not the folder that you run `sonah review` in, unless you add `--code-repo`.
   It does not see what a script writes, or a write after a `cd`: a session that started in a folder that no git

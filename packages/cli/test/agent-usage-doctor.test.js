@@ -30,7 +30,8 @@ test('agent transport: the usage tally keeps turns and cost, and the usage line 
   const state = budget.snapshot();
   assert.deepEqual([state.agentCalls, state.turns, state.turnsReportedCalls, state.costUsd, state.costReportedCalls],
     [2, 12, 1, 0.75, 2]);
-  assert.match(budget.summaryLine(), /; output tokens 2 \(2\/3 calls reported\); agent turns 12 \(1\/2 agent calls reported\); wall /);
+  // D129: the list cost the CLI stated follows the turns.
+  assert.match(budget.summaryLine(), /; output tokens 2 \(2\/3 calls reported\); agent turns 12 \(1\/2 agent calls reported\); list cost \$0\.75 \(2\/3 calls reported\); wall /);
   const unreported = createReviewBudget();
   await unreported.wrap(async () => { unreported.record({ agentRun: {} }); return {}; })(request);
   assert.equal(unreported.snapshot().turns, null);

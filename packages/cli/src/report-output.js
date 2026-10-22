@@ -62,7 +62,9 @@ const partsText = (parts) => (Array.isArray(parts) ? parts : []).map((p) => (p?.
 /**
  * The terminal's count lines (D97): the tiers and your prompt's statuses (the D93 split: an ask with a code
  * finding counted apart), with no "(folded)"; then the Must act labels (the code review's or the fixed kind label), or,
- * when Must act and Must know are empty, the fixed pair that says this does not mean the work is correct.
+ * when Must act and Must know are empty, the fixed sentence that says Sonah found nothing for them (D133: the sentence
+ * after it, that this does not mean the work is correct, is in the page's and the report's fold What Sonah could not
+ * check).
  */
 export function countLines(model) {
   const { countLine } = model;

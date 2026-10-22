@@ -27,7 +27,12 @@ test('3b: the turn-limit notice is harness context; with an extra field it stays
   async (t) => {
     const notice = attachment({ type: 'max_turns_reached', maxTurns: 3, turnCount: 3 });
     assert.equal(claudeRowClass(notice).cls, CLAUDE_ROW_CLASSES.harness);
-    assert.equal(claudeRowClass(attachment({ type: 'max_turns_reached', maxTurns: 3, turnCount: 3, note: 'x' })), null);
+    // D128: an extra field that can hold session content (words) keeps it unclassified; one of a token is read by its
+    // structure.
+    assert.equal(claudeRowClass(attachment({ type: 'max_turns_reached', maxTurns: 3, turnCount: 3,
+      note: 'a note in words' })), null);
+    assert.equal(claudeRowClass(attachment({ type: 'max_turns_reached', maxTurns: 3, turnCount: 3, note: 'x' }))?.structural,
+      'attachment.max_turns_reached');
     const { raw, session } = await load(t, [humanAsk('Add a flag to src/cli.js.'), ...edit('e1'), notice]);
     assert.equal(raw.capture?.unclassifiedRows ?? 0, 0);
     assert.ok(raw.capture.harnessContextRows >= 1, 'counted as harness context');

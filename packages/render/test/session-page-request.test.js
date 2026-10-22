@@ -159,7 +159,7 @@ test('story /14: a failed window fails every step it touches, and the page count
   const packed = incomplete(windowedReport(ids, [ids], [0]));
   assert.deepEqual(storyFacts(session, packed).steps.map((step) => step.failure), ['judge_timeout', 'judge_timeout']);
   // D97: the report counts the messages Sonah did not review in full, read from the same steps.
-  assert.deepEqual(reportModel(session, packed, {}).header.didNotCheck.phrases.at(-1), '2 messages of yours in full');
+  assert.deepEqual(reportModel(session, packed, {}).notChecked.didNotCheck.phrases.at(-1), '2 messages of yours in full');
   // Two windows, the second failed: it holds request 2's work and the helper's work of request 1, so both steps fail.
   const cut = ids.indexOf('I2');
   const both = incomplete(windowedReport(ids, [ids.slice(0, cut), ids.slice(cut)], [1]));

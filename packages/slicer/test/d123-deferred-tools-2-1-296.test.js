@@ -9,6 +9,9 @@
 // D123's review: the release note says which row is read, never that a recorder version is read whole. The same recorder
 // writes other rows that the reader does not list (a `budget_usd` attachment, for one), and those still leave a
 // recording incomplete.
+// D128 amends both: a key the reader does not list is read by its structure (records.js `structuralAttachment`). One
+// that cannot hold session content (no string but a token) leaves the row harness context; one that can (text) still
+// leaves it unclassified and declared. A `budget_usd` row (three numbers) is harness context.
 //
 // Every row here is synthetic and mirrors only the recorder's key sets as it writes them; no real recording is read and
 // nothing here holds a secret.
@@ -68,7 +71,9 @@ test('D123: the 2.1.296 deferred_tools_delta row, surfacedDefinitions and all, i
 });
 
 test('D123: a payload key that the reader does not list still leaves the row unclassified and declared', async (t) => {
-  const drift = attachment(delta({ surfacedSchemas: [] }));
+  // D128: a key that can hold session content (text); one that holds only tokens is read by its structure.
+  assert.equal(claudeRowClass(attachment(delta({ surfacedSchemas: [] })))?.structural, 'attachment.deferred_tools_delta');
+  const drift = attachment(delta({ surfacedSchemas: [{ name: 'ToolC', description: 'A synthetic tool with words.' }] }));
   assert.equal(claudeRowClass(drift), null);
   const file = await recording(t, [ask('Run the tests.'), drift, bash('b-1'), result('b-1')]);
   const parsed = await readSession(file);
@@ -88,13 +93,16 @@ test('D123\'s review: the reader takes the row by its keys whatever the recorder
   + 'recorder is still unread, so the release note names the row it reads, not a version read whole', async (t) => {
   // The row is read by its keys alone: recorder 2.1.295 writes the same key.
   assert.equal(claudeRowClass({ ...attachment(delta()), version: '2.1.295' })?.cls, CLAUDE_ROW_CLASSES.harness);
-  // A `budget_usd` attachment, keyed as the recorder writes it, is not a shape the reader lists: unclassified, declared.
+  // A `budget_usd` attachment, keyed as the recorder writes it, is not a shape the reader lists. D128: it is read by its
+  // structure (three numbers, nothing that can hold session content): harness context, counted, no gap.
   const budget = attachment({ type: 'budget_usd', total: 5, used: 1.25, remaining: 3.75 });
-  assert.equal(claudeRowClass(budget), null);
+  assert.deepEqual(claudeRowClass(budget), { cls: CLAUDE_ROW_CLASSES.harness, agentId: null,
+    structural: 'attachment.budget_usd' });
   const file = await recording(t, [ask('Run the tests.'), attachment(delta()), budget, bash('b-1'), result('b-1')]);
   const parsed = await readSession(file);
   assert.deepEqual([parsed.meta.capture.harnessContextRows, parsed.meta.capture.unclassifiedRows,
-    parsed.meta.capture.incomplete], [1, 1, true]);
+    parsed.meta.capture.incomplete], [2, undefined, false]);
+  assert.deepEqual(parsed.meta.structuralRows, [{ kind: 'attachment.budget_usd', version: '2.1.296', count: 1 }]);
   // So the release note claims the row, and names a row that is still unread; it says no recording is read whole.
   const note = (await releaseNote()).replace(/\s+/g, ' ');
   assert.ok(!/\bare read whole\b/i.test(note), 'the note says that recordings of a version are read whole');

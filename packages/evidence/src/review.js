@@ -488,6 +488,8 @@ export const COVERAGE_CAUSES = Object.freeze(['no_windows', 'no_actions', 'windo
   'labels_legacy_recorder', 'interruptions_untyped', 'commands_args_unrecorded', 'answers_unrecorded',
   'origins_unknown', 'notifications_unmatched', 'ends_unread', 'ends_unchecked',
   'instructions_refusal_untyped', 'instructions_refusal_session_unknown', 'human_interaction_unknown',
+  'instructions_earlier_missing', 'instructions_earlier_ambiguous', 'instructions_earlier_unread',
+  'instructions_earlier_cycle',
   'delegations_unlinked',
   'delegations_ambiguous',
   'briefs_encrypted', 'messages_encrypted', 'workflow_runs_unread', 'workflow_entries_unread',
@@ -597,6 +599,17 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // counted: the declaration's count is the session's actions, so the sentence states none.
   human_interaction_unknown: () => 'Sonah does not know how this recorder marks the actions that asked you a question or '
     + 'kept your answer',
+  // D126 (N0): the session opens on a compaction, and Sonah did not read the part before it (the adapter's notes
+  // INSTRUCTION_GAP_NOTES.earlier_recording_*, one per reason). Sonah's search is the subject: what it found, never that
+  // no such recording exists.
+  instructions_earlier_missing: () => 'Sonah found no earlier recording in the folder for the compaction that the '
+    + 'session opens on, so it does not have your messages from before it',
+  instructions_earlier_ambiguous: () => 'Sonah found more than one earlier recording for the compaction that the session '
+    + 'opens on, and they differ, so it read none of them',
+  instructions_earlier_unread: () => 'Sonah could not read the earlier recording of the compaction that the session '
+    + 'opens on, so it does not have your messages from before it',
+  instructions_earlier_cycle: () => 'the compaction that the session opens on links back to a recording that Sonah '
+    + 'already read, so Sonah read no earlier part',
   delegations_unlinked: (counts) => `Sonah found no checked recording for ${amount(counts)} `
     + `${nounOf(counts, 'delegation', 'delegations')} to a helper`,
   // F191: an `ambiguous_child` had candidate child sessions — more than one — not none, so the
@@ -760,6 +773,11 @@ const INSTRUCTION_NOTE_CAUSE = Object.freeze({
   [INSTRUCTION_GAP_NOTES.refusal_session_unknown]: 'instructions_refusal_session_unknown',
   // M33 brittleness L3 review: a recorder schema that cannot say which actions asked the human — no instruction elided.
   [HUMAN_INTERACTION_UNKNOWN_NOTE]: 'human_interaction_unknown',
+  // D126 (N0): the part before the compaction a session opens on, not read, by its reason.
+  [INSTRUCTION_GAP_NOTES.earlier_recording_missing]: 'instructions_earlier_missing',
+  [INSTRUCTION_GAP_NOTES.earlier_recording_ambiguous]: 'instructions_earlier_ambiguous',
+  [INSTRUCTION_GAP_NOTES.earlier_recording_unread]: 'instructions_earlier_unread',
+  [INSTRUCTION_GAP_NOTES.earlier_recording_cycle]: 'instructions_earlier_cycle',
 });
 // M33 T. Likewise on the `actions` channel: a brief the recorder encrypted is named as that, not as a part of the
 // session evidence that was incomplete. A brief redaction withheld keeps the cause it always had.

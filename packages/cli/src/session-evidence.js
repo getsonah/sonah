@@ -21,6 +21,7 @@ import { HELPER_DELIVERY_REASONS, planHelperSegments, helperRow, laterRequestTur
   from '../../slicer/src/helper-deliveries.js';
 import { IDENTITY_SUBS, validIdentity } from '../../slicer/src/event-identity.js';
 import { censusEntryOrder } from '../../slicer/src/recorder-census.js';
+import { continuedLineage } from './continued-recordings.js';
 
 /**
  * M33 P: each node's encrypted arrivals (the work its own recording received), kept in memory for its parent's
@@ -174,12 +175,24 @@ async function parentSources(files, sources, roots) {
   }));
 }
 
+/**
+ * D126 (N0): the recordings a loaded session was read from, oldest first (each by its real path), when it opens on a
+ * compaction and so was read with the recordings it continues; null otherwise. Kept beside the ledger, never on it (a
+ * ledger names its recordings by order only).
+ */
+const recordingsOfLedger = new WeakMap();
+export function continuedRecordingsOf(ledger) {
+  return ledger !== null && typeof ledger === 'object' ? recordingsOfLedger.get(ledger) ?? null : null;
+}
+
 /** Returns bounded, validated evidence (redact). No model or network. A fresh context rechecks growing files. D90 (owner
  *  decision 2026-10-15, privacy is not a design constraint): every recording of the lineage is sliced and kept as
  *  recorded — nothing is masked — for a review and for `sonah slice` alike. Which identities may locate a recording on
- *  disk (`keptIdentities`, before a Workflow agent is read) is a join check of their shape. */
+ *  disk (`keptIdentities`, before a Workflow agent is read) is a join check of their shape. D126 (N0): one recording
+ *  that opens on a compaction is read with the recordings it continues (continued-recordings.js `continuedLineage`),
+ *  oldest first, as one session; `continued: false` reads it alone. */
 export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots = {},
-  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {} } = {}) {
+  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {}, continued: follow = true } = {}) {
   const limits = { ...CHILD_RECORDING_LIMITS, ...lower };
   if (Object.entries(limits).some(([key, n]) => !Number.isSafeInteger(n) || n <= 0
     || !(key in CHILD_RECORDING_LIMITS) || n > CHILD_RECORDING_LIMITS[key])) {
@@ -189,11 +202,13 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   // M33 W: `claimedRuns` holds every canonical Workflow run directory a call of this review has claimed.
   const state = { inventories: context.inventories, checkedInventories: new Set(), staleInventories: new Map(),
     visited: new Set(), children: 0, actionBytes: 0, claimedRuns: new Set(), census: emptyCensus() };
-  async function readNode(nodeFiles, depth, child = false, snapshot = null, verifiedChild = false) {
+  async function readNode(nodeFiles, depth, child = false, snapshot = null, verifiedChild = false, cut = null) {
     let raw = snapshot ?? await sliceLineage(nodeFiles, { cwd: child ? undefined : cwd,
       outcomes: child ? await outcomesFor(nodeFiles) : outcomes ?? await outcomesFor(nodeFiles),
       includeSources: true, sidechainAsMain: child || undefined, childRecording: child, workflowLaunches: true,
-      claudeLocators: true, helperDeliveries: true, recorderCensus: true });
+      claudeLocators: true, helperDeliveries: true, recorderCensus: true,
+      // D126 (N0): the root of a session that opens on a compaction, read with the recordings it continues.
+      ...(cut ? { through: cut.through, ...(cut.unread ? { continuedUnread: cut.unread } : {}) } : {}) });
     // M34 labels (C-02 "Slice-time labels"): a helper's recording is known by its structure — the slicer's lineage role,
     // from `isSidechain` rows or a Codex subagent thread — never by its path. M34 labels review (F7): by that role alone,
     // never re-decided here: a main recording holding inline sidechain rows beside its own (`mixedHistory`, its first
@@ -557,8 +572,13 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     }
   }
 
-  for (const file of files) { const path = await canonical(file); if (path) state.visited.add(path); }
-  const root = await readNode(files, 0);
+  // D126 (N0): one recording that opens on a compaction is read with the recordings it continues, oldest first.
+  const cut = follow && files.length === 1 ? await continuedLineage(files[0]) : null;
+  const rootFiles = cut ? cut.files : files;
+  if (cut) outcomes = await outcomesFor(rootFiles);
+  for (const file of rootFiles) { const path = await canonical(file); if (path) state.visited.add(path); }
+  const root = await readNode(rootFiles, 0, false, null, false, cut);
   censusOf.set(root, state.census);
+  if (cut) recordingsOfLedger.set(root, [...rootFiles]);
   return root;
 }

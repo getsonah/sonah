@@ -74,7 +74,45 @@ export const INSTRUCTION_GAP_NOTES = Object.freeze({
   // Gain I: the human messages that carried nontext blocks beside their words, named by their instruction events. A
   // review request that carries a message's images (evidence images.js) clears its loss for that request.
   nontext_attached: 'human messages carried images or other nontext content that this reviewer was not shown',
+  // D126 (N0): a session that opens on a compaction whose earlier part Sonah did not read (`lineage.continued.unread`,
+  // the slicer's CONTINUED_REASONS): the human messages recorded before that compaction are in no event of this session.
+  // One note per reason, so each reason's rate stays computable. The review names each `instructions_earlier_<reason>`.
+  earlier_recording_missing: 'the session opens on a compaction and no recording in its folder holds the part before it',
+  earlier_recording_ambiguous: 'the session opens on a compaction and more than one differing recording holds the part before it',
+  earlier_recording_unread: 'the session opens on a compaction and the recording that holds the part before it could not be read',
+  earlier_recording_cycle: 'the session opens on a compaction whose link leads back to a recording already read with it',
 });
+
+/** D126 (N0): the slicer's CONTINUED_REASONS (slicer/src/continued.js), re-declared: this package never imports the
+ *  slicer. Each reason is its own instructions note above. */
+export const CONTINUED_UNREAD_REASONS = Object.freeze(['earlier_recording_missing', 'earlier_recording_ambiguous',
+  'earlier_recording_unread', 'earlier_recording_cycle']);
+
+/**
+ * D127 (B10d): the typed facts of the compaction a mark records (the slicer's `compacted`, on the mark of a Claude Code
+ * compaction boundary row), as the boundary event keeps them: `{ compacted: { trigger?, before?, after? } }` — a
+ * `trigger` of `auto` or `manual`, and the agent's context in tokens before and after it (safe integers >= 0). A mark
+ * without them (a summary row's, another recorder's) gives nothing, so its event is as before. No request shows them:
+ * a window shows a boundary by its id and kind alone (prompt.js); the readers count the gap from them.
+ */
+function compactedFactsOf(mark) {
+  const value = mark?.compacted;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  const count = (n) => Number.isSafeInteger(n) && n >= 0;
+  return { compacted: { ...(['auto', 'manual'].includes(value.trigger) ? { trigger: value.trigger } : {}),
+    ...(count(value.before) ? { before: value.before } : {}), ...(count(value.after) ? { after: value.after } : {}) } };
+}
+
+/** D126 (N0): a ledger's `lineage.continued` as the slicer writes it — `{ earlier, unread? }` — or null: a ledger of a
+ *  recording that does not open on a compaction (or a malformed field, which no slicer writes) has none. */
+function continuedOf(ledger) {
+  const value = ledger?.lineage?.continued;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).some((key) => key !== 'earlier' && key !== 'unread')
+    || !Number.isSafeInteger(value.earlier) || value.earlier < 0
+    || (value.unread !== undefined && !CONTINUED_UNREAD_REASONS.includes(value.unread))) return null;
+  return { earlier: value.earlier, unread: value.unread ?? null };
+}
 
 /** Gain I (2026-10-13): the recorder block types of a human message's nontext content (slicer records.js
  *  `NONTEXT_BLOCK_TYPES`, re-declared: this package never imports the slicer). */
@@ -2426,7 +2464,7 @@ export function sessionFromLedger(ledger, options = {}) {
 
     for (const mark of compactions.filter((m) => m.turn === turn)) {
       events.push({ id: mark.eventId ?? `B${turn}-${mark.index}`, kind: 'boundary', sequence: sequence++,
-        boundary: 'compaction', relatedSession: null });
+        boundary: 'compaction', relatedSession: null, ...compactedFactsOf(mark) });
       factOf.set(events[events.length - 1], { turn, end: true });
       boundaryN++;
     }
@@ -2524,10 +2562,21 @@ export function sessionFromLedger(ledger, options = {}) {
   if (!Object.hasOwn(HUMAN_INTERACTION_TOOLS, adapter) && ownActions > 0) session.adapterGaps.push({
     code: 'incomplete_inventory', channel: 'instructions', scope: 'session', count: ownActions,
     note: HUMAN_INTERACTION_UNKNOWN_NOTE });
+  // D126 (N0): a session that opens on a compaction: how many earlier recordings were read with it, and why its
+  // earliest part was not read, when it was not (`session.continued`, `{ earlier, unread }`; absent for any other
+  // session). The part not read holds messages of the person's that no event of this session holds: one part, declared
+  // on the instructions channel by its reason's own note, located at no event.
+  const continued = continuedOf(ledger);
+  if (continued) {
+    session.continued = continued;
+    if (continued.unread !== null) session.adapterGaps.push({ code: 'incomplete_inventory', channel: 'instructions',
+      scope: 'session', count: 1, note: INSTRUCTION_GAP_NOTES[continued.unread] });
+  }
   // Declared on the session as well, so a reader of the canonical model alone can see that the
   // instruction history it is looking at is not the whole one — whether the recorder shortened an
-  // ask or redaction withheld one (W3e-4 / F204).
-  session.instructionScopeIncomplete = elidedAsks > 0 || cappedAsks > 0 || strippedAsks > 0 || withheldAsks.length > 0;
+  // ask or redaction withheld one (W3e-4 / F204), or (D126) Sonah did not read the part before a compaction.
+  session.instructionScopeIncomplete = elidedAsks > 0 || cappedAsks > 0 || strippedAsks > 0 || withheldAsks.length > 0
+    || continued?.unread != null;
   // W3e-6 / F213: how many NULs this session's stored text spells as NUL_SYMBOL, a transferred
   // child's included. A count, never a gap: nothing is missing.
   session.controlCharsReplaced = controlCharsReplaced;

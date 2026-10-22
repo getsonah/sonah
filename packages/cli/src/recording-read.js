@@ -1,4 +1,5 @@
 import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { lstat, open, realpath, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
@@ -24,13 +25,19 @@ const owned = stat => typeof process.getuid !== 'function' || stat.uid === BigIn
 
 // Consumers are private and provisional: no result escapes until EOF and the final file checks.
 // Both full action reads and metadata scans use the same path, inode, byte and UTF-8 checks.
-async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity }, consume, finish = () => {}) {
+// D135 (M3): with `prefix: true`, `consume` may return a number: the bytes of its chunk through which the read is
+// complete. The read stops there, and only the bytes before that point (the prefix) must be unchanged: when the file
+// changed while it was read (a recording still being written), the prefix is read again through the same open file and
+// its SHA-256 must equal what was read; the bytes read again count in `bytesRead` (the caller's bounds charge them). The
+// path, the file's identity and every other check are as for a whole read; a read that reaches EOF is a whole read.
+async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity, prefix = false }, consume,
+  finish = () => {}) {
   if (typeof file !== 'string' || typeof namespace !== 'string' || !bounded(maxBytes) || !bounded(maxLineBytes)
     || maxLineBytes > maxBytes || typeof deadline !== 'number' || Number.isNaN(deadline)) fail();
   const checkTime = () => { if (performance.now() >= deadline) limit('deadline'); };
 
   let handle;
-  let total = 0;
+  let total = 0, reread = 0; // reread: the prefix's bytes read again (D135); every byte read is reported as read
   try {
     checkTime();
     const root = await realpath(namespace);
@@ -48,7 +55,8 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
 
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
     const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes + 1));
-    let lineBytes = 0;
+    const read = prefix === true ? createHash('sha256') : null;
+    let lineBytes = 0, through = null;
     while (true) {
       checkTime();
       const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, maxBytes - total + 1), null);
@@ -64,26 +72,45 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
       }
       lineBytes += used.length - start;
       if (lineBytes > maxLineBytes) limit('line_bytes');
-      decoder.decode(used, { stream: true });
-      await consume(used);
+      const stop = await consume(used);
+      const kept = read && Number.isSafeInteger(stop) && stop >= 0 && stop <= used.length ? stop : used.length;
+      decoder.decode(used.subarray(0, kept), { stream: true });
+      read?.update(used.subarray(0, kept));
+      if (kept < used.length || (read && stop === used.length)) { through = total - used.length + kept; break; }
     }
-    decoder.decode(); // Reject an unfinished multibyte sequence at EOF.
-    await finish();
+    decoder.decode(); // Reject an unfinished multibyte sequence at EOF (or at the end of the prefix).
+    if (through === null) await finish();
     checkTime();
 
     const openedAfter = await handle.stat({ bigint: true });
     const entryAfter = await lstat(file, { bigint: true });
     const pathAfter = await realpath(file);
-    if (!unchanged(openedBefore, openedAfter) || !unchanged(entryBefore, entryAfter)
-      || !sameFile(openedAfter, entryAfter) || BigInt(total) !== openedAfter.size
-      || pathAfter !== pathBefore || !inside(pathAfter, root)) fail();
+    const same = sameFile(openedBefore, openedAfter) && sameFile(entryBefore, entryAfter)
+      && sameFile(openedAfter, entryAfter) && pathAfter === pathBefore && inside(pathAfter, root);
+    const still = unchanged(openedBefore, openedAfter) && unchanged(entryBefore, entryAfter);
+    if (!same) fail();
+    if (through === null) { if (!still || BigInt(total) !== openedAfter.size) fail(); }
+    else if (!still) {
+      // D135: the file changed while it was read; the prefix the read relies on must not have.
+      if (openedAfter.size < BigInt(through)) fail();
+      const again = createHash('sha256');
+      for (let at = 0; at < through;) {
+        checkTime();
+        const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, through - at), at);
+        if (bytesRead === 0) fail();
+        reread += bytesRead;
+        again.update(chunk.subarray(0, bytesRead));
+        at += bytesRead;
+      }
+      if (again.digest('hex') !== read.digest('hex')) fail();
+    }
     checkTime();
 
-    return { bytesRead: total, version: recordingVersion(openedAfter) };
+    return { bytesRead: total + reread, version: recordingVersion(openedAfter) };
   } catch (error) {
     // Counters are safe to report; native errors may contain paths or source text.
     throw Object.assign(new Error(CLOSED), { reason: LIMIT_REASONS.includes(error?.reason)
-      ? error.reason : 'unverified', bytesRead: total });
+      ? error.reason : 'unverified', bytesRead: total + reread });
   } finally {
     await handle?.close().catch(() => {});
   }
@@ -235,4 +262,67 @@ export async function readRecordingRows(file, { namespace, uuids, maxBytes, maxL
     }
   }, () => { if (length) observe(); });
   return found;
+}
+
+/**
+ * D126 (N0). What one recording of a folder holds of a compaction's link, read through the same verified path as every
+ * recording (inside `namespace`, a regular owned single-linked file, at most `maxBytes`, unchanged while read).
+ * Streamed: a line is parsed only when its bytes hold a wanted id. `linkedLine` is the line (from 1) of the first strict
+ * JSON object row whose own `uuid` is `linked`, or null; `boundaryAfter` whether a later strict row is a `system` row of
+ * subtype `compact_boundary` whose own `uuid` is `boundary` (there the compaction happened after the linked row); with
+ * `digest: true`, `digest` is the SHA-256 of the bytes of every line through `linkedLine`, each with its newline, so two
+ * recordings that hold the same history through it can be told from two that do not. Nothing else of the file is kept.
+ * D135 (M3): the read ends at the boundary row's line once both are found, and only the bytes through that line must be
+ * unchanged while read (`scanRecording`'s `prefix`); a recording that holds no such pair is read whole, unchanged.
+ */
+export async function readLinkedRow(file, { namespace, linked, boundary, maxBytes, maxLineBytes = Math.min(maxBytes,
+  8_000_000), digest = false } = {}) {
+  if (typeof linked !== 'string' || !linked || typeof boundary !== 'string' || !boundary || !bounded(maxBytes)
+    || !bounded(maxLineBytes) || maxLineBytes > maxBytes) fail();
+  const needles = { linked: Buffer.from(linked, 'utf8'), boundary: Buffer.from(boundary, 'utf8') };
+  const hash = digest === true ? createHash('sha256') : null;
+  const object = (bytes) => {
+    const decoded = strictJson(bytes.toString('utf8'));
+    return decoded.strict && decoded.value !== null && typeof decoded.value === 'object' && !Array.isArray(decoded.value)
+      ? decoded.value : null;
+  };
+  let lineNo = 0, linkedLine = null, boundaryAfter = false;
+  let line = Buffer.allocUnsafe(Math.min(64 * 1024, maxLineBytes, maxBytes));
+  let length = 0;
+  const observe = () => {
+    lineNo++;
+    const bytes = line.subarray(0, length);
+    if (linkedLine === null) {
+      if (hash) { hash.update(bytes); hash.update('\n'); }
+      if (bytes.indexOf(needles.linked) !== -1 && object(bytes)?.uuid === linked) linkedLine = lineNo;
+    } else if (!boundaryAfter && bytes.indexOf(needles.boundary) !== -1) {
+      const row = object(bytes);
+      if (row?.uuid === boundary && row.type === 'system' && row.subtype === 'compact_boundary') boundaryAfter = true;
+    }
+    length = 0;
+  };
+  // D135 (M3): the facts end at the boundary row's line, so the read does too (a `prefix` read): a recording still
+  // being written is read through it, and only the bytes through it must be unchanged.
+  const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, prefix: true }, used => {
+    let start = 0;
+    while (start < used.length) {
+      const newline = used.indexOf(0x0a, start);
+      const end = newline === -1 ? used.length : newline;
+      const required = length + end - start;
+      if (required > maxLineBytes) limit('line_bytes');
+      if (required > line.length) {
+        const next = Buffer.allocUnsafe(Math.min(maxLineBytes, Math.max(required, line.length * 2)));
+        line.copy(next, 0, 0, length);
+        line = next;
+      }
+      used.copy(line, length, start, end);
+      length += end - start;
+      if (newline === -1) break;
+      observe();
+      start = newline + 1;
+      if (boundaryAfter) return start;
+    }
+    return undefined;
+  }, () => { if (length) observe(); });
+  return { linkedLine, boundaryAfter, digest: hash && linkedLine !== null ? hash.digest('hex') : null, bytesRead };
 }

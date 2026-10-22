@@ -21,7 +21,13 @@ import { CODE_FILES, CODE_TEXT, FAKE_KEY, PARSE_QUOTE, buildCodeSession, codeSes
 const CODE_LABEL = /^code-(?:review|verify|account)(?::|$)/;
 const strip = (report) => {
   const { codePass: _pass, ...rest } = report;
-  return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
+  return JSON.parse(JSON.stringify(withoutCost(rest), (key, value) => (key === 'codeCheck' ? undefined : value)));
+};
+/** D129: a report without what its run cost (`instrument.usage`): each run's own, with its own calls and wall time. */
+const withoutCost = (report) => {
+  if (!report?.instrument) return report;
+  const { usage: _usage, ...instrument } = report.instrument;
+  return { ...report, instrument };
 };
 
 /** One `sonah review` run on the synthetic session, its files under `root`, its state under `state`; `cwd`, the
@@ -112,7 +118,7 @@ test('D87: the session part is byte-identical with the code step on and off — 
   assert.ok(code.every((r) => r.agent.root === root && Array.isArray(r.agent.addDirs) && r.schema));
   // The report: the session's members as they were; the pass beside them, and the row its claim_false finding names.
   assert.equal(off.report.codePass, undefined);
-  assert.deepEqual(strip(on.report), JSON.parse(JSON.stringify(off.report)));
+  assert.deepEqual(strip(on.report), JSON.parse(JSON.stringify(withoutCost(off.report))));
   assert.equal(on.report.promises[0].status, off.report.promises[0].status);
   assert.deepEqual([on.report.promises[0].codeCheck.outcome, on.report.promises[0].codeCheck.by],
     ['contradicted-by-code', 'finding']);
@@ -195,7 +201,7 @@ test('D60: the same repository asks nothing twice, and an existing state replays
   assert.match(third.out, /Code review answers: 3 of 3 reused \(no call\)/);
   const uncounted = (report) => JSON.parse(JSON.stringify(report, (key, value) => (['answers', 'resume'].includes(key)
     ? undefined : value)));
-  assert.deepEqual(uncounted(third.report), uncounted(second.report));
+  assert.deepEqual(uncounted(withoutCost(third.report)), uncounted(withoutCost(second.report)));
   assert.deepEqual(third.report.codePass.answers, { calls: 0, reused: second.report.codePass.answers.calls });
   // D105: every agent answer the report uses carries its reading record, live and replayed alike: the store keeps it
   // beside the answer and sets it again, so the replayed report's records are the live one's, and none is null.

@@ -2,7 +2,7 @@
 // facts every reader shows. Every session, report, path and hash here is synthetic (report-fixture.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, permalinkOf, tierMoves, firstScreenWords, firstScreenExcerptLines, openText, itemVisibleText,
+import { reportModel, permalinkOf, tierMoves, firstScreenWords, firstScreenExcerptLines, openText, headText, itemVisibleText,
   refusedCall, ITEM_TYPES, REPORT_MODEL_VERSION, REPORT_LIMITS } from '../report-model.js';
 import { REPORT_ITEM_KINDS, REPORT_ITEM_TYPES, RESULT_OUTCOME_WORDS, RESULT_OUTCOME_CLASSES } from '../../evidence/src/ledger.js';
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
@@ -88,8 +88,11 @@ test('D97 (4): inside a tier, items go by kind, then by the first ask they are t
   report.codePass.findings = [findings[5], ...findings.filter((_, i) => i !== 5)];
   const model = reportModel(session, report, repoFacts());
   const act = model.tiers.must_act.map((item) => item.kind);
-  // Kinds in their order (D97).
-  assert.deepEqual(act, [...act].sort((a, b) => REPORT_ITEM_KINDS.indexOf(a) - REPORT_ITEM_KINDS.indexOf(b)));
+  // Kinds in their order (D97); D138: the items backed by two recorded quotes that disagree first (here a contradicted
+  // claim and an edit against your words), each part in the kinds' order.
+  assert.deepEqual(act.slice(0, 2), ['claim_contradicted', 'edit_against_instruction']);
+  const rest = act.slice(2);
+  assert.deepEqual(rest, [...rest].sort((a, b) => REPORT_ITEM_KINDS.indexOf(a) - REPORT_ITEM_KINDS.indexOf(b)));
   const bugs = model.tiers.must_act.filter((item) => item.kind === 'code_bug');
   assert.deepEqual(bugs.map((item) => textOf(item.what.parts)), ['The bucket refills before the first request',
     'Aaa first by alphabet'], 'the bug tied to ask 1 first; the untied one last, whatever its title or index');
@@ -101,8 +104,10 @@ test('D97 (5): header line D counts from structure; line E stands exactly when t
   // The claims the claims list shows as not checked, with the one resting on a check that did not finish (its row says
   // so in its own words; Sonah did not check it either), and the written statements it shows as not checked.
   // D115: the asks for which the session review cited only the agent's words, never that they rest on nothing else.
-  assert.deepEqual(a.header.didNotCheck.phrases, ['1 ask', '1 ask for which the session review cited only the agent\'s '
-    + 'words', '3 claims', '1 statement that the agent wrote into a file']);
+  // D133 (R2): the line is said word for word in What Sonah could not check, first; the first screen has none.
+  assert.equal(a.header.didNotCheck, null);
+  assert.equal(a.notChecked.quiet[0], 'Sonah did not check: 1 ask · 1 ask for which the session review cited only the '
+    + 'agent\'s words · 3 claims · 1 statement that the agent wrote into a file');
   assert.equal(a.header.noCode, null);
   // What Sonah could not check names the same counts in the same terms: one term for one thing (S4).
   const facts = a.notChecked.facts.map((f) => textOf(f.parts));
@@ -206,8 +211,9 @@ test('D97 (8): the empty Must act and Must know pair stands exactly when both ar
     failure: null }], requirements: [{ text: 'Rename the helper', status: 'done',
     instruction: { role: 'instruction', eventId: 'I1', quote: 'Rename the helper', sessionKey: STORY_KEY },
     deliverable: { role: 'code', eventId: 'W1', quote: 'export const b = 1;', sessionKey: STORY_KEY } }] }, {});
-  assert.equal(empty.countLine.empty, 'Sonah found nothing for Must act or Must know. This does not mean that the work is '
-    + 'correct.');
+  // D133 (R2): the sentence after it is said in What Sonah could not check.
+  assert.equal(empty.countLine.empty, 'Sonah found nothing for Must act or Must know.');
+  assert.ok(empty.notChecked.quiet.includes('This does not mean that the work is correct.'));
   assert.deepEqual(empty.countLine.labels, []);
   // A Good to know item alone keeps the pair.
   assert.equal(itemsOf(empty).length, 0);
@@ -218,7 +224,10 @@ test('D97 (8): the empty Must act and Must know pair stands exactly when both ar
   assert.deepEqual([known.tiers.must_act.length, known.tiers.must_know.length], [0, 1]);
   assert.equal(known.countLine.empty, null);
   const count = (text) => text.split(/\s+/).filter(Boolean).length;
-  assert.equal(firstScreenWords(known), count(openText(known)) + count(itemVisibleText(known.tiers.must_know[0])));
+  // D131 (R1): Must act and Must know come before your prompt, so the first screen is the header, the count line and
+  // the first item.
+  assert.equal(firstScreenWords(known), count(headText(known)) + count(itemVisibleText(known.tiers.must_know[0])));
+  assert.ok(count(openText(known)) > count(headText(known)), 'your prompt is not on the first screen');
   assert.ok(count(itemVisibleText(known.tiers.must_know[0])) > 0);
 });
 
@@ -362,18 +371,16 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     // D109 (its review): the code step's counts are the change's, never what the recording changed.
     'Claude Code recording · a change of 1 file, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
-    // D115: what the session review cited, never that nothing else does the ask.
-    'Sonah did not check: 1 ask · 1 ask for which the session review cited only the agent\'s words',
     'Must act 2 · Must know 0 · Good to know 0 (folded) · Your prompt: 4 done, 1 partly done, 1 not checked',
     'Must act: fix the Retry-After unit · ask 2',
     'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
     'Done Add rate limiting to the public API. Partly done 100 requests per minute per API key. Done Return 429 with a '
       + 'Retry-After header. Done Add tests and Not checked make sure nothing else breaks. Done Don\'t touch the billing '
       + 'service.',
-    'Sonah checked only the marked parts of your message.',
     'ask 2 · Partly done · See item 2.',
-    'ask 5 · Not checked · Sonah did not find, word for word, the evidence that the session review cited for it.',
-    'ask 6 · Done · The session review cited the agent\'s words as what does it, not a recorded result or change.',
+    // D133 (R2): why ask 5 is not checked, and what the session review cited for ask 6, are in each row's own fold.
+    'ask 5 · Not checked · Evidence',
+    'ask 6 · Done · Evidence',
     // Item 1 is the bug that the code review rated high: inside a section, by final level first (D112), then by kind.
     '1 Fix: Retry-After gives the wait in milliseconds',
     'Impact on you: A client that obeys the header can stop calling your API for up to 17 hours.',
@@ -384,8 +391,10 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
   // line of an ask that rests only on the agent's words says what the session review cited, five words more; D109's
   // review: "a change of 1 file", two words more; D112: the first item is the bug with its impact and action, 18 words
   // more than the partly done ask; D115: the header names what the session review cited, three words more, and the
-  // ask's line says only that, two words fewer).
-  assert.equal(firstScreenWords(model), 243);
+  // ask's line says only that, two words fewer). D131 (R1, B12): Must act comes before your prompt, so the first screen is
+  // the header and the count line (7 + 14 + 15 + 19 + 24 + 9) and the first item (8 + 19 + 8 + 5): 128 words, 115 fewer.
+  // D133 (R2): the header's "Sonah did not check" line (19 words) is folded: 109.
+  assert.equal(firstScreenWords(model), 109);
   assert.equal(firstScreenExcerptLines(model), 1);
   // The bug carries the code review's impact and action, and one excerpt of at most 8 lines.
   assert.equal(model.tiers.must_act[0].where[0].excerpt.lines.length, 1);
@@ -401,8 +410,8 @@ test('D97 (16): the marked prompt wraps exactly the located spans; an overlap an
   assert.deepEqual(marked, [[1, 'Add rate limiting to the API'], [2, 'Return 429 with a Retry-After header in seconds'],
     [3, 'Keep the auth checks before the limiter'], [4, 'Do not change the CI config'], [5, 'Update the README']]);
   assert.equal(first.segments.map((s) => s.text).join(''), REPORT_TEXT.ask1, 'the whole message, in order');
-  assert.ok(openText(model).split('\n').filter((l) => l === words.REPORT_PROMPT_WORDS.coverage).length
-    === model.prompt.messages.length, 'the coverage sentence under each shown message');
+  // D133 (R2): the coverage sentence is said once, in the page's legend, never under each message.
+  assert.equal(openText(model).split('\n').filter((l) => l === words.REPORT_PROMPT_WORDS.coverage).length, 0);
   // An ask that overlaps an earlier one keeps only what the earlier one leaves, and says so.
   const b = sessionBuilder();
   b.ask('I1', 'Make the button blue and large.');
@@ -478,13 +487,16 @@ test('D97 (19): the D93 split — a done ask with a code finding is counted apar
     === 'Is a 429 body needed?');
   // D101: the ask the quote gate lowered says which test refused its quote, with code's numbers. D116: the question
   // whose key names this ask names no place (its quote is null), so no code checked the tie: no line names it.
+  // D133 (R2): the reason is in the row's own fold (`folded`).
   assert.deepEqual(notChecked.lines.map(textOf), [
-    'The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.',
     'Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the '
       + 'section What Sonah could not check.']);
+  assert.deepEqual(notChecked.folded.map(textOf), [
+    'The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.']);
   assert.ok(question, 'the question is still an item of its own');
-  // The agent's own word for a done ask is a fact line, counted in "Sonah did not check".
-  assert.deepEqual(model.prompt.asks[2].lines.map(textOf), [words.REPORT_PROMPT_WORDS.agentOnly]);
+  // The agent's own word for a done ask is a fact line, counted in "Sonah did not check". D133 (R2): in its row's fold.
+  assert.deepEqual(model.prompt.asks[2].lines.map(textOf), []);
+  assert.deepEqual(model.prompt.asks[2].folded.map(textOf), [words.REPORT_PROMPT_WORDS.agentOnly]);
 });
 
 test('D97 (20): code-pass/3 questions are Good to know items with no row id; no shown-in-code check is shown; code_issue', () => {
@@ -535,9 +547,12 @@ test('D97 (21): line C names every result class; the runs map every class and fo
   // A command refused before it ran is never counted as one the agent ran: it is said apart (R5). Nor is one the
   // recording cannot tell failed from refused: "the agent ran 6 commands. Results: … 1 failed or the harness refused it"
   // counted as run a command that may never have run.
+  // D133 (R2): the parts that say what Sonah could not read of a run are said in What Sonah could not check, each with
+  // its count; the header keeps how the runs ended.
+  assert.ok(model.notChecked.quiet.includes('Results: 1 completed with no exit code that Sonah read, for 1 Sonah read no '
+    + 'exit code.'));
   assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 5 commands.',
-    'Results: 1 exited with code 0, 1 completed with no exit code that Sonah read, 1 failed, 1 has no recorded end, for 1 '
-      + 'Sonah read no exit code.',
+    'Results: 1 exited with code 0, 1 failed, 1 has no recorded end.',
     'After the agent\'s last edit, 1 command failed or the harness refused it. The recorder does not mark which.',
     'The recording shows 1 command after the agent\'s last edit as refused before it ran.']);
   // Before the last edit, an exit-0 run is counted apart from what a cap cuts.
@@ -593,9 +608,11 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const bug = itemsOf(model).find((item) => textOf(item.what.parts) === 'The bucket refills before the first request');
   assert.deepEqual(bug.what.parts.map((p) => p.by), ['code-review']);
   assert.deepEqual(bug.label.map((p) => [p.text, p.by]), [['fix the refill order', 'code-review']]);
-  // D112: the Must act items the code review rated come first, so the count line shows their labels first.
+  // D112: the Must act items the code review rated come first, so the count line shows their labels first; D138: then
+  // the contradicted claim, backed by two recorded quotes that disagree, before the asks.
   assert.deepEqual(model.countLine.labels.map((l) => l.parts.map((p) => [p.text, p.by])), [
-    [['fix the refill order', 'code-review']], [['check the forced push', 'code-review']], [['ask 6', 'sonah']]]);
+    [['fix the refill order', 'code-review']], [['check the forced push', 'code-review']],
+    [['a false claim', 'sonah'], [' ', 'sonah'], ['(item 3)', 'sonah']]]);
   const question = one(model, 'code_question');
   assert.equal(question.what.parts[0].by, 'code-review');
   const file = model.did.files.groups.flatMap((g) => g.files).find((f) => f.path === 'src/limiter.js');
@@ -620,7 +637,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/5 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/6 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -1006,7 +1023,10 @@ test('R11, R17: the header and What Sonah could not check count the claims the c
     const listed = (source) => model.did.claims.shown.filter((c) => c.source === source && unchecked.includes(c.status))
       .length;
     assert.equal(model.did.claims.more, 0, letter);
-    const phrase = (re) => Number((model.header.didNotCheck?.phrases ?? []).map((p) => re.exec(p)?.[1]).find(Boolean) ?? 0);
+    // D133 (R2): the header's line, word for word, in What Sonah could not check.
+    const line = model.notChecked.quiet.find((t) => t.startsWith(words.REPORT_HEADER_WORDS.notCheckedLead)) ?? '';
+    const phrases = line.slice(words.REPORT_HEADER_WORDS.notCheckedLead.length).split(' · ').map((p) => p.trim());
+    const phrase = (re) => Number(phrases.map((p) => re.exec(p)?.[1]).find(Boolean) ?? 0);
     assert.equal(phrase(/^(\d+) claims?$/), listed('promises'), `${letter}: claims`);
     assert.equal(phrase(/^(\d+) statements? that the agent wrote/), listed('writtenClaims'), `${letter}: written`);
     const fact = model.notChecked.facts.map((f) => textOf(f.parts)).find((t) => /^Sonah did not check \d+ claims?\./.test(t));

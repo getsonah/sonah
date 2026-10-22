@@ -68,6 +68,7 @@ function assertPlaced(model, report, label) {
   assert.equal(did.runs.shown.length + did.runs.quietExit0 + did.runs.cut, did.runs.total, `${label}: runs`);
   assert.equal(did.claims.shown.length + did.claims.more, did.claims.total, `${label}: claims`);
   const nc = model.notChecked;
+  // D133's review: the first screen's lines said in it (`quiet`) are not counted.
   assert.equal(nc.total, nc.facts.length + nc.withheldTotal + nc.unreadAsks.length + nc.unreadRows.length,
     `${label}: what Sonah could not check`);
   // Every row in a list is in that list's count, shown or cut.

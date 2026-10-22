@@ -135,7 +135,7 @@ test('seam D114 x D115/D116: an ask row that cites nothing, tied to by its liste
 
   const model = reportModel(session, saved, {});
   const ask = model.prompt.asks[1];
-  const lines = ask.lines.map(textOf);
+  const lines = [...ask.lines, ...ask.folded].map(textOf); // D133 (R2): its open lines and its own fold's
   // D115: the row's own sentence, what it cites and what the session review did not check, beside the code review's.
   assert.ok(lines.includes(CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end), JSON.stringify(lines));
   assert.equal(CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end,

@@ -1,7 +1,7 @@
 // Session page (D97). ONE recorded session's review as a self-contained HTML page: the report model
-// (report-model.js `reportModel`) rendered for a browser, in its order — the header and the count line, your prompt with
-// each ask marked, then Must act, Must know, Good to know (folded), what the agent did (folded), what Sonah could not
-// check (folded) and the footer. The Markdown report renders the same model, so both say the same things, in the same
+// (report-model.js `reportModel`) rendered for a browser, in its order — the header and the count line, Must act, Must
+// know, your prompt with each ask marked (D131: after Must act and Must know, folded on a long session), Good to know
+// (folded), what the agent did (folded), what Sonah could not check (folded) and the footer. The Markdown report renders the same model, so both say the same things, in the same
 // order, with the same counts. Styled as sonah.dev's "What a Sonah review looks like" card (light from the site's
 // tokens, a derived warm dark, the reader's own setting unless asked).
 //
@@ -27,7 +27,8 @@
 
 import { visible, backtickPieces, noFilesWords } from './session-story.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
-import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, askStatusWord } from './report-model.js';
+import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, foldNotes, askStatusWord, promptAfterTiers }
+  from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS,
@@ -77,8 +78,16 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  (D116) a question's pointer to an item or an ask only where code checked its tie, as the report model gives them.
  *  And (D125, the owner: "Let's fix 1st"; amended the same day, "go for option 3"): an ask that the session review left
  *  not checked and that the code review found to hold in the code keeps "Not checked", with the note the report model
- *  gives its row; the mark's word by the model's one map (`askStatusWord`). */
-export const PAGE_VERSION = 'sonah.session-page/44';
+ *  gives its row; the mark's word by the model's one map (`askStatusWord`). /45 (0.3.0-beta.6, one move from
+ *  0.3.0-beta.5's /44). D126 and D127: beside the title, the recordings Sonah read a session that opens on a compaction
+ *  from, or the part it did not read; and among your messages, each compaction of the agent's context at its place, as
+ *  the report model gives them (a session with neither renders there as /44, byte for byte). D129 (C7): the footer says
+ *  what the review cost, from its run record, after the line that names Sonah. D131 (R1, B12; the owner: "Must
+ *  act comes first"), in the same move: Must act and Must know come before your prompt, and a long session's prompt
+ *  (more than 30 asks) is a closed fold after them, its count in its summary. D133 (R2): the lines about what Sonah could
+ *  not check are folded, each word for word (the fold What Sonah could not check, an ask's row fold, an item's evidence
+ *  fold), and "Sonah checked only the marked parts of your message." is said once, in the legend. */
+export const PAGE_VERSION = 'sonah.session-page/45';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -148,6 +157,8 @@ function headerHtml(model) {
   const out = [];
   // Your words, each recorded span a quote of its own; a join and the cut are outside the quotation marks.
   if (header.title) out.push(`<p class="title-words">${partsHtml(header.title.parts)}</p>`);
+  // D126 (N0) and D127 (B10d): a session that opens on a compaction says so beside the title.
+  if (header.continued) out.push(`<p class="meta continued">${esc(header.continued)}</p>`);
   // D118 (a): no code reviewed, first after your words (the first screen); the folder last, as code.
   if (header.noCode) out.push(`<p class="meta no-code">${[esc(header.noCode.words),
     ...(header.noCode.impact ? [esc(header.noCode.impact)] : []),
@@ -220,17 +231,31 @@ function promptHtml(model, trim) {
     };
     const unlocatedHtml = listed(m.attachedAsks, REPORT_PROMPT_WORDS.fromAttached)
       + listed(m.unlocated, REPORT_PROMPT_WORDS.unlocated);
+    // D133 (R2): that Sonah checked only the marked parts is said once, in the page's legend (`footerHtml`).
     return `<div class="message-block"><p class="message">${start.html}${start.cut ? '…' : ''}</p>${whole}${extras}`
-      + `<p class="note coverage">${esc(REPORT_PROMPT_WORDS.coverage)}</p>${unlocatedHtml}</div>`;
+      + `${unlocatedHtml}</div>`;
   });
+  // D127 (B10d): each compaction at its place among your messages: before the first message recorded after it.
+  const compactions = Array.isArray(prompt.compactions) ? prompt.compactions : [];
+  const compactionHtml = (c) => `<p class="note compaction">${esc(c.words)}</p>`;
+  const placed = [];
+  let next = 0;
+  prompt.messages.forEach((m, at) => {
+    while (next < compactions.length && compactions[next].afterMessage < m.k) placed.push(compactionHtml(compactions[next++]));
+    placed.push(blocks[at]);
+  });
+  while (next < compactions.length) placed.push(compactionHtml(compactions[next++]));
   // An ask whose words no mark above shows (its mark past a message's start, or inside an earlier ask's) is listed with
   // its words.
-  const lines = prompt.asks.filter((a) => a.lines.length || !ids.has(a.n)).map((a) => {
+  // D133 (R2): a row's folded lines (the model's `folded`) in its own evidence fold, after its open lines.
+  const lines = prompt.asks.filter((a) => a.lines.length || a.folded.length || !ids.has(a.n)).map((a) => {
     const unmarked = !ids.has(a.n);
     const id = unmarked ? (ids.add(a.n), ` id="ask-${a.n}"`) : '';
+    const folded = a.folded.length ? ` · <details class="row-evidence"><summary>${esc(REPORT_ITEM_WORDS.evidence)}</summary>`
+      + `${a.folded.map((line) => `<p class="note">${partsHtml(line)}</p>`).join('')}</details>` : '';
     return `<li${id}>${esc(REPORT_PROMPT_WORDS.askLine(a.n))} · <span class="tag s-${esc(a.state)}">${esc(a.status)}</span>`
       + `${unmarked && a.words.length ? ` · ${partsHtml(a.words)}` : ''}${a.lines.map((line) => ` · ${partsHtml(line)}`)
-        .join('')}</li>`;
+        .join('')}${folded}</li>`;
   });
   // The messages that hold no ask, as recorded (a join between two recorded spans is Sonah's), each its start when cut.
   const noAsk = prompt.emptyMessages;
@@ -242,13 +267,17 @@ function promptHtml(model, trim) {
       return `<li><p class="message">${shown.html}${shown.cut ? '…' : ''}</p>${m.pasted ? `<p class="note">${esc(m.pasted)}</p>`
         : ''}</li>`; }).join('')}</ul>${noAsk.length > noAskShown.length ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS
       .rowsNotShown(noAsk.length - noAskShown.length))}</p>` : ''}</details>` : '';
-  return `<section class="card-ui part" id="prompt"><div class="card-bar"><h2>${esc(REPORT_SECTION_WORDS
-    .promptCounted(prompt.asks.length, prompt.parts.join(', ')))}</h2></div><div class="content">`
+  // D131 (R1): a long session's prompt is folded, its count in the fold's summary, as What the agent did is.
+  const heading = `<h2>${esc(REPORT_SECTION_WORDS.promptCounted(prompt.asks.length, prompt.parts.join(', ')))}</h2>`;
+  const [open, close] = prompt.folded === true
+    ? [`<details class="card-ui part fold-part" id="prompt"><summary class="card-bar">${heading}</summary>`, '</details>']
+    : [`<section class="card-ui part" id="prompt"><div class="card-bar">${heading}</div>`, '</section>'];
+  return `${open}<div class="content">`
     + (messagesCut ? `<p class="cut">${esc(REPORT_TRIM_WORDS.messagesTrimmed)}</p>` : '')
     + (noAskShown.length < noAsk.length ? `<p class="cut">${esc(REPORT_TRIM_WORDS.listsTrimmed)}</p>` : '')
     + (prompt.asks.length ? '' : `<p class="note">${esc(REPORT_COUNT_WORDS.noAsk)}</p>`)
-    + blocks.join('') + (lines.length ? `<ul class="rows ask-lines">${lines.join('')}</ul>` : '') + empty
-    + '</div></section>';
+    + placed.join('') + (lines.length ? `<ul class="rows ask-lines">${lines.join('')}</ul>` : '') + empty
+    + `</div>${close}`;
 }
 
 // ---- the items ------------------------------------------------------------------------------------------------------
@@ -274,14 +303,17 @@ function whereHtml(item) {
 }
 function evidenceHtml(item, trimmed) {
   const summary = `${esc(REPORT_ITEM_WORDS.evidence)} · ${esc(REPORT_ITEM_WORDS.why(REPORT_TIER_WORDS[item.tier.final]))}`;
-  if (trimmed) return `<details class="evidence"><summary>${summary}</summary></details>`;
+  // D133 (R2): what Sonah could not check of the item, first in its fold (`foldNotes`); kept when the fold is shortened
+  // to its summary, as it was kept on the item's visible lines before.
+  const notes = foldNotes(item).map((t) => `<p class="note">${esc(t)}</p>`).join('');
+  if (trimmed) return `<details class="evidence"><summary>${summary}</summary>${notes}</details>`;
   const lines = item.evidence.map((e) => labelled(e.label, partsHtml(e.parts)));
   const noLink = [...new Set(item.where.map((w) => w.noLink).filter(Boolean))].map((t) => `<p class="note">${esc(t)}</p>`);
   const id = item.rowId ? labelled(REPORT_ITEM_WORDS.rowId, `<code>${esc(shortId(item.rowId))}</code>`, 'note') : '';
   // Your earlier answer is your own words, escaped, and never in a recorded quote's quotation marks.
   const answer = item.answer ? labelled(REPORT_ITEM_WORDS.yourAnswer, `${esc(item.answer.words)} `
     + `<span class="answer-reason">${esc(item.answer.reason)}</span>`, 'note answer') : '';
-  return `<details class="evidence"><summary>${summary}</summary>${lines.join('')}${noLink.join('')}`
+  return `<details class="evidence"><summary>${summary}</summary>${notes}${lines.join('')}${noLink.join('')}`
     + `<p class="note why">${esc(item.why)}</p>${id}${answer}</details>`;
 }
 /** The lines of an item or a member (D97, D112), in order, then its evidence fold. */
@@ -289,7 +321,6 @@ function linesHtml(item, trimmed) {
   const out = [];
   if (item.quote) out.push(`<blockquote class="item-quote">${item.quoteLabel ? `<span class="label">${esc(item.quoteLabel)}</span> `
     : ''}${partHtml(item.quote)}</blockquote>`);
-  else if (item.quoteMissing) out.push(`<p class="note">${esc(REPORT_ITEM_WORDS.quoteMissing)}</p>`);
   // D110: each premise of an item to verify that Sonah could not check, in its check's words.
   for (const parts of list(item.restsOutside)) out.push(labelled(REPORT_ITEM_WORDS.restsOutside, partsHtml(parts),
     'line rests-outside'));
@@ -332,6 +363,8 @@ function goodToKnowHtml(item, trimmed) {
   return `<details class="item gtk t-${esc(item.type)}" id="item-${item.n}"><summary>${head}`
     + `${where.length ? ` · <span class="mono">${esc(where[0])}</span>` : ''}</summary>${body}</details>`;
 }
+/** The three tiers: Must act and Must know open (`must`), Good to know folded (`good`); D131: your prompt may stand
+ *  between them (`promptAfterTiers`). */
 function tiersHtml(model, trim) {
   const [act, know, good] = ['must_act', 'must_know', 'good_to_know'];
   const note = (on) => (on ? `<p class="cut">${esc(REPORT_TRIM_WORDS.trimmed)}</p>` : '');
@@ -341,7 +374,7 @@ function tiersHtml(model, trim) {
   const gtk = `<details class="part tier fold-tier" id="good-to-know"><summary><h2>${esc(REPORT_SECTION_WORDS
     .tier(REPORT_TIER_WORDS[good], model.tiers[good].length))}</h2></summary>${note(trim.goodToKnow)}`
     + `${model.tiers[good].map((item) => goodToKnowHtml(item, trim.goodToKnow)).join('')}</details>`;
-  return open(act) + open(know) + gtk;
+  return { must: open(act) + open(know), good: gtk };
 }
 
 // ---- what the agent did -------------------------------------------------------------------------------------------
@@ -453,6 +486,8 @@ function notCheckedHtml(model, factor) {
   const cut = nc.facts.length - facts.length;
   return `<details class="card-ui part fold-part" id="not-checked"><summary class="card-bar"><h2>`
     + `${esc(REPORT_SECTION_WORDS.notCheckedCounted(nc.total))}</h2></summary><div class="content">${note}`
+    // D133 (R2): the first screen's lines about what Sonah could not check, word for word, first.
+    + (nc.quiet.length ? `<ul class="rows quiet">${nc.quiet.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
     + `<h3 class="sub-h">${esc(REPORT_NOT_CHECKED_WORDS.sessionReview)}</h3><p class="note">${esc(nc.lead)}</p>`
     + factsHtml + (cut ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS.rowsNotShown(cut))}</p>` : '')
     + code + withheldHtml
@@ -470,8 +505,12 @@ function footerHtml(model) {
       + `<p>${esc(REPORT_FOOTER_WORDS.answerIntro)} ${esc(REPORT_FOOTER_WORDS.answerParts)}</p>`
       + `<p class="cmd"><code>${esc(REPORT_FOOTER_WORDS.answerCommand(footer.sessionHash))}</code></p>`
       + `<p>${esc(REPORT_FOOTER_WORDS.answerReport)}</p></details>` : '';
+  // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it.
   return `<footer class="foot"><p class="gen">${esc(footer.provenance)}</p>`
+    + (footer.usage ? `<p>${esc(footer.usage)}</p>` : '')
     + footer.legend.map((line) => `<p>${esc(line)}</p>`).join('')
+    // D133 (R2): said once here, in the legend, for every message whose asks the page marks.
+    + (model.prompt.messages.length ? `<p>${esc(REPORT_PROMPT_WORDS.coverage)}</p>` : '')
     + (footer.triageLegend ? `<p>${esc(footer.triageLegend)}</p>` : '')
     + `<p>${esc(footer.share)}</p>${answer}</footer>`;
 }
@@ -575,6 +614,9 @@ details > summary::before { content: ""; flex-shrink: 0; align-self: center; wid
 details[open] > summary::before { transform: rotate(90deg); }
 details.evidence { margin-top: 4px; }
 details.evidence > *:not(summary) { margin-top: 6px; }
+details.row-evidence { display: inline-block; vertical-align: baseline; }
+details.row-evidence[open] { display: block; }
+details.row-evidence > *:not(summary) { margin-top: 4px; }
 details.item.gtk > summary { font: 500 15px/1.45 var(--display); color: var(--ink); }
 .members { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .member { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -618,8 +660,13 @@ function compose(model, theme, trim) {
   const card = `<article class="card-ui review" aria-labelledby="review-title"><div class="card-bar">`
     + `<h1 id="review-title">${esc(REPORT_HEADER_WORDS.review)}</h1><span class="mono">${esc(model.header.size.join(' · '))}</span>`
     + `</div><div class="content">${headerHtml(model)}</div></article>`;
-  const body = [`<header class="masthead"><p class="wordmark">${LOGO}Sonah</p></header>`, card, promptHtml(model, trim),
-    tiersHtml(model, trim), didHtml(model, trim.did), notCheckedHtml(model, trim.notChecked), footerHtml(model)];
+  // D131 (R1, B12): Must act and Must know before your prompt (`promptAfterTiers`), so what needs your action is on the
+  // first screen; Good to know, folded, after it.
+  const tiers = tiersHtml(model, trim);
+  const prompt = promptHtml(model, trim);
+  const body = [`<header class="masthead"><p class="wordmark">${LOGO}Sonah</p></header>`, card,
+    ...(promptAfterTiers(model) ? [tiers.must, prompt] : [prompt, tiers.must]), tiers.good, didHtml(model, trim.did),
+    notCheckedHtml(model, trim.notChecked), footerHtml(model)];
   // One list item a line, so a reader of the source (and a snapshot's diff) can follow it. Recorded text never holds a
   // tag (it is escaped), and no list item is inside a <pre>, so this changes no rendered text.
   const html = heldLinks(body.join('\n')).replace(/<\/li>/g, '</li>\n').replace(/<\/article>/g, '</article>\n');

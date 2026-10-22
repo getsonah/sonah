@@ -273,9 +273,10 @@ test('D112 amended (2026-10-18): a decision cut from the same sentence as a deci
 test('D112 (3): inside each section, items come by final level (high, medium, low, then none), then by kind', () => {
   const model = reportModel(reportSession(), triagedReport(reportSession()), repoFacts());
   const order = (tier) => model.tiers[tier].map((item) => [item.kind, item.tier.proposed]);
-  // Must act: the two items the code review rated high, then the unrated ones by kind.
-  assert.deepEqual(order('must_act').slice(0, 3), [['code_bug', 'must_act'], ['decision_unasked', 'must_act'],
-    ['ask_not_done', null]]);
+  // Must act: the two items the code review rated high, then the unrated ones; D138: among those, the two backed by two
+  // recorded quotes that disagree first, then by kind.
+  assert.deepEqual(order('must_act').slice(0, 5), [['code_bug', 'must_act'], ['decision_unasked', 'must_act'],
+    ['claim_contradicted', null], ['edit_against_instruction', null], ['ask_not_done', null]]);
   // Must know: rated high (held at Must know by a ceiling), then medium, then low (lifted by a floor), then none.
   const levels = model.tiers.must_know.map((item) => levelRank(item.tier));
   // D122 (b): the fixture's refused read, a failure passed over, is unrated Must know (no refused-read default).

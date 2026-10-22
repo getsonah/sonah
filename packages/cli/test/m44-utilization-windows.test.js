@@ -196,13 +196,16 @@ test('M44 the usage line shows each window in plain words, from the latest attem
     budget.record({});
     return {};
   })({ system: 's', prompt: 'p' });
-  assert.match(budget.summaryLine(), /; utilization 0\.57 \(five-hour 0\.57, seven-day 0\.18\)\.$/);
+  // D129: then each window from its first reading to its last.
+  assert.match(budget.summaryLine(), /; utilization 0\.57 \(five-hour 0\.57, seven-day 0\.18\); limits from first to last reading: five-hour 0\.41 to 0\.57, seven-day 0\.17 to 0\.18\.$/);
+  assert.deepEqual(budget.usageRecord().windows, { five_hour: { first: 0.41, last: 0.57 }, seven_day: { first: 0.17, last: 0.18 } });
   assert.deepEqual([budget.snapshot().utilization, budget.snapshot().windows], [0.57, { five_hour: 0.57, seven_day: 0.18 }]);
   assert.equal(budget.snapshot().reason, null);
   assert.ok(!budget.summaryLine().includes(LEAK));
   const old = createReviewBudget();
   old.record({ rateLimit: { utilization: 0.4 } });
   assert.match(old.summaryLine(), /; utilization 0\.4\.$/);
+  assert.equal(old.usageRecord().windows, null, 'an older CLI reports no window');
   assert.equal(old.snapshot().windows, null);
   assert.match(createReviewBudget().summaryLine(), /; utilization not reported\.$/);
 });
@@ -360,7 +363,7 @@ test('M44 sonah review pauses on the five-hour window alone, prints each window 
   assert.equal(paused.code, 3, paused.chunks.stdout);
   assert.equal(paused.calls.length, 1);
   assert.match(paused.chunks.stdout, /Review stopped where you asked \(utilization\)/);
-  assert.match(paused.chunks.stdout, /; utilization 0\.93 \(five-hour 0\.93, seven-day 0\.2\)\.\n/);
+  assert.match(paused.chunks.stdout, /; utilization 0\.93 \(five-hour 0\.93, seven-day 0\.2\); limits from first to last reading: five-hour 0\.93 to 0\.93, seven-day 0\.20 to 0\.20\.\n/);
   assert.ok(!paused.chunks.stdout.includes(LEAK));
   assert.deepEqual((await readSessionReviewProgress(state)).rateLimit, { status: 'allowed', rateLimitType: 'five_hour',
     utilization: null, resetsAt: 1800000000, windows: { five_hour: 0.93, seven_day: 0.2 } });
@@ -378,7 +381,7 @@ test('M44 sonah review: a later call that reports no rate limit keeps the earlie
   assert.ok(done.calls.length >= 2, 'the narrative call, then its challenge passes');
   assert.ok(done.calls.slice(1).every((request) => request.challenge), 'every later call is a challenge reporting none');
   assert.deepEqual((await readSessionReviewProgress(state)).rateLimit.windows, { five_hour: 0.41, seven_day: 0.17 });
-  assert.match(done.chunks.stdout, /; utilization 0\.41 \(five-hour 0\.41, seven-day 0\.17\)\.\n/);
+  assert.match(done.chunks.stdout, /; utilization 0\.41 \(five-hour 0\.41, seven-day 0\.17\); limits from first to last reading: five-hour 0\.41 to 0\.41, seven-day 0\.17 to 0\.17\.\n/);
 });
 
 test('M44 the 2.1.296 rateLimitType `seven_day_overage_included` is kept by name', () => {

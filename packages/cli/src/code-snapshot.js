@@ -931,7 +931,9 @@ export function namedSpellings(spellings, onDisk, changes, roots) {
  * directory now) — the code step then does not run. `top` is the
  * repository's real top folder (the working directory's real path when there is no repository); `maxBytes` is the most
  * one file may be (the review's request bound); `recording` the recording's path (its opening timestamp and commit
- * place the start commit); `git` runs git (a test may pass another). `base` is `{ kind: 'git', commit, how, outside,
+ * place the start commit; its last timestamp ends D113's window); D126 (N0): `startRecording` the first recording of a
+ * session read with the recordings it continues, whose opening timestamp places the start (the recording itself when
+ * omitted); `git` runs git (a test may pass another). `base` is `{ kind: 'git', commit, how, outside,
  * changedOutside, written }` (D113: the paths that differ from the start commit that no recorded write of the session
  * touched, named apart and never part of the change; how many paths the session's recorded writes could have changed)
  * or `{ kind: 'recorded_edits', written }`; D117: with `places` when the session's writes make another git repository a
@@ -949,8 +951,8 @@ export function namedSpellings(spellings, onDisk, changes, roots) {
  * of either that holds the working directory is never left out. `stateOmits` keeps both lists, so the state taken
  * again after the code step leaves out the same places. Reads only; writes nothing.
  */
-export async function readCodeSnapshot(session, { root, maxBytes, recording = null, git = runGit, own = [],
-  harnessHomes = [], codeRepos = [] }) {
+export async function readCodeSnapshot(session, { root, maxBytes, recording = null, startRecording = recording,
+  git = runGit, own = [], harnessHomes = [], codeRepos = [] }) {
   const none = { root: false, plan: codeSnapshotPlan(session), files: [] };
   if (typeof root !== 'string' || !isAbsolute(root)) return none;
   const dir = resolve(root);
@@ -968,7 +970,9 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   const spellings = unresolvedShellPaths(session);
   const onDisk = await literalSpellings(spellings, dir);
   const diskPlan = codeSnapshotPlan(session, { root: dir, literal: onDisk });
-  const start = await recordingStart(recording);
+  // D126 (N0): a session read with the recordings it continues starts where the first of them starts
+  // (`startRecording`); its window ends where the reviewed recording ends.
+  const start = await recordingStart(startRecording);
   // Git is read with the plan of the spellings the disk holds: its `recorded` reaches only the untracked paths git
   // lists, each of which the disk holds, so the spellings git alone names (deleted files) never change what it lists.
   const gitBase = await readGitBase({ root: dir, start, recorded: new Set(diskPlan.map((e) => e.path)), git, own });

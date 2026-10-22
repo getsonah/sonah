@@ -157,7 +157,24 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // D125 amended (the owner: "go for option 3"; the status and the counts as before, a note on the row): 3 other out
   // (the status, the count part, the lead of where Sonah found its quotes), the verdict's line read again with the lead
   // (other), and 1 sonah in (that Sonah did not check it); none states an absence.
-  assert.deepEqual(AUDIT_CLASSES.map(count), [89, 424, 383]);
+  // D126 (N0, a session that opens on a compaction): 5 sonah in (the part before it not read, by each of its 4 reasons,
+  // and the terminal's line when it was not read), 1 other (the terminal's line when it was read). D127 (B10d, N1): 1
+  // absence in (a compaction and what the agent's context dropped, on the recorder's typed counts: `typed_compaction`), 1
+  // sonah (the part before the compaction that Sonah did not read, beside the title), 2 other (the recordings Sonah read
+  // the session from, and the first compaction after an ask). D129 (C7, what a review cost): 1 sonah in, the footer's
+  // sentence of Sonah's own calls, tokens, time and usage limits ("no model calls" is a fact of Sonah's run, from its
+  // usage record), and 4 other in, each usage limit's name; none states an absence. Joined at the beta.6 integration:
+  // [89, 424, 383] + D126 and D127's [1, 6, 3] + D129's [0, 1, 4]. D131 (R1, a shortened report .md): 1 sonah in, the
+  // count of your messages that the report does not show (what Sonah shows, never a fact of the recording). D132 (R3 b):
+  // 1 sonah in, the footer's sentence of what the whole review cost over its runs, and the run's own sentence read again
+  // with the list cost that FOOTER_LIST_COST may add (sonah); none states an absence. D133 (R2, quiet the gap lines): 2
+  // other in, the count line's sentence split in two (Sonah found nothing for Must act or Must know, read again as sonah;
+  // that this does not mean the work is correct, other) and the short line beside the title of a session whose earlier
+  // part Sonah did not read (other); none states an absence. D133's review: 1 sonah out, the terminal coverage line's
+  // part "code pass reviewed no code" (RUN_STATE_WORDS `codePassNoCode`), with the line. Where D131 and D132 meet D133:
+  // [90, 431, 390] + D131 and D132's [0, 2, 0] + D133's [0, -1, 2].
+  // D131's review: 1 sonah in, the .md's sentence of what Sonah checked when its table does not show every ask.
+  assert.deepEqual(AUDIT_CLASSES.map(count), [90, 433, 392]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
@@ -169,8 +186,9 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // its second review: 1 more, by the same search. D117: two more, by the recorded writes' search (another repository's
   // files named apart, on the page and in the dry run); the merge: one more, by the same search (another repository's
   // files named apart, given to the code review). D118 (a): 1 more, by the same search (the first screen's no-write
-  // reason). D122 (b): E1-F8's one out again (the refused read's default tier is removed).
-  assert.deepEqual([proved - rows, rows, held], [86, 6, 3]);
+  // reason). D122 (b): E1-F8's one out again (the refused read's default tier is removed). D127 (B10d): 1 more, by the
+  // compaction's typed boundary row (`typed_compaction`).
+  assert.deepEqual([proved - rows, rows, held], [87, 6, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

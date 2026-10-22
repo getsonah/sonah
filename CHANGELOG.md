@@ -1,5 +1,126 @@
 # Changelog
 
+## 0.3.0-beta.6 (2026-10-22)
+
+Sonah now reads a Claude Code session whole, even after a compaction, and puts what needs your action first. On every
+review, Must act and Must know come right after the count line, before your prompt, and inside Must act the items where
+two recorded quotes disagree come first. A long prompt is folded after them, with its counts in sight. When the .md must
+be shortened for a GitHub comment, it cuts everything else first and the evidence of Must act and Must know last. The
+title is the first words that you typed. A review that you stopped and resumed gives the cost of the whole review. And
+the page reads as a review: what Sonah could not check moves into folds, with its counts.
+
+Each compaction now shows among your messages, with how much of the agent's context it dropped, and files that Claude
+Code restores after a compaction no longer read as files that you attached. A new kind of row from Claude Code no longer
+makes a review incomplete when it cannot hold your session, and every review says what it cost. Commands, the page and
+the files under `~/.sonah` can still change between betas.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, Sonah asks the session review again for a session that opens on a compaction, and for a session that holds a
+file that Claude Code restored after a compaction. It asks again for one part of a session that holds a row it now reads
+by its structure. The page, the .md and the report model each have a new version.
+
+### Must act comes first
+
+- The page and the .md show Must act and Must know right after the count line, then your prompt, then Good to know,
+  so the first Must act item is on the first screen, even on a long session.
+- When your prompt holds more than 30 asks, the page and the .md fold it after Must act and Must know. Its heading keeps
+  the count of each status, and every link to an ask still lands.
+- When the .md must be shortened to fit a GitHub comment, it keeps the evidence of Must act and Must know last of all.
+  First your long messages keep their start and Good to know's evidence folds are left out; then the table of your
+  prompt keeps the asks that are not done, and the .md counts your messages instead of showing them; then the lists of
+  What the agent did and What Sonah could not check keep their counts; then the code excerpts give way to their place,
+  and Good to know to a count of each kind. An evidence fold is never printed empty.
+
+### Must act leads with what the recording contradicts
+
+- Inside Must act, the items where two recorded quotes disagree come first: a claim of the agent's that a recorded
+  result, a file or your own words contradict; a statement that the agent wrote into a file and that a result
+  contradicts; and an edit against your words. They come first also when a finding of the code review holds them. The
+  asks that the agent did only in part, which rest on a part that Sonah did not find, follow. Nothing is dropped and no
+  item changes section; the links on the first screen and the terminal's Must act labels follow the new order. With the
+  code review, the level that it proposed still comes first.
+
+### The title is your first words
+
+- When your message opens with lines that are each one markup tag, such as the tags that wrap a paste, the title
+  leaves them out, with what they wrap, and shows the words that you typed after them. When a message holds nothing
+  but such wrapped text, the title comes from your next message with words of your own. Sonah reads the form of the
+  line, never the tag's name.
+
+### The page reads as a review, and what Sonah could not check is folded
+
+- What Sonah could not check is said in the fold "What Sonah could not check", word for word and with its count, instead
+  of on the first screen; each row's own reason is in that row's fold. Nothing is left out: open the fold to read it.
+- The header's "Sonah did not check: …" line, the results that Sonah could not read an exit code or an end of, and
+  "This does not mean that the work is correct." are the fold's first lines. The count line keeps "N not checked", and
+  "Sonah found nothing for Must act or Must know." stays.
+- A session whose earlier part Sonah could not read says "This session continues from an earlier part." beside the
+  title; the fold says that Sonah did not read it.
+- An ask row shows its status, and its own small fold holds why it is not checked, or that the session review cited
+  only the agent's words for it. An item's evidence fold holds that Sonah could not find its quote, or could not check
+  whether you asked for it.
+- "Sonah checked only the marked parts of your message." is said once, in the page's legend, not under each message.
+- The terminal no longer prints the "Coverage: …" and "Not covered: …" lines, or, on the "Code review: on" line, that
+  Sonah does not yet see every edit of helper agents or scripts after a `cd`. Each is in the page's and the .md's fold,
+  and a .md that Sonah shortens still lists every cause with its count.
+  The exit codes do not change.
+
+### A session continued after a compaction is read whole
+
+- When a recording opens on a compaction, Sonah finds the earlier recording that it continues in the same folder, by the
+  link that Claude Code writes on the compaction's first row, and reads the two as one session, in order. It repeats
+  this for each earlier recording that also opens on a compaction, up to 16. A message that both recordings hold is read
+  once, where you wrote it. The review of such a session now reads its earlier recordings too, so it reads more and
+  takes longer.
+- The terminal says how many earlier recordings the review reads, after the line that names the recording. The page
+  and the .md say it beside the title.
+- When Sonah cannot find the earlier recording, finds more than one that differ, or cannot read it, the review says so
+  and why, under What Sonah could not check, and counts that part as missing from your messages. Before, it said
+  nothing.
+- The code review's window starts where the earliest recording starts.
+- An earlier recording that is still being written is read too, such as the original of a session that you resumed
+  in a new recording while the original still runs. Sonah reads it up to the compaction that the later recording
+  continues, and only that part must not change while Sonah reads it.
+- A recording that does not open on a compaction is read as before.
+
+### Compactions are shown
+
+- Each compaction of the agent's context shows among your messages, at its place, with how many tokens it dropped of
+  how many, from what Claude Code recorded: "Compaction 1: Claude Code compacted the agent's context here and dropped
+  956,238 of its 967,925 tokens."
+- In the .md, the asks table is cut at each compaction, under one line "Before compaction N." above the asks that you
+  gave before it.
+
+### Restored files are not your attachments
+
+- After a compaction, Claude Code attaches again the files of a message that the compaction kept. These are no longer
+  said to be files that you attached, and they are no asks.
+
+### A new kind of row from Claude Code no longer makes a review incomplete when it cannot hold your session
+
+- Each Claude Code release adds rows that Sonah did not know, such as the session's budget in dollars (`budget_usd`).
+  Before, each such row made the review say that the session evidence was incomplete and that a record has a form that
+  Sonah cannot read. Now Sonah reads a row that it does not know by its structure, never by its name. A new row can
+  hold the words, commands or results of your session if it has text with spaces, a value or a name longer than 64
+  characters, a name with spaces, a message or a part of a message. Such a row still makes the review say that the
+  session evidence is incomplete. A row with none of these is the harness's own context: Sonah counts it and the review
+  stays complete.
+- Sonah's record of each review counts each new kind of row that it read by structure, with the Claude Code version
+  that wrote it.
+
+### Every review says what it cost
+
+- The usage line at the end of a review now gives the input tokens with their part written to and read from the cache,
+  the list cost that the `claude` CLI states for the calls, and how far each usage limit of your plan moved from the
+  first call that reported it to the last. When the code review runs, the line always gives its part of the calls,
+  the tokens, the cost and the time.
+- The report's footer says how many model calls the review made, how many of them the code review made, the tokens,
+  the time and how far each usage limit moved. A review that you stopped and resumed gives these for the whole review,
+  over its runs that made model calls with the same backend and model, not for its last run alone.
+- Sonah keeps the same figures in its record of the review (`report.private.json`, as `instrument.usage`), as counts
+  only. It also keeps what each run cost in `usage.private.json` beside it, for a run that stopped where you asked, was
+  interrupted or failed too, so a review that you resume over several runs keeps the cost of each run.
+
 ## 0.3.0-beta.5 (2026-10-20)
 
 The code review now reviews the session's own change as the change, in every git repository that the session wrote to,

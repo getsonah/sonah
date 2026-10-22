@@ -23,6 +23,8 @@ const OPUS = 'claude-opus-5-5[1m]';
 const OTHER = 'claude-opus-5-1[1m]';
 const strip = (report) => {
   const { codePass: _pass, ...rest } = report;
+  // D129: what each run cost (`instrument.usage`) is that run's own: its wall times differ from run to run.
+  if (rest.instrument) { const { usage: _usage, ...instrument } = rest.instrument; rest.instrument = instrument; }
   return JSON.parse(JSON.stringify(rest, (key, value) => (key === 'codeCheck' ? undefined : value)));
 };
 /** The session's requests, as their bytes, sorted: one lane does not fix the order of a challenge's passes, which start
@@ -131,10 +133,13 @@ test('--code-model: every code-step request reaches the code model\'s judge, eve
   assert.deepEqual(code.map(({ request }) => request.label), ['code-review:agent', 'code-verify:F1', 'code-account:1']);
   // The report records the code step's model; the usage line names it, with its share of the calls.
   assert.equal(run.report.codePass.model, OPUS);
+  // D129: and its list cost and wall time (the fixture's transport states no cost).
   const usage = new RegExp(`^Review usage: ${run.calls.length} calls; .* Code step on ${OPUS.replace(/[[\]]/g, '\\$&')} `
     + `\\(the session on ${SESSION_MODEL.replace(/[[\]]/g, '\\$&')}\\): ${code.length} of these calls; \\d+ input bytes; `
-    + `input tokens ${code.length * 10} \\(${code.length}/${code.length} calls reported\\); `
-    + `output tokens ${code.length * 2} \\(${code.length}/${code.length} calls reported\\)\\.$`, 'm');
+    + `input tokens ${code.length * 10} \\(${code.length}/${code.length} calls reported: ${code.length * 10} uncached, `
+    + `0 written to the cache, 0 read from the cache\\); `
+    + `output tokens ${code.length * 2} \\(${code.length}/${code.length} calls reported\\); `
+    + `list cost not reported \\(0/${code.length} calls reported\\); wall \\d+ ms\\.$`, 'm');
   assert.match(run.out, usage);
 });
 
@@ -220,7 +225,8 @@ test('--code-model default: no flag and no SONAH_CODE_MODEL is the session\'s mo
   assert.ok(codeRequests(plain.calls).length > 0 && plain.calls.every(({ model }) => model === SESSION_MODEL));
   assert.equal(Object.hasOwn(plain.report.codePass, 'model'), false, 'the report as before');
   assert.doesNotMatch(plain.out, /Code step on/);
-  assert.match(plain.out, /^Review usage: \d+ calls; [^\n]*; utilization not reported\.$/m);
+  // D129: the code step's part is said whenever it runs, with no model named when it is the session's.
+  assert.match(plain.out, /^Review usage: \d+ calls; [^\n]*; utilization not reported\. Code step: \d+ of these calls; [^\n]*\.$/m);
   // SONAH_CODE_MODEL, with --code-pass: the code step on that model; the flag wins over it.
   const fromEnv = await review(t, { root, state: await stateDir(t), argv: ['--code-pass'], env: { SONAH_CODE_MODEL: OPUS } });
   assert.equal(fromEnv.code, 0);
@@ -270,7 +276,7 @@ test('--code-model: a stored code-step answer is never replayed for another mode
   assert.equal(again.report.codePass.model, OPUS);
 });
 
-test('--code-model usage line: the code step\'s share counted apart; without a code model the line is as before', async () => {
+test('--code-model usage line: the code step\'s share counted apart; D129: said with or without a code model', async () => {
   const request = { system: 'ab', prompt: 'cd' };
   const run = async (budget) => {
     await budget.wrap(async () => { budget.record({ usage: { input_tokens: 7, output_tokens: 1 } }); return {}; })(request);
@@ -281,16 +287,22 @@ test('--code-model usage line: the code step\'s share counted apart; without a c
   };
   const clock = () => 0;
   const budget = await run(createReviewBudget({}, { now: clock }));
-  const before = 'Review usage: 3 calls; 12 input bytes; input tokens 12 (2/3 calls reported); output tokens 4 '
-    + '(2/3 calls reported); wall 0 ms; utilization not reported.';
-  assert.equal(budget.summaryLine(), before);
-  assert.equal(budget.summaryLine({}), before);
+  // D129: the input tokens with their split, the list cost (none stated here) and each part's wall time.
+  const before = 'Review usage: 3 calls; 12 input bytes; input tokens 12 (2/3 calls reported: 12 uncached, 0 written to '
+    + 'the cache, 0 read from the cache); output tokens 4 (2/3 calls reported); list cost not reported (0/3 calls '
+    + 'reported); wall 0 ms; utilization not reported.';
+  const part = '2 of these calls; 8 input bytes; input tokens 5 (1/2 calls reported: 5 uncached, 0 written to the cache, '
+    + '0 read from the cache); output tokens 3 (1/2 calls reported); list cost not reported (0/2 calls reported); '
+    + 'wall 0 ms.';
+  assert.equal(budget.summaryLine(), `${before} Code step: ${part}`);
+  assert.equal(budget.summaryLine({}), `${before} Code step: ${part}`);
   assert.equal(budget.summaryLine({ codeModel: OPUS, sessionModel: SESSION_MODEL }), `${before} Code step on ${OPUS} `
-    + `(the session on ${SESSION_MODEL}): 2 of these calls; 8 input bytes; input tokens 5 (1/2 calls reported); `
-    + 'output tokens 3 (1/2 calls reported).');
-  // No code-step call: its counts are zero, never unreported.
+    + `(the session on ${SESSION_MODEL}): ${part}`);
+  // No code-step call: its counts are zero, never unreported, when the code step runs or a code model is named.
   const none = createReviewBudget({}, { now: clock });
-  assert.match(none.summaryLine({ codeModel: OPUS }), /\. Code step on claude-opus-5-5\[1m\]: 0 of these calls; 0 input bytes; input tokens 0 \(0\/0 calls reported\); output tokens 0 \(0\/0 calls reported\)\.$/);
+  assert.match(none.summaryLine({ codeModel: OPUS }), /\. Code step on claude-opus-5-5\[1m\]: 0 of these calls; 0 input bytes; input tokens 0 \(0\/0 calls reported\); output tokens 0 \(0\/0 calls reported\); list cost \$0\.00 \(0\/0 calls reported\)\.$/);
+  assert.match(none.summaryLine({ codeStep: true }), /\. Code step: 0 of these calls; /);
+  assert.doesNotMatch(none.summaryLine(), /Code step/, 'no code step, no code model, no code call');
   // The whole is unchanged by the part.
   const whole = createReviewBudget({}, { now: clock });
   await whole.wrap(async () => { whole.record({ usage: { input_tokens: 7, output_tokens: 1 } }); return {}; })(request);
