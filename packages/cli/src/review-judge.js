@@ -8,6 +8,7 @@ import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES, CODE_READ_FAILURES } from
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { codexExecutable, codexJudgeArgs } from './codex-model.js';
 import { IMAGE_BACKENDS, REQUEST_IMAGE_LIMITS } from '../../evidence/src/images.js';
+import { REPLY_BEGUN } from '../../evidence/src/challenge.js';
 
 // W3d-1: a transport failure also carries its closed `transportClass`. The message is the
 // code and nothing else — no stderr, no provider body, no error text reaches the thrown error.
@@ -1234,6 +1235,25 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
     return await new Promise((resolve) => {
       let child = null, done = false, closed = false, output = '', size = 0, stop = null, timer = null;
       let unregister = () => {}, cancelGrace = () => {};
+      // D145: a request whose later passes wait for it (challenge.js REPLY_BEGUN) is told once that the model's reply has
+      // begun: at the first `stream_event` line, the API's own stream that `--include-partial-messages` prints (its
+      // `message_start` comes once the prompt is processed, and so cached). Read by the line's typed `type` only; the
+      // scan ends there, or at the first `assistant` or `result` line, which no reply-begun signal follows.
+      let begun = typeof request?.[REPLY_BEGUN] === 'function' ? request[REPLY_BEGUN] : null, scanned = 0;
+      const scanReplyBegun = () => {
+        let newline;
+        while (begun !== null && (newline = output.indexOf('\n', scanned)) !== -1) {
+          let event = null;
+          try { event = JSON.parse(output.slice(scanned, newline)); } catch { /* not a line this scan reads */ }
+          scanned = newline + 1;
+          const type = isRecord(event) ? event.type : null;
+          if (type === 'stream_event') {
+            const told = begun;
+            begun = null;
+            try { told(); } catch { /* the caller's signal never changes the call */ }
+          } else if (type === 'assistant' || type === 'result') begun = null;
+        }
+      };
       const finish = (result) => {
         if (done) return;
         done = true; clearTimeout(timer); unregister(); resolve(result);
@@ -1263,6 +1283,7 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
         size += Buffer.byteLength(chunk);
         if (size > outputBound) { halt('model_output_limit'); return; }
         output += chunk;
+        if (begun !== null) scanReplyBegun();
       });
       child.stderr.on('data', () => {}); // Never expose provider output that may contain input text.
       // The child could not be started (ENOENT, EACCES, …). Its error text is never read.

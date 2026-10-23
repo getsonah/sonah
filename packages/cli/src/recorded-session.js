@@ -19,12 +19,14 @@ import { sessionFromLedger } from '../../evidence/adapters/sonah-ledger.js';
 /** The same load, with the session's hash: `sliceHash` of the ledger the review reads (D45; D84: the
  *  bounded, unmasked ledger — a digest names the session and shows none of its text). D69 f (g): the session page names
  *  it in the command under each decision, and your answers are keyed by it. */
-export async function loadRecordedSessionWithHash({ parent, codexHome, claudeProjects = null, sessionKey = 'session' }) {
+export async function loadRecordedSessionWithHash({ parent, codexHome, claudeProjects = null, sessionKey = 'session',
+  frozen = null }) {
   const files = [resolve(parent)];
   const recordingRoots = { codex: join(resolve(codexHome), 'sessions'),
     ...(typeof claudeProjects === 'string' && claudeProjects ? { claude: resolve(claudeProjects) } : {}) };
+  // D142: `frozen` (frozen-read.js), a review by session id: every recording read as it was when it started.
   const raw = await loadSessionEvidence(files, { outcomes: await outcomesFor(files), reviewLinkedChildren: true,
-    recordingRoots });
+    recordingRoots, ...(frozen ? { frozen } : {}) });
   const { ledger } = redact(raw);
   // D87: `cwd`, the working directory the recording names (the slicer's `cwd`), which `sonah review --code-pass` reads
   // the session's files under; null when it names none. Nothing else reads it. D99 (F1 guard): `census`, the recorder

@@ -20,7 +20,7 @@ import { modulesBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fix
 import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
-import { modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview }
+import { modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview, textBeforeAgentPrompt }
   from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, RUN, SID, SLUG, TEXT, linkedRun, mkdir, rm, scratch, writeTree } from './m33-w-workflow-fixture.js';
 import { W2_TEXT, captureReceivedCases, receivedLaterRows, resumedRows, verifierBeforeFixRows }
@@ -452,7 +452,7 @@ const MOVED_BY_REPORT_TRUTH = Object.freeze({ story: 'e62f59c639b3dc948d75e10632
  *  evidence that D119 splits, and its one list holds files, so nothing else moves. The story's version and the report
  *  model's do not move (each moved once since beta.4). No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_FIRST_SCREEN = Object.freeze({ story: '14c55c450096b8d44b008865abcd4a60d5e6755f161c5128105afb13b1fa21a3' });
-/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): the
+/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22): the
  *  story, by the report model's version in its footer alone (`sonah.report-model/6`; with the version set back to /5 it
  *  renders D118's bytes): the case neither opens on a compaction nor holds one, and the report carries no run record of
  *  what the review cost, so the footer says nothing of it. No event, gap, request, label, window or window failure
@@ -467,6 +467,11 @@ const MOVED_BY_MUST_FIRST = Object.freeze({ story: '43f7aeb2a7457b880dc0de51a473
  *  not check whether you asked for this." from its head into its evidence fold. No status word or count of the case
  *  changes. No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_QUIET = Object.freeze({ story: 'f5e80e33da8fae0bdd936ccb928cb4d766465fd8203ffe5ae3e649b557e61df9' });
+/** D144 (0.3.0-beta.7; the owner, 2026-10-23): the story, by the report model's version in its
+ *  footer alone (`sonah.report-model/7`): no item of the case leads in Must act with a prompt for the agent, so no fold
+ *  is added. Rendered back (`textBeforeAgentPrompt`), D133's, byte for byte. No event, gap, request, label, window or
+ *  window failure moved. */
+const MOVED_BY_AGENT_PROMPT = Object.freeze({ story: 'd8e6fc521f134c62ba84572228e389dd5c9c937ed1295abd9f70513c4f9bc5a0' });
 
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
@@ -477,12 +482,18 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   // (MOVED_BY_WINDOWING). The texts rendered back reproduce no capture before M35 (every window moved): `stable` and
   // the values before it are the record.
   const current = await captureReceivedCases(modules);
-  const asksFixes = stable.map((c) => ({ ...c, ...MOVED_BY_DISCLOSURE_WORDS, ...MOVED_BY_WINDOWING,
+  const beta6 = stable.map((c) => ({ ...c, ...MOVED_BY_DISCLOSURE_WORDS, ...MOVED_BY_WINDOWING,
     ...MOVED_BY_M36_FORMAT, ...MOVED_BY_M36_CONVERSATION, ...MOVED_BY_D71, ...MOVED_BY_D71_BRIEF, ...MOVED_BY_D71_CHANNELS,
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
     ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
     ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND,
     ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN, ...MOVED_BY_BETA6_READERS, ...MOVED_BY_MUST_FIRST, ...MOVED_BY_QUIET }));
+  // D144 (0.3.0-beta.7): and once more (MOVED_BY_AGENT_PROMPT), by the report model's version in the footer; rendered
+  // back (`textBeforeAgentPrompt`), 0.3.0-beta.6's, byte for byte.
+  const asksFixes = beta6.map((c) => ({ ...c, ...MOVED_BY_AGENT_PROMPT }));
+  assert.deepEqual(await captureReceivedCases({ ...modules, renderStory: (session, report) => textBeforeAgentPrompt(
+    renderReportMarkdown(session, report)) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
+    ...MOVED_BY_FIX_REVIEW })), 'as 0.3.0-beta.6 rendered them');
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90
   // once more (MOVED_BY_AGENTIC), the same way; and D97 once more (MOVED_BY_STE), the same way; D97 once more

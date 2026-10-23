@@ -98,7 +98,9 @@ test('status fact readers: versions moved with the bytes', () => {
   // D126 and D127 once more (sonah.session-story/40, 0.3.0-beta.6): the line beside the title for a session that opens on a
   // compaction, each compaction among your messages, and the first compaction after an ask. In the same move (D129, C7):
   // the footer says what the review cost.
-  assert.equal(STORY_VERSION, 'sonah.session-story/40');
+  // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
+  // act, folded, and its step in the shortening order.
+  assert.equal(STORY_VERSION, 'sonah.session-story/41');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -150,7 +152,9 @@ test('status fact readers: versions moved with the bytes', () => {
   // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
   // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
   // cost.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/45');
+  // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
+  // act, folded, in a block that one click selects.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/46');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {

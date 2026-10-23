@@ -81,6 +81,48 @@ fixed code and a fix.
 : The recording path does not exist or cannot be read, or `--choose N` is larger than the list. Numbers follow the
   newest-first order of `sonah sessions`, so they shift when a new session appears.
 
+**`/sonah` is not a command in Claude Code**
+: Run `sonah skill add`, then start a new Claude Code session: a session reads its skills when it starts. With
+  `CLAUDE_CONFIG_DIR` set, run `sonah skill add` with the same `CLAUDE_CONFIG_DIR`, so the skill goes where that Claude
+  Code reads it. Settings that an administrator manages can turn off personal skills; `/status` in Claude Code shows the
+  setting sources.
+
+**`/sonah` prints `Shell command failed for pattern ...`**
+: Claude Code could not run `sonah`: the agent never saw the skill. Most often `sonah` is not on the PATH that Claude
+  Code uses. Type `!command -v sonah` in Claude Code: it prints the path of `sonah`, or nothing when Claude Code cannot
+  find it. (`sonah doctor` checks the PATH of the terminal you run it in, which can differ, for example when Claude Code
+  was started from an editor.) Install Sonah with `npm install -g getsonah`, or add the folder of the `sonah` command to
+  the PATH that Claude Code starts with, then start a new session.
+
+**`~/.claude/skills/sonah/SKILL.md is not as Sonah wrote it, so Sonah changed nothing there for Claude Code.`**
+: A skill of your own is named `sonah`, the folder holds a file Sonah did not write, or someone edited Sonah's file.
+  `sonah skill add` and `sonah skill remove` never change such a file. Move it away, then run `sonah skill add` again.
+
+**`Review could not complete: session_id_not_found.`**
+: With `--session ID`, no recording's file name carries the id, in the projects folder of Claude Code (with
+  `CLAUDE_CONFIG_DIR` or `SONAH_CLAUDE_PROJECTS`, the folder they name) or in the Codex home (`CODEX_HOME`). Check the id,
+  and the folders that `sonah doctor --no-probe` prints; `sonah sessions` lists what Sonah finds for this repository.
+
+**`Review could not complete: session_id_ambiguous.`**
+: More than one recording carries the id in its file name: Codex writes a second file for a thread after a revert, or
+  the same file name is in two project folders. The line lists them. Give the path of the one to review.
+
+**`Review could not complete: session_id_compressed.`**
+: The one recording with the id is a compressed Codex rollout (`.jsonl.zst`), which Sonah does not read. The line names
+  it. Decompress it (`zstd -d <file>`) and give the path of the `.jsonl` file.
+
+**`Sonah got an empty session id, so it reviewed nothing.`**
+: `--session ""` was given, which is what a skill passes when the agent's harness gives it no session id. Sonah never
+  falls back to the newest recording here: that could be another session. Run `sonah sessions` and review by path or
+  with `--choose N`.
+
+**`sonah review --session ID --background` printed its line, and no page opened**
+: The review runs in the background and can take minutes to about an hour on a long session. Its line names the page and
+  the log. The log holds what the review printed, including its last line: a review that could not complete says why
+  there, with its fix. With `--no-open`, Sonah writes the page and does not open it. A review of the same recording that
+  `--background` started and that still runs, or any review of it while it asks the model, is said in the first line
+  instead (`review_in_progress`), and no second review starts.
+
 ## While a review runs
 
 The review first prints its estimate, for example *"This review should take roughly 4-12 minutes"*. A *window* is one
@@ -305,6 +347,15 @@ It then prints `Review window N/M finished` as each part completes. There are no
   the open lines of the Must act and Must know items whole too. Here these parts alone are longer than the limit, so Sonah prints no `gh` command. Open
   the page, or post a part of the .md yourself.
 
+**A Must act item has no fold "Prompt for the agent".**
+: Sonah writes a prompt only for these Must act items: an ask that the agent did not do or did only in part; a claim,
+  or a statement in a file, that the recording contradicts; an edit against your words; and a bug, a broken contract
+  or rule, an ask that the code does not meet or a false claim that the code review found. Other items, such as a weak
+  test or a question of the code review, have none. Sonah writes one only when it found the quotes that the prompt
+  needs again in the recording. When Sonah shortens the .md to fit a GitHub comment, it can
+  leave the prompts out; the HTML page keeps them unless it is shortened too. The .md that Sonah prints in the terminal
+  holds no prompt: give `--output` to write the report with them.
+
 **`Commit 1a2b3c4 is not on origin yet.`**
 : GitHub does not have this commit, so the report has no links to the code that needs it. The header says so when the
   report names a place in that code. The line names those links. When it is your last commit, they are the links to the code as the agent left it. When it is
@@ -373,6 +424,60 @@ one). Messages you can see:
 
 Your answer is stored only on this computer and shows on the page the next time you write it.
 
+## The commit link (`sonah hook add`)
+
+`sonah doctor`, run in the repository, prints one `Commit link:` line. What each one means:
+
+- **`Commit link: off in this repository.`** `sonah hook add` was not run here, or `sonah hook remove` was. Run
+  `sonah hook add` to turn it on.
+- **`Commit link: on.`** Sonah can see that git runs its hook at each commit: Sonah's own hook file is the hook, or
+  pre-commit's hook runs it as `prepare-commit-msg.legacy` (the line says which).
+- **`Commit link: not checked. Sonah's line is in ...`** You added Sonah's line or command to a file that another
+  tool or you own, and Sonah does not follow that file to see whether git reaches the line. Let your agent make one
+  commit, and look for the line in `git log`. A hook that ends in `exec` or `exit` before the line never reaches it.
+- **`Commit link: not checked. ... is another tool's hook`** The hook git runs is another tool's, and Sonah's line is
+  not in it. Run `sonah hook add` and add what it prints.
+- **`Commit link: off. lefthook moved Sonah's hook to ... .old, and nothing runs it there.`** A `lefthook install` ran
+  after `sonah hook add`. Run `sonah hook add` again: it prints Sonah's command for your lefthook file. `sonah doctor`
+  exits 1 until then.
+- **`Commit link: off. ... is Sonah's hook, but it is not executable, so git skips it.`** Run `sonah hook add`: it
+  makes Sonah's own file in the git folder executable again, or prints the `chmod +x` command for a file elsewhere (a
+  `core.hooksPath` folder). `sonah doctor` exits 1 until then.
+- **`Commit link: off. ... runs no line of Sonah's, and Sonah's script is still there.`** Another tool replaced the
+  hook (lefthook does so without a `.old` copy when its file names no hook), or the hook file was deleted, or
+  `core.hooksPath` points to a folder with none. Run `sonah hook add` and add what it prints. `sonah doctor` exits 1
+  until then.
+
+`sonah review --commits A..B` stops with one of these before it reads the session and before any model call. To print
+the list above the code, it has read the range's messages and the tool calls of each recording the range names.
+
+- `commits_range_unreadable`: git cannot list that range in this repository. Give one that `git log` reads, or the
+  repository with `--repo DIR`.
+- `commits_no_session`: no commit of the range names a session in an `Agent-Session` line. `sonah sessions --commits
+  A..B` says how many lines carry a value that is not a session id.
+- `commits_choose_one`: the range names several sessions whose recordings are here, or `--choose N` names no row of the
+  list. Sonah lists them above. Add `--choose N` with a row of the list.
+- `session_not_on_this_computer`: no file on this computer carries the session's id. Review it where the agent ran.
+- `session_id_ambiguous` or `session_id_compressed`: two recordings here carry the session's id, or its only recording
+  is a compressed Codex rollout (`.zst`). Sonah names the files: give the path of the one to review, or run `zstd -d`
+  on the compressed one and give the `.jsonl` file that it writes.
+
+`sonah sessions --commits A..B` exits 1 when no commit of the range names a session. `sonah sessions --github
+OWNER/REPO --pr N` does the same for a pull request whose commits GitHub listed in full, and exits 2 with `Sonah could
+not read the commits of ... from GitHub` when GitHub does not answer (a wrong name or number, or a token that cannot
+read the repository). When the pull request holds more than 250 commits, GitHub lists 250: Sonah says so, prints the
+two commands that read them all, and exits 2 when none of the commits it got names a session. Run from a folder in no
+git repository, it says so first, and no commit can be shown in a recording: run it in your clone, or give the clone
+with `--repo DIR`.
+
+A commit with no `Agent-Session` line: it was made in your own terminal, by Codex (not stamped yet), with a message
+written in an editor, with an empty message (blank, comments or `Signed-off-by:` lines only, which git refuses), or by
+a rebase or a cherry-pick, which add no line (see
+[INSTALL.md](INSTALL.md#link-commits-to-sessions)). `sonah hook add` stops with `... is in no git working tree`,
+`... is a bare repository`, `... is there, and Sonah did not write it` (a file where Sonah keeps its script) or
+`... passes through a link`, and changes nothing; each exits 2. When `.git/hooks` is a link, it writes no hook there,
+prints what to add, and exits 1.
+
 ## Exit codes
 
 This is the one list of Sonah's exit codes. The exit code reports only whether Sonah's own review ran, never a
@@ -380,10 +485,10 @@ judgment of the agent's work: a review with findings that ran to the end exits `
 
 | Code | Meaning |
 | --- | --- |
-| `0` | The command did its job: Sonah's review ran to completion, whatever it lists |
-| `1` | Sonah's review ran but did not complete (a part of the session was not reviewed, or, with `--code-pass` on the command line, the code step did not cover the whole change and finish its checks; the output says which and why); or no session was found for this repository; or `sonah doctor` found something to fix; or `sonah decision` refused an answer (the reason is printed). A code step that ran by default or by your setting never sets it by itself. |
-| `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model) |
-| `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer |
+| `0` | The command did its job: Sonah's review ran to completion, whatever it lists; or `sonah review --background` printed its one line, whatever it says (when the line says the review started, it runs on, and its log says how it ended) |
+| `1` | Sonah's review ran but did not complete (a part of the session was not reviewed, or, with `--code-pass` on the command line, the code step did not cover the whole change and finish its checks; the output says which and why); or no session was found for this repository, or `--session` got an empty id; or `sonah doctor` found something to fix; or `sonah hook add` could not turn the commit link on by itself and printed the line for you to add; or `sonah skill add` or `sonah skill remove` found a file that Sonah did not write and changed nothing; or `sonah sessions --commits A..B` found no commit that names a session, or `sonah sessions --github OWNER/REPO --pr N` found none in a list that GitHub gave whole; or `sonah decision` refused an answer (the reason is printed). A code step that ran by default or by your setting never sets it by itself. |
+| `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model, a range git cannot list, a pull request GitHub does not answer for, or one whose list GitHub did not give whole and whose listed commits name no session) |
+| `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer; or `sonah skill add` or `sonah skill remove` could not write or delete its file |
 | `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again |
 
 ## Still stuck

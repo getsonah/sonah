@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.3.0-beta.7 (2026-10-23)
+
+Type `/sonah` in Claude Code when the agent says it is done: Sonah reviews that exact session in the background and
+opens its page when the review ends. It reviews the session by its id, so it reviews that session and no other, even
+while the agent is still writing it.
+
+Each Must act item can now hold a prompt to paste into your agent. In your voice, it says what you asked or what the
+agent said, quotes what Sonah checked in the recording, says where to look, and ends with one line. You no longer write
+such an item out for the agent yourself, and the evidence reaches it word for word.
+
+Your agent's commits can now name the session that made them. Run `sonah hook add` once in a repository, and each
+commit that your Claude Code agent makes there ends with one line, `Agent-Session: <id>`. Then
+`sonah sessions --commits main..HEAD` lists the sessions behind your branch, `sonah sessions --github OWNER/REPO --pr N`
+those behind a pull request, and `sonah review --commits main..HEAD` reviews one of them. Commands, the page and the
+files under `~/.sonah` can still change between betas.
+
+Reviews of long sessions run through Claude Code (the default backend) cost less: when Sonah checks an item in three
+passes, the second and third now read the prompt that the first one cached, instead of each writing it again.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, the stored answers of the session review and the code review stay: Sonah asks again only for a session that
+holds a `/sonah` command, which it now leaves out. To add `/sonah` to Claude Code, run `sonah skill add` once.
+
+### /sonah in Claude Code
+
+- `sonah skill add` writes the /sonah skill for Claude Code (`~/.claude/skills/sonah/SKILL.md`, or under
+  `CLAUDE_CONFIG_DIR`). In a new session, `/sonah` starts a review of that session in the background, and the agent
+  replies with Sonah's one line: where the page will be. Only you start it; Claude Code asks no permission for it.
+- `sonah skill remove` deletes the skill. Neither command changes a file that Sonah did not write.
+- `sonah doctor` says whether the skill is added and current, and says so when `sonah` is not on the PATH of the
+  terminal you run it in (type `!command -v sonah` in Claude Code to check its own).
+- Sonah leaves its own turn out of the review: `/sonah` is never read as an ask of yours, and the agent's reply to it is
+  not read. What starts other work after it, such as your next message or a background task's notification, is read as
+  before.
+
+### A review by session id
+
+- `sonah review --session ID` reviews the recording whose file name carries the session id (Claude Code's
+  `<ID>.jsonl`), whatever is newer in the repository. When no recording carries the id, or more than one does, Sonah
+  says so and reads nothing.
+- Sonah reads that recording, and the recordings reviewed with it, as they were when the review started. Rows that the
+  agent writes later are not read, so the same start gives the same review.
+- With `--background`, Sonah prints one line and reviews in the background. It writes the page, the Markdown report and
+  a log in the review's folder under `~/.sonah`, and opens the page when the review ends. An empty id reviews nothing.
+
+### A prompt for the agent under a Must act item
+
+- Under a Must act item, a fold "Prompt for the agent" holds a short message for your agent: "I asked: …" or
+  "You said: …", the recorded result, message or file that the item rests on, the files to look at, and "Fix this."
+  or "Check this claim against what I quoted." Each quote in it is one that the item shows, which Sonah found again in
+  the recording. For an item of the code review, the prompt gives the code review's title and action, labelled as its
+  words.
+- On the page, one click selects the whole prompt. In the .md, the prompt is a code block, so GitHub shows a copy
+  button on it, and nothing in it pings anyone.
+- Sonah writes a prompt for these Must act items: an ask that the agent did not do or did only in part; a claim, or a
+  statement in a file, that the recording contradicts; an edit against your words; and a bug, a broken contract or
+  rule, an ask that the code does not meet or a false claim that the code review found. Other items have none, and so
+  has an item whose quote Sonah did not find in the recording.
+- When the .md must be shortened to fit a GitHub comment, Sonah leaves out the prompts after Good to know becomes
+  counts, and before any evidence of Must know or Must act.
+- The report that Sonah prints in the terminal (with no `--output`) holds no prompt, so a review that runs in the
+  agent's own shell does not give the agent its prompts.
+- The page, the .md and the report model each have a new version.
+
+### The commit link
+
+- `sonah hook add` writes a `prepare-commit-msg` hook and a small `sh` script into the repository's git folder. Every
+  worktree of the repository shares them. The hook only appends the line at the end of the message, so your message
+  stays as you wrote it. It needs no Sonah process at commit time, prints nothing, sends nothing and never stops a
+  commit. Commits that you make in your own terminal, rebases, cherry-picks, messages written in an editor, unedited
+  templates and empty messages (as git counts them, sign-offs included) get no line, so git still refuses an empty one.
+- When another tool owns the hook, Sonah changes none of it: it prints what to add and where, and exits 1. That is one
+  line for husky or a hook of your own, Sonah's command in your lefthook file's own format (YAML, TOML or JSON), or the
+  three commands that hand Sonah's hook to pre-commit.
+- `sonah doctor` says on only when it can see that git runs Sonah's hook, in the repository you run it in: the file is
+  there and executable. A later `lefthook install` moves the hook aside, where nothing runs it, and doctor says so. A
+  line in another tool's file is "not checked", with how to check it.
+- `sonah hook remove` deletes only the files Sonah wrote. Run it before you uninstall Sonah. The lines already in your
+  history stay.
+- `sonah sessions --commits main..HEAD` lists the sessions behind your branch: each one's id, its recording, its
+  commits, and a line to review it. Each commit is shown in the recording (a tool call of that session spans its time,
+  in this repository), named by the commit only, or not on this computer. `sonah review --commits main..HEAD` reviews
+  the session, or lists them and takes `--choose N`. Two recordings with one id, or a compressed one, are named as
+  such, with their files.
+- `sonah sessions --github OWNER/REPO --pr N` does the same for a pull request's commits, as GitHub lists them. Past
+  250 commits, GitHub's list is not whole: Sonah says so, states no absence over the rest, and prints the commands that
+  read them all.
+- In a public repository the line is public, and one id ties commits to one session.
+  [PRIVACY.md](docs/PRIVACY.md#the-agent-session-line) says what the line tells a reader.
+
 ## 0.3.0-beta.6 (2026-10-22)
 
 Sonah now reads a Claude Code session whole, even after a compaction, and puts what needs your action first. On every

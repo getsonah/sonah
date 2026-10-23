@@ -1,6 +1,6 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { readRecordingIdentity, recordingVersion } from './recording-read.js';
+import { currentVersion, readRecordingIdentity } from './recording-read.js';
 import { CONFLICT_CANDIDATE_FIELDS } from '../../slicer/src/recording-identity.js';
 
 // Metadata is streamed, so total bytes/records/time do not impose a small-session default.
@@ -55,7 +55,9 @@ function conflictCandidateRecords(pending) {
   return Object.freeze(frozen);
 }
 
-async function enumerate(namespace, adapter, limits, deadline) {
+/** D142: with `frozen` (frozen-read.js), a recording that was not there when the review started is not one: a
+ *  frozen load lists what a copy of the folder taken then would hold. */
+async function enumerate(namespace, adapter, limits, deadline, frozen = null) {
   const files = [], reasons = new Set();
   let directories = 0, omittedFiles = 0, incomplete = false, unindexedDirectories = 0;
   const unavailable = reason => { incomplete = true; reasons.add(reason); };
@@ -85,6 +87,7 @@ async function enumerate(namespace, adapter, limits, deadline) {
       if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
       if (adapter === 'codex' && !/^rollout-\d{4}-\d{2}-\d{2}T/.test(entry.name)) continue;
       if (adapter === 'claude' && !/(?:^|\/)subagents?\//.test(relative(namespace, file))) continue;
+      if (frozen && !frozen.has(await lstat(file, { bigint: true }).catch(() => null))) continue;
       if (files.length >= limits.files) { omittedFiles++; unavailable('files'); continue; }
       files.push(file);
     }
@@ -93,7 +96,9 @@ async function enumerate(namespace, adapter, limits, deadline) {
   return { files, reasons, directories, omittedFiles, incomplete, unindexedDirectories };
 }
 
-export async function indexRecordings(namespace, adapter, { limits: lower = {} } = {}) {
+/** D142: with `frozen`, every recording is listed and read as it was when the review started (frozen-read.js), and
+ *  one that only grew since is unchanged. */
+export async function indexRecordings(namespace, adapter, { limits: lower = {}, frozen = null } = {}) {
   const limits = { ...RECORDING_INDEX_LIMITS, ...lower };
   if (!['codex', 'claude'].includes(adapter) || Object.entries(limits).some(([key, n]) =>
     !Number.isSafeInteger(n) || n <= 0 || !(key in RECORDING_INDEX_LIMITS) || n > RECORDING_INDEX_LIMITS[key])) {
@@ -101,7 +106,7 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
   }
   const started = performance.now(), deadline = limits.milliseconds === UNBOUNDED
     ? Infinity : started + limits.milliseconds;
-  const first = await enumerate(namespace, adapter, limits, deadline);
+  const first = await enumerate(namespace, adapter, limits, deadline, frozen);
   const { files } = first;
   const sources = [], versions = new Map(), reasons = new Set(first.reasons), pendingCandidates = new Map();
   let failedFiles = 0, bytesRead = 0, records = 0, scannedFiles = 0;
@@ -113,7 +118,7 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
     try {
       const { bytesRead: bytes, records: count, version, candidates, ...identity } = await readRecordingIdentity(file,
         { adapter, namespace, maxBytes: remaining, maxLineBytes: Math.min(limits.lineBytes, remaining),
-          maxRecords: limits.inventoryRecords - records, deadline, candidates: true });
+          maxRecords: limits.inventoryRecords - records, deadline, candidates: true, frozen });
       bytesRead += bytes; records += count; scannedFiles++;
       if (!identity.identityConflict && !(adapter === 'codex' ? identity.sessionId : identity.childId)) {
         failedFiles++;
@@ -133,7 +138,7 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
   }
   const unscannedFiles = files.length - scannedFiles + first.omittedFiles;
   // Detect an added/deleted candidate or changed verified file before releasing the index.
-  const last = await enumerate(namespace, adapter, limits, deadline);
+  const last = await enumerate(namespace, adapter, limits, deadline, frozen);
   const enumerationChanged = first.incomplete !== last.incomplete || first.omittedFiles !== last.omittedFiles
     || files.length !== last.files.length || files.some((file, index) => file !== last.files[index]);
   if (enumerationChanged) reasons.add('enumeration_changed');
@@ -141,7 +146,7 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
   let changedFiles = 0;
   for (const [file, version] of versions) {
     try {
-      if (recordingVersion(await lstat(file, { bigint: true })) !== version) changedFiles++;
+      if (await currentVersion(file, frozen) !== version) changedFiles++;
     } catch { changedFiles++; }
   }
   if (changedFiles) reasons.add('source_changed');
@@ -158,7 +163,7 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
       unindexedDirectories: first.unindexedDirectories,
       changedFiles, bytesRead, records, elapsedMs: performance.now() - started,
       reasons: [...reasons] } };
-  if (!incomplete) inventoryVersions.set(result, { namespace, adapter, limits, versions });
+  if (!incomplete) inventoryVersions.set(result, { namespace, adapter, limits, versions, frozen });
   return result;
 }
 
@@ -167,13 +172,13 @@ export async function indexRecordings(namespace, adapter, { limits: lower = {} }
 export async function recordingInventoryCurrent(inventory) {
   const saved = inventoryVersions.get(inventory);
   if (!saved || inventory.incomplete) return false;
-  const { namespace, adapter, limits, versions } = saved;
-  const now = await enumerate(namespace, adapter, limits, Infinity);
+  const { namespace, adapter, limits, versions, frozen } = saved;
+  const now = await enumerate(namespace, adapter, limits, Infinity, frozen);
   if (now.incomplete || now.files.length !== inventory.files.length
     || now.files.some((file, i) => file !== inventory.files[i])) return false;
   for (const [file, version] of versions) {
     try {
-      if (recordingVersion(await lstat(file, { bigint: true })) !== version) return false;
+      if (await currentVersion(file, frozen) !== version) return false;
     } catch { return false; }
   }
   return true;

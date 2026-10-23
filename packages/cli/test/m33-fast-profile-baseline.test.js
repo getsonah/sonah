@@ -35,6 +35,7 @@ import * as sessionReview from '../src/session-review.js';
 import { CHALLENGE_PROFILE, MAX_REVIEW_INPUT_BYTES } from '../../evidence/src/challenge.js';
 import { WINDOW_REQUEST_MAX_BYTES, WINDOWING_PROFILE } from '../../evidence/src/windows.js';
 import { captureStandard } from './m33-fast-profile-fixture.js';
+import { modulesBeforeD145 } from './d145-passes-fixture.js';
 import { modulesBeforeRelayRule, profileBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fixture.js';
 import { modulesBeforeForbiddenEdit, profileBeforeForbiddenEdit, modulesBeforeM3, modulesBeforeDisclosureWords }
   from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
@@ -1434,15 +1435,31 @@ const MOVED_BY_RELATIVE_PLACE = Object.freeze({
     combined: MOVED_BY_TIER_REVERT.runProfile.combined },
   sessionProfileDigest: 'c3695aaea457c6ffc0ad31fc052b9f26810bd55ee5d2a4c4dc640e68303d5646',
 });
+/**
+ * D145 (0.3.0-beta.7): the values that moved from D122 (d)'s — the `large` case's order alone (`sentInOrder`,
+ * `labels`): every challenge batch's first pass is sent first, then each batch's later passes, each once its first
+ * pass's reply has begun (challenge.js `challengeItems`). The same requests, byte for byte (`sentSorted`, `planned`,
+ * `sentCount`), and the same run profiles; "turn" and "lanes" ask one batch at a time, so their order did not move.
+ * Computed once against `git archive 0981e645` and this code (d145-passes-after-first.test.js has the rest of the
+ * proof).
+ */
+const MOVED_BY_D145 = Object.freeze({
+  cases: [{ sentInOrder: '0f8268b64aca3e907d78546604d33a4f04afdadb9f7993c11a14faf50c26e921',
+    labels: '2710d793a0f0dac5dab0574f544c48f49d20d1e1a28364df84e83f3cfc27a2fe' }, {}, {}],
+  runProfile: MOVED_BY_RELATIVE_PLACE.runProfile,
+  sessionProfileDigest: MOVED_BY_RELATIVE_PLACE.sessionProfileDigest,
+});
 /** What the evidence merge sent: the agent transport's cases (the cleanup withdrew the void re-asks). */
 const EVIDENCE_MERGE_CASES = AGENT_TRANSPORT_CURRENT.cases;
-/** What the code sends now. */
-const CURRENT = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT,
+/** What the code sent before D145. */
+const BEFORE_D145 = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT,
   cases: withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(withMoves(
     { cases: EVIDENCE_MERGE_CASES }, MOVED_BY_SKIM.cases), MOVED_BY_CITED_WHOLE.cases), MOVED_BY_REFUSED_AFTER_EDIT.cases),
   MOVED_BY_REPAIR_MERGE.cases), MOVED_BY_ONE_BOUND.cases), MOVED_BY_WHOLE_FILES.cases), MOVED_BY_WHOLE_FILES_ON.cases),
   MOVED_BY_WHERE_IT_LIES.cases), MOVED_BY_PREMISES.cases), MOVED_BY_ACCOUNT.cases), MOVED_BY_ONE_ITEM.cases).cases,
   runProfile: MOVED_BY_RELATIVE_PLACE.runProfile, sessionProfileDigest: MOVED_BY_RELATIVE_PLACE.sessionProfileDigest });
+/** What the code sends now: D122 (d)'s, in D145's order. */
+const CURRENT = Object.freeze(withMoves(BEFORE_D145, MOVED_BY_D145.cases));
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
  *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
  *  `modulesBeforeSkim`). */
@@ -1534,6 +1551,12 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   assert.equal(typeof modulesBeforeDisclosureWords(modules).runReview, 'function');
   const now = await captureStandard(modules, digests);
   assert.deepEqual(now, CURRENT);
+  // D145 moved the `large` case's order alone (its challenge runs ask two batches or more): the same requests, sent
+  // first pass first. Rendered back (`modulesBeforeD145`: each challenge run's passes put back in batch order), the
+  // capture is D122 (d)'s byte for byte.
+  assert.deepEqual(MOVED_BY_D145.cases.map((c) => Object.keys(c).sort().join(',')), ['labels,sentInOrder', '', '']);
+  assert.notEqual(MOVED_BY_D145.cases[0].sentInOrder, BEFORE_D145.cases[0].sentInOrder);
+  assert.deepEqual(await captureStandard(modulesBeforeD145(modules), digests), BEFORE_D145);
   // D103: the skim moved the large case's narrative and challenge requests alone (a Claude Code recording's 70 KB
   // results, shown 12,000 bytes at each end); rendered back (`profileBeforeSkim`), every run profile is the evidence
   // merge's, and windowed as before it (`modulesBeforeSkim`: no session names a harness), every case is. Every capture
@@ -1690,7 +1713,8 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     D80_VERSIONS.dossier.after);
   for (const scope of ['session-only', 'combined'])
     assert.equal(sha256(canonicalJson(profileBeforeSkim(reviewRun.runProfile(scope)))), MOVED_BY_EVIDENCE_MERGE.runProfile[scope]);
-  const beforeSkim = modulesBeforeSkim(modules);
+  // D145 moved the order alone; every capture below is rendered back to the order before it (`modulesBeforeD145`).
+  const beforeSkim = modulesBeforeD145(modulesBeforeSkim(modules));
   const skimBack = (...args) => profileBeforeSkim(reviewRun.runProfile(...args));
   assert.deepEqual(await captureStandard(beforeSkim, { canonicalJson, runProfile: skimBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(skimBack('session-only', ...args))) }),

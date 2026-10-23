@@ -27,12 +27,12 @@
 
 import { visible, backtickPieces, noFilesWords } from './session-story.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
-import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, foldNotes, askStatusWord, promptAfterTiers }
-  from './report-model.js';
+import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, foldNotes, askStatusWord, promptAfterTiers,
+  agentPromptText } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS,
-  REPORT_SEEN_WORDS } from './report-words.js';
+  REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS } from './report-words.js';
 
 /** The page's layout version, in its generator meta. /37 (D97, owner decisions 2026-10-16): the page
  *  renders the report model — the header (its size line, the runs after the last edit, what Sonah did not check), the
@@ -86,8 +86,13 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  act comes first"), in the same move: Must act and Must know come before your prompt, and a long session's prompt
  *  (more than 30 asks) is a closed fold after them, its count in its summary. D133 (R2): the lines about what Sonah could
  *  not check are folded, each word for word (the fold What Sonah could not check, an ask's row fold, an item's evidence
- *  fold), and "Sonah checked only the marked parts of your message." is said once, in the legend. */
-export const PAGE_VERSION = 'sonah.session-page/45';
+ *  fold), and "Sonah checked only the marked parts of your message." is said once, in the legend. /46 (0.3.0-beta.7,
+ *  one move from 0.3.0-beta.6's /45). D144 (the owner, 2026-10-23): under each item that leads in
+ *  Must act and has a prompt, after its visible lines, a fold "Prompt for the agent" holds it, as plain
+ *  text in a `<pre>` that one click selects whole (CSS, no script), left out with the evidence when the page is
+ *  shortened; a page with no such prompt differs from /45 only by the versions it names and the fold's three style
+ *  rules, which every page carries. */
+export const PAGE_VERSION = 'sonah.session-page/46';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -316,7 +321,13 @@ function evidenceHtml(item, trimmed) {
   return `<details class="evidence"><summary>${summary}</summary>${notes}${lines.join('')}${noLink.join('')}`
     + `<p class="note why">${esc(item.why)}</p>${id}${answer}</details>`;
 }
-/** The lines of an item or a member (D97, D112), in order, then its evidence fold. */
+/** D144: the prompt for the agent of an item that leads in Must act, folded: the note on its voice, then the
+ *  prompt as plain text in a `<pre>` that one click selects whole (CSS `user-select: all`; the page runs no script). */
+const agentPromptHtml = (prompt) => `<details class="agent-prompt"><summary>${esc(REPORT_AGENT_PROMPT_WORDS.fold)}`
+  + `</summary><p class="note">${esc(REPORT_AGENT_PROMPT_WORDS.voice)}</p><pre class="agent-prompt-text">`
+  + `${esc(agentPromptText(prompt))}</pre></details>`;
+/** The lines of an item or a member (D97, D112), in order, then (D144) the prompt for the agent of an item that has one,
+ *  left out with the evidence when the page is shortened, then its evidence fold. */
 function linesHtml(item, trimmed) {
   const out = [];
   if (item.quote) out.push(`<blockquote class="item-quote">${item.quoteLabel ? `<span class="label">${esc(item.quoteLabel)}</span> `
@@ -330,6 +341,7 @@ function linesHtml(item, trimmed) {
   if (item.action) out.push(labelled(REPORT_ITEM_WORDS.action, partsHtml(item.action), 'line action'));
   out.push(whereHtml(item));
   out.push(excerptHtml(item.where[0]?.excerpt));
+  if (item.agentPrompt && !trimmed) out.push(agentPromptHtml(item.agentPrompt));
   out.push(evidenceHtml(item, trimmed));
   return out.join('');
 }
@@ -617,6 +629,11 @@ details.evidence > *:not(summary) { margin-top: 6px; }
 details.row-evidence { display: inline-block; vertical-align: baseline; }
 details.row-evidence[open] { display: block; }
 details.row-evidence > *:not(summary) { margin-top: 4px; }
+details.agent-prompt { margin-top: 4px; }
+details.agent-prompt > *:not(summary) { margin-top: 6px; }
+pre.agent-prompt-text { font: 12.5px/1.55 var(--mono); color: var(--ink); background: var(--wash); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
+  -webkit-user-select: all; user-select: all; }
 details.item.gtk > summary { font: 500 15px/1.45 var(--display); color: var(--ink); }
 .members { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .member { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 6px; }

@@ -1,4 +1,4 @@
-// D128 (A05+B23+D6; the owner, 2026-10-22: "go with your recommendations"): each new Claude
+// D128 (A05+B23+D6; the owner, 2026-10-22): each new Claude
 // Code release adds row forms that the reader's lists did not name, and every such row marked the recording "session
 // evidence incomplete". A row of a form no list names is now read by its structure (records.js
 // `canHoldSessionContent`): when nothing unlisted on it can hold session content (no string but a token, no

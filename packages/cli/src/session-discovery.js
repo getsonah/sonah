@@ -9,14 +9,22 @@ import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { claudeProjectsDir } from './claude-home.js';
+import { COMMITS_PROBLEMS } from '../../evidence/src/ledger.js';
+import { commitRangeShape, commitSessionLines, commitSessionsExit, sessionsOfCommits, sessionsOfPullRequest,
+  COMMIT_SESSION_FIXES }
+  from './commit-sessions.js';
+import { createGitHubClient, targetPath } from '../../github/client.js';
+import { GITHUB_ERROR_CODES } from '../../github/errors.js';
+import { resolveToken } from './github.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
 
 const execute = promisify(execFile);
 // POSIX single-quote grammar, shared with the installer's copyable command hints.
 const shellQuote = text => "'" + text.split("'").join("'\\''") + "'";
-export const SESSIONS_USAGE = 'sonah sessions [--repo DIR]';
+export const SESSIONS_USAGE = 'sonah sessions [--repo DIR] [--commits A..B | --github OWNER/REPO --pr N]';
 export const SESSION_DISCOVERY_FIX = 'Run Claude Code or Codex in this repository, then retry; '
   + 'or pass an existing recording path to sonah review. Use sonah doctor --no-probe to check recording locations.';
+const COMMIT_RANGE_FIX = (range) => COMMIT_SESSION_FIXES.rangeUnreadable(range);
 const DIRECTORY_FIX = 'Run from a readable repository or directory, or pass --repo with its correct path. '
   + 'Check read access to the configured Claude and Codex recording directories.';
 
@@ -126,17 +134,66 @@ export async function discoverSessions({ repo = process.cwd(), claudeProjects = 
 }
 
 /** A read-only numbered list; choose explicitly through sonah review --choose N.
- * The local file identifies each choice on the user's own terminal. No recorded cwd,
- * session id, transcript text, or caught error message becomes terminal output.
+ * The local file identifies each choice on the user's own terminal. No recorded cwd, transcript text, or caught error
+ * message becomes terminal output. D143: with --commits A..B it lists the sessions that the range's Agent-Session
+ * lines name, by their ids (commit-sessions.js): an id is printed because the person asks for the sessions behind
+ * commits that already carry it, and D90 (owner decision 2026-10-15) lifted the rule that kept ids off the terminal for
+ * privacy's sake.
  */
 export async function runSessionsCommand(argv, { stdout = process.stdout, stderr = process.stderr,
-  discover = discoverSessions, ...options } = {}) {
-  let repo;
+  discover = discoverSessions, sessionsOf = sessionsOfCommits, sessionsOfPull = sessionsOfPullRequest, client = null,
+  env = process.env, ...options } = {}) {
+  let repo, commits, github, pr;
   if (argv.includes('--help') || argv.includes('-h')) { stdout.write(`usage: ${SESSIONS_USAGE}\n`); return 0; }
-  if (argv.length !== 0 && (argv.length !== 2 || argv[0] !== '--repo' || !argv[1] || argv[1].startsWith('--'))) {
-    stderr.write(`usage: ${SESSIONS_USAGE}\n`); return 2;
+  const usage = () => { stderr.write(`usage: ${SESSIONS_USAGE}\n`); return 2; };
+  for (let i = 0; i < argv.length; i += 2) {
+    const [flag, value] = [argv[i], argv[i + 1]];
+    if (!value || value.startsWith('--')) return usage();
+    if (flag === '--repo' && repo === undefined) repo = value;
+    else if (flag === '--commits' && commits === undefined) commits = value;
+    else if (flag === '--github' && github === undefined) github = value;
+    else if (flag === '--pr' && pr === undefined) pr = value;
+    else return usage();
   }
-  if (argv.length) repo = argv[1];
+  if (commits !== undefined && !commitRangeShape(commits)) return usage();
+  // D143: --github OWNER/REPO --pr N, the pull request as its comment names it, checked by the GitHub client's own
+  // rule (client.js targetPath); never with --commits. It asks GitHub for that pull request and its commits (GET only).
+  let target = null;
+  if (github !== undefined || pr !== undefined) {
+    const [owner, name, ...rest] = (github ?? '').split('/');
+    const number = /^[1-9]\d{0,9}$/.test(pr ?? '') ? Number(pr) : null;
+    target = { owner, repo: name, number };
+    try { targetPath(target); } catch { return usage(); }
+    if (rest.length || commits !== undefined) return usage();
+  }
+  const cwd = resolve(repo ?? '.');
+  // The roots as `sonah review` resolves them: an empty CODEX_HOME is unset, as an empty CLAUDE_CONFIG_DIR is.
+  const home = env.HOME ?? homedir();
+  const roots = { claude: resolve(options.claudeProjects || claudeProjectsDir({ env, home })),
+    codex: resolve(options.codexHome || env.CODEX_HOME || join(home, '.codex')) };
+  if (target) {
+    try {
+      const reader = client ?? createGitHubClient({ token: await resolveToken(process.env) });
+      const found = await sessionsOfPull(target, { cwd, roots, client: reader });
+      for (const line of commitSessionLines(found)) stdout.write(`${line}\n`);
+      return commitSessionsExit(found);
+    } catch (error) {
+      if (!GITHUB_ERROR_CODES.includes(error?.code)) throw error;
+      stderr.write(`${COMMIT_SESSION_FIXES.githubUnreadable(`${target.owner}/${target.repo}#${target.number}`)}\n`);
+      return 2;
+    }
+  }
+  if (commits !== undefined) {
+    try {
+      const found = await sessionsOf(commits, { cwd, roots });
+      for (const line of commitSessionLines(found)) stdout.write(`${line}\n`);
+      return commitSessionsExit(found);
+    } catch (error) {
+      if (error?.code !== COMMITS_PROBLEMS[0]) throw error;
+      stderr.write(`${COMMIT_RANGE_FIX(commits)}\n`);
+      return 2;
+    }
+  }
   try {
     const found = await discover({ ...options, ...(repo === undefined ? {} : { repo }) });
     if (!found.sessions.length) {

@@ -23,6 +23,7 @@ import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
+import { textBeforeAgentPrompt } from '../../evidence/test/m33-integration-fixture.js';
 
 const START = '2030-01-01T00:00:00.000Z';
 const END = '2030-01-02T00:00:00.000Z';
@@ -131,8 +132,9 @@ async function digestsOf(t, shape) {
   // versions once (D126 and D127, COMPACTION_READER_VERSIONS; D129, COST_READER_VERSIONS: the same move): a session with
   // no compaction renders as before but for them. D129 (C7) rendered back too: the footer's sentence of what this run
   // cost, which nothing else moves here. Each release renders back too: the footer's version is put back to the one that
-  // the tree before D124 named, so a new version moves no digest.
-  const before = (text) => text.replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
+  // the tree before D124 named, so a new version moves no digest. D144 (0.3.0-beta.7) rendered back first
+  // (`textBeforeAgentPrompt`): each prompt for the agent's fold, and the readers' versions it moved.
+  const before = (text) => textBeforeAgentPrompt(text).replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
     .replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '')
     .replace(/<p>In this run, Sonah made [^<]*<\/p>/g, '').replace(/In this run, Sonah made [^\n]*  \n/g, '')
     .replaceAll('sonah.report-model/6', 'sonah.report-model/5').replaceAll('sonah.session-page/45', 'sonah.session-page/44')

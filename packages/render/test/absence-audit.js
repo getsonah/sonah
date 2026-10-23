@@ -112,6 +112,38 @@ export const ABSENCE_PROOFS = Object.freeze({
     + 'verbatim in the file read and no occurrence overlaps the named lines, or they are no lines of the file '
     + '(groundCodeReceipt); or the lines that the finding is about are no lines of the file, or overlap no lines where '
     + 'a code step of its trace grounded its quote (groundFinding)' }),
+  // D143: what `sonah sessions --commits` and `--github`, and `sonah review --commits`, say of the commits they read.
+  commit_range_lines: Object.freeze({ kind: 'system', where: [['packages/cli/src/commit-sessions.js', 'commitsOf']],
+  scopes: Object.freeze(['system']),
+  proves: 'no commit of the range names a session in an Agent-Session line: git listed the range, and neither git\'s '
+    + 'own trailer reader nor the scan for whole Agent-Session lines found a session id in any of its messages' }),
+  pull_request_commit_lines: Object.freeze({ kind: 'system', where: [['packages/github/reader.js',
+    'readPullRequestCommits'], ['packages/cli/src/commit-sessions.js', 'messageIds'],
+  ['packages/cli/src/commit-sessions.js', 'commitSessionLines']],
+  scopes: Object.freeze(['system']),
+  proves: 'no commit of the pull request names a session in an Agent-Session line: GitHub listed every commit of it (as '
+    + 'many as the pull request\'s own count, and said only then; a list that is not whole gets other words), and '
+    + 'neither git\'s trailer parse nor the scan for whole lines found a session id in any of their messages' }),
+  recording_file_names: Object.freeze({ kind: 'system', where: [['packages/cli/src/session-id.js', 'recordingsNamed']],
+  scopes: Object.freeze(['system']),
+  proves: 'not on this computer: no file in Claude Code\'s projects folder or in Codex\'s home carries the id in its '
+    + 'name (said as what the folders hold, never that the session did not run)' }),
+  commit_call_search: Object.freeze({ kind: 'search', where: [['packages/cli/src/commit-sessions.js', 'toolCallsOf'],
+    ['packages/cli/src/commit-sessions.js', 'linkOf']],
+  scopes: Object.freeze(['recording']),
+  proves: 'named by the commit only: every tool call of the one recording that the id names, and of its helpers\' '
+    + 'recordings, was read, and none spans the commit\'s committer time in a folder of the commit\'s repository' }),
+  recording_not_read: Object.freeze({ kind: 'system', where: [['packages/cli/src/session-id.js', 'recordingsNamed'],
+    ['packages/cli/src/commit-sessions.js', 'sessionsOf']],
+  scopes: Object.freeze(['system']),
+  proves: 'named by the commit only: more than one file here carries the id in its name, or the one that does is '
+    + 'compressed (.zst), so Sonah read no recording of the session and the commit\'s line is all that links them; the '
+    + 'session\'s own line says which' }),
+  commit_not_held: Object.freeze({ kind: 'system', where: [['packages/cli/src/commit-sessions.js',
+    'sessionsOfPullRequest']],
+  scopes: Object.freeze(['system']),
+  proves: 'named by the commit only: git answered that the repository of the working folder does not hold the commit '
+    + '(`git cat-file -e`), or the folder is in no repository (said first), so no call can be placed in it' }),
   git_remote_refs: Object.freeze({ kind: 'system', where: [['packages/cli/src/repo-links.js', 'onRemote']],
   scopes: Object.freeze(['system']),
   proves: 'git does not show the commit on the remote: git ran, and no remote-tracking branch of that remote holds it '
@@ -327,6 +359,9 @@ export const ABSENCE_REGISTRY = Object.freeze({
   'packages/render/report-words.js': Object.freeze({
     // D127 (B10d): what the agent's context dropped at a compaction, only from the counts its boundary row typed.
     'REPORT_PROMPT_WORDS.compaction': Object.freeze({ typed_compaction: 'call' }),
+    // D144: what an item's what line says of an ask, in the prompt's voice, on the same proof as the item's.
+    'REPORT_AGENT_PROMPT_WORDS.notDone': Object.freeze({ judged_ask_shortfall: 'judgment' }),
+    'REPORT_AGENT_PROMPT_WORDS.partlyDone': Object.freeze({ judged_ask_shortfall: 'judgment' }),
     'REPORT_DID_WORDS.unconfirmed': Object.freeze({ typed_stop: 'call' }),
     // D113 amended: an item about code outside the evaluated session, their count, the count line's tag, and the files
     // list's line of the files outside it, each by the recorded writes' search that places a file outside it.
@@ -388,11 +423,23 @@ export const ABSENCE_REGISTRY = Object.freeze({
     // D113's review: the terminal's run-state line of a session with no write that could have changed a file, as the
     // page says it.
     'RUN_STATE_WORDS.codePass.noWrite': Object.freeze({ recorded_writes_search: 'recording' }),
+    // D143: a review by commits that found no session to review.
+    'REVIEW_FIX_WORDS.commits_no_session': Object.freeze({ commit_range_lines: 'system' }),
+    'REVIEW_FIX_WORDS.session_not_on_this_computer': Object.freeze({ recording_file_names: 'system' }),
   }),
   'packages/cli/src/report-output.js': Object.freeze({
     'REPORT_OUTPUT_WORDS.notPushed.new': Object.freeze({ git_remote_refs: 'system' }),
     'REPORT_OUTPUT_WORDS.notPushed.old': Object.freeze({ git_remote_refs: 'system' }),
     'REPORT_OUTPUT_WORDS.notPushed.both': Object.freeze({ git_remote_refs: 'system' }),
+  }),
+  // D143: the links of a range's or a pull request's commits, and no session named in a range or a whole pull request.
+  // A commit is named by the commit only on one of three proofs: the calls searched, no recording read (several, or
+  // compressed), or a commit the repository does not hold.
+  'packages/cli/src/commit-sessions.js': Object.freeze({
+    'COMMIT_SESSION_WORDS.none': Object.freeze({ commit_range_lines: 'system', pull_request_commit_lines: 'system' }),
+    'COMMIT_SESSION_WORDS.link.not_here': Object.freeze({ recording_file_names: 'system' }),
+    'COMMIT_SESSION_WORDS.link.named': Object.freeze({ commit_call_search: 'recording', recording_not_read: 'system',
+      commit_not_held: 'system' }),
   }),
 });
 
@@ -847,6 +894,36 @@ export const READ_CENSUS = Object.freeze({
     'shellWriteWords': ['absence', 'c38a623c6edf86c3'],
   }),
   'packages/render/report-words.js': Object.freeze({
+    // D144 (0.3.0-beta.7, the prompt for the agent under an item that leads in Must act): its fold, its note on the voice,
+    // its labels in your voice, the code review's labels, its places and its closing sentences (other); what the item's
+    // what line says of an ask (not done, done only in part), in the prompt's voice, each the absence its item states,
+    // on the same proof (judged_ask_shortfall).
+    'REPORT_AGENT_PROMPT_WORDS.fold': ['other', '0a51cb3e68c8c9c3'],
+    'REPORT_AGENT_PROMPT_WORDS.voice': ['other', '75da0058890b43c4'],
+    'REPORT_AGENT_PROMPT_WORDS.iAsked': ['other', '77caea7234a983d3'],
+    'REPORT_AGENT_PROMPT_WORDS.iSaid': ['other', 'a3974e695682a3ab'],
+    'REPORT_AGENT_PROMPT_WORDS.youSaid': ['other', '2d557eaf73cb5649'],
+    'REPORT_AGENT_PROMPT_WORDS.youToldMe': ['other', '592bba703aaf14aa'],
+    'REPORT_AGENT_PROMPT_WORDS.youDid': ['other', 'c2b4c1d221b9e829'],
+    'REPORT_AGENT_PROMPT_WORDS.youWrote': ['other', 'd69f01e44e123938'],
+    'REPORT_AGENT_PROMPT_WORDS.youRan': ['other', '08b03d17621ce76e'],
+    'REPORT_AGENT_PROMPT_WORDS.youRemoved': ['other', 'bc17a08ef5b11d63'],
+    'REPORT_AGENT_PROMPT_WORDS.youWroteFile': ['other', '6d2b77e725193def'],
+    'REPORT_AGENT_PROMPT_WORDS.helperSaid': ['other', '94ffd0ba97b7a707'],
+    'REPORT_AGENT_PROMPT_WORDS.resultShows': ['other', '7a253f2dc0df83d2'],
+    'REPORT_AGENT_PROMPT_WORDS.changeShows': ['other', 'a073bc30206dcbed'],
+    'REPORT_AGENT_PROMPT_WORDS.codeWritten': ['other', '1330a5c1d9fc87c5'],
+    'REPORT_AGENT_PROMPT_WORDS.whatDoes': ['other', '141d2d5aadc406fc'],
+    'REPORT_AGENT_PROMPT_WORDS.projectFile': ['other', '84c3e64adae5ff17'],
+    'REPORT_AGENT_PROMPT_WORDS.codeReviewSays': ['other', '1bb7b6a37f24eb79'],
+    'REPORT_AGENT_PROMPT_WORDS.codeReviewAction': ['other', '200f186b8b38342e'],
+    'REPORT_AGENT_PROMPT_WORDS.where': ['other', '02cc020f791cdbd4'],
+    'REPORT_AGENT_PROMPT_WORDS.notDone': ['absence', '14d49f0509b1ba8e'],
+    'REPORT_AGENT_PROMPT_WORDS.partlyDone': ['absence', 'c22c940196991f4d'],
+    'REPORT_AGENT_PROMPT_WORDS.fix': ['other', '1c5af463a1585383'],
+    'REPORT_AGENT_PROMPT_WORDS.reason': ['other', 'af5d4ba073772372'],
+    'REPORT_AGENT_PROMPT_WORDS.check': ['other', 'ca6b8691edb3b762'],
+    'REPORT_AGENT_PROMPT_WORDS.holds': ['other', '115419259d433ebe'],
     'REPORT_ANSWER_WORDS.accept': ['other', '5fa95309fd7fd714'],
     'REPORT_ANSWER_WORDS.change': ['other', 'c937cf61cf63ef68'],
     'REPORT_ANSWER_WORDS.clarify': ['other', '4eecaa8cfade2afd'],
@@ -1278,6 +1355,80 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_MD_WORDS.messagesNotShown': ['sonah', '25c9c78ad65d2828'],
     'REPORT_MD_WORDS.kindCount': ['other', '63dff3734a86266e'],
   }),
+  // D143: the words of `sonah hook add`, `sonah hook remove` and the commit link's line in `sonah doctor`. Read
+  // 2026-10-23, and again in its fix round: each says what Sonah wrote, deleted or found of its own hook files in the
+  // repository, or what it could not tell (sonah), or tells the person what to add or run, or states a fact of another
+  // tool or of a public repository (other). None states an absence of the recording, the session or the code.
+  'packages/cli/src/agent-session-hook.js': Object.freeze({
+    'HOOK_WORDS.turnedOn': ['sonah', '0170bac7b5f53203'],
+    'HOOK_WORDS.alreadyOn': ['sonah', 'b79cbf923f582957'],
+    'HOOK_WORDS.optIn': ['sonah', 'd171b36b9ad5b61e'],
+    'HOOK_WORDS.optInOnce': ['sonah', '0974046896bbf1b2'],
+    'HOOK_WORDS.publicLine': ['other', '031bc220686143a9'],
+    'HOOK_WORDS.stopIt': ['sonah', '4ae1f718c6330ef1'],
+    'HOOK_WORDS.lefthookAhead': ['other', '8f4ad66000c0e612'],
+    'HOOK_WORDS.notOnForeign': ['sonah', '30bbfe6345a7b400'],
+    'HOOK_WORDS.notOnPreCommit': ['sonah', '38bc7742aea69a7b'],
+    'HOOK_WORDS.notOnHooksPath': ['sonah', '6d1f0d2141260120'],
+    'HOOK_WORDS.notOnLink': ['sonah', '56faaa4522df7053'],
+    'HOOK_WORDS.notOnNotExecutable': ['sonah', 'f594f5a7c7965edc'],
+    'HOOK_WORDS.makeExecutable': ['other', 'ab0d8c90180babaa'],
+    'HOOK_WORDS.madeExecutable': ['sonah', 'ab650ed787e08ded'],
+    'HOOK_WORDS.addLine': ['other', '9ddc91d69e61b40c'],
+    'HOOK_WORDS.createFile': ['other', 'a633933c06d30ba2'],
+    'HOOK_WORDS.addLefthook': ['other', '6447563af085cb55'],
+    'HOOK_WORDS.mergeLefthook': ['other', '9d70fbb0e7f548cf'],
+    'HOOK_WORDS.lefthookShared': ['other', 'efb91f79e408a538'],
+    'HOOK_WORDS.preCommitSteps': ['other', 'aad9978801151494'],
+    'HOOK_WORDS.thenDoctor': ['other', '3da50d6fc6e675b8'],
+    'HOOK_WORDS.removed': ['sonah', '9af3f789cc644a82'],
+    'HOOK_WORDS.nothingToRemove': ['sonah', 'c0d107ed1fdb0246'],
+    'HOOK_WORDS.lineLeft': ['sonah', 'a1e5003d46fd93a7'],
+    'HOOK_WORDS.historyStays': ['sonah', '35a446fdbc52c129'],
+    'HOOK_WORDS.status.off': ['sonah', '269e35e9ec1eefbc'],
+    'HOOK_WORDS.status.on.runner': ['sonah', '01539adea6fdee02'],
+    'HOOK_WORDS.status.on.pre-commit': ['sonah', '738c1418040ce5d2'],
+    'HOOK_WORDS.status.moved': ['sonah', '245336bf77d6e4ad'],
+    'HOOK_WORDS.status.notRun': ['sonah', '3fee60078a80fe37'],
+    'HOOK_WORDS.status.notExecutable': ['sonah', 'f5382d234ad95da5'],
+    'HOOK_WORDS.status.notChecked': ['sonah', 'e008d886114400bd'],
+    'HOOK_WORDS.status.lineNotChecked': ['sonah', 'b4ff066e20756575'],
+    'HOOK_WORDS.status.fix': ['other', 'd6fa81ff1921446a'],
+    'HOOK_WORDS.status.check': ['other', 'cc8f137cde799da2'],
+    'HOOK_WORDS.problems.hook_not_git': ['sonah', '3071dba1a4db4ba0'],
+    'HOOK_WORDS.problems.hook_bare_repository': ['sonah', '1373fd467f42e7d1'],
+    'HOOK_WORDS.problems.hook_file_foreign': ['sonah', '58b49d28f1a15fac'],
+    'HOOK_WORDS.problems.hook_path_link': ['sonah', '0b97e8fbfb3a09d1'],
+  }),
+  // D143: the words of sonah sessions --commits and of the list sonah review --commits prints. Read 2026-10-23: the
+  // three absences each stand on their proofs (no session named in the range or the whole pull request:
+  // commit_range_lines, pull_request_commit_lines; no recording here: recording_file_names; named by the commit only:
+  // commit_call_search, recording_not_read, commit_not_held); what git could not list, what Sonah found in a pull
+  // request's partial list, the values it lists no session for, a compressed recording and a folder in no repository
+  // are sonah; the rest is other.
+  'packages/cli/src/commit-sessions.js': Object.freeze({
+    'COMMIT_SESSION_WORDS.heading': ['other', '453afb731a5228ed'],
+    'COMMIT_SESSION_WORDS.none': ['absence', 'b21c3963e3763f46'],
+    'COMMIT_SESSION_WORDS.noneListed': ['sonah', '47707a188ba2a2eb'],
+    'COMMIT_SESSION_WORDS.unusable': ['sonah', '2fc6628aaf8b4979'],
+    'COMMIT_SESSION_WORDS.recordings': ['other', '646d79e89eda937a'],
+    'COMMIT_SESSION_WORDS.compressed': ['sonah', '0b2ded2746c89848'],
+    'COMMIT_SESSION_WORDS.noRepository': ['sonah', 'e718983c2d316c09'],
+    'COMMIT_SESSION_WORDS.link.shown': ['other', '21648b505fe3a8b1'],
+    'COMMIT_SESSION_WORDS.link.named': ['absence', '4f75fb02de69ff95'],
+    'COMMIT_SESSION_WORDS.link.not_here': ['absence', '903b5f81506edca7'],
+    'COMMIT_SESSION_WORDS.several': ['other', 'fd6ac69b6ef80ca9'],
+    'COMMIT_SESSION_WORDS.session': ['other', '1dbc19e1f6e7846b'],
+    'COMMIT_SESSION_WORDS.commits': ['other', 'aa9746d213016c4d'],
+    'COMMIT_SESSION_WORDS.commit': ['other', 'c813dd60f741622a'],
+    'COMMIT_SESSION_WORDS.review': ['other', '2034f769765f087c'],
+    'COMMIT_SESSION_WORDS.claim': ['other', 'b4ad44fe9163bb17'],
+    'COMMIT_SESSION_FIXES.rangeUnreadable': ['sonah', 'c6180f942cb95b0d'],
+    // D143: a pull request's list that GitHub did not give whole, and a pull request Sonah could not read: what
+    // Sonah's list holds and what it could not do (sonah).
+    'COMMIT_SESSION_WORDS.notWhole': ['sonah', '1544c1909e3f4076'],
+    'COMMIT_SESSION_FIXES.githubUnreadable': ['sonah', '0cac7b2f4b6ad2a6'],
+  }),
   'packages/cli/src/local-page.js': Object.freeze({
     'LOCAL_PAGE_OPEN_FIX': ['sonah', '9c813c7e1d17c9a0'],
     'LOCAL_PAGE_WORDS.line': ['other', '74b53e15f6a7d21d'],
@@ -1310,6 +1461,25 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_OUTPUT_WORDS.notPushed.both': ['absence', '9b9020254579483c'],
     'REPORT_OUTPUT_WORDS.rerun': ['other', '14b1e533d5191657'],
     'REPORT_OUTPUT_WORDS.outputInRepository': ['other', 'e6420dac03919f92'],
+  }),
+  // D142: the words of `sonah skill add`, `sonah skill remove` and their doctor lines: each says what Sonah did,
+  // found or could not do with its own skill's files; none states an absence of the recording, the session or the code.
+  'packages/cli/src/skill.js': Object.freeze({
+    'SKILL_WORDS.added': ['sonah', '7d783a2fe260c43c'],
+    'SKILL_WORDS.updated': ['sonah', '8a3b6fcd6a232062'],
+    'SKILL_WORDS.current': ['sonah', '6b513184408a4907'],
+    'SKILL_WORDS.foreign': ['sonah', 'b38c6626ece0c77b'],
+    'SKILL_WORDS.noHome': ['sonah', '855b6f2c8d64bfc6'],
+    'SKILL_WORDS.removed': ['sonah', '0ba287bae03c5c73'],
+    'SKILL_WORDS.absent': ['sonah', 'cd7d6d3176e13e4e'],
+    'SKILL_WORDS.keptForeign': ['sonah', 'f763fec5ca2a7044'],
+    'SKILL_WORDS.notOnPath': ['sonah', '95eb525fa54df91a'],
+    'SKILL_WORDS.failed': ['sonah', '188e8dba47444da8'],
+    'SKILL_WORDS.doctor.current': ['sonah', '50635eb2ef9afe2b'],
+    'SKILL_WORDS.doctor.older': ['sonah', 'ef0ab662ca12f239'],
+    'SKILL_WORDS.doctor.none': ['sonah', '0699774e87dfc510'],
+    'SKILL_WORDS.doctor.foreign': ['sonah', '6a9925c372f7fdbb'],
+    'SKILL_WORDS.doctor.noPath': ['sonah', '635d137858611d08'],
   }),
   'packages/cli/src/session-review-command.js': Object.freeze({
     'ANSWER_REUSE_WORDS.session': ['other', '85e45abc60f5de21'],
@@ -1386,6 +1556,25 @@ export const READ_CENSUS = Object.freeze({
     'REVIEW_FIX_WORDS.state_dir_holds_root': ['sonah', 'ea92baeae4c5d976'],
     'REVIEW_FIX_WORDS.code_repo_not_found': ['sonah', '53718eea0c0b309f'],
     'REVIEW_FIX_WORDS.code_repo_not_git': ['sonah', 'f389e8799a8c6003'],
+    // D142: a session id given with --session, by its file name only. What Sonah found (`not_found`); two facts of
+    // the recordings' names (`ambiguous`, `compressed`).
+    'REVIEW_FIX_WORDS.session_id_not_found': ['sonah', '02b43f043e291cbe'],
+    'REVIEW_FIX_WORDS.session_id_ambiguous': ['other', 'eb30e7fd0f21bbc8'],
+    'REVIEW_FIX_WORDS.session_id_compressed': ['other', '1d9575897379267b'],
+    // D143: a review by commits: the range git cannot list (sonah), no line in the range and no recording here
+    // (absences, on commit_range_lines and recording_file_names), and the choice among several (other).
+    'REVIEW_FIX_WORDS.commits_range_unreadable': ['sonah', '985775c4ef9ce873'],
+    'REVIEW_FIX_WORDS.commits_no_session': ['absence', 'c168f2becd4b401c'],
+    'REVIEW_FIX_WORDS.commits_choose_one': ['other', 'c8055842c93a56a2'],
+    'REVIEW_FIX_WORDS.session_not_on_this_computer': ['absence', 'a4a75dc4cf9357fa'],
+    // D142: the one line of a review by session id: what Sonah got and did (`missing`, `started`, `failed`), and the
+    // recordings that a session id names (`matches`).
+    'SESSION_ID_WORDS.missing': ['sonah', '389b29bae7a11edf'],
+    'SESSION_ID_WORDS.started': ['sonah', '1d80adab880c4a47'],
+    // D142's review: the start line with --no-open, which never says that Sonah opens the page.
+    'SESSION_ID_WORDS.startedNoOpen': ['sonah', '9e91273c0fde0858'],
+    'SESSION_ID_WORDS.failed': ['sonah', 'f314cfc99f81fea7'],
+    'SESSION_ID_WORDS.matches': ['other', '46d7b76edc4886b1'],
     'RUN_STATE_WORDS.complete': ['other', 'eebbf6457e46a7f6'],
     'RUN_STATE_WORDS.incomplete': ['sonah', '85554bb9dd4b57d6'],
     'RUN_STATE_WORDS.failed': ['sonah', '5d28a90f4498a814'],
@@ -1428,7 +1617,7 @@ export const READ_CENSUS = Object.freeze({
     'SAVED_COMMENT_WORDS.lead': ['sonah', '40e27d1e02b0ba78'],
     'WORKING_FOLDER_WORDS.refused': ['sonah', '203fe4812ee00326'],
     'WORKING_FOLDER_WORDS.fix': ['other', '7a49f66e9d8a61f7'],
-    'sessionReviewUsage': ['other', 'eaa69061f9ae5895'],
+    'sessionReviewUsage': ['other', 'b3d033c6851d850a'],
   }),
   'packages/github/publication.js': Object.freeze({
     'CHECK_TITLES.complete': ['other', 'a11477790b308f7c'],

@@ -35,7 +35,7 @@ import { supportCheck, supportShape } from './claims.js';
 import { statusUncovered } from './status-fact.js';
 import { challengeItems, mergeChallengeRuns, CHALLENGE_PROFILE, requestFits, reviewInputBytes, verbatimWords,
   forbiddenEditProposition, challengeOutcome, disclosureAsks, disclosureOutcomes, disclosureCounts, REFUTING_VOTES,
-  refutingVotesOf } from './challenge.js';
+  refutingVotesOf, withReplyBegun } from './challenge.js';
 import { FORBIDDEN_CHANNEL, forbiddenShape, forbiddenListOf, readForbiddenEdit, forbiddenChallengeItem,
   forbiddenFindingCandidate, forbiddenEditIdentity } from './forbidden.js';
 import { WRITTEN_CHANNEL, WRITTEN_ITEM_TYPE, writtenChatClaim, asWrittenStatement, readWrittenStatement,
@@ -2640,10 +2640,10 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   aliases = null, backend = undefined, requestBound = requestBoundOf(profile, reviewScope, backend) }) {
   // Gain I (2026-10-13): every check of a window whose request carries images is sent them too — its evidence names
   // them (prompt.js `IMAGES_ATTACHED`) and its scope is the request's. A window that carries none sends its checks as
-  // before.
+  // before. D145: the copy keeps the first pass's REPLY_BEGUN (`withReplyBegun`), which a spread leaves behind.
   if (Array.isArray(request?.images) && request.images.length && typeof challengeJudge === 'function') {
     const plainJudge = challengeJudge;
-    challengeJudge = (asked) => plainJudge({ ...asked, images: request.images });
+    challengeJudge = (asked) => plainJudge(withReplyBegun(asked, { ...asked, images: request.images }));
   }
   let narrative = null, failure = null, shape = null;
   let transport = null, resolutionOutcomes = null;

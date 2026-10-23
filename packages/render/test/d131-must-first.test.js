@@ -245,8 +245,10 @@ test('D131: a long session\'s shortened .md says so once, above its folded promp
   // The table does not show every ask, so its sentence names the asks, not the table (D131's review).
   assert.ok(fold.includes(REPORT_MD_WORDS.coverageAsks));
   assert.equal(fold.includes(REPORT_MD_WORDS.coverage), false);
-  // Unshortened, the same session shows every row: the notice is the shortening's alone, and the table's sentence holds.
-  const short = longReview(133);
+  // Unshortened, a long session shows every row: the notice is the shortening's alone, and the table's sentence holds.
+  // (D144: each ask not done or done only in part leads in Must act with a prompt for the agent, so at 133 asks the
+  // report no longer fits whole; 100 asks, still a long session, does.)
+  const short = longReview(100);
   const whole = renderReportMarkdown(short.session, short.report, {});
   assert.doesNotMatch(whole, notice);
   assert.ok(whole.includes(REPORT_MD_WORDS.coverage));

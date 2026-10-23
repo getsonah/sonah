@@ -22,7 +22,7 @@ Each package is a folder of ES modules that import each other by relative path; 
 | `packages/redact` | Bounds and validates the ledger and computes its hash (the session's identity); it masks nothing | Yes |
 | `packages/evidence` | The review engine: the canonical session, the parts it is reviewed in, the prompts, grounding, the checking passes, the code step and the report | Code only: the model call and the repository reader are passed in, and it makes no network call and starts no process of its own |
 | `packages/render` | The report model, and the HTML page and the Markdown report that render it, from a session, a finished report and the repository facts the CLI passes in | Yes |
-| `packages/github` | The PR comment: one metadata read and a confirmed, count-only post | No: it talks to GitHub |
+| `packages/github` | The PR comment: one metadata read and a confirmed, count-only post; and, for `sonah sessions --github`, a pull request's metadata and commit list, read only | No: it talks to GitHub |
 | `packages/golden` | A builder of synthetic Claude Code recordings, for tests | Yes |
 
 Imports point one way: `cli` uses `evidence`, `slicer`, `redact`, `render` and `github`; `render` and `github` use

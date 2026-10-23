@@ -4,12 +4,14 @@
 // report and posted only after the page is written and the person confirms it (`--github OWNER/REPO --pr N
 // --post-comment`, pr-sharing.js); the pull request's metadata is the only thing read from GitHub.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { setMaxListeners } from 'node:events';
 import { constants } from 'node:fs';
-import { access, lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, link, lstat, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
   RUN_FAILURE_CODES, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
 import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
@@ -27,6 +29,9 @@ import { loadRecordedSessionWithHash } from './recorded-session.js';
 import { openLocalPage, presentLocalPage } from './local-page.js';
 import { attestableModel, createReviewJudge, reviewJudgeConfig, selectedContextWindow, rateLimitRecordOf } from './review-judge.js';
 import { discoverSessions } from './session-discovery.js';
+import { SESSION_ID_SHAPE, resolveSessionId } from './session-id.js';
+import { commitRangeShape, commitSessionLines, sessionToReview, sessionsOfCommits } from './commit-sessions.js';
+import { freezeRecordings } from './frozen-read.js';
 import { createSessionReviewStore, dryRunReplay, reviewCodePass, reviewSession, sameRunIdentity }
   from './session-review.js';
 import { codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
@@ -59,6 +64,13 @@ export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
   'options:',
   '  --repo DIR, --choose N   where to look, and the Nth session that',
   '                           sonah sessions lists',
+  '  --commits A..B           the session that the commits\' Agent-Session lines',
+  '                           name. With several, --choose N picks one of the',
+  '                           list that sonah sessions --commits A..B prints',
+  '  --session ID             the session with this id (the agent\'s own session',
+  '                           id), read as it was when Sonah started',
+  '  --background             with --session: print one line and review in the',
+  '                           background, then open the page',
   '  --dry-run                show what a review would read and roughly how long',
   '                           it takes, and send nothing',
   '  --backend claude-cli|codex-cli|anthropic-api',
@@ -129,16 +141,28 @@ export function parseSessionReviewArgs(argv) {
     ['--timeout', 'timeoutMs'], ['--concurrency', 'concurrency'], ['--profile', 'profile'],
     ['--format', 'format'], ['--output', 'output'], ['--state-dir', 'stateDir'],
     ['--max-calls', 'maxCalls'], ['--max-input-bytes', 'maxInputBytes'], ['--stop-at-utilization', 'stopAtUtilization'],
-    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel']]);
+    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel'], ['--commits', 'commits']]);
   const seen = new Set();
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') { options.help = true; continue; }
-    if (arg === '--dry-run' || arg === '--no-open' || arg === '--post-comment' || arg === '--code-pass') {
+    if (arg === '--dry-run' || arg === '--no-open' || arg === '--post-comment' || arg === '--code-pass'
+        || arg === '--background') {
       if (seen.has(arg)) throw usageError(`${arg} is given twice`);
       seen.add(arg);
       options[{ '--dry-run': 'dryRun', '--no-open': 'noOpen', '--post-comment': 'postComment',
-        '--code-pass': 'codePass' }[arg]] = true;
+        '--code-pass': 'codePass', '--background': 'background' }[arg]] = true;
+      continue;
+    }
+    // D142: --session ID, the agent's own session id (a UUID). An empty value is a harness that gave none: kept, and
+    // said in its own line (SESSION_ID_WORDS.missing), never read as the next option. No value, or one that starts with
+    // `-`, is a usage error.
+    if (arg === '--session') {
+      const value = argv[++i];
+      if (seen.has(arg)) throw usageError(`${arg} is given twice`);
+      if (value === undefined || value.startsWith('-')) throw usageError(`${arg} needs a value`);
+      if (value !== '' && !SESSION_ID_SHAPE.test(value)) throw usageError('--session takes a session id');
+      seen.add(arg); options.session = value.toLowerCase();
       continue;
     }
     // Owner decision 2026-10-14: the code step is on unless the setting (settings.js) or this flag turns it off.
@@ -166,6 +190,26 @@ export function parseSessionReviewArgs(argv) {
   if (options.help) return options;
   if (seen.has('--code-pass') && seen.has('--no-code-pass')) throw usageError('give --code-pass or --no-code-pass, not both');
   if (options.file && options.choose !== undefined) throw usageError('give a recording path or --choose N, not both');
+  // D143: --commits A..B names the sessions by the range's lines; --repo is the range's repository, and --choose N
+  // picks one of the list that sonah sessions --commits prints. No path and no --session with it.
+  if (options.commits !== undefined) {
+    if (!commitRangeShape(options.commits)) throw usageError('--commits takes a range A..B');
+    if (options.file) throw usageError('give a recording path or --commits A..B, not both');
+    if (options.session !== undefined) throw usageError('give --session ID or --commits A..B, not both');
+  }
+  // D142: a session id names one recording, whatever the repository: no path, no --choose, no --repo with it.
+  if (options.session !== undefined) {
+    if (options.file) throw usageError('give a recording path or --session ID, not both');
+    if (options.choose !== undefined) throw usageError('give --session ID or --choose N, not both');
+    if (options.repo !== undefined) throw usageError('give --session ID or --repo DIR, not both');
+  }
+  // D142: --background starts the review of one session id, writes its own page and report in the state folder,
+  // and opens the page: it takes no output, format, dry run or PR comment of its own.
+  if (options.background) {
+    if (options.session === undefined) throw usageError('--background needs --session ID');
+    for (const flag of ['--dry-run', '--format', '--output', '--post-comment', '--github', '--pr'])
+      if (seen.has(flag)) throw usageError(`--background is not used with ${flag}`);
+  }
   // The code step's own model is a setting of the code step, and of nothing else: it applies whenever the step runs (by
   // default, by the setting or by --code-pass), so only a review that turns the step off on its own command line has no
   // use for it.
@@ -250,6 +294,34 @@ export const REVIEW_FIX_WORDS = Object.freeze({
   state_dir_holds_root: 'The --state-dir that you gave is the folder that the session worked in, or holds it. If '
     + 'Sonah used it, the code review would read what Sonah writes there as part of the change. Sonah read and sent '
     + 'nothing. Choose a --state-dir outside that folder, leave it out to use the folder of Sonah, or add --no-code-pass.',
+  // D142: a session id given with --session (session-id.js `resolveSessionId`), by its file name only.
+  session_id_not_found: 'Sonah found no recording whose file name has this session id. Sonah looked in the projects '
+    + 'folder of Claude Code and in the Codex home. Check the id. Or run sonah sessions and choose a session from its list.',
+  session_id_ambiguous: 'More than one recording has this session id in its file name. Give the path of the one to '
+    + 'review.',
+  session_id_compressed: 'Codex keeps the recording with this session id compressed (.zst), and Sonah reads only plain '
+    + 'recordings. Run zstd -d on that file. Give the path of the .jsonl file that it writes.',
+  // D143: --commits A..B (commit-sessions.js). Each stops the review before it reads the session and before any model
+  // call; to print the list, Sonah has read the range's messages and the tool calls of each recording it names.
+  commits_range_unreadable: 'Git could not list the commits of that range in this repository. Give a range that git log '
+    + 'reads here, such as main..HEAD, or give the repository with --repo DIR.',
+  commits_no_session: 'No commit of that range names a session in an Agent-Session line. Give the session with '
+    + '--session ID, or run sonah sessions to choose one.',
+  commits_choose_one: 'Choose one session of the list above with --choose N.',
+  session_not_on_this_computer: 'The recording of that session is not on this computer. Review it where the agent ran, '
+    + 'or choose a session of the list above that has a recording here.',
+});
+/** D142: the lines of a review by session id (`--session`, and `--background`, which the /sonah skill runs). With
+ *  --background, each outcome before the review starts is one line on stdout: the agent relays it. */
+export const SESSION_ID_WORDS = Object.freeze({
+  missing: 'Sonah got an empty session id, so it reviewed nothing. Run sonah sessions to choose a session.',
+  started: (page, log) => `Sonah started a review of this session in the background. When it ends, Sonah opens ${page}. `
+    + `Its log is ${log}.`,
+  // With --no-open, the page is written and not opened.
+  startedNoOpen: (page, log) => `Sonah started a review of this session in the background. When it ends, its page is `
+    + `${page}. Its log is ${log}.`,
+  failed: (code, fix) => `Review could not complete: ${code}. Fix: ${fix}`,
+  matches: (files) => `Recordings with this session id: ${files.join(', ')}.`,
 });
 /** What the review prints when it finds no recording for the repository (`claude`, `codex`: the folders it
  *  searched). */
@@ -295,6 +367,7 @@ export const STYLE_KINDS = Object.freeze({
   ANSWER_REUSE_WORDS: 'notice', WORKING_FOLDER_WORDS: 'notice', CONTINUED_RECORDING_WORDS: 'notice',
   SAVED_COMMENT_WORDS: 'description', 'SAVED_COMMENT_WORDS.target': 'label', 'SAVED_COMMENT_WORDS.noReview': 'fragment',
   'SAVED_COMMENT_WORDS.unreadable': 'fragment',
+  SESSION_ID_WORDS: 'notice',
   RUN_STATE_WORDS: 'fragment', 'RUN_STATE_WORDS.line': 'notice', CODE_STEP_SOURCE_WORDS: 'fragment',
   CODE_STEP_WORDS: 'notice', CODE_PASS_NO_ROOT: 'notice', CODE_STEP_BACKEND_LINE: 'notice', CODE_SNAPSHOT_WORDS: 'notice',
   REPLAY_UNREAD: 'notice', REPLAY_WORDS: 'notice', DRY_RUN_WORDS: 'notice',
@@ -305,6 +378,12 @@ export const STYLE_FIXTURES = Object.freeze({
   'NO_SESSION_WORDS.searched': [['/folder/one', '/folder/two']],
   'ANSWER_REUSE_WORDS.session': [[1, 2], [5, 5]], 'ANSWER_REUSE_WORDS.code': [[0, 3], [3, 3]],
   'CONTINUED_RECORDING_WORDS.read': [[1], [2]],
+  'SESSION_ID_WORDS.started': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
+    '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.log']],
+  'SESSION_ID_WORDS.startedNoOpen': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
+    '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.log']],
+  'SESSION_ID_WORDS.failed': [['session_id_not_found', 'Check the id.']],
+  'SESSION_ID_WORDS.matches': [[['/codex/sessions/2026/10/23/rollout-a.jsonl', '/codex/sessions/2026/10/23/rollout-b.jsonl']]],
   'WORKING_FOLDER_WORDS.refused': [['/folder/project'], [null]],
   'SAVED_COMMENT_WORDS.none': [['PR comment for owner/repo#7', 'this recording has no finished review yet'],
     ['PR comment for owner/repo#7', 'Sonah could not read the last saved review of this recording']],
@@ -343,10 +422,11 @@ export const STYLE_ALLOW = Object.freeze({ ...Object.fromEntries(['CODE_PASS_NO_
 
 /** What a review writes in its state folder (`--state-dir`, else `session-reviews/<digest>` in Sonah's home), and
  *  nothing else there: the stored session answers, the review's record (and its lock), the code step's stored answers,
- *  and a pull request comment's record (pr-sharing.js). The code step leaves exactly these out of the session's change
- *  and the repository's state, never the state folder whole: `--state-dir .` makes it the working directory. */
-export const STATE_FOLDER_ENTRIES = Object.freeze(['answers', 'review', 'code-pass', 'publication']);
-const [STATE_ANSWERS, STATE_REVIEW, STATE_CODE_PASS] = STATE_FOLDER_ENTRIES;
+ *  a pull request comment's record (pr-sharing.js), and (D142) the page, report and log of a review started with
+ *  --background. The code step leaves exactly these out of the session's change and the repository's state, never the
+ *  state folder whole: `--state-dir .` makes it the working directory. */
+export const STATE_FOLDER_ENTRIES = Object.freeze(['answers', 'review', 'code-pass', 'publication', 'background']);
+const [STATE_ANSWERS, STATE_REVIEW, STATE_CODE_PASS, , STATE_BACKGROUND] = STATE_FOLDER_ENTRIES;
 
 /** --code-model: the code step's model as the person set it — the flag, else SONAH_CODE_MODEL — whenever the code step
  *  runs in this review (`codeStep.on`, settings.js `resolveCodePass`: by default, by the setting or by --code-pass);
@@ -385,7 +465,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   cwd = undefined, env = process.env, discover = discoverSessions, loadSession = loadRecordedSessionWithHash,
   createJudge = createReviewJudge, runSession = reviewSession, loadReviews = loadDecisionReviews,
   signal = null, installSignals = true, openPage = openLocalPage, client = null, confirm = undefined,
-  resolveToken = null, readCode = readCodeSnapshot, runCode = reviewCodePass } = {}) {
+  resolveToken = null, readCode = readCodeSnapshot, runCode = reviewCodePass, resolveSession = resolveSessionId,
+  freeze = freezeRecordings, startReview = startDetachedReview } = {}) {
   let options;
   try { options = parseSessionReviewArgs(argv); }
   catch (error) {
@@ -467,8 +548,58 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
         throw error;
       }
     }
-    let file, adapter = null;
-    if (options.file) file = resolve(cwd, options.file);
+    const sonahHome = env.SONAH_HOME ?? join(home, '.sonah');
+    const stateOf = (recording) => (options.stateDir ? resolve(cwd, options.stateDir)
+      : join(sonahHome, 'session-reviews', createHash('sha256').update(recording).digest('hex')));
+    let file, adapter = null, frozen = null;
+    if (options.commits !== undefined) {
+      // D143: the session that the range's Agent-Session lines name (commit-sessions.js): the only one whose recording
+      // is here, or the --choose N of the list. When it stops (several, none here, or a session whose recording is
+      // ambiguous or compressed), the list is printed first.
+      const found = await sessionsOfCommits(options.commits, { cwd: repo, roots });
+      try { options.session = sessionToReview(found, options.choose).id; }
+      catch (error) {
+        if (found.sessions.length) for (const line of commitSessionLines(found)) stdout.write(`${line}\n`);
+        throw error;
+      }
+    }
+    if (options.session !== undefined) {
+      // D142: the recording whose file name carries the agent's own session id, or none: never the newest one. An
+      // empty id (the harness gave none) reviews nothing.
+      if (options.session === '') {
+        stdout.write(`${SESSION_ID_WORDS.missing}\n`);
+        return options.background ? 0 : 1;
+      }
+      ({ file, adapter } = await resolveSession(options.session, { claudeProjects: roots.claude, codexHome: roots.codex }));
+      try { await access(file, constants.R_OK); } catch { throw failure('session_not_found'); }
+      if (options.background) {
+        // A review of this recording in progress is said now, in its one line; the review itself runs detached, with the
+        // same options, and writes its page, its report and its log in the state folder.
+        const state = stateOf(file);
+        const folder = join(state, STATE_BACKGROUND);
+        await mkdir(folder, { recursive: true, mode: 0o700 });
+        await chmod(folder, 0o700);
+        // A review that --background started and that still runs, in any phase (its mark), or any review of this
+        // recording while it asks the model (the review lock), is said in this line, and none is started.
+        const mark = await claimBackgroundStart(folder);
+        try {
+          const release = await createSessionReviewStore(join(state, STATE_REVIEW)).lock();
+          await release();
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const page = join(folder, `review-${stamp}.html`), log = join(folder, `review-${stamp}.log`);
+          const pid = await startReview({ argv: ['review', ...argv.filter((arg) => arg !== '--background'), '--format',
+            'html', '--output', page], cwd, env, log });
+          await markBackgroundStart(mark, pid);
+          stdout.write(`${(options.noOpen ? SESSION_ID_WORDS.startedNoOpen : SESSION_ID_WORDS.started)(page, log)}\n`);
+          return 0;
+        } catch (error) {
+          await rm(mark.path, { force: true }).catch(() => {});
+          throw error;
+        }
+      }
+      // D142: every recording this review reads, read as it was now (frozen-read.js).
+      frozen = await freeze(file, { adapter, codexHome: roots.codex });
+    } else if (options.file) file = resolve(cwd, options.file);
     else {
       const discovered = await discover({ repo, claudeProjects: roots.claude, codexHome: roots.codex });
       if (!discovered.sessions.length) {
@@ -482,7 +613,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     }
     try { await access(file, constants.R_OK); } catch { throw failure('session_not_found'); }
     const loaded = await loadSession({ parent: file, codexHome: roots.codex,
-      claudeProjects: roots.claude, sessionKey: 'session' });
+      claudeProjects: roots.claude, sessionKey: 'session', ...(frozen ? { frozen } : {}) });
     const { session, hash } = loaded;
     stdout.write(`Recording: ${file} (${adapter ?? session.adapter}).\n`);
     // D126 (N0): a session that opens on a compaction, read with the recordings it continues, or not.
@@ -500,9 +631,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // The agentic code step (D90): nothing is withheld for privacy's sake; its agents read the repository with read-only
     // tools, which only the claude-cli backend gives them, so on another backend the step does not run, and says why
     // (`code_step_backend`), before anything is read.
-    const digest = createHash('sha256').update(file).digest('hex');
-    const sonahHome = env.SONAH_HOME ?? join(home, '.sonah');
-    const state = options.stateDir ? resolve(cwd, options.stateDir) : join(sonahHome, 'session-reviews', digest);
+    const state = stateOf(file);
     // What Sonah writes (what this review writes in its state folder, by name, and Sonah's home) is no part of the
     // session's change; it and what the coding agents write in their homes while the review runs (the review's own
     // agents and any session of the person's) are never read as the repository changing (code-snapshot.js
@@ -515,8 +644,11 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // any other is given the recording alone, as before.
     const startRecording = Array.isArray(loaded.recordings) && loaded.recordings.length > 1
       && typeof loaded.recordings[0] === 'string' ? loaded.recordings[0] : null;
+    // D142: a frozen review's recordings are read by the code step as the load read them.
+    const frozenEnds = frozen ? { recordingBytes: await frozen.endOf(file),
+      ...(startRecording ? { startBytes: await frozen.endOf(startRecording) } : {}) } : {};
     const snapshot = !codeStep.on ? null : backend === 'claude-cli' ? await readCode(session, { root: loaded.cwd ?? null,
-      maxBytes: bound, recording: file, ...(startRecording ? { startRecording } : {}),
+      maxBytes: bound, recording: file, ...(startRecording ? { startRecording } : {}), ...frozenEnds,
       own: [...STATE_FOLDER_ENTRIES.map((entry) => join(resolve(state), entry)),
         resolve(sonahHome)],
       harnessHomes: harnessHomePlaces({ env, home }), ...(codeRepos.length ? { codeRepos } : {}) })
@@ -687,7 +819,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // alone, and the home folder itself as `~` (render report-model.js `folderNameOf`), by the home as the environment
     // gives it and as the disk resolves it; the page and the terminal name the path.
     const homes = [home, await realpath(home).catch(() => null)].filter((spelling) => typeof spelling === 'string');
-    const md = renderReportMarkdown(session, report, { ...linkFacts, homes, page: page ? { whole: page.whole } : null });
+    // D144: the report printed to the terminal (no --output) holds no prompt for the agent: a review run in the agent's
+    // own shell would hand the agent its prompts unasked. A report written to a file holds them.
+    const md = renderReportMarkdown(session, report, { ...linkFacts, homes, page: page ? { whole: page.whole } : null,
+      agentPrompts: page !== null || Boolean(output) });
     if (page) {
       await writeFile(output, page.html, { mode: 0o600, flag: 'wx' });
       await writeFile(mdOutput, md, { mode: 0o600, flag: 'wx' });
@@ -712,7 +847,16 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     const code = admissionFailure ?? (error?.code === 'EEXIST' ? 'output_exists'
       : allowed.includes(error?.code) ? error.code : 'review_failed');
     failedWith = code;
+    // D142: the recordings a session id names, when there are several.
+    const matches = (code === 'session_id_ambiguous' || code === 'session_id_compressed') && Array.isArray(error?.matches)
+      ? error.matches : null;
+    // D142: with --background, one line on stdout, and exit 0, so the skill that ran it shows the line.
+    if (options.background) {
+      stdout.write(`${SESSION_ID_WORDS.failed(code, fixOf(code))}${matches ? ` ${SESSION_ID_WORDS.matches(matches)}` : ''}\n`);
+      return 0;
+    }
     stderr.write(`Review could not complete: ${code}.\nFix: ${fixOf(code)}\n`);
+    if (matches) stderr.write(`${SESSION_ID_WORDS.matches(matches)}\n`);
     const toolFailure = ['review_failed', 'model_unavailable'];
     return RUN_FAILURE_CODES.includes(code) || toolFailure.includes(code) ? 3 : 2;
   } finally {
@@ -740,6 +884,71 @@ async function keepRunUsage(store, run) {
     await store.appendUsageRun(run);
   } catch { /* the usage line says it */ }
   finally { await release?.().catch(() => {}); }
+}
+
+/** D142: the CLI's own entry, which a review started with --background runs again. */
+const SONAH_ENTRY = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
+/** D142: start `sonah <argv>` detached from this process (its own process group, no terminal), in `cwd` with `env`,
+ *  writing its output to the new file `log` (owner-only); resolves with its process id once it has started. It outlives
+ *  this process and the agent's session that ran it. */
+export async function startDetachedReview({ argv, cwd, env, log }) {
+  const out = await open(log, 'wx', 0o600);
+  try {
+    const child = spawn(process.execPath, [SONAH_ENTRY, ...argv], { cwd, env, detached: true,
+      stdio: ['ignore', out.fd, out.fd] });
+    await new Promise((started, failed) => { child.once('spawn', started); child.once('error', failed); });
+    child.unref();
+    return child.pid;
+  } finally { await out.close(); }
+}
+
+/** D142: the mark of the review that --background started for a recording, in `background/` of its state folder:
+ *  `{ pid }`, the process that runs it (at first the process that starts it). A mark whose process runs is a review
+ *  in progress, whatever it does; one whose process is gone is left from a review that ended. */
+export const BACKGROUND_MARK = 'active.json';
+/** Whether a process id names a running process (EPERM: it runs, and is another user's), as the review lock reads it. */
+const running = (pid) => {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
+};
+/** Publish `bytes` at `path` only if nothing is there: a private temporary file, hard-linked in one step, so a reader
+ *  never sees it half written and of two starters exactly one lands. */
+async function publishOnce(path, bytes) {
+  const temp = `${path}.${process.pid}-${randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, bytes, { mode: 0o600, flag: 'wx' });
+    await link(temp, path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
+  } finally { await rm(temp, { force: true }); }
+}
+/** D142: claim the start of a background review in `folder`, or fail with `review_in_progress` when the mark there
+ *  names a running process. A mark left by a review that ended is taken back, only while its bytes are the ones read. */
+async function claimBackgroundStart(folder) {
+  const path = join(folder, BACKGROUND_MARK);
+  const bytes = JSON.stringify({ pid: process.pid });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await publishOnce(path, bytes)) return { path, bytes };
+    let seen = null;
+    try { seen = await readFile(path, 'utf8'); } catch (error) { if (error?.code === 'ENOENT') continue; throw error; }
+    let pid = null;
+    try { pid = JSON.parse(seen)?.pid ?? null; } catch { pid = null; }
+    if (running(pid)) throw failure('review_in_progress');
+    const now = await readFile(path, 'utf8').catch(() => null);
+    if (now === seen) await rm(path, { force: true });
+  }
+  throw failure('review_in_progress');
+}
+/** D142: the mark names the started review's own process from now on (replaced in one step). */
+async function markBackgroundStart(mark, pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
+  const temp = `${mark.path}.${process.pid}-${randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, JSON.stringify({ pid }), { mode: 0o600, flag: 'wx' });
+    await rename(temp, mark.path);
+  } finally { await rm(temp, { force: true }); }
 }
 
 /**

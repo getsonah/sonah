@@ -1962,7 +1962,7 @@ export const REPORT_TRUTH_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/43', after: 'sonah.session-page/44' }),
   story: Object.freeze({ before: 'sonah.session-story/38', after: 'sonah.session-story/39' }),
 });
-/** D129 (C7; the owner, 2026-10-22: "go with your recommendations"): the readers it moved,
+/** D129 (C7; the owner, 2026-10-22): the readers it moved,
  *  once each from 0.3.0-beta.5 (`REPORT_TRUTH_READER_VERSIONS`): the footer says what the review cost, read from its run
  *  record (report-model.js `usageOf`). No request, profile or stored answer moved. 0.3.0-beta.6 moves each reader once:
  *  another change of beta.6 that moves a reader rides this same move. */
@@ -1971,6 +1971,26 @@ export const COST_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/44', after: 'sonah.session-page/45' }),
   story: Object.freeze({ before: 'sonah.session-story/39', after: 'sonah.session-story/40' }),
 });
+/** D144 (0.3.0-beta.7; the owner, 2026-10-23): the readers it moved, once each from 0.3.0-beta.6
+ *  (`COST_READER_VERSIONS`): each item that leads in Must act carries a prompt for the agent, folded on the page and in
+ *  the .md, and the .md's shortening order gains a step for it. No request, run profile or stored answer moved.
+ *  0.3.0-beta.7 moves each reader once: another change of beta.7 that moves a reader rides this same move. */
+export const AGENT_PROMPT_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/6', after: 'sonah.report-model/7' }),
+  page: Object.freeze({ before: 'sonah.session-page/45', after: 'sonah.session-page/46' }),
+  story: Object.freeze({ before: 'sonah.session-story/40', after: 'sonah.session-story/41' }),
+});
+/** D144: a report .md or page as 0.3.0-beta.6's readers wrote it: each fold of a prompt for the agent taken out (the
+ *  .md's block, with the blank line before it; the page's element), the page's style rules for it taken out, and the
+ *  versions it names set back (`AGENT_PROMPT_READER_VERSIONS`). Text only: a capture rendered back through it that
+ *  equals 0.3.0-beta.6's shows that D144 moved nothing else. */
+export function textBeforeAgentPrompt(text) {
+  let out = String(text).replace(/\n\n<details><summary>Prompt for the agent<\/summary>\n\n[\s\S]*?\n\n<\/details>/g, '')
+    .replace(/<details class="agent-prompt"><summary>Prompt for the agent<\/summary>[\s\S]*?<\/details>/g, '')
+    .replace(/details\.agent-prompt \{ margin-top: 4px; \}\ndetails\.agent-prompt > \*:not\(summary\) \{ margin-top: 6px; \}\n(?:pre\.agent-prompt-text \{[^}]*\}\n)/, '');
+  for (const { before, after } of Object.values(AGENT_PROMPT_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
 /** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
  *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
  *  applies it first. D113 (0.3.0-beta.5): it applies `profileBeforeSessionChange` first. */
@@ -2001,7 +2021,7 @@ export const SESSION_CHANGE_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/43', after: 'sonah.session-page/44' }),
   story: Object.freeze({ before: 'sonah.session-story/38', after: 'sonah.session-story/39' }),
 });
-/** D126 and D127 (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): the
+/** D126 and D127 (0.3.0-beta.6; the owner, 2026-10-22): the
  *  readers they moved, once each from 0.3.0-beta.5, one link after D113's (`SESSION_CHANGE_READER_VERSIONS`): beside
  *  the title, the recordings a session that opens on a compaction was read from (or the part Sonah did not read), each
  *  compaction of the agent's context among your messages (B10d), and the first compaction after an ask (N1). No

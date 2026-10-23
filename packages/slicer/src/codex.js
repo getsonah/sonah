@@ -17,7 +17,7 @@
 // Everything here normalises into the same record stream `buildEvents` already consumes, so
 // nothing downstream needs knowledge that Codex exists.
 
-import { createReadStream } from 'node:fs';
+import { recordingStream } from './recording-stream.js';
 import { createInterface } from 'node:readline';
 import { posix } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -68,10 +68,10 @@ function paginatedItemRow(payload, raw) {
  * the mode must not depend on where the first item row happens to sit. Identity is observed from
  * the same session_meta rows, in the same way, as the main scan does.
  */
-async function ownPaginatedItemStream(file) {
+async function ownPaginatedItemStream(file, byteEnd = null) {
   const identity = recordingIdentity('codex');
   const threads = new Set();
-  const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  const rl = createInterface({ input: recordingStream(file, byteEnd), crlfDelay: Infinity });
   for await (const raw of rl) {
     if (!raw.trim()) continue;
     let d;
@@ -451,7 +451,7 @@ export function isCodexRollout(file) {
  * Read a Codex rollout into the same normalised shape `readSession` produces for Claude Code.
  * @returns {Promise<{records: object[], meta: object, corrupt: number}>}
  */
-export async function readCodexSession(file, { childRecording = false, noForkChildProof = null } = {}) {
+export async function readCodexSession(file, { childRecording = false, noForkChildProof = null, byteEnd = null } = {}) {
   const identity = recordingIdentity('codex');
   const records = [];
   const meta = { sessionId: null, cwd: null, version: null, gitBranch: null, file, agent: 'codex' };
@@ -485,7 +485,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
 
   // C-02 M33 native-first. Only a recording whose own thread persists the paginated item stream
   // changes mode; every other recording keeps the static-parse and emitter rules unchanged.
-  const paginated = await ownPaginatedItemStream(file);
+  const paginated = await ownPaginatedItemStream(file, byteEnd);
   // The exact turn a wrapper was called in: the strict `task_started` row's turn_id, until that
   // turn completes, aborts, or a turn_context names another turn. Anything else is no exact turn.
   let turnKey = null;
@@ -879,7 +879,7 @@ export async function readCodexSession(file, { childRecording = false, noForkChi
     records.push(record); group.records.add(record); resultGroups.set(record, group);
   }
 
-  const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  const rl = createInterface({ input: recordingStream(file, byteEnd), crlfDelay: Infinity });
   let line = 0;
 
   for await (const raw of rl) {

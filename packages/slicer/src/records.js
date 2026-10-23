@@ -14,13 +14,14 @@
 //   - a continued session keeps the ORIGINAL sessionId in its records.
 //   - much of a file's bytes is per-line scaffolding (uuid/parentUuid/cwd/version/gitBranch).
 
-import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { recordingIdentity } from './recording-identity.js';
+import { recordingStream } from './recording-stream.js';
 import { duplicateJsonKeys } from './strict-json.js';
 import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId, claudeNotificationCarrier,
   isLocalCommandCaveat, LOCAL_COMMAND_OUTPUT_SUBTYPE } from './harness-context.js';
-import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, labelOf, applyLabel, humanPart } from './labels.js';
+import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, SONAH_SKILL_NAMES, labelOf, applyLabel, humanPart,
+  opensTurn, partsOf } from './labels.js';
 
 // 2 (C-01 event identity, 2026-10-07): every ledger element that becomes a canonical event records where the recorder
 // wrote it (`identity`: its row, block and the recorder's own id for it, src/event-identity.js), so the evidence adapter
@@ -173,7 +174,7 @@ function rowAgent(row) {
     ? { ok: true, agentId: row.agentId } : { ok: false, agentId: null };
 }
 /**
- * D128 (A05+B23+D6; the owner, 2026-10-22: "go with your recommendations"): a Claude row of a form no list in this file
+ * D128 (A05+B23+D6; the owner, 2026-10-22): a Claude row of a form no list in this file
  * names — a row type, an attachment type or a system subtype the reader does not list, or a listed one with a key it
  * does not list or without one it lists — is read by its structure, never by its name. The parts of the row that no
  * list names are tested for whether they can hold session content (`canHoldSessionContent`): a string that is not a
@@ -450,24 +451,25 @@ export function claudeRowClass(row) {
  * @returns {Promise<{records: object[], meta: object, corrupt: number}>}
  */
 export async function readSession(file, { sidechainAsMain = undefined, childRecording = false,
-  noForkChildProof = null, throughUuid = null } = {}) {
+  noForkChildProof = null, throughUuid = null, byteEnd = null } = {}) {
   // Codex rollouts are a different schema entirely. Route before parsing, not after failing.
+  // D142: with `byteEnd`, only the file's first `byteEnd` bytes are read (recording-stream.js).
   const { isCodexRollout, readCodexSession } = await import('./codex.js');
-  if (isCodexRollout(file)) return readCodexSession(file, { childRecording, noForkChildProof });
+  if (isCodexRollout(file)) return readCodexSession(file, { childRecording, noForkChildProof, byteEnd });
   // Cursor transcripts are Claude-style JSONL with quirks (role vs type, wrapped user text,
   // omitted tool outputs). Route by their session-dir convention, same idea as the rollout check.
   const { isCursorSession, readCursorSession } = await import('./cursor.js');
   if (isCursorSession(file)) return readCursorSession(file);
-  const claude = await readClaudeSession(file, { sidechainAsMain, childRecording, throughUuid });
+  const claude = await readClaudeSession(file, { sidechainAsMain, childRecording, throughUuid, byteEnd });
   // Imported rollouts may lose the native filename/path convention. A short Codex file used
   // to produce zero Claude records without reaching the >=10-row unknown-schema threshold.
-  if (claude.records.length === 0 && await hasCodexRows(file))
-    return readCodexSession(file, { childRecording, noForkChildProof });
+  if (claude.records.length === 0 && await hasCodexRows(file, byteEnd))
+    return readCodexSession(file, { childRecording, noForkChildProof, byteEnd });
   return claude;
 }
 
-async function hasCodexRows(file) {
-  const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+async function hasCodexRows(file, byteEnd = null) {
+  const rl = createInterface({ input: recordingStream(file, byteEnd), crlfDelay: Infinity });
   let seen = 0;
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -487,7 +489,8 @@ const rowUuid = (d) => (typeof d?.uuid === 'string' && d.uuid ? d.uuid : null);
 /** Code-unit order (never locale-aware). */
 const cmpUnits = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-async function readClaudeSession(file, { sidechainAsMain = undefined, childRecording = false, throughUuid = null } = {}) {
+async function readClaudeSession(file, { sidechainAsMain = undefined, childRecording = false, throughUuid = null,
+  byteEnd = null } = {}) {
   const identity = recordingIdentity('claude');
   const records = [];
   // M34 labels: every row is labelled once, in recorded order (`claudeLabeller`); a row that becomes a record carries its
@@ -533,7 +536,7 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   };
 
   const rl = createInterface({
-    input: createReadStream(file, { encoding: 'utf8' }),
+    input: recordingStream(file, byteEnd),
     crlfDelay: Infinity,
   });
 
@@ -673,12 +676,19 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   // M34 labels: settle the recording-wide labels, then put each on its record (with the row's own lineage).
   labeller.finish();
   const counted = [];
+  // D142: a row of Sonah's own turn is not read: no record is kept of it, and it is counted by its label, so the
+  // command is no ask, and nothing the agent did or said in that turn is an action, an observation or a claim.
+  const notRead = new Set();
   for (const { rec, value, uuid, version } of labelled) {
     if (value === null) continue;
     const lineage = (rec?.raw ?? null)?.isSidechain === true ? LINEAGE_ROLES.helper : LINEAGE_ROLES.root;
-    if (rec) applyLabel(rec, value, lineage);
+    if (rec && value.basis === LABEL_BASIS.sonahTurn) {
+      notRead.add(rec);
+      counted.push({ uuid: rowUuid(rec.raw), value, version: typeof rec.raw?.version === 'string' ? rec.raw.version : null });
+    } else if (rec) applyLabel(rec, value, lineage);
     else counted.push({ uuid, value, version });
   }
+  if (notRead.size) records.splice(0, records.length, ...records.filter((rec) => !notRead.has(rec)));
   meta.labelled = counted;
   // D99 (F1 guard): how many lines this read took, so a second read of the file (background-ends.js) reads the same.
   meta.lines = lineNo;
@@ -1081,6 +1091,14 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  * A human row whose text is a prompt command (only the recorder's command elements) carries `command`; one whose words a
  * `queue-operation` enqueue recorded while the agent worked (an assistant row recorded after it and timestamped after
  * it — the recorder's own ISO timestamps, compared as recorded; a row with none is never marked) carries `queued`.
+ * D142: Sonah's own turn, settled by `finish()` on the final labels (after D120 has settled every local command):
+ * a main-thread row labelled `human` + `command` whose recorded command name is one of Sonah's own skill names (labels.js
+ * `SONAH_SKILL_NAMES`) opens it; it, and every main-thread row after it, is harness (`sonah_turn`), whole, up to the first
+ * main-thread row that starts other work (`startsWork`): a row on which `opensTurn` opens a turn (a `user` row with a
+ * human label, whole or in a block, that is no answer and no refusal), a queued prompt, a background task's
+ * notification, or another agent's message. That row and everything after it are read as before. A compaction row and a
+ * private-only row keep their labels and end nothing. Read from the recorded command element and the labels' structure,
+ * never from what the person or the agent wrote, never from where the recording ends.
  */
 export function claudeLabeller() {
   const L = LABELS, B = LABEL_BASIS, M = MARKERS, G = LABEL_GAPS;
@@ -1288,9 +1306,37 @@ export function claudeLabeller() {
     Object.assign(command.value, { label: L.harness, basis: B.localCommand });
   };
 
+  /**
+   * D142: every main-thread row's label value, in recorded order, with what the span of Sonah's own turn needs of
+   * its row: its kind, and whether its text is a prompt command of Sonah's own name (the recorded `command-name`
+   * element, a name Sonah owns). `finish()` settles the span on the final values (`settleSonahTurns`).
+   */
+  const mainRows = [];
+  const sonahNamed = (d) => SONAH_SKILL_NAMES.includes((recorderCommand(textOf(d))?.name ?? '').replace(/^\//, ''));
+  const wholeValue = (v) => v !== null && !Object.hasOwn(v, 'parts') && v.private !== true;
+  /** A row that starts work other than Sonah's turn: a turn `opensTurn` opens, a queued prompt, a background task's
+   *  notification, or another agent's message. */
+  const startsWork = (kind, v) => {
+    const rec = { kind, ...(Object.hasOwn(v, 'parts') ? { parts: v.parts } : v) };
+    return opensTurn(rec) || partsOf(rec).some((part) => (part.label === L.human
+      && (part.markers ?? []).includes(M.queued)) || part.basis === B.taskNotification || part.label === L.peer);
+  };
+  const settleSonahTurns = () => {
+    let inTurn = false;
+    for (const { kind, value: v, named } of mainRows) {
+      if (v === null || v.private === true) continue;
+      if (wholeValue(v) && v.label === L.human && named && (v.markers ?? []).includes(M.command)) inTurn = true;
+      else if (!inTurn || startsWork(kind, v)) { inTurn = false; continue; }
+      for (const key of ['parts', 'markers', 'gap', 'links']) delete v[key];
+      Object.assign(v, { label: L.harness, basis: B.sonahTurn });
+    }
+  };
+
   /** The label of one row (`label` below), remembered by its recorded uuid for the attachment chain (F1). */
   const labelRow = (d) => {
     const result = labelOne(d);
+    if (result !== null && plain(d) && d.isSidechain !== true && !isCompactionMarker(d))
+      mainRows.push({ kind: d.type, value: result, named: result.label === L.human && sonahNamed(d) });
     if (plain(d) && typeof d.uuid === 'string' && d.uuid && !rows.has(d.uuid))
       rows.set(d.uuid, { attachment: d.type === 'attachment', parent: d.parentUuid,
         value: result !== null && !Object.hasOwn(result, 'parts') && result.private !== true ? result : null });
@@ -1348,6 +1394,8 @@ export function claudeLabeller() {
           delete refused.markers; delete refused.links;
         }
       }
+      // D142: Sonah's own turn, on the final labels.
+      settleSonahTurns();
       return { sessionType };
     },
   };

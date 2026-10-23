@@ -39,7 +39,9 @@ function fakes({ claude = true, codex = false, auth = 'signed_in', codexAuth = '
       return answer;
     }; },
     adapters: async ({ home }) => ({ claude: { count: 0, where: `${home}/.claude/projects` },
-      codex: { count: 0, where: `${home}/.codex/sessions` } }) } };
+      codex: { count: 0, where: `${home}/.codex/sessions` } }),
+    // D143: no repository of the person's is read; the commit link's own test gives doctor a synthetic one.
+    commitLink: async () => null } };
 }
 
 test('B1 doctor checks Node, subscription sign-in, one 1M probe and session locations without capture hooks', async () => {

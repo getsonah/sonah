@@ -15,7 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, readdir, access } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, access, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,8 +65,10 @@ test('the usage table advertises every command the dispatch implements', async (
   // so the table lists the nine that remain (it listed 20 before); D69 f (g) adds `decision`, your answer to one decision
   // on a session page. D76 retires `init` and `ledgers`; `capture`, `capture-outcome` and (D77) `trailer` stay only for
   // hooks early previews installed, doing nothing, and are no longer advertised. Owner decision 2026-10-14 adds
-  // `config`, the code step's switch.
-  assert.deepEqual(listed.sort(), ['config', 'decision', 'doctor', 'feedback', 'review', 'sessions', 'slice']);
+  // `config`, the code step's switch. D142 adds `skill`, the /sonah skill's add and remove. D143 adds `hook`
+  // (`hook add`, `hook remove`), the commit-to-session link.
+  assert.deepEqual(listed.sort(), ['config', 'decision', 'doctor', 'feedback', 'hook', 'review', 'sessions', 'skill',
+    'slice']);
 });
 
 test('every command answers --help without running, writing or reaching out', async (t) => {
@@ -92,6 +94,22 @@ test('every command answers --help without running, writing or reaching out', as
     }
   }
   assert.deepEqual(broken, [], `--help executed the command for: ${broken.join('; ')}`);
+});
+
+// D143: `sonah hook add --help` and `sonah hook remove --help` print the usage and change nothing: no hook file, no
+// script in the git folder, no config.
+test('hook add --help and hook remove --help write nothing', async (t) => {
+  const box = await sandbox(t);
+  const config = await readFile(join(box.cwd, '.git', 'config'), 'utf8');
+  for (const argv of [['hook', 'add', '--help'], ['hook', 'remove', '-h'], ['hook', '--help']]) {
+    const r = await run(argv, box);
+    assert.equal(r.code, 0, argv.join(' '));
+    assert.match(r.stdout, /usage:/);
+    assert.equal(await exists(join(box.cwd, '.git', 'hooks', 'prepare-commit-msg')), false);
+    assert.equal(await exists(join(box.cwd, '.git', 'sonah')), false);
+    assert.equal(await readFile(join(box.cwd, '.git', 'config'), 'utf8'), config);
+  }
+  assert.deepEqual(await readdir(box.home), []);
 });
 
 test('an unknown command still prints usage and exits 2, and --help is not a command', async (t) => {

@@ -220,18 +220,19 @@ test('none-found and discovery failure give fixed actionable messages', async ()
   assert.doesNotMatch(failed.read().stderr, /private-diagnostic/);
 });
 
+// D143: the usage names --commits A..B too.
 test('help and invalid arguments do not discover or invoke any provider', async () => {
   let calls = 0;
   const discover = async () => { calls++; return { sessions: [] }; };
   for (const argv of [['--help'], ['-h']]) {
     const out = output();
     assert.equal(await runSessionsCommand(argv, { ...out.streams, discover }), 0);
-    assert.equal(out.read().stdout, 'usage: sonah sessions [--repo DIR]\n');
+    assert.equal(out.read().stdout, 'usage: sonah sessions [--repo DIR] [--commits A..B | --github OWNER/REPO --pr N]\n');
   }
   for (const argv of [['--repo'], ['--repo', '--bad'], ['--bad'], ['extra'], ['--repo', 'one', 'extra']]) {
     const out = output();
     assert.equal(await runSessionsCommand(argv, { ...out.streams, discover }), 2);
-    assert.equal(out.read().stderr, 'usage: sonah sessions [--repo DIR]\n');
+    assert.equal(out.read().stderr, 'usage: sonah sessions [--repo DIR] [--commits A..B | --github OWNER/REPO --pr N]\n');
   }
   assert.equal(calls, 0);
 });

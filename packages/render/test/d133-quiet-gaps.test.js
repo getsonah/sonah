@@ -138,7 +138,7 @@ function missingQuote(base = null) {
   return { session, report };
 }
 
-test('D133: the two placements the owner confirmed (2026-10-22, "go with your recommendations") are on', () => {
+test('D133: the two placements the owner confirmed (2026-10-22) are on', () => {
   assert.deepEqual(REPORT_FOLD_CHOICES, { notCheckedLine: true, continuedUnread: true });
   assert.ok(Object.isFrozen(REPORT_FOLD_CHOICES));
 });

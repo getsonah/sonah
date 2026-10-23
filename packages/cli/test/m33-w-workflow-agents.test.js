@@ -18,8 +18,8 @@ import { modulesBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fix
 import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
-import { modulesBeforeM36Conversation, modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview }
-  from '../../evidence/test/m33-integration-fixture.js';
+import { modulesBeforeM36Conversation, modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview,
+  textBeforeAgentPrompt } from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, CALL, RESULTS, RUN, SID, SID_EARLIER, SLUG, TEXT, captureStableCases, fixerRows, journalKey,
   linkedRun, mkdir, parentRows, resulted, rm, scratch, started, symlink, testerRows, workflowRows, writeFile, writeTree }
   from './m33-w-workflow-fixture.js';
@@ -940,7 +940,7 @@ const MOVED_BY_FIRST_SCREEN = Object.freeze([
 const MOVED_BY_EVIDENCE_KINDS = Object.freeze([{},
   { story: '1e1fa884b2b3968770db50bfafcb5453589c467e77fa00f929b10e692b4dfc60' },
   { story: '72847b86d93e5619d6369283358c67eff4b56a103fd04cbe9ed67ca827289dd6' }]);
-/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22: "go with your recommendations"): every
+/** D126 and D127 meet D129 in one move (0.3.0-beta.6; the owner, 2026-10-22): every
  *  case's story, by the report model's version in its footer alone (`sonah.report-model/6`; with
  *  the version set back to /5 every case renders D119's bytes): no case opens on a compaction or holds one, and these
  *  reports carry no run record of what the review cost, so the footer says nothing of it. No ledger, gap, request,
@@ -965,6 +965,14 @@ const MOVED_BY_QUIET = Object.freeze([
   { story: '45eeb3adbb0a83113307139d5e08a834ad16076fd4a426ee27887eff63fabc59' },
   { story: '2870a3a637e24371836d273d40b7f4ca483efe4d0ceee01c0d120fbcbe129862' },
   { story: '6f81b499733d3b512bf8234c41504434ff6124645149333400069a37cf1e565b' }]);
+/** D144 (0.3.0-beta.7; the owner, 2026-10-23): every case's story, by the report model's version
+ *  in its footer alone (`sonah.report-model/7`): no item of a case leads in Must act with a prompt for the agent, so no
+ *  fold is added. Rendered back (`textBeforeAgentPrompt`), D133's, byte for byte. No ledger, gap, request, label, window
+ *  or window failure moved. */
+const MOVED_BY_AGENT_PROMPT = Object.freeze([
+  { story: 'b0658352664bc45b377bb2ec0119b8f2438b9751566cdde54f9b2ea0fa1c1487' },
+  { story: '227024e706ec8a60d49a33ef860ab351e2b5f3659bfffef5a2b5f5f0c390b070' },
+  { story: '1688838b4512e2b77ac6455f6e63c1678a48e58c975345acf7ff7846b3434ece' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1085,13 +1093,19 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // once more, in one move (MOVED_BY_BETA6_READERS), by the report model's version in the footer; and D131 once more
   // (MOVED_BY_MUST_FIRST), by its sections' order; and D133 once more (MOVED_BY_QUIET), by the lines about what Sonah
   // could not check moving into their folds.
-  const asksFixes = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
+  const beta6 = m36.map((c, at) => ({ ...c, ...MOVED_BY_D69[at], ...MOVED_BY_D71[at], ...MOVED_BY_D71_BRIEF[at],
     ...MOVED_BY_D71_CHANNELS[at], ...MOVED_BY_D71_FIX[at], ...MOVED_BY_S7[at], ...MOVED_BY_REQUEST_STEPS[at],
     ...MOVED_BY_FIX_COLUMN[at], ...MOVED_BY_ASKS_FIXES[at], ...MOVED_BY_JUDGMENT_FIRST[at], ...MOVED_BY_AGENTIC[at],
     ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at],
     ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at],
     ...MOVED_BY_ONE_BOUND[at], ...MOVED_BY_REPORT_TRUTH[at], ...MOVED_BY_FIRST_SCREEN[at],
     ...MOVED_BY_EVIDENCE_KINDS[at], ...MOVED_BY_BETA6_READERS[at], ...MOVED_BY_MUST_FIRST[at], ...MOVED_BY_QUIET[at] }));
+  // D144 (0.3.0-beta.7): and every story once more (MOVED_BY_AGENT_PROMPT), by the report model's version in the
+  // footer; rendered back (`textBeforeAgentPrompt`), 0.3.0-beta.6's, byte for byte.
+  const asksFixes = beta6.map((c, at) => ({ ...c, ...MOVED_BY_AGENT_PROMPT[at] }));
+  assert.deepEqual(await captureStableCases({ ...STABLE_MODULES, renderStory: (session, report) => textBeforeAgentPrompt(
+    renderReportMarkdown(session, report)) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
+    ...MOVED_BY_W3[at], ...MOVED_BY_FIX_REVIEW[at] })), 'as 0.3.0-beta.6 rendered them');
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.
   // The fix review: and once more (MOVED_BY_FIX_REVIEW); rendered back (`modulesBeforeFixReview`), W3's, byte for byte.

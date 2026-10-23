@@ -174,7 +174,29 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // part "code pass reviewed no code" (RUN_STATE_WORDS `codePassNoCode`), with the line. Where D131 and D132 meet D133:
   // [90, 431, 390] + D131 and D132's [0, 2, 0] + D133's [0, -1, 2].
   // D131's review: 1 sonah in, the .md's sentence of what Sonah checked when its table does not show every ask.
-  assert.deepEqual(AUDIT_CLASSES.map(count), [90, 433, 392]);
+  // D142 (a review by session id): 4 sonah in (no recording named by the id; an empty id; the one line that a
+  // review started in the background prints; and its one failure line), 3 other in (two ids' facts of the recordings'
+  // names, and the recordings that one id names); none states an absence. [90, 433, 392] + [0, 4, 3]. Its review: 1 sonah
+  // in, the start line with --no-open.
+  // D144 (0.3.0-beta.7, the prompt for the agent): 26 keys in. 2 absence, each the absence its item states, on the same
+  // proof (judged_ask_shortfall: an ask not done, and one done only in part, in the prompt's voice); 24 other (the fold,
+  // the note on the voice, the labels in your voice, the code review's two labels, the place and the four closing
+  // sentences); none sonah. [90, 433, 392] + [2, 0, 24].
+  // D142 and D144 together: [90, 433, 392] + [2, 0, 24] (D144) + [0, 5, 3] (D142). D142 (the /sonah skill): 15 sonah
+  // in, the words of sonah skill add and remove and their doctor lines (what Sonah did, found or could not do with its
+  // own skill's files); none states an absence. + [0, 15, 0].
+  // D143 (the commit link's hook, with its two fix rounds): 27 sonah in (what Sonah wrote, deleted or found of its
+  // own hook files, or could not tell) and 12 other (what the person adds or runs, and facts of lefthook and of a public
+  // repository); none states an absence.
+  // Joined at beta.7's merge of D142, D143 and D144: [90, 433, 392] + D142 and D144's [2, 20, 27] + D143's [0, 27, 12].
+  // D143 (a range's commits to their sessions): 5 absence in (no line in the range, twice; no recording here,
+  // twice; the recording does not show the commit), each on its proof; 2 sonah (git could not list the range, twice);
+  // 9 other. + [5, 2, 9].
+  // D143 (a pull request's commits): 2 sonah in (GitHub's list not whole; GitHub not read). + [0, 2, 0].
+  // D143's review round: 4 sonah in (what Sonah found in a pull request's partial list, the values it lists no session
+  // for, a compressed recording, a folder in no repository) and 1 other (the files of an id that several recordings
+  // carry); the absence words now name a session, and stand on their proofs as before. + [0, 4, 1].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 488, 441]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
@@ -187,8 +209,12 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // files named apart, on the page and in the dry run); the merge: one more, by the same search (another repository's
   // files named apart, given to the code review). D118 (a): 1 more, by the same search (the first screen's no-write
   // reason). D122 (b): E1-F8's one out again (the refused read's default tier is removed). D127 (B10d): 1 more, by the
-  // compaction's typed boundary row (`typed_compaction`).
-  assert.deepEqual([proved - rows, rows, held], [87, 6, 3]);
+  // compaction's typed boundary row (`typed_compaction`). D144: 2 more, by the session review's checked shortfall of an
+  // ask (`judged_ask_shortfall`), the prompt's words for what its item states.
+  // D143: 5 more, on commit_range_lines (2), recording_file_names (2) and commit_call_search (1). Its review round: none
+  // more; a pull request's whole list (`pull_request_commit_lines`), no recording read (`recording_not_read`) and a
+  // commit the repository does not hold (`commit_not_held`) are added as proofs of two keys already counted.
+  assert.deepEqual([proved - rows, rows, held], [94, 6, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

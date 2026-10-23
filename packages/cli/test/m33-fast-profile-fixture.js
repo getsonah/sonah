@@ -304,14 +304,17 @@ export const requestIdentity = (request) =>
  * Everything a standard review plans and sends for one synthetic case, as digests: each planned
  * narrative request (label, system, prompt, evidence prompt), and every request the run sent — the
  * sorted list and its digest. `options` is passed to `planWindowRequests` and `runReview` as is (the
- * base ignores a member it does not know). Concurrency 1, so the call order is fixed too.
+ * base ignores a member it does not know). Concurrency 1, so the call order is fixed too. D145: `sentOrder` (optional,
+ * on the modules) puts the requests sent in another order before they are digested (`modulesBeforeD145`).
  */
-export async function captureCase({ runReview, planWindowRequests }, { name, session, narrativeOf, options = {} }) {
+export async function captureCase({ runReview, planWindowRequests, sentOrder = (list) => list },
+  { name, session, narrativeOf, options = {} }) {
   const plan = planWindowRequests({ session, reviewScope: 'session-only', ...options });
   const planned = plan.requests.map(({ request }) => `${requestIdentity(request)}|${sha256(request.evidencePrompt)}`);
-  const seen = [];
+  const asked = [];
   const report = await runReview({ session, pr: null, reviewScope: 'session-only', concurrency: 1, ...options,
-    judge: fixtureJudge({ narrativeOf: (request) => narrativeOf(session, request), seen }) });
+    judge: fixtureJudge({ narrativeOf: (request) => narrativeOf(session, request), seen: asked }) });
+  const seen = sentOrder(asked);
   const sent = seen.map(requestIdentity);
   return { name, windows: plan.windows.length, planned: sha256(planned.join('\n')),
     sentCount: sent.length, sentInOrder: sha256(sent.join('\n')), sentSorted: sha256([...sent].sort().join('\n')),

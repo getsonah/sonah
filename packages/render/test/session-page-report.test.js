@@ -77,7 +77,9 @@ test('D97, D131: the page is the report model in its order — header, count lin
   // D126 and D127 once more (sonah.session-page/45, 0.3.0-beta.6): the line beside the title for a session that opens on a
   // compaction, and each compaction among your messages. In the same move (D129, C7): the footer says what the review
   // cost.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/45');
+  // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
+  // act, folded, in a block that one click selects.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/46');
 });
 
 test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {

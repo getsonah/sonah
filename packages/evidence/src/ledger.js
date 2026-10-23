@@ -119,13 +119,63 @@ export const RUN_FAILURE_CODES = Object.freeze([
 /** D124: the closed problems of a folder given with --code-repo (cli code-snapshot.js `codeRepoTop`): not there or not
  *  a folder; in no git working tree. Each is a failure code the review prints by name (CLI_SAFE_ERROR_CODES). */
 export const CODE_REPO_PROBLEMS = Object.freeze(['code_repo_not_found', 'code_repo_not_git']);
+/** D142: the closed problems of a session id given with `sonah review --session` (cli session-id.js
+ *  `resolveSessionId`): no recording's file name carries it; more than one does; the one that does is a compressed Codex
+ *  rollout (`.zst`), which Sonah does not read. Each is a failure code the review prints by name. */
+export const SESSION_ID_PROBLEMS = Object.freeze(['session_id_not_found', 'session_id_ambiguous',
+  'session_id_compressed']);
+/** D143: what stops `sonah review --commits A..B` (cli commit-sessions.js) before it reads the session, each a code the
+ *  review prints by name: git cannot list the range; no commit of the range names a session id in an Agent-Session line;
+ *  several sessions named by the range have a recording here and no `--choose N` picks one, or `--choose N` names no
+ *  row of the list; no file on this computer carries the id of the session to review. A session whose id more than one
+ *  recording carries, or one compressed recording, stops with SESSION_ID_PROBLEMS' code instead. */
+export const COMMITS_PROBLEMS = Object.freeze(['commits_range_unreadable', 'commits_no_session', 'commits_choose_one',
+  'session_not_on_this_computer']);
 export const CLI_SAFE_ERROR_CODES = Object.freeze([
   'github_auth_missing', 'stale_revision', 'review_in_progress', 'review_state_invalid',
   'budget_exhausted', 'unsupported_backend', 'invalid_model', 'explicit_api_model_required',
   'anthropic_key_missing', 'session_not_found', 'output_exists',
   'output_folder_missing', 'output_folder_unwritable', 'config_invalid', 'state_dir_holds_root',
-  ...CODE_REPO_PROBLEMS,
+  ...CODE_REPO_PROBLEMS, ...SESSION_ID_PROBLEMS, ...COMMITS_PROBLEMS,
 ]);
+
+/** D143: the commit-to-session link's hook in one repository (cli/src/agent-session-hook.js `commitLinkFacts`), as
+ *  `sonah hook add`, `sonah hook remove` and `sonah doctor` report it, from the files and git's answers alone:
+ *    off          Sonah's script is not in the git common dir (any runner or line that is left does nothing);
+ *    on           the script is there, and Sonah can see that git runs it, by one of COMMIT_LINK_ROUTES;
+ *    moved        the script is there, and lefthook moved Sonah's hook file to `prepare-commit-msg.old`, which nothing
+ *                 runs;
+ *    not_run      the script is there, and the hook that git runs is none, or is lefthook's and no lefthook file names
+ *                 the script, or is Sonah's runner (or pre-commit's `.legacy` of it) without the executable bit, which
+ *                 git and pre-commit then skip;
+ *    not_checked  the script is there, and the hook that git runs is another tool's, or a line of Sonah's sits in a file
+ *                 that another tool or the person owns: Sonah cannot tell whether git reaches it.
+ *  COMMIT_LINK_ROUTES: how Sonah sees that git runs the script: `runner`, Sonah's own hook file is the hook, and it is
+ *  executable; `pre-commit`, pre-commit's hook (by its id line), which runs Sonah's executable hook file that it moved to
+ *  `.legacy`.
+ *  HOOK_PROBLEMS: what stops `sonah hook add` or `remove` before it writes anything: the folder is in no git working
+ *  tree; it is a bare repository; a file that Sonah did not write is where its script goes; the way to Sonah's script
+ *  passes through a link. */
+export const COMMIT_LINK_STATES = Object.freeze(['off', 'on', 'moved', 'not_run', 'not_checked']);
+export const COMMIT_LINK_ROUTES = Object.freeze(['runner', 'pre-commit']);
+export const HOOK_PROBLEMS = Object.freeze(['hook_not_git', 'hook_bare_repository', 'hook_file_foreign', 'hook_path_link']);
+
+/** D143 (the owner's default, 2026-10-23): how a commit is linked to the session its Agent-Session line names (cli
+ *  commit-sessions.js `linkOf`), by structure only:
+ *    shown     one recording here carries the id, and one tool call of it (or of a helper of it) spans the commit's
+ *              committer time, by the recording's own timestamps, in a folder of the same repository (git common dir):
+ *              both facts;
+ *    named     a recording here carries the id, and Sonah could not show the commit in it: no call spans the commit's
+ *              time in a folder of that repository (most often the agent ran the commit in another repository's
+ *              folder, after a `cd`; also an amend, a rebase, a commit typed in a terminal, a line typed by hand, a
+ *              merge); or more than one recording, or one compressed recording, carries the id, and Sonah reads none of
+ *              them; or the repository does not hold the commit (a pull request's commit not fetched);
+ *    not_here  no recording on this computer carries the id.
+ *  COMMIT_RECORDING_STATES: the recordings here whose file names carry a session's id (cli session-id.js
+ *  `recordingsNamed`): `one` plain recording, which Sonah reads; `several`; `compressed`, one `.zst` rollout, which
+ *  Sonah does not read; `none`. */
+export const COMMIT_SESSION_LINKS = Object.freeze(['shown', 'named', 'not_here']);
+export const COMMIT_RECORDING_STATES = Object.freeze(['one', 'several', 'compressed', 'none']);
 
 // W3d-4: `unsettled` — a challenge item every pass voted on that was not settled (D58: ran,
 // inconclusive, withheld). It is not `unreviewed_scope`, which is an item some pass never voted on.
@@ -3814,6 +3864,20 @@ export const REPORT_GROUP_TIES = Object.freeze(['concerns']);
  *           an item sits below the tier it has alone
  */
 export const REPORT_TIER_SOURCES = Object.freeze(['lead', 'member']);
+/**
+ * D144 (0.3.0-beta.7): why an item that leads in Must act has no prompt for the agent
+ * (render/report-model.js `agentPromptOf`). A prompt is made from the item's own checked parts alone, so each reason is
+ * a fact of the item's structure, never of its words. Closed, so the count of each stays computable.
+ *   kind_not_covered   the item's kind has no prompt in this cut (report-model.js AGENT_PROMPT_KINDS)
+ *   quote_not_found    the item's own quote, which the prompt leads with, is not one that Sonah found again in this
+ *                      session (the item shows that it did not find it, or shows none)
+ *   evidence_not_found the second recorded quote that the kind needs did not ground: the result, message or file that
+ *                      contradicts a claim or a statement, or what the agent did against your words
+ *   title_missing      a kind of the code review whose title is not the code review's own words (it gave none)
+ *   label_not_covered  a quote that the prompt would carry has a label on the item that the prompt has no words for
+ */
+export const AGENT_PROMPT_NONE_REASONS = Object.freeze(['kind_not_covered', 'quote_not_found', 'evidence_not_found',
+  'title_missing', 'label_not_covered']);
 /**
  * What is wrong with one entry of the code review's `triage` or `files` list, beside the shape errors of
  * CODE_ITEM_ERRORS (code-pass/10): named in the one repair when a failing finding or question asks for it, and kept as

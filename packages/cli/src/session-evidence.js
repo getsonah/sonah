@@ -192,7 +192,8 @@ export function continuedRecordingsOf(ledger) {
  *  that opens on a compaction is read with the recordings it continues (continued-recordings.js `continuedLineage`),
  *  oldest first, as one session; `continued: false` reads it alone. */
 export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots = {},
-  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {}, continued: follow = true } = {}) {
+  context = evidenceContext(), reviewLinkedChildren = false, childLimits: lower = {}, continued: follow = true,
+  frozen = null } = {}) {
   const limits = { ...CHILD_RECORDING_LIMITS, ...lower };
   if (Object.entries(limits).some(([key, n]) => !Number.isSafeInteger(n) || n <= 0
     || !(key in CHILD_RECORDING_LIMITS) || n > CHILD_RECORDING_LIMITS[key])) {
@@ -202,8 +203,11 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   // M33 W: `claimedRuns` holds every canonical Workflow run directory a call of this review has claimed.
   const state = { inventories: context.inventories, checkedInventories: new Set(), staleInventories: new Map(),
     visited: new Set(), children: 0, actionBytes: 0, claimedRuns: new Set(), census: emptyCensus() };
-  async function readNode(nodeFiles, depth, child = false, snapshot = null, verifiedChild = false, cut = null) {
-    let raw = snapshot ?? await sliceLineage(nodeFiles, { cwd: child ? undefined : cwd,
+  // D142: with `frozen` (frozen-read.js), the root's recordings are read through their ends at the start (`ends`),
+  // and every other recording read here as it was then; without it, every read is as before.
+  async function readNode(nodeFiles, depth, child = false, snapshot = null, verifiedChild = false, cut = null,
+    ends = null) {
+    let raw = snapshot ?? await sliceLineage(nodeFiles, { cwd: child ? undefined : cwd, ...(ends ? { byteEnds: ends } : {}),
       outcomes: child ? await outcomesFor(nodeFiles) : outcomes ?? await outcomesFor(nodeFiles),
       includeSources: true, sidechainAsMain: child || undefined, childRecording: child, workflowLaunches: true,
       claudeLocators: true, helperDeliveries: true, recorderCensus: true,
@@ -216,7 +220,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     // (its first `isSidechain` true) is a helper's, and the child read withholds its unchecked history.
     if (!child && raw.lineage?.role === 'helper') {
       child = true;
-      raw = await sliceLineage(nodeFiles, { outcomes: await outcomesFor(nodeFiles),
+      raw = await sliceLineage(nodeFiles, { outcomes: await outcomesFor(nodeFiles), ...(ends ? { byteEnds: ends } : {}),
         includeSources: true, sidechainAsMain: true, childRecording: true, workflowLaunches: true,
         claudeLocators: true, helperDeliveries: true, recorderCensus: true });
     }
@@ -283,7 +287,8 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
         if (!prior || !await recordingInventoryCurrent(prior)) {
           if (prior && !prior.incomplete) state.staleInventories.set(key, prior);
           state.inventories.set(key, indexRecordings(parent.namespace, parent.adapter,
-            { limits: Object.fromEntries(Object.keys(RECORDING_INDEX_LIMITS).map(name => [name, limits[name]])) }));
+            { limits: Object.fromEntries(Object.keys(RECORDING_INDEX_LIMITS).map(name => [name, limits[name]])),
+              ...(frozen ? { frozen } : {}) }));
         }
         state.checkedInventories.add(key);
       }
@@ -311,7 +316,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       try {
         const maxBytes = Math.min(limits.actionBytes, limits.aggregateActionBytes - state.actionBytes);
         snapshot = await snapshotRecording(file, { namespace: parent.namespace,
-          maxBytes, maxLineBytes: Math.min(limits.lineBytes, maxBytes) });
+          maxBytes, maxLineBytes: Math.min(limits.lineBytes, maxBytes), frozen });
         const identity = await readRecordingIdentity(snapshot.path, { adapter: parent.adapter,
           namespace: snapshot.directory, maxBytes: snapshot.bytesRead,
           maxLineBytes: Math.min(limits.lineBytes, snapshot.bytesRead),
@@ -457,7 +462,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       // the agent was read), or a call of a recording read later — is unresolved and keeps its M33 D declaration.
       if (!run || state.claimedRuns.has(run.dir)) continue;
       state.claimedRuns.add(run.dir);
-      const contents = await readWorkflowRun(run, { namespace: parent.namespace });
+      const contents = await readWorkflowRun(run, { namespace: parent.namespace, ...(frozen ? { frozen } : {}) });
       if (!contents) continue;
       const plan = planWorkflowRun(contents);
       const losses = { ...plan.losses };
@@ -522,7 +527,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     if (bySession.size > WORKFLOW_LIMITS.copiedSessions) return proven;
     for (const { namespace, segment, calls } of [...bySession.values()]) {
       const rows = await readEarlierSessionRows({ namespace, sessionId: segment, maxLineBytes: limits.lineBytes,
-        uuids: calls.flatMap(({ launch }) => [launch.uuid, ...launch.resultUuids]) });
+        uuids: calls.flatMap(({ launch }) => [launch.uuid, ...launch.resultUuids]), frozen });
       if (rows === null) continue;
       for (const { index, launch } of calls)
         if (copiedCallProven({ rows, sessionId: segment, callId: launch.callId, runId: launch.runId, uuid: launch.uuid,
@@ -548,7 +553,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
     try {
       const maxBytes = Math.min(limits.actionBytes, limits.aggregateActionBytes - state.actionBytes);
       snapshot = await snapshotRecording(file, { namespace: parent.namespace, maxBytes,
-        maxLineBytes: Math.min(limits.lineBytes, maxBytes) });
+        maxLineBytes: Math.min(limits.lineBytes, maxBytes), frozen });
       const identity = await readRecordingIdentity(snapshot.path, { adapter: 'claude', namespace: snapshot.directory,
         maxBytes: snapshot.bytesRead, maxLineBytes: Math.min(limits.lineBytes, snapshot.bytesRead),
         maxRecords: limits.inventoryRecords });
@@ -573,11 +578,14 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   }
 
   // D126 (N0): one recording that opens on a compaction is read with the recordings it continues, oldest first.
-  const cut = follow && files.length === 1 ? await continuedLineage(files[0]) : null;
+  const cut = follow && files.length === 1 ? await continuedLineage(files[0], frozen ? { frozen } : {}) : null;
   const rootFiles = cut ? cut.files : files;
   if (cut) outcomes = await outcomesFor(rootFiles);
   for (const file of rootFiles) { const path = await canonical(file); if (path) state.visited.add(path); }
-  const root = await readNode(rootFiles, 0, false, null, false, cut);
+  // D142: each root recording's end at the start (null, read whole, for one that was not there then or is shorter
+  // now: it cannot be read as it was).
+  const ends = frozen ? await Promise.all(rootFiles.map((file) => frozen.endOf(file))) : null;
+  const root = await readNode(rootFiles, 0, false, null, false, cut, ends);
   censusOf.set(root, state.census);
   if (cut) recordingsOfLedger.set(root, [...rootFiles]);
   return root;

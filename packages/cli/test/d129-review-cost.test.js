@@ -1,4 +1,4 @@
-// D129 (C7; the owner, 2026-10-22: "go with your recommendations"): every review prints and
+// D129 (C7; the owner, 2026-10-22): every review prints and
 // stores what it cost — its calls, its input tokens (uncached, written to the cache, read from the cache) and output
 // tokens, the list cost the CLI states, its wall time, the code review's part of each, and how far each usage limit
 // moved from its first reading to its last — in the run record (`report.instrument.usage`), on the terminal's usage
@@ -164,9 +164,9 @@ test('D129: the page and the .md say the cost right after the line that names So
     + 'tokens and 6 output tokens in 2 minutes. Your seven-day usage went from 20% to 21% of its limit.';
   const report = { windowResults: [], instrument: { usage } };
   const page = sessionPage(codeSession(), report, { sonahVersion: '0.9.0' }).html;
-  assert.ok(page.includes(`<p class="gen">Sonah 0.9.0 · sonah.report-model/6</p><p>${words}</p>`));
+  assert.ok(page.includes(`<p class="gen">Sonah 0.9.0 · sonah.report-model/7</p><p>${words}</p>`));
   const md = renderReportMarkdown(codeSession(), report, { sonahVersion: '0.9.0' });
-  assert.ok(md.includes(`Sonah 0.9.0 · sonah.report-model/6  \n${words}  \n`));
+  assert.ok(md.includes(`Sonah 0.9.0 · sonah.report-model/7  \n${words}  \n`));
   const none = { windowResults: [] };
   assert.doesNotMatch(sessionPage(codeSession(), none, { sonahVersion: '0.9.0' }).html, /In this run/);
   assert.doesNotMatch(renderReportMarkdown(codeSession(), none, { sonahVersion: '0.9.0' }), /In this run/);

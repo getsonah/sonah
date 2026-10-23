@@ -1,4 +1,4 @@
-// D126 (N0; the owner, 2026-10-22: "go with your recommendations"). A Claude Code recording
+// D126 (N0; the owner, 2026-10-22). A Claude Code recording
 // that opens on a compaction continues an earlier recording: when a session is resumed after a compaction, Claude Code
 // writes a new recording that starts with a copy of the compaction's boundary row, its summary and the messages the
 // compaction kept, and the person's messages from before the compaction stay in the earlier recording. The boundary row

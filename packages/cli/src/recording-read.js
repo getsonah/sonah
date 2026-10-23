@@ -6,6 +6,7 @@ import { basename, join, relative, sep } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { recordingIdentity } from '../../slicer/src/recording-identity.js';
 import { duplicateJsonKeys, strictJson } from '../../slicer/src/strict-json.js';
+import { wholeLinesEnd } from './frozen-read.js';
 
 const CLOSED = 'Recording input could not be verified';
 const fail = (reason = 'unverified') => { throw Object.assign(new Error(CLOSED), { reason }); };
@@ -21,6 +22,16 @@ const unchanged = (a, b) => sameFile(a, b) && a.size === b.size
   && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 export const recordingVersion = stat => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs]
   .map(String).join(':');
+/** D142: the version of a file a frozen read reads (frozen-read.js): the file, and its size when the review
+ *  started. It stays the same while the file only grows: what a frozen read relies on is its prefix, which the read
+ *  itself checks byte for byte. */
+const frozenVersion = (stat, size) => ['frozen', stat.dev, stat.ino, size].map(String).join(':');
+/** The version of `file` now, as a read of it with the same `frozen` set (or none) would return it. */
+export async function currentVersion(file, frozen = null) {
+  const stat = await lstat(file, { bigint: true });
+  const size = frozen?.sizeOf(stat) ?? null;
+  return size !== null && stat.size >= size ? frozenVersion(stat, size) : recordingVersion(stat);
+}
 const owned = stat => typeof process.getuid !== 'function' || stat.uid === BigInt(process.getuid());
 
 // Consumers are private and provisional: no result escapes until EOF and the final file checks.
@@ -30,8 +41,13 @@ const owned = stat => typeof process.getuid !== 'function' || stat.uid === BigIn
 // changed while it was read (a recording still being written), the prefix is read again through the same open file and
 // its SHA-256 must equal what was read; the bytes read again count in `bytesRead` (the caller's bounds charge them). The
 // path, the file's identity and every other check are as for a whole read; a read that reaches EOF is a whole read.
-async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity, prefix = false }, consume,
-  finish = () => {}) {
+// D142: with `frozen` (frozen-read.js), a file it names is read only through its last whole line within its size
+// when the review started, as a prefix read of that end: the bytes after it are never read, and the bytes through it
+// must be unchanged. A file it names that is now shorter than that size fails (`wholeLinesEnd` cannot read back from
+// that size), and a file it does not name was not there at the start: a frozen read reads none, so it fails too. With
+// no `frozen`, every file is read as before.
+async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity, prefix = false,
+  frozen = null }, consume, finish = () => {}) {
   if (typeof file !== 'string' || typeof namespace !== 'string' || !bounded(maxBytes) || !bounded(maxLineBytes)
     || maxLineBytes > maxBytes || typeof deadline !== 'number' || Number.isNaN(deadline)) fail();
   const checkTime = () => { if (performance.now() >= deadline) limit('deadline'); };
@@ -45,21 +61,27 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
     const entryBefore = await lstat(file, { bigint: true });
     if (!inside(pathBefore, root) || !entryBefore.isFile() || entryBefore.isSymbolicLink()
       || entryBefore.nlink !== 1n || !owned(entryBefore)) fail();
-    if (entryBefore.size > BigInt(maxBytes)) limit('bytes');
+    const frozenSize = frozen?.sizeOf(entryBefore) ?? null;
+    if (frozen && frozenSize === null) fail();
+    if ((frozenSize ?? entryBefore.size) > BigInt(maxBytes)) limit('bytes');
 
     handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     const openedBefore = await handle.stat({ bigint: true });
     if (!openedBefore.isFile() || openedBefore.nlink !== 1n || !owned(openedBefore)
       || !sameFile(entryBefore, openedBefore)) fail();
-    if (openedBefore.size > BigInt(maxBytes)) limit('bytes');
+    if (frozenSize === null && openedBefore.size > BigInt(maxBytes)) limit('bytes');
+    // D142: the frozen end, just after the last newline within the size at the start.
+    const end = frozenSize === null ? null : await wholeLinesEnd(handle, Number(frozenSize));
 
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
     const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes + 1));
-    const read = prefix === true ? createHash('sha256') : null;
+    const read = prefix === true || end !== null ? createHash('sha256') : null;
     let lineBytes = 0, through = null;
     while (true) {
       checkTime();
-      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, maxBytes - total + 1), null);
+      if (end !== null && total >= end) { through = end; break; }
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, maxBytes - total + 1,
+        end === null ? Infinity : end - total), null);
       if (bytesRead === 0) break;
       total += bytesRead;
       if (total > maxBytes) limit('bytes');
@@ -73,11 +95,14 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
       lineBytes += used.length - start;
       if (lineBytes > maxLineBytes) limit('line_bytes');
       const stop = await consume(used);
-      const kept = read && Number.isSafeInteger(stop) && stop >= 0 && stop <= used.length ? stop : used.length;
+      const stops = prefix === true && Number.isSafeInteger(stop) && stop >= 0 && stop <= used.length;
+      const kept = stops ? stop : used.length;
       decoder.decode(used.subarray(0, kept), { stream: true });
       read?.update(used.subarray(0, kept));
-      if (kept < used.length || (read && stop === used.length)) { through = total - used.length + kept; break; }
+      if (kept < used.length || (stops && stop === used.length)) { through = total - used.length + kept; break; }
     }
+    // D142: a frozen file shorter than its end now (read to EOF before it) was not read as it was.
+    if (end !== null && through === null) fail();
     decoder.decode(); // Reject an unfinished multibyte sequence at EOF (or at the end of the prefix).
     if (through === null) await finish();
     checkTime();
@@ -106,7 +131,8 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
     }
     checkTime();
 
-    return { bytesRead: total + reread, version: recordingVersion(openedAfter) };
+    return { bytesRead: total + reread, version: frozenSize === null ? recordingVersion(openedAfter)
+      : frozenVersion(openedAfter, frozenSize) };
   } catch (error) {
     // Counters are safe to report; native errors may contain paths or source text.
     throw Object.assign(new Error(CLOSED), { reason: LIMIT_REASONS.includes(error?.reason)
@@ -118,9 +144,9 @@ async function scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline
 
 /** Return the exact verified bytes for a bounded action snapshot. Never echo rejected input. */
 export async function readRecording(file, { namespace, maxBytes = 8_000_000,
-  maxLineBytes = Math.min(maxBytes, 8_000_000) } = {}) {
+  maxLineBytes = Math.min(maxBytes, 8_000_000), frozen = null } = {}) {
   const chunks = [];
-  const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes },
+  const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, frozen },
     used => chunks.push(Buffer.from(used)));
   return Buffer.concat(chunks, bytesRead);
 }
@@ -128,7 +154,8 @@ export async function readRecording(file, { namespace, maxBytes = 8_000_000,
 /** Copy one verified native file into a private immutable parsing input without retaining it
  * in a Buffer. The caller owns the returned directory and must remove it in a finally block.
  * A limit or source change removes the provisional copy before any content can escape. */
-export async function snapshotRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity } = {}) {
+export async function snapshotRecording(file, { namespace, maxBytes, maxLineBytes, deadline = Infinity,
+  frozen = null } = {}) {
   let directory;
   let output;
   try {
@@ -138,7 +165,7 @@ export async function snapshotRecording(file, { namespace, maxBytes, maxLineByte
     directory = await mkdtemp(join(tmpdir(), 'sonah-recording-'));
     const path = join(directory, name);
     output = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline },
+    const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline, frozen },
       async bytes => {
         let offset = 0;
         while (offset < bytes.length) {
@@ -163,7 +190,7 @@ export async function snapshotRecording(file, { namespace, maxBytes, maxLineByte
  * `candidates: true` (exactly) also returns the C-03 conflict candidate side channel, unredacted:
  * only the inventory asks for it, and it redacts the values before storing or comparing them. */
 export async function readRecordingIdentity(file, { adapter, namespace, maxBytes = 64_000_000,
-  maxLineBytes = 1_000_000, maxRecords = 1_000_000, deadline = Infinity, candidates = false } = {}) {
+  maxLineBytes = 1_000_000, maxRecords = 1_000_000, deadline = Infinity, candidates = false, frozen = null } = {}) {
   if (!['codex', 'claude'].includes(adapter) || !bounded(maxRecords)
     || !bounded(maxLineBytes) || !bounded(maxBytes) || maxLineBytes > maxBytes) fail();
   const identity = recordingIdentity(adapter);
@@ -179,8 +206,9 @@ export async function readRecordingIdentity(file, { adapter, namespace, maxBytes
     if (!record || typeof record !== 'object' || Array.isArray(record)) fail();
     identity.observe(record, { repeatedKeys: duplicateJsonKeys(text) });
   };
+  const scan = { namespace, maxBytes, maxLineBytes, deadline, frozen };
   try {
-    const { bytesRead, version } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, deadline }, used => {
+    const { bytesRead, version } = await scanRecording(file, scan, used => {
       let start = 0;
       while (start < used.length) {
         const newline = used.indexOf(0x0a, start);
@@ -217,7 +245,7 @@ export async function readRecordingIdentity(file, { adapter, namespace, maxBytes
  * escapes is not found. More than `maxRows` kept rows is a limit. Nothing escapes before EOF and the final checks.
  */
 export async function readRecordingRows(file, { namespace, uuids, maxBytes, maxLineBytes = Math.min(maxBytes, 8_000_000),
-  maxRows } = {}) {
+  maxRows, frozen = null } = {}) {
   if (!Array.isArray(uuids) || !uuids.length || uuids.some(uuid => typeof uuid !== 'string' || !uuid)
     || !bounded(maxRows) || !bounded(maxBytes) || !bounded(maxLineBytes) || maxLineBytes > maxBytes) fail();
   const wanted = [...new Set(uuids)];
@@ -242,7 +270,7 @@ export async function readRecordingRows(file, { namespace, uuids, maxBytes, maxL
     }
     length = 0;
   };
-  await scanRecording(file, { namespace, maxBytes, maxLineBytes }, used => {
+  await scanRecording(file, { namespace, maxBytes, maxLineBytes, frozen }, used => {
     let start = 0;
     while (start < used.length) {
       const newline = used.indexOf(0x0a, start);
@@ -276,7 +304,7 @@ export async function readRecordingRows(file, { namespace, uuids, maxBytes, maxL
  * unchanged while read (`scanRecording`'s `prefix`); a recording that holds no such pair is read whole, unchanged.
  */
 export async function readLinkedRow(file, { namespace, linked, boundary, maxBytes, maxLineBytes = Math.min(maxBytes,
-  8_000_000), digest = false } = {}) {
+  8_000_000), digest = false, frozen = null } = {}) {
   if (typeof linked !== 'string' || !linked || typeof boundary !== 'string' || !boundary || !bounded(maxBytes)
     || !bounded(maxLineBytes) || maxLineBytes > maxBytes) fail();
   const needles = { linked: Buffer.from(linked, 'utf8'), boundary: Buffer.from(boundary, 'utf8') };
@@ -303,7 +331,7 @@ export async function readLinkedRow(file, { namespace, linked, boundary, maxByte
   };
   // D135 (M3): the facts end at the boundary row's line, so the read does too (a `prefix` read): a recording still
   // being written is read through it, and only the bytes through it must be unchanged.
-  const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, prefix: true }, used => {
+  const { bytesRead } = await scanRecording(file, { namespace, maxBytes, maxLineBytes, prefix: true, frozen }, used => {
     let start = 0;
     while (start < used.length) {
       const newline = used.indexOf(0x0a, start);

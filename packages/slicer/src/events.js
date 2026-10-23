@@ -913,6 +913,8 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   const markedUuids = new Set();
   for (const [recordIndex, rec] of records.entries()) {
     const d = rec.raw;
+    // D142: a row of Sonah's own turn is never read (records.js `claudeLabeller`), whoever built the record.
+    if (rec.basis === LABEL_BASIS.sonahTurn) continue;
 
     // M34 labels review (F2): a label carrying a positioned gap (`POSITIONED_GAPS`) marks its row, before the row is
     // read — a row that opens a turn is placed before that turn's instruction, so the loss reaches it.

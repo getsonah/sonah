@@ -214,7 +214,9 @@ test('R3 batch fanout is bounded and authority claims are ordered first', async 
   } });
   assert.equal(result.attemptedCalls, 15);
   assert.equal(highWater, CHALLENGE_PROFILE.maxConcurrency);
-  assert.deepEqual(order.slice(0, 3), [['i7', 'i8'], ['i7', 'i8'], ['i7', 'i8']]);
+  // D145: every batch's first pass is sent first, the authority claims' batch leading; then each batch's later passes.
+  assert.deepEqual(order.slice(0, 7), [['i7', 'i8'], ['i0', 'i1'], ['i2', 'i3'], ['i4', 'i5'], ['i6'], ['i7', 'i8'],
+    ['i7', 'i8']]);
   assert.equal(result.plannedBatches, 5);
   assert.equal(result.plannedVoteSlots, 27);
 });
@@ -602,7 +604,8 @@ test('R3 seventeen tiny candidates split at the fixed output-planning bound with
   assert.equal(result.attemptedCalls, 6);
   assert.equal(result.plannedVoteSlots, 51);
   assert.equal(result.resolvedItems, 17);
-  assert.deepEqual(sizes, [16, 16, 16, 1, 1, 1]);
+  // D145: both batches' first passes, then each batch's later passes.
+  assert.deepEqual(sizes, [16, 1, 16, 16, 1, 1]);
   assert.equal(result.complete, true);
 });
 
@@ -756,16 +759,27 @@ test('R3 one failed batch pass remains incomplete without leaking transport erro
 test('R3 late budget exhaustion retains every unstarted item/pass slot and prior resolved batches', async () => {
   const items = [item, { ...item, key: 'other' }].map((i) => ({ ...i,
     candidate: { ...decision, chosen: 'x'.repeat(300000) } }));
-  const result = await challenge({ items, concurrency: 1, judge: async (request) => {
-    if (request.challenge.batchIndex === 1) throw Object.assign(new Error('synthetic quota'), { code: 'budget_exhausted' });
+  const exhaustedAt = (pass) => challenge({ items, concurrency: 1, judge: async (request) => {
+    if (request.challenge.batchIndex === 1 && request.challenge.pass === pass)
+      throw Object.assign(new Error('synthetic quota'), { code: 'budget_exhausted' });
     return batchVote(request);
   } });
+  // D145: the queue is b1p1, b2p1, b1p2, b1p3, b2p2, b2p3. Exhausted at the second batch's second pass, the first
+  // batch's three passes ran before it and resolve it.
+  const result = await exhaustedAt(2);
   assert.equal(result.plannedCalls, 6);
-  assert.equal(result.attemptedCalls, 4);
+  assert.equal(result.attemptedCalls, 5);
   assert.equal(result.results[0].resolved, true);
   assert.equal(result.results[1].resolved, false);
   assert.ok(result.results.every((r) => r.votes.length === 3));
   assert.equal(result.budgetExhausted, true);
+  // Exhausted at the second batch's first pass, the first batch's later passes, queued after it, never start; each
+  // keeps its slot unanswered.
+  const early = await exhaustedAt(1);
+  assert.equal(early.attemptedCalls, 2);
+  assert.ok(early.results.every((r) => r.resolved === false && r.votes.length === 3));
+  assert.deepEqual(early.results[0].votes.map((v) => v.answered), [true, false, false]);
+  assert.equal(early.budgetExhausted, true);
 });
 
 test('R3 valid empty candidate set requires no challenge calls or fictitious votes', async () => {

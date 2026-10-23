@@ -82,12 +82,14 @@ export async function locateWorkflowRun({ namespace, runId, transcriptDir, sessi
  * unchanged while read, only lines naming a wanted uuid parsed). Null when it cannot be read within those bounds.
  * Nothing else of the file is kept; its path never leaves this module.
  */
-export async function readEarlierSessionRows({ namespace, sessionId, uuids, maxLineBytes, limits = WORKFLOW_LIMITS }) {
+export async function readEarlierSessionRows({ namespace, sessionId, uuids, maxLineBytes, limits = WORKFLOW_LIMITS,
+  frozen = null }) {
   if (!safeSessionId(sessionId) || typeof namespace !== 'string' || !namespace) return null;
   const maxBytes = limits.copiedSessionBytes;
   try {
+    // D142: with `frozen`, read as it was when the review started (frozen-read.js).
     return await readRecordingRows(join(namespace, `${sessionId}.jsonl`), { namespace, uuids, maxBytes,
-      maxLineBytes: Math.min(maxLineBytes ?? maxBytes, maxBytes), maxRows: limits.copiedRows });
+      maxLineBytes: Math.min(maxLineBytes ?? maxBytes, maxBytes), maxRows: limits.copiedRows, frozen });
   } catch { return null; }
 }
 
@@ -99,10 +101,17 @@ export async function readEarlierSessionRows({ namespace, sessionId, uuids, maxL
  * Entries are compared by name in code-unit order, so the result never depends on the directory listing order. Returns null when the directory cannot be listed, or lists more entries
  * than `WORKFLOW_LIMITS.entries` (the run is then unresolved, and its M33 D declaration stands).
  */
-export async function readWorkflowRun(run, { namespace, limits = WORKFLOW_LIMITS } = {}) {
+export async function readWorkflowRun(run, { namespace, limits = WORKFLOW_LIMITS, frozen = null } = {}) {
   let entries;
   try { entries = await readdir(run.dir, { withFileTypes: true }); } catch { return null; }
   if (entries.length > limits.entries) return null;
+  // D142: with `frozen` (frozen-read.js), the run as it was when the review started: a journal or an agent
+  // recording that was not there then is not one of its entries, and the journal is read only through its end then.
+  if (frozen) {
+    const there = await Promise.all(entries.map(async (entry) => !entry.name.endsWith('.jsonl')
+      || frozen.has(await lstat(join(run.dir, entry.name), { bigint: true }).catch(() => null))));
+    entries = entries.filter((_, i) => there[i]);
+  }
   entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const files = new Map();
   let journalEntry = null;
@@ -119,7 +128,7 @@ export async function readWorkflowRun(run, { namespace, limits = WORKFLOW_LIMITS
     else {
       try {
         const bytes = await readRecording(join(run.dir, JOURNAL_FILE), { namespace,
-          maxBytes: limits.journalBytes, maxLineBytes: limits.journalLineBytes });
+          maxBytes: limits.journalBytes, maxLineBytes: limits.journalLineBytes, frozen });
         journal = readJournal(bytes.toString('utf8'));
       } catch { journal = unreadable; }
     }

@@ -624,6 +624,30 @@ export const REPORT_FOOTER_WORDS = Object.freeze({
 export const REPORT_ANSWER_WORDS = Object.freeze({ accept: 'You accepted it.', change: 'You asked to change it.',
   clarify: 'You asked for clarification.' });
 
+/**
+ * D144 (0.3.0-beta.7; the owner, 2026-10-23): the prompt for the agent under an item that leads in
+ * Must act (report-model.js `agentPromptOf`), folded. It speaks in your voice to the agent: "I" is you and
+ * "you" is the agent, so its labels are keys of their own, never REPORT_ITEM_WORDS (whose "you" is you). Each quote
+ * label is the prompt's word for that quote's label on the item (report-model.js AGENT_PROMPT_LABELS); the code review's
+ * words keep a label that names them as its words. Each closing sentence holds one action (S3).
+ */
+export const REPORT_AGENT_PROMPT_WORDS = Object.freeze({
+  fold: 'Prompt for the agent',
+  voice: 'In this prompt, “I” means you and “you” means the agent.',
+  iAsked: 'I asked:', iSaid: 'I said:', youSaid: 'You said:', youToldMe: 'You told me:', youDid: 'You did:',
+  youWrote: 'You wrote:', youRan: 'You ran:', youRemoved: 'You removed:', youWroteFile: 'You wrote this into a file:',
+  helperSaid: 'A helper said:', resultShows: 'A recorded result shows:', changeShows: 'The change shows:',
+  codeWritten: 'Code written:', whatDoes: 'This does part of it:',
+  projectFile: (path) => `The project instruction file ${path} says:`,
+  codeReviewSays: 'The code review says:', codeReviewAction: "The code review's action:",
+  where: 'Where:',
+  // What the item's what line says of an ask (the agent did not do it, or did only part of it), in the prompt's voice.
+  notDone: 'You did not do it.', partlyDone: 'You did only part of it.',
+  // The closing line: by the item's type, one action a sentence.
+  fix: 'Fix this.', reason: 'If you think that it is right as it is, give me your reason.',
+  check: 'Check this claim against what I quoted.', holds: 'If the claim does not hold, fix your work.',
+});
+
 const amount = ({ n, atLeast } = {}) => (Number.isSafeInteger(n) && n >= 0 ? `${atLeast === true ? 'at least ' : ''}${n}`
   : 'some');
 const single = (counts = {}) => counts.n === 1 && counts.atLeast !== true;
@@ -736,6 +760,11 @@ export const STYLE_KINDS = Object.freeze({
   'REPORT_FOOTER_WORDS.answerCommand': 'fragment',
   REPORT_ANSWER_WORDS: 'notice', REPORT_CAUSE_WORDS: 'fragment', REPORT_GAP_WORDS: 'fragment',
   REPORT_COLUMN_REASON_WORDS: 'description',
+  REPORT_AGENT_PROMPT_WORDS: 'label', 'REPORT_AGENT_PROMPT_WORDS.fold': 'heading',
+  'REPORT_AGENT_PROMPT_WORDS.voice': 'notice', 'REPORT_AGENT_PROMPT_WORDS.notDone': 'description',
+  'REPORT_AGENT_PROMPT_WORDS.partlyDone': 'description', 'REPORT_AGENT_PROMPT_WORDS.fix': 'action',
+  'REPORT_AGENT_PROMPT_WORDS.reason': 'action', 'REPORT_AGENT_PROMPT_WORDS.check': 'action',
+  'REPORT_AGENT_PROMPT_WORDS.holds': 'action',
 });
 /** One fixture for every function under a table, by its path (`TABLE.key`, `TABLE.key.member`): the linter renders
  *  each function entry with its own fixture. */
@@ -840,6 +869,7 @@ export const STYLE_FIXTURES = Object.freeze({
     windows: [{ name: 'five_hour', rise: 2 }] }],
   [{ runs: 1, calls: 7, codeCalls: 2, inputTokens: null, outputTokens: null, wallMs: 90_000, windows: [] }]],
   ...each('REPORT_CAUSE_WORDS', REPORT_CAUSE_WORDS, [[{ n: 1, m: 3 }], [{ n: 2, m: 5, atLeast: true }]]),
+  'REPORT_AGENT_PROMPT_WORDS.projectFile': [['AGENTS.md'], ['docs/CONTRIBUTING.md']],
 });
 /** Allowed exceptions, counted by the linter: a product name holds a glossary term. */
 export const STYLE_ALLOW = Object.freeze({

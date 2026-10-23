@@ -5,9 +5,9 @@ and, with the code step (on by default, with the `claude` reviewer), your reposi
 open, search and list its files with read-only tools. Since 0.3.0-beta.5 the code step also reads the files that the
 session wrote in other git repositories, such as a sibling worktree, and its agents can read each repository that holds a
 file of the change. A folder that no git repository holds, such as a notes folder, is never read: Sonah names it and
-counts the files the session wrote there. The only thing that leaves your computer is the review itself:
-requests to the model you choose, through your own `claude` or `codex` login, or your API key with `--backend
-anthropic-api`.
+counts the files the session wrote there. What leaves your computer is the review itself: requests to the model you
+choose, through your own `claude` or `codex` login, or your API key with `--backend anthropic-api`. The only other
+requests go to GitHub, and only when you name a pull request with `--github` ([below](#what-leaves-your-computer)).
 
 Sonah masks nothing and withholds nothing for privacy's sake. The model reads your session as it was recorded and, in
 the code step, any file of your repository, or of another git repository that holds a file of the change, that its
@@ -83,10 +83,12 @@ never one of them, whatever the session wrote there.
 `--backend codex-cli --model gpt-6.1-sol` uses your `codex` login instead, read-only, with its tools and web search off.
 `--backend anthropic-api` posts the same requests to Anthropic's API with your `ANTHROPIC_API_KEY`.
 
-Sonah itself makes no other network request: no telemetry, no analytics, no update check. (The one exception is a PR
-comment you ask for with `--github OWNER/REPO --pr N --post-comment`: Sonah reads that pull request's metadata from
-GitHub and posts the comment only once you confirm it; see Sharing below.) Your provider's own terms apply to what it
-receives.
+Sonah itself makes no other network request: no telemetry, no analytics, no update check. There are two exceptions,
+both to GitHub and both only when you name a pull request: a PR comment you ask for with `--github OWNER/REPO --pr N
+--post-comment`, for which Sonah reads that pull request's metadata and posts the comment only once you confirm it (see
+Sharing below); and `sonah sessions --github OWNER/REPO --pr N`, which reads that pull request's metadata and the list
+of its commits (their ids, messages and times) and posts nothing ([The Agent-Session line](#the-agent-session-line)).
+Each sends your GitHub token when you have one. Your provider's own terms apply to what it receives.
 
 ## What is never sent
 
@@ -125,6 +127,10 @@ command. If you post the report, the comment holds your words and the agent's wo
 can read the pull request can read the comment. Read the report before you post it, as
 its footer says.
 
+The prompt for the agent under a Must act item, on the page and in the .md, quotes only what its item shows, so it
+adds nothing that the report does not already hold. When you paste it into your agent, it goes to that agent's provider
+like any message that you type.
+
 When no code was reviewed, the first lines of the report name the folder that the code review looked in. The page and
 the terminal name its full path. The Markdown report, which is meant for a pull request, names only the folder's name
 (`Folder: my-app`), and your home folder itself as `~`, so this line never holds the path of your home folder or your
@@ -148,13 +154,43 @@ recorded, like the recording itself.
 | Your settings (`sonah config`) | `~/.sonah/config.json` | Whether the code step is on. Readable by you only; one that is not yours, that others can write or that cannot be read stops a review given no `--code-pass` or `--no-code-pass`, before anything is read. |
 | The page or Markdown you asked for | the `--output` file | Never overwrites an existing file. It holds your session as recorded. |
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
+| The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |
+| The page, Markdown report and log of `sonah review --session ID --background` | `background/` in the review's folder above | Only if you ran one. The page and the report hold your session as recorded; the log holds what the review printed. `active.json` there holds the process id of the review it started, nothing else. |
 | A `sonah feedback` bundle | `~/sonah-feedback-YYYY-MM-DD.md` in your home folder | Setup facts and counts only. A second bundle on the same day replaces the first. |
+| The commit link's hook (`sonah hook add`) | `.git/hooks/prepare-commit-msg` (`prepare-commit-msg.old` or `.legacy` when lefthook or pre-commit moved it) and `.git/sonah/` in that repository: the script `agent-session.sh`, and `hooks-folder-made` when Sonah made the hooks folder | Only where you ran it. It holds no session text; `sonah hook remove` deletes these files. The `Agent-Session` lines it added stay in your commits. |
 
 Every file a review or `sonah decision` writes is readable by you only (folders `0700`, files `0600`). `SONAH_HOME`
-moves `~/.sonah`. To delete everything Sonah stored, remove `~/.sonah`, the output files you wrote and any
-`sonah-feedback-*.md` bundle; your recordings are not affected. If you used an early preview of Sonah, `~/.sonah` can
+moves `~/.sonah`. To delete everything Sonah stored, run `sonah skill remove` if you added the /sonah skill, run
+`sonah hook remove` in each repository where you ran `sonah hook add`, and remove `~/.sonah`, the output files you wrote
+and any `sonah-feedback-*.md` bundle; your recordings are not affected. If you used an early preview of Sonah, `~/.sonah` can
 also hold `pr-reviews/`, `answers/`, `ledgers/` and `outcomes/` from it; you can delete them (a review still reads
 the exit statuses an early preview's hook saved in `outcomes/`, and nothing writes there any more).
+
+## The Agent-Session line
+
+Off until you run `sonah hook add` in a repository ([INSTALL.md](INSTALL.md#link-commits-to-sessions)). Then each
+commit that your Claude Code agent makes there ends with one line, `Agent-Session: <id>`, the id of the agent's session
+as Claude Code gives it. The hook adds nothing else: no part of the recording, no path and no name, and it changes
+nothing else in the message. It runs on your computer, calls only `git` and `tail`, and sends nothing. The line leaves
+your computer when you push the commit, as the rest of the commit does. Codex sessions get no line yet.
+
+What the line tells anyone who can read the commit:
+
+- that a Claude Code session made the commit (its id is a random UUID, version 4, which shows no time);
+- that commits that carry the same id, in any repository, branch or fork, came from one session.
+
+It does not reveal the recording: the id is the recording's file name on the computer where the agent ran, which only
+someone with that computer can open. Sonah masks nothing, so the id is written as Claude Code gives it, not hashed. In
+a public repository the line is public and stays in the history: removing it means rewriting history.
+`sonah hook remove` stops new lines; uninstalling Sonah does not, so run it first.
+
+`sonah sessions --commits A..B` reads the range's messages with git and the recordings on this computer, prints each
+session's id and its recording's path, and sends nothing. `sonah review --commits A..B` reads the same to choose the
+session, then reviews it like any `sonah review`, which sends what
+[What leaves your computer](#what-leaves-your-computer) lists.
+`sonah sessions --github OWNER/REPO --pr N` asks GitHub for that pull request and the list of its commits (their ids,
+messages and times), GET requests only, with your token when you have one; it sends nothing else. When GitHub's list is
+not whole, it prints the `git fetch` command that reads the rest; you run it, Sonah does not.
 
 ## Sharing
 

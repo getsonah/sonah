@@ -45,6 +45,14 @@ export const MARKERS = Object.freeze({
 });
 const MARKER_ORDER = Object.values(MARKERS);
 
+/**
+ * D142 (the owner, 2026-10-23): the names of Sonah's own skills, as a person types
+ * them (`/sonah`) and as Claude Code records them in a prompt command's `command-name` element. A name Sonah owns, so a
+ * row is read by its provenance, never by its wording: the turn such a command opens is Sonah's own, and is not read
+ * (`LABEL_BASIS.sonahTurn`). The CLI's `sonah skill add` writes the skill of the first name (cli skill.js).
+ */
+export const SONAH_SKILL_NAMES = Object.freeze(['sonah']);
+
 /** Whether a record is the recording's own top-level agent or a helper (sub-agent) of another. */
 export const LINEAGE_ROLES = Object.freeze({ root: 'root', helper: 'helper' });
 
@@ -108,6 +116,13 @@ export const LABEL_BASIS = Object.freeze({
    *  `local-command-caveat` element) and that command's typed output (a `system` row of subtype `local_command`): a
    *  command the person ran in the harness itself, never a message to the agent, whatever its own fields say. */
   localCommand: 'local_command',
+  /** D142: a row of Sonah's own turn: the prompt command whose recorded command name is one of
+   *  `SONAH_SKILL_NAMES` (`/sonah`, which starts a review of this session), and every row after it on the main thread up
+   *  to the first that starts other work (a turn `opensTurn` opens, a queued prompt, a background task's notification,
+   *  another agent's message): the skill's expansion, its attachments, the agent's reply, any call and result. Harness:
+   *  the turn is not read (records.js `claudeLabeller` settles it, `readClaudeSession` counts its rows and keeps no record
+   *  of them), so the command is no ask and the reply no claim. */
+  sonahTurn: 'sonah_turn',
   /** Any other user row of a modern recorder with no origin and no flag — where Claude Code writes its interruption
    *  notice, which it does not type (`LABEL_GAPS.interruptUntyped`). Its words are never read. */
   untypedUserRow: 'untyped_user_row',

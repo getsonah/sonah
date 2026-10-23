@@ -330,6 +330,21 @@ export const CHALLENGE_PROFILE = Object.freeze({
   maxConcurrency: 6, maxInputBytes: MAX_REVIEW_INPUT_BYTES,
   batching: 'full-evidence-greedy-bytes-and-items', maxItemsPerBatch: 16, response: 'keyed-votes',
 });
+/**
+ * D145 (0.3.0-beta.7): the name of the function a batch's first pass request carries, not enumerable (so no key, byte,
+ * copy or JSON of the request holds it), when later passes of its batch wait for it. A transport that can tell when the
+ * model's reply begins calls it then, once (the claude-cli transport: at the first `stream_event` line,
+ * review-judge.js); any other never calls it, and the later passes are sent when the first pass's call settles. Either
+ * way they are sent after the first pass's prompt was cached, so they read it instead of each writing its own.
+ */
+export const REPLY_BEGUN = 'replyBegun';
+/** D145: `to` (a copy of `from`, a request) with the REPLY_BEGUN function `from` carries, when it carries one. */
+export function withReplyBegun(from, to) {
+  const begun = from?.[REPLY_BEGUN];
+  if (typeof begun === 'function' && to !== null && typeof to === 'object' && !Object.hasOwn(to, REPLY_BEGUN))
+    Object.defineProperty(to, REPLY_BEGUN, { value: begun });
+  return to;
+}
 export const reviewInputBytes = ({ system = '', prompt = '' }) =>
   Buffer.byteLength(system, 'utf8') + Buffer.byteLength(prompt, 'utf8');
 /** Does the whole serialized request fit `maxInputBytes` (the standard bound unless a run names its own)? */
@@ -1545,8 +1560,24 @@ export async function challengeItems({ items, judge, evidence, verifyReceipt,
   flush();
   const batches = absorbAlone(formed).map((batch) => (batch.invalid || batch.oversize ? batch
     : sent(batch.entries, batch.cut)));
-  const queue = batches.flatMap((batch, batchIndex) => Array.from({ length: passes },
-    (_, pass) => ({ batch, batchIndex, pass: pass + 1 })));
+  // D145 (0.3.0-beta.7): the passes of a batch send one request, byte for byte, and a prompt cache entry is read only
+  // once the reply that wrote it has begun, so passes sent at the same moment each wrote the whole prompt and none read
+  // it. Every batch's first pass is now sent first, in batch order, and each batch's later passes after it, batch by
+  // batch; a later pass is sent only once its first pass's reply has begun (the transport calls the first pass
+  // request's REPLY_BEGUN) or its call has settled (whatever came of it, or no call was made). Calls reach the judge in
+  // exactly this queue order, so the order never depends on timing: a pass waits for its batch's first pass and for the
+  // place before it, holding no call in flight. No request byte changes, and each request still takes the same D60
+  // occurrence: identical bytes are only the passes of one batch, sent in pass order.
+  const queue = [...batches.map((batch, batchIndex) => ({ batch, batchIndex, pass: 1 })),
+    ...batches.flatMap((batch, batchIndex) => Array.from({ length: passes - 1 },
+      (_, later) => ({ batch, batchIndex, pass: later + 2 })))];
+  const firstPass = batches.map(() => {
+    let open;
+    const begun = new Promise((resolve) => { open = resolve; });
+    return { begun, open: () => open() };
+  });
+  // The place of the last entry taken: it resolves once that entry's call was made (or found not to be made).
+  let sentBefore = Promise.resolve();
   let next = 0, attemptedCalls = 0, budgetExhausted = false, quotaStopped = false;
   // Per pass, the slots a reply came back without a vote for (W3d-1).
   const unvoted = Array.from({ length: passes }, () => []);
@@ -1554,25 +1585,34 @@ export async function challengeItems({ items, judge, evidence, verifyReceipt,
   async function worker() {
     while (next < queue.length) {
       const { batch, batchIndex, pass } = queue[next++];
+      const before = sentBefore;
+      let sent;
+      sentBefore = new Promise((resolve) => { sent = resolve; });
+      if (pass > 1) await firstPass[batchIndex].begun;
+      await before;
       const batchItems = batch.entries.map((x) => x.item);
       let votes = new Map(batchItems.map((item) => [item.key, invalidVote(batch.invalid ? 'kind_rejected' : 'unreviewed_scope')]));
-      let cast = null;
-      if (batch.oversize) budgetExhausted = true;
-      if (!quotaStopped && !batch.invalid && !batch.oversize && callable) {
-        try {
+      let cast = null, reply = null;
+      try {
+        if (batch.oversize) budgetExhausted = true;
+        if (!quotaStopped && !batch.invalid && !batch.oversize && callable) {
           const request = { ...batch.request, label: `${labelPrefix}:b${batchIndex + 1}:p${pass}`,
             challenge: { items: batchItems, pass, batchIndex } };
+          if (pass === 1 && passes > 1) Object.defineProperty(request, REPLY_BEGUN, { value: firstPass[batchIndex].open });
           attemptedCalls++;
-          ({ votes, cast } = batchVotes(await judge(request), batchItems, batch.verify, boundOf, voteRoles));
-        } catch (error) {
-          if (error?.code === 'budget_exhausted') { budgetExhausted = true; quotaStopped = true; }
-          // W3d-1 (C-04): a reply came back that could not be read even after the transport's
-          // own retry. That is an unreadable reply, like a malformed one, so its slots may take
-          // this pass's one re-ask. Every other failure is a check that did not run, and stays so.
-          else if (REASKABLE_JUDGE_CODES.includes(error?.code)) cast = new Set();
-          // Raw transport errors can contain source text; retain only closed safe reason codes.
+          try { reply = judge(request); } catch (error) { reply = Promise.reject(error); }
         }
-      }
+      } finally { sent(); }
+      try {
+        if (reply !== null) ({ votes, cast } = batchVotes(await reply, batchItems, batch.verify, boundOf, voteRoles));
+      } catch (error) {
+        if (error?.code === 'budget_exhausted') { budgetExhausted = true; quotaStopped = true; }
+        // W3d-1 (C-04): a reply came back that could not be read even after the transport's
+        // own retry. That is an unreadable reply, like a malformed one, so its slots may take
+        // this pass's one re-ask. Every other failure is a check that did not run, and stays so.
+        else if (REASKABLE_JUDGE_CODES.includes(error?.code)) cast = new Set();
+        // Raw transport errors can contain source text; retain only closed safe reason codes.
+      } finally { if (pass === 1) firstPass[batchIndex].open(); }
       for (const entry of batch.entries) {
         // D58: `answered` — a readable reply came back and cast a vote on this item, valid or not.
         // A slot nobody answered (no call, a thrown call, an omission, an unreadable reply) is a

@@ -38,7 +38,7 @@ import { PRELAUNCH_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W1_READER_
   ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
   SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, CITED_WHOLE_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 let n = 0;
@@ -495,12 +495,14 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // (And both once more by D126 and D127, 0.3.0-beta.6: COMPACTION_READER_VERSIONS, a session that opens on a compaction.)
   assert.deepEqual([COMPACTION_READER_VERSIONS.story.before, COMPACTION_READER_VERSIONS.page.before],
     [SESSION_CHANGE_READER_VERSIONS.story.after, SESSION_CHANGE_READER_VERSIONS.page.after]);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [COMPACTION_READER_VERSIONS.story.after,
-    COMPACTION_READER_VERSIONS.page.after]);
   // (And both once more by D129, 0.3.0-beta.6: COST_READER_VERSIONS, the footer's cost of the review.)
   assert.deepEqual([COST_READER_VERSIONS.story.before, COST_READER_VERSIONS.page.before],
     [SESSION_CHANGE_READER_VERSIONS.story.after, SESSION_CHANGE_READER_VERSIONS.page.after]);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [COST_READER_VERSIONS.story.after, COST_READER_VERSIONS.page.after]);
+  // (And both once more by D144, 0.3.0-beta.7: AGENT_PROMPT_READER_VERSIONS, the prompt for the agent.)
+  assert.deepEqual([AGENT_PROMPT_READER_VERSIONS.story.before, AGENT_PROMPT_READER_VERSIONS.page.before],
+    [COST_READER_VERSIONS.story.after, COST_READER_VERSIONS.page.after]);
+  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [AGENT_PROMPT_READER_VERSIONS.story.after,
+    AGENT_PROMPT_READER_VERSIONS.page.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

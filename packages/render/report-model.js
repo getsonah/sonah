@@ -23,8 +23,8 @@ import { honestStatuses, resultOutcome, actionOutcome, DECISION_COLUMNS, REQUIRE
   LEGACY_REQUIREMENT_STATUSES, FAILURE_HANDLINGS, PROMISE_STATUSES, WRITTEN_LABELS, CONTRADICTION_SOURCES,
   CONTRADICTION_ROLES, OWN_WRITTEN_SOURCE, REPORT_TIERS, REPORT_ITEM_KINDS, TRIAGE_LEVELS, PART_REASONS,
   windowRecordComplete, TRIAGE_ERRORS, STOPPED_OUTCOME_FORMS, PROVED_NO_END_FORM, NO_RESULT_OUTCOME_FORM,
-  REPORT_GROUP_TIES, REPORT_TIER_SOURCES, CODE_ACCOUNT_ASK_SOURCES, CODE_NOT_REVIEWED_REASONS }
-  from '../evidence/src/ledger.js';
+  REPORT_GROUP_TIES, REPORT_TIER_SOURCES, CODE_ACCOUNT_ASK_SOURCES, CODE_NOT_REVIEWED_REASONS,
+  AGENT_PROMPT_NONE_REASONS } from '../evidence/src/ledger.js';
 import { boundTier, itemKindOf, PERMISSION_DENIALS, ITEM_KIND_TABLE } from '../evidence/src/triage.js';
 import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, uncappedCauses, COVERAGE_SENTENCE,
   checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS, askCodeHoldsNote }
@@ -42,13 +42,14 @@ import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound
   codePlaceLines, codeWritesLines }
   from '../evidence/src/code-report.js';
 import { storyFacts, visible, oneLine, clip, lineWord, durationWord, failedCommandText, disclosedEdit, locateQuote,
-  overlapping, withoutLeadingCd, readableRequirement } from './session-story.js';
+  overlapping, withoutLeadingCd, readableRequirement, codeSpan } from './session-story.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HEADER_WORDS, REPORT_RESULT_PARTS,
   REPORT_NOT_CHECKED_PARTS, REPORT_COUNT_WORDS, REPORT_PROMPT_PARTS, REPORT_ITEM_WORDS, REPORT_WHAT_WORDS,
   REPORT_CONTRADICTION_SOURCES, REPORT_DISCLOSURE_WORDS, REPORT_KIND_LABELS, REPORT_TIER_WHY, REPORT_KIND_WORDS,
   REPORT_LEVEL_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_OUTCOME_WORDS, REPORT_NOT_CHECKED_WORDS,
   REPORT_FOOTER_WORDS, REPORT_ANSWER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS,
-  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS, REPORT_LIMIT_WORDS } from './report-words.js';
+  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS }
+  from './report-words.js';
 
 /** The report model's version: reported in the page's generator meta and the footer. /2 (D101, owner decision
  *  2026-10-17): an ask's line for why it is not checked reads the cause of the test that refused its quote
@@ -94,7 +95,7 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  review's item-by-item check recorded as holding in the code (evidence review.js `askCodeHoldsNote`), keeps "Not
  *  checked" and every count as before; after the session review's reason its row says the code review's verdict, where
  *  Sonah found each quote of it, and that Sonah did not check it (REPORT_PROMPT_WORDS `codeHolds`, `codeHoldsUnchecked`).
- *  /6 (0.3.0-beta.6, one move from 0.3.0-beta.5's /5; the owner, 2026-10-22: "go with your recommendations"). D126 and
+ *  /6 (0.3.0-beta.6, one move from 0.3.0-beta.5's /5; the owner, 2026-10-22). D126 and
  *  D127: the header's `continued` (a session that opens on a compaction: the recordings Sonah
  *  read it from, or the part it did not read), the prompt's `compactions` (each compaction of the agent's context that
  *  the recorder typed, at its place, counted by what the context dropped: B10d) and an ask's `compaction` (the first
@@ -108,8 +109,12 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  D133 (R2; the owner, 2026-10-22: quiet, folded, never false): the first screen's lines about what Sonah could not
  *  check are the fold's `quiet` lines, word for word (the header's `didNotCheck` is null, REPORT_FOLD_CHOICES); an ask's
  *  `folded` lines are its own evidence fold's; an item's `foldNotes` its evidence fold's first lines.
+ *  /7 (0.3.0-beta.7, one move from 0.3.0-beta.6's /6; the owner, 2026-10-23). D144: each item that
+ *  leads in Must act carries a prompt for the agent (`agentPrompt`, `agentPromptOf`) made from its own checked parts in
+ *  your voice, or the closed reason it has none (`agentPromptNone`); every field of /6 is as it was, but the version
+ *  that the footer names.
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/6';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/7';
 
 /**
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
@@ -128,7 +133,7 @@ export const REPORT_LIMITS = Object.freeze({ quoteChars: 120, askPrefixWords: 12
 /**
  * D131 (R1, B12; the owner: "Must act comes first"): whether Must act and Must know come before your prompt on every
  * page and report (true), or only on a long session, whose prompt is folded (false). The owner chose every page
- * (2026-10-22: "go with your recommendations"). One literal: flip it here.
+ * (2026-10-22). One literal: flip it here.
  */
 export const MUST_FIRST_ON_EVERY_PAGE = true;
 /** D131: whether a reader shows your prompt after Must act and Must know (`MUST_FIRST_ON_EVERY_PAGE`, or a long session's
@@ -693,8 +698,12 @@ function promptAsks(session, report, facts) {
  *   for an item to verify, one Part list per premise of its check that Sonah could not check, in the check's words; else
  *   null), impact, action, label (Parts or null), where (`[{ path, side, startLine, endLine, url, noLink, excerpt }]` or `[{ anchor, text }]`; an excerpt is
  *   `{ lines: [{ n, text, changed }], more }`), whereMore (the places past `REPORT_LIMITS.where` not shown, counted), scope: { asks, notAsked, askedUnknown, preExisting }, related: { items,
- *   asks }, evidence (`[{ label, parts }]`, folded), why (its tier's sentence), rowId, answer ({ words, reason } or
- *   null), rows ([{ source, index }], the primary row first) }`.
+ *   asks }, evidence (`[{ label, parts }]`, folded; D144: the line of an ask done only in part that quotes its
+ *   shortfall also has `roleLabel`, the label its quote has by its receipt's role), why (its tier's sentence), rowId,
+ *   answer ({ words, reason } or null), rows ([{ source, index }], the primary row first), agentPrompt (D144: on an item that leads in Must act, the
+ *   prompt for the agent `{ lines }`, each line a Part list (`agentPromptOf`, shown as `agentPromptText`), or null; null
+ *   on every other item; a member has none), agentPromptNone (D144: why an item that leads in Must act has no prompt, a
+ *   member of ledger.js AGENT_PROMPT_NONE_REASONS; else null) }`.
  * - `did`: `files` (`{ groups: [{ ask, files: [{ path, type, counts, state, what, asks, link, items }] }], grouped,
  *   total, shown, more, outside: { n, paths, more, notInChange } | null, unresolved: { n, paths, more } | null (D118 b: the
  *   paths the recording does not resolve), unconfirmed, none }`; `none` (D123): with no file, which sentence says so (one of
@@ -743,6 +752,13 @@ export function reportModel(session, report, options = {}) {
   ctx.items = items;
   ctx.itemOfRow = new Map(items.flatMap((item) => item.rows.map((ref) => [rowKey(ref.source, ref.index), item.n])));
   for (const item of items) { finishItem(ctx, item); for (const member of item.members) finishItem(ctx, member); }
+  // D144: a prompt for the agent on each item that leads in Must act (Must act alone), from the item's own fields; a
+  // member, and an item of another tier, has none.
+  for (const item of items) {
+    const made = item.tier.final === MUST_ACT ? agentPromptOf(item) : { prompt: null, none: null };
+    item.agentPrompt = made.prompt;
+    item.agentPromptNone = made.none;
+  }
   const prompt = promptOf(ctx);
   const did = didOf(ctx);
   ctx.did = did;
@@ -766,7 +782,8 @@ const publicItem = (item) => ({ n: item.n, kind: item.kind, type: item.type, tie
   action: item.action, label: item.label, where: item.where,
   whereMore: item.whereMore,
   scope: item.scope, related: item.related, evidence: item.evidence, why: item.why, rowId: item.rowId,
-  answer: item.answer, rows: item.rows.map((ref) => ({ ...ref })), members: item.members.map(publicMember) });
+  answer: item.answer, rows: item.rows.map((ref) => ({ ...ref })), members: item.members.map(publicMember),
+  agentPrompt: item.agentPrompt, agentPromptNone: item.agentPromptNone });
 /** A member of an item (D112) as the readers see it: the tie that joined it (REPORT_GROUP_TIES), its own tier, whether
  *  a reader shows it folded, its own lines (as an item's, but no number, label, scope or links of its own) and its
  *  rows. */
@@ -776,6 +793,152 @@ const publicMember = (member) => ({ kind: member.kind, type: member.type, tie: m
   impact: member.impact, action: member.action, where: member.where, whereMore: member.whereMore,
   evidence: member.evidence, why: member.why, rowId: member.rowId, answer: member.answer,
   rows: member.rows.map((ref) => ({ ...ref })) });
+
+// ---- the prompt for the agent (D144) ------------------------------------------------------------------------------
+
+const [KIND_NOT_COVERED, QUOTE_NOT_FOUND, EVIDENCE_NOT_FOUND, TITLE_MISSING, LABEL_NOT_COVERED] = AGENT_PROMPT_NONE_REASONS;
+const PW = REPORT_AGENT_PROMPT_WORDS;
+/**
+ * D144: the prompt's label, in your voice, for each label that an item gives a quote (REPORT_ITEM_WORDS), by the key
+ * of its words in REPORT_AGENT_PROMPT_WORDS: the label of your words becomes "I …", the agent's "You …", and a label
+ * that names neither keeps its sense (a recorded result, the change, code written, a helper, what does part of an ask).
+ * Closed: a label not here, and no project instruction file's (`projectFileOf`), has no words in the prompt. What is
+ * missing from an ask is no label here: its quote is labelled by its role (`roleLabel`).
+ */
+export const AGENT_PROMPT_LABELS = Object.freeze({
+  [REPORT_ITEM_WORDS.youSaid]: 'iSaid', [REPORT_ITEM_WORDS.agentSaid]: 'youSaid',
+  [REPORT_ITEM_WORDS.agentTold]: 'youToldMe', [REPORT_ITEM_WORDS.agentDid]: 'youDid',
+  [REPORT_ITEM_WORDS.breach.wrote]: 'youWrote', [REPORT_ITEM_WORDS.breach.ran]: 'youRan',
+  [REPORT_ITEM_WORDS.breach.removed]: 'youRemoved', [REPORT_ITEM_WORDS.helperSaid]: 'helperSaid',
+  [REPORT_ITEM_WORDS.recordedResult]: 'resultShows', [REPORT_ITEM_WORDS.changeShows]: 'changeShows',
+  [REPORT_ITEM_WORDS.codeWritten]: 'codeWritten', [REPORT_ITEM_WORDS.whatDoes]: 'whatDoes',
+});
+/** A project instruction file's label on an item (REPORT_ITEM_WORDS.referredFrom), read by that table's own template
+ *  (its words before and after the path): the path it names, or null. */
+const PATH_SLOT = '\uE000';
+const [PROJECT_FILE_HEAD, PROJECT_FILE_TAIL] = REPORT_ITEM_WORDS.referredFrom(PATH_SLOT).split(PATH_SLOT);
+const projectFileOf = (label) => (typeof label === 'string'
+  && label.length > PROJECT_FILE_HEAD.length + PROJECT_FILE_TAIL.length && label.startsWith(PROJECT_FILE_HEAD)
+  && label.endsWith(PROJECT_FILE_TAIL) ? label.slice(PROJECT_FILE_HEAD.length, label.length - PROJECT_FILE_TAIL.length)
+  : null);
+/** The prompt's words for an item's label (`AGENT_PROMPT_LABELS`, a project instruction file's by its path), or null. */
+const promptLabel = (label) => {
+  if (typeof label !== 'string') return null;
+  if (Object.hasOwn(AGENT_PROMPT_LABELS, label)) return PW[AGENT_PROMPT_LABELS[label]];
+  const path = projectFileOf(label);
+  return path === null ? null : PW.projectFile(path);
+};
+/** The closing line of a prompt, by its kind's close (REPORT_AGENT_PROMPT_WORDS keys): one action a sentence. */
+const PROMPT_CLOSES = Object.freeze({ fix: Object.freeze(['fix', 'reason']), verify: Object.freeze(['check', 'holds']) });
+const ANY_QUOTE = 'any';
+/**
+ * D144: the kinds that have a prompt (the code review's kinds with its own words, labelled as its), and how each
+ * reads its item. Every other kind has none (`kind_not_covered`), and is counted.
+ *   lead    the prompt's label (REPORT_AGENT_PROMPT_WORDS key) of the item's own quote where the item shows that quote
+ *           with no label of its own: its what line says whose words they are (your ask, the agent's claim, what the
+ *           agent wrote into a file); null where the item always labels it
+ *   status  the line after it: what the item's what line says of an ask, in the prompt's voice; or null
+ *   needs   which quote of the item's evidence must ground: null none, 'any' one of them, or a list of the item labels of
+ *           which one must (what the agent did against your words)
+ *   review  a kind of the code review: the prompt carries its title and its action, each labelled as its words, and the
+ *           item's own quote when it has one (a claim that the code contradicts); no evidence quote
+ *   close   the closing line (PROMPT_CLOSES), by the item's type: fix, or verify for a contradicted claim
+ */
+export const AGENT_PROMPT_KINDS = Object.freeze({
+  ask_not_done: Object.freeze({ lead: 'iAsked', status: 'notDone', needs: null, review: false, close: 'fix' }),
+  ask_partly_done: Object.freeze({ lead: 'iAsked', status: 'partlyDone', needs: null, review: false, close: 'fix' }),
+  claim_contradicted: Object.freeze({ lead: 'youSaid', status: null, needs: ANY_QUOTE, review: false, close: 'verify' }),
+  edit_against_instruction: Object.freeze({ lead: null, status: null, needs: Object.freeze([REPORT_ITEM_WORDS.agentDid,
+    ...Object.values(REPORT_ITEM_WORDS.breach)]), review: false, close: 'fix' }),
+  written_contradicted: Object.freeze({ lead: 'youWroteFile', status: null, needs: ANY_QUOTE, review: false,
+    close: 'fix' }),
+  code_ask_not_met: Object.freeze({ lead: null, status: null, needs: null, review: true, close: 'fix' }),
+  code_bug: Object.freeze({ lead: null, status: null, needs: null, review: true, close: 'fix' }),
+  code_contract: Object.freeze({ lead: null, status: null, needs: null, review: true, close: 'fix' }),
+  code_claim_false: Object.freeze({ lead: null, status: null, needs: null, review: true, close: 'fix' }),
+});
+/** An item's evidence lines that are one verbatim quote and nothing else, in the item's order. */
+const quoteEvidence = (item) => list(item.evidence).filter((e) => plain(e) && list(e.parts).length === 1
+  && list(e.parts)[0]?.quote === true);
+/** A place of an item's Where line as text: its path, then `:line` or `:from-to` when it names lines. */
+export const placeTextOf = (w) => `${w.path}${Number.isSafeInteger(w.startLine) ? `:${w.startLine}`
+  + `${Number.isSafeInteger(w.endLine) && w.endLine > w.startLine ? `-${w.endLine}` : ''}` : ''}`;
+/**
+ * D144: the label that the prompt gives `part`, a verbatim quote of `item` (each quote's label is the prompt's
+ * words for that quote's label on the item): the item's own quote by its label, or, where the item shows it with none,
+ * by the kind's `lead`; an evidence quote by its line's label. Null when the item does not hold `part` as such a quote,
+ * or its label has no words in the prompt. Pure.
+ */
+export function agentPromptLabelOf(item, part) {
+  if (!plain(item) || !plain(part) || part.quote !== true) return null;
+  const kind = Object.hasOwn(AGENT_PROMPT_KINDS, item.kind) ? AGENT_PROMPT_KINDS[item.kind] : null;
+  if (part === item.quote) return item.quoteLabel ? promptLabel(item.quoteLabel) : kind?.lead ? PW[kind.lead] : null;
+  const line = quoteEvidence(item).find((e) => e.parts[0] === part);
+  // A line whose label says what its quote shows, not whose words it is (what is missing from an ask), by its role.
+  return line ? promptLabel(line.roleLabel ?? line.label) : null;
+}
+/**
+ * D144: the prompt for the agent of one item, from its own fields alone: `{ prompt, none }`, `prompt`
+ * `{ lines }` (each line a list of Parts) or null, `none` the closed reason (ledger.js AGENT_PROMPT_NONE_REASONS) when
+ * it is null. The lines: for a kind from recorded quotes, the item's own quote under its label, the status of an ask,
+ * each quote of its evidence under its label; for a kind of the code review, its title and its action, each labelled as
+ * its words, and the item's own quote when it has one; then the item's places that are files (`path:line`; a place in
+ * the report, such as "ask 3", means nothing to the agent), and the closing line. Every quote is a Part of the item with
+ * `quote: true` (one that Sonah found again in this session), every other word is the prompt table's, a place the item
+ * shows, or a Part of the code review's words of the item, unchanged. A needed quote that did not ground gives no
+ * prompt: precision over recall. Whether the item is in Must act is the caller's (`reportModel`). Pure.
+ */
+export function agentPromptOf(item) {
+  const none = (reason) => ({ prompt: null, none: reason });
+  if (!plain(item) || !Object.hasOwn(AGENT_PROMPT_KINDS, item.kind)) return none(KIND_NOT_COVERED);
+  const kind = AGENT_PROMPT_KINDS[item.kind];
+  const quoteLine = (part) => {
+    const label = agentPromptLabelOf(item, part);
+    return label === null ? null : [S(label), S(' '), part];
+  };
+  const own = plain(item.quote) && item.quote.quote === true ? item.quote : null;
+  const lines = [];
+  if (kind.review) {
+    const parts = list(item.what?.parts);
+    if (parts.length !== 1 || !plain(parts[0]) || parts[0].by !== CODE_REVIEW) return none(TITLE_MISSING);
+    lines.push([S(PW.codeReviewSays), S(' '), parts[0]]);
+    if (own) {
+      const line = quoteLine(own);
+      if (line === null) return none(LABEL_NOT_COVERED);
+      lines.push(line);
+    }
+    const action = list(item.action);
+    if (action.length === 1 && plain(action[0]) && action[0].by === CODE_REVIEW)
+      lines.push([S(PW.codeReviewAction), S(' '), action[0]]);
+  } else {
+    if (!own) return none(QUOTE_NOT_FOUND);
+    const lead = quoteLine(own);
+    if (lead === null) return none(LABEL_NOT_COVERED);
+    lines.push(lead);
+    if (kind.status) lines.push([S(PW[kind.status])]);
+    let needed = kind.needs === null;
+    for (const e of quoteEvidence(item)) {
+      const line = quoteLine(e.parts[0]);
+      if (line === null) return none(LABEL_NOT_COVERED);
+      lines.push(line);
+      if (kind.needs === ANY_QUOTE || (Array.isArray(kind.needs) && kind.needs.includes(e.label))) needed = true;
+    }
+    if (!needed) return none(EVIDENCE_NOT_FOUND);
+  }
+  const places = list(item.where).filter((w) => plain(w) && typeof w.path === 'string' && w.path);
+  if (places.length) lines.push([S(PW.where), S(' '), ...places.flatMap((w, i) => [...(i ? [S(', ')] : []),
+    CODE(placeTextOf(w))])]);
+  const [first, second] = PROMPT_CLOSES[kind.close];
+  lines.push([S(PW[first]), S(' '), S(PW[second])]);
+  return { prompt: { lines }, none: null };
+}
+/** D144: a prompt as the plain text a person pastes into the agent, one line a line: a quote in quotation marks (the
+ *  cut outside them), a place as a code span, every other Part as it is. The page and the Markdown report show this
+ *  same text. Pure. */
+export function agentPromptText(prompt) {
+  return list(prompt?.lines).map((line) => list(line).map((p) => (!plain(p) ? '' : p.quote
+    ? `“${p.text}”${p.cut ? '…' : ''}` : p.code ? codeSpan(p.text) : p.text)).join('')).join('\n');
+}
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -1415,6 +1578,12 @@ function finishItem(ctx, item) {
         const label = item.kind === 'ask_partly_done' ? REPORT_ITEM_WORDS.whatMissing : shortfallLabel(checked.shortfall);
         if (!quote(label, checked.shortfall)) evidence(null, ONE(item.kind === 'ask_partly_done'
           ? REPORT_ITEM_WORDS.noFindingRest : REPORT_ITEM_WORDS.noFinding));
+        // D144: the quote under "What is missing:" is recorded text that shows the shortfall (the agent's words, a
+        // result, the change), never the missing part itself: its line also carries the label it has by its receipt's
+        // role (`roleLabel`), as an ask not done labels it. The readers show `label`; the prompt for the agent says
+        // `roleLabel`.
+        else if (item.kind === 'ask_partly_done') ev.at(-1).roleLabel = speaker(checked.shortfall,
+          shortfallLabel(checked.shortfall));
         where.push(...sessionFile(checked.shortfall));
         ev.push(...askNotes(checked));
       }

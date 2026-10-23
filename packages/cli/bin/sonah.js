@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Top-level failure contract (D71 (a), owner decision 2026-10-08: an exit code never judges the agent's work):
 //   exit 0  the command ran to completion
-//   exit 1  `review`: Sonah's own review ran but did not complete; `doctor`: the install needs a human
-//   exit 2  usage error
-//   exit 3  the tool itself failed
+//   exit 1  the command ran, and something needs you: `review` did not complete; `doctor` found something to fix;
+//           `sessions` found none; `hook add` printed a line for you to add; `skill add|remove` found a file it did
+//           not write; `decision` refused an answer (docs/TROUBLESHOOTING.md, Exit codes, lists each)
+//   exit 2  usage error, or a problem Sonah names with its fix
+//   exit 3  the tool itself failed, or `skill add|remove` could not write or delete its file
 //
 // A crash must NEVER exit 0. Garbage input once produced a raw stack trace followed by exit 0 — a
 // failure reporting success, in a tool whose entire thesis is that silent false-negatives are the
@@ -87,6 +89,14 @@ if (cmd === 'review') {
   // Owner decision 2026-10-14: Sonah's own settings (settings.js), for now the code step's switch.
   const { runConfigCommand } = await import('../src/settings.js');
   process.exitCode = await runConfigCommand(argv.slice(1));
+} else if (cmd === 'hook') {
+  // D143: the commit-to-session link, opt-in per repository. A new name: `trailer` stays silent for old hooks.
+  const { runHookCommand } = await import('../src/agent-session-hook.js');
+  process.exitCode = await runHookCommand(argv.slice(1));
+} else if (cmd === 'skill') {
+  // D142: the /sonah skill, added to or removed from the coding agents (skill.js).
+  const { runSkillCommand } = await import('../src/skill.js');
+  process.exitCode = await runSkillCommand(argv.slice(1));
 } else if (cmd === 'doctor') {
   const { runDoctorCommand } = await import('../src/doctor.js');
   process.exitCode = await runDoctorCommand(argv.slice(1));
@@ -119,12 +129,20 @@ function usage() {
   return ['usage:',
     row('sonah review [--repo DIR] [--choose N]', 'review the latest session in this repository'),
     row('sonah review <session.jsonl>', 'review one recorded session'),
+    row('sonah review --session ID [--background]', 'review the session with this id'),
     row('sonah review ... --dry-run', 'show what would be reviewed; no model call'),
     row('sonah sessions [--repo DIR]', 'list recorded parent sessions, newest first'),
+    row('sonah sessions --commits A..B', 'list the sessions that the commits name'),
+    row('sonah sessions --github OWNER/REPO --pr N', 'the same for a pull request\'s commits'),
+    row('sonah review --commits A..B [--choose N]', 'review the session that the commits name'),
     row('sonah decision accept|change|clarify HASH ID --report FILE --reason TEXT',
       'record your answer to one row of a session page'),
     row(['sonah doctor [--no-probe] [--timeout MS]', '[--backend claude-cli|codex-cli] [--model ID]'],
       'Node, sign-in, one model check, session locations'),
+    row('sonah hook add [--repo DIR]', 'Claude Code\'s commits get an Agent-Session line'),
+    row('sonah hook remove [--repo DIR]', 'remove that hook (lines in history stay)'),
+    row('sonah skill add', 'add /sonah to Claude Code, to review a session'),
+    row('sonah skill remove', 'remove the skill that sonah skill add wrote'),
     row('sonah config', 'show your settings'),
     row('sonah config code-pass off', 'turn the code step off (on turns it on)'),
     row('sonah feedback', 'setup facts and recording counts; no session text'),

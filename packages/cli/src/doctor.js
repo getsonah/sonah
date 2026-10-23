@@ -13,6 +13,8 @@ import { AGENT_CLI_OPTIONS, createReviewJudge, reviewJudgeConfig, cliVersionOf, 
 import { utilizationWords } from './review-budget.js';
 import { PROBE_REQUEST, probeOutcome } from './review-probe.js';
 import { CODE_PASS_DEFAULT, codePassSettingLine, readSettings, settingsPath } from './settings.js';
+import { commitLinkFacts, commitLinkStatus } from './agent-session-hook.js';
+import { skillDoctorLines } from './skill.js';
 
 const execute = promisify(execFile);
 // Node's requirement is the package engines value; timeout bounds are Node's timer range.
@@ -147,12 +149,21 @@ export async function detectAdapters({ home: injected, env, codexHome } = {}) {
   };
 }
 
+/** D143: the commit-to-session link of the repository that holds `cwd`, from its files alone (no hook runs), or
+ *  null outside a git working tree or when git cannot answer: doctor then prints no line for it. */
+export async function commitLinkLine({ cwd = process.cwd(), git } = {}) {
+  try {
+    const facts = await commitLinkFacts(cwd, git ? { git } : {});
+    return { state: facts.state, route: facts.route, ...commitLinkStatus(facts) };
+  } catch { return null; }
+}
+
 /** One explicit doctor invocation. With --no-probe, no model is created. Injected boundaries
  * let synthetic tests check every failure without using the user's providers or settings.
  */
 export async function doctor(options = {}, { env = process.env, home = env.HOME ?? homedir(),
   nodeVersion = process.versions.node, runCli = execute, createJudge = createReviewJudge,
-  adapters = detectAdapters, onProbe = () => {} } = {}) {
+  adapters = detectAdapters, onProbe = () => {}, commitLink = commitLinkLine, cwd = process.cwd() } = {}) {
   const selected = parseDoctorArgs([
     ...('probe' in options && !options.probe ? ['--no-probe'] : []),
     ...['backend', 'model'].flatMap((key) => options[key] === undefined ? [] : [`--${key}`, options[key]]),
@@ -261,6 +272,10 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
   if (reviewRoot !== found.claude.where) lines.push(`Claude recording copy for review: ${reviewRoot}`);
   lines.push(`Codex sessions: ${found.codex.count} rollout(s) in ${found.codex.where}`);
   if (found.claude.count + found.codex.count === 0) lines.push(`No Claude or Codex recordings found. ${DOCTOR_FIXES.sessions}`);
+  // D142: the /sonah skill of each coding agent here (skill.js), and whether it can run sonah from this PATH.
+  const skills = await skillDoctorLines({ env, home });
+  lines.push(...skills.lines);
+  if (skills.attention) attention.push('skill');
   // Owner decision 2026-10-14: the code step's setting (settings.js). A settings file that cannot be read stops a review
   // given no --code-pass or --no-code-pass (`config_invalid`), so it needs the person.
   const read = await readSettings({ env, home });
@@ -271,8 +286,16 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
   // The agent transport: options the CLI refused need the person when a review would run the code step on Claude.
   if (agentOptions.state === 'refused' && selected.backend === 'claude-cli' && settings.codePass !== false)
     attention.push('claude_agent');
+  // D143: the commit link of this folder's repository. It needs the person only when Sonah's script is there and git no
+  // longer runs it (a hook manager moved Sonah's hook, or no hook runs at all).
+  const link = await commitLink({ cwd });
+  if (link) {
+    lines.push(link.line);
+    if (link.attention) attention.push('commit_link');
+  }
   lines.push(attention.length ? `needs attention: ${attention.join(', ')}` : 'Local review setup checked.');
-  return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth, agentOptions, codex, model, adapters: found, settings } };
+  return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth, agentOptions, codex,
+    model, adapters: found, settings, commitLink: link ? { state: link.state, route: link.route } : null } };
 }
 
 export async function runDoctorCommand(argv, { stdout = process.stdout, stderr = process.stderr, env = process.env,

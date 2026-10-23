@@ -16,6 +16,19 @@ Where: `src/limiter.js:2-3` · ask 1
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L2-L3
 
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+The code review says: The bucket refills before the first request
+The code review's action: Refill the bucket after the first request.
+Where: `src/limiter.js:2-3`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
+
 <details><summary>Evidence · Why Must act</summary>
 
 - How the code gets there: *The limiter calls refill at creation.*
@@ -43,6 +56,18 @@ Action: *Check the remote branch.*
 “The limiter uses Redis.”  
 Where: the claims list
 
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+You said: “The limiter uses Redis.”
+A recorded result shows: “connect ECONNREFUSED”
+Check this claim against what I quoted. If the claim does not hold, fix your work.
+```
+
+</details>
+
 <details><summary>Evidence · Why Must act</summary>
 
 - A recorded result shows: “connect ECONNREFUSED”
@@ -57,6 +82,19 @@ Where: `.github/workflows/ci.yml`
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
 
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+I said: “Do not change the CI config”
+You wrote: “run: npm test --silent”
+Where: `.github/workflows/ci.yml`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
+
 <details><summary>Evidence · Why Must act</summary>
 
 - The agent wrote: “run: npm test --silent”
@@ -68,6 +106,19 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 <a name="item-5"></a>**5 Fix:** The agent did not do ask 6.  
 “Also add a test for the limiter”  
 Where: ask 6
+
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+I asked: “Also add a test for the limiter”
+You did not do it.
+You said: “I added no test yet.”
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
 
 <details><summary>Evidence · Why Must act</summary>
 
@@ -83,6 +134,21 @@ Where: ask 4 · `.github/workflows/ci.yml`
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
 
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+I asked: “Do not change the CI config”
+You did only part of it.
+This does part of it: “I reverted the CI change.”
+The change shows: “run: npm test --silent”
+Where: `.github/workflows/ci.yml`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
+
 <details><summary>Evidence · Why Must act</summary>
 
 - What does it: “I reverted the CI change.”
@@ -96,6 +162,18 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 Where: `src/limiter.js:5` · ask 2
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L5
+
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+The code review says: Retry-After is sent in milliseconds
+Where: `src/limiter.js:5`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
 
 <details><summary>Evidence · Why Must act</summary>
 
@@ -113,6 +191,19 @@ Where: `.github/workflows/ci.yml:1`
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml#L1
 
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+The code review says: The CI change is still there
+You said: “I reverted the CI change.”
+Where: `.github/workflows/ci.yml:1`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
+
 <details><summary>Evidence · Why Must act</summary>
 
 - How the code gets there: *The CI file still runs the silent tests.*
@@ -127,6 +218,18 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 Where: `src/server.js:2`
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js#L2
+
+<details><summary>Prompt for the agent</summary>
+
+In this prompt, “I” means you and “you” means the agent.
+
+```
+The code review says: The server mounts the limiter after a route
+Where: `src/server.js:2`
+Fix this. If you think that it is right as it is, give me your reason.
+```
+
+</details>
 
 <details><summary>Evidence · Why Must act</summary>
 
@@ -561,7 +664,7 @@ Sonah could not read 1 ask of the session review.
 
 ---
 
-Sonah 0.9.0 · sonah.report-model/6 · commit 1111111  
+Sonah 0.9.0 · sonah.report-model/7 · commit 1111111  
 Text in quotation marks is word for word from the recording.  
 Titles, questions, labels and file notes in italics are the code review's words.  
 Words in italics inside Sonah's sentences are the session review's words.  

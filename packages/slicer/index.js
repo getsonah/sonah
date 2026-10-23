@@ -74,6 +74,19 @@ function countedGap(ledger) {
 }
 
 /**
+ * D142: the byte end of each file (`opts.byteEnds`), or null to read every file whole. An array aligned with the
+ * files, each a whole number from 0 (the file is read through its first that many bytes) or null (read whole). Anything
+ * else is no end a caller of this stage writes: it throws.
+ */
+function byteEndsOf(ends, count) {
+  if (ends === undefined || ends === null) return null;
+  if (!Array.isArray(ends) || ends.length !== count
+    || !ends.every((end) => end === null || (Number.isSafeInteger(end) && end >= 0)))
+    throw new Error('The recording ends could not be verified');
+  return ends;
+}
+
+/**
  * D126 (N0): the cut of a session that opens on a compaction (`opts.through`), or null for any other lineage. An array
  * aligned with the files: for each earlier recording the `uuid` of the row it is read through (the row its successor's
  * compaction links to), and null for the last recording, which is read whole. Anything else is no cut a caller of this
@@ -103,10 +116,13 @@ function continuedThrough(through, count) {
  *   is added; and `lineage.continued` says how many earlier recordings were read and, when one was not, why. An earlier
  *   recording whose row the read did not find (it changed since it was found) is not read, nor any before it: that part
  *   is `earlier_recording_unread`. Without `through`, every byte is as before.
+ *   D142: `byteEnds` (see `byteEndsOf`) reads each file only through its end: a review of a session still being
+ *   written reads it as it was when the review started. Without it, every byte is as before.
  * @returns {Promise<Ledger>}
  */
 export async function sliceLineage(allFiles, opts = {}) {
   const cut = continuedThrough(opts.through, allFiles.length);
+  const byteEnds = byteEndsOf(opts.byteEnds, allFiles.length);
   let unread = null;
   if (cut && opts.continuedUnread != null) {
     if (!Object.values(CONTINUED_REASONS).includes(opts.continuedUnread))
@@ -122,6 +138,7 @@ export async function sliceLineage(allFiles, opts = {}) {
       childRecording: opts.childRecording ?? false,
       noForkChildProof: allFiles.length === 1 ? opts.noForkChildProof ?? null : null,
       ...(cut && cut[at] !== null ? { throughUuid: cut[at] } : {}),
+      ...(byteEnds && byteEnds[at] !== null ? { byteEnd: byteEnds[at] } : {}),
     }));
   }
   // D126 (N0): an earlier recording whose row was not found is not read, and neither is any recording before it.

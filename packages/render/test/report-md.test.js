@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { renderReportMarkdown, neutraliseMentions, REPORT_MD_LIMITS, REPORT_MD_WORDS, STORY_VERSION }
   from '../session-story.js';
 import { renderSessionPage, sessionPage, escapeHtml } from '../session-page.js';
-import { reportModel, REPORT_LIMITS, foldNotes } from '../report-model.js';
+import { reportModel, REPORT_LIMITS, foldNotes, agentPromptText } from '../report-model.js';
 import { REPORT_SECTION_WORDS, REPORT_TIER_WORDS, REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_TYPE_WORDS,
-  REPORT_COUNT_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS }
-  from '../report-words.js';
+  REPORT_COUNT_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS,
+  REPORT_AGENT_PROMPT_WORDS } from '../report-words.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts, HEAD, START } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
@@ -41,6 +41,15 @@ const linkable = (text) => [prose(text), ...[...text.matchAll(SUMMARY_LINE)]
 const summaryTags = (text) => [...text.matchAll(SUMMARY_LINE)].flatMap(([, html]) => html.match(/<[^>]*>/g) ?? []);
 const OWN_SUMMARY_TAG = /^(?:<a name="item-\d+">|<\/a>|<em>|<\/em>|<code>|<\/code>)$/;
 const r = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
+/** D144: the summary line of a prompt for the agent's fold, and the text without those folds (each holds a fence). */
+const PROMPT_SUMMARY = `<details><summary>${REPORT_AGENT_PROMPT_WORDS.fold}</summary>`;
+const withoutAgentPrompts = (text) => text.split('\n\n').reduce(({ out, inside }, block) => {
+  if (block.startsWith(PROMPT_SUMMARY)) return { out, inside: true };
+  if (inside) return { out, inside: block !== '</details>' };
+  return { out: [...out, block], inside };
+}, { out: [], inside: false }).out.join('\n\n');
+/** Text outside every fence: a fence holds code or a prompt, where GitHub reads no markup. */
+const outsideFences = (text) => text.replace(/^(`{3,})[^\n]*\n[\s\S]*?^\1$/gm, ' ');
 const windowOf = (session) => [{ windowIndex: 0, eventIds: session.events.map((e) => e.id), failure: null }];
 
 test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', () => {
@@ -59,7 +68,9 @@ test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', ()
   // D126 and D127 once more (sonah.session-story/40, 0.3.0-beta.6): the line beside the title for a session that opens on a
   // compaction, each compaction among your messages, and the first compaction after an ask. In the same move (D129, C7):
   // the footer says what the review cost.
-  assert.equal(STORY_VERSION, 'sonah.session-story/40');
+  // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
+  // act, folded, and its step in the shortening order.
+  assert.equal(STORY_VERSION, 'sonah.session-story/41');
 });
 
 test('D97 (1): the .md has the report model\'s sections in order, with the page\'s counts, for every report shape', () => {
@@ -214,8 +225,11 @@ test('D97 (2): hostile text cannot open a block, end a fold, or break the table 
   const opens = lines.filter((l) => l.startsWith('<details>')).length;
   assert.ok(opens >= 4);
   assert.equal(lines.filter((l) => l === '</details>').length, opens);
-  assert.equal(text.split('</details>').length - 1, opens, 'no quote closes a fold');
-  assert.equal(text.split('<details>').length - 1, opens, 'no quote opens a fold');
+  // D144: a prompt for the agent holds its quotes in a fence (longer than any run of backticks in them), where GitHub
+  // reads no markup: outside the fences, no quote opens or closes a fold.
+  assert.ok(text.includes(PROMPT_SUMMARY), 'the item that leads in Must act has its prompt');
+  assert.equal(outsideFences(text).split('</details>').length - 1, opens, 'no quote closes a fold');
+  assert.equal(outsideFences(text).split('<details>').length - 1, opens, 'no quote opens a fold');
   // A fold's summary holds the review's words as text: no tag but the report's own, the markup escaped.
   for (const tag of summaryTags(text)) assert.match(tag, OWN_SUMMARY_TAG);
   for (const item of model.tiers.good_to_know) {
@@ -231,10 +245,15 @@ test('D97 (2): hostile text cannot open a block, end a fold, or break the table 
   const rows = lines.filter((l) => l.startsWith('| '));
   assert.equal(rows.length, 2, "the heading row and one ask");
   for (const row of rows) assert.equal(row.match(/(?<!\\)\|/g).length, 4, row);
-  // No fence but an excerpt's, and none here: the hostile backticks are escaped.
-  assert.equal(lines.some((l) => /^\s*(?:```|~~~)/.test(l)), false);
-  // Markup is text: no tag of the recording reaches the comment, no text strikes itself through or renders as math.
-  assert.equal(/<b>|<\/b>/.test(text), false);
+  // No fence but an excerpt's or (D144) a prompt's, and no excerpt here: the hostile backticks are escaped. The prompt
+  // for the agent of the ask not done is a fence longer than the hostile run of three backticks, its text verbatim.
+  const [lead] = model.tiers.must_act;
+  assert.ok(lead.agentPrompt, 'the ask not done has a prompt');
+  assert.ok(text.includes(`\n\n\`\`\`\`\n${agentPromptText(lead.agentPrompt)}\n\`\`\`\`\n\n`));
+  assert.deepEqual(lines.filter((l) => /^\s*(?:```|~~~)/.test(l)), ['````', '````']);
+  // Markup is text: no tag of the recording reaches the comment (inside the prompt's fence it is code, shown as written),
+  // no text strikes itself through or renders as math.
+  assert.equal(/<b>|<\/b>/.test(outsideFences(text)), false);
   const outside = prose(text);
   assert.equal(/(?<!\\)~~/.test(outside), false, 'no unescaped ~~');
   assert.equal(/(?<!\\)\$/.test(outside), false, 'no unescaped $');
@@ -322,7 +341,7 @@ test('D97 (2): a finding kind and anchor line numbers are read by structure, nev
   }
 });
 
-test('D97 (2a): no pings — mentions, issues and bare commit hashes in recorded and reviewers\' text are code spans', () => {
+test('D97: no pings — mentions, issues and bare commit hashes in recorded and reviewers\' text are code spans', () => {
   const sha = 'abcdef0123456789abcdef0123456789abcdef01';
   const words = `cc @octocat on #12 and getsonah/sonah#12 at ${sha}`;
   assert.equal(neutraliseMentions(words), `cc \`@octocat\` on \`#12\` and \`getsonah/sonah#12\` at \`${sha}\``);
@@ -371,12 +390,12 @@ test('D97 (2a): no pings — mentions, issues and bare commit hashes in recorded
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/6', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/7', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });
 
-test('D97 (2a): a recorded path in Sonah\'s own sentences is a code span, so it pings no one and links nothing', () => {
+test('D97: a recorded path in Sonah\'s own sentences is a code span, so it pings no one and links nothing', () => {
   const b = sessionBuilder();
   b.ask('I1', 'Write the notes.');
   b.change('W1', '@octocat', { after: 'Ping.\n' });
@@ -477,8 +496,10 @@ test('D97 (3): permalinks are bare URLs on their own lines, at most 8 lines; old
   }
   assert.match(renderReportMarkdown(session, triagedReport(session), repoFacts({ repo: { atHead: [] } })),
     /- This file differs from the last commit, so Sonah gives no link\./);
-  // With a permalink, the excerpt is not repeated as a fence: GitHub shows the code from the link.
-  assert.equal(/\n```\n/.test(md()), false);
+  // With a permalink, the excerpt is not repeated as a fence: GitHub shows the code from the link. (D144: a prompt for
+  // the agent is a fence of its own, in its fold.)
+  assert.equal(/\n```\n/.test(withoutAgentPrompts(md())), false);
+  assert.ok(/\n```\n/.test(md()));
 });
 
 /** A review whose evidence and lists are the bulk: the same report with many decisions made without asking (Must
@@ -558,9 +579,10 @@ test('D97 (4), D131: past 60,000 bytes the report is shortened in order; header,
 
 /** The triaged report made larger in one part at a time, for the shortening order: `gtk` Good to know questions
  *  from findings whose evidence holds the long words of their checks, `withheld` withheld proposals of the code review (What Sonah
- *  could not check), `fences` Must act findings each with an 8-line excerpt and no permalink, and `pivots` Good to know
- *  changes of approach with long words in their one-line summaries. */
-function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 25 } = {}) {
+ *  could not check), `fences` Must act findings each with an 8-line excerpt and no permalink, `pivots` Good to know
+ *  changes of approach with long words in their one-line summaries, and (D144) `contradicted` Must act items, each a
+ *  copy of the fixture's contradicted claim, so each has a prompt for the agent. */
+function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 25, contradicted = 0 } = {}) {
   const session = reportSession();
   const report = triagedReport(session);
   const hex = (k) => `sha256:${String(k).padStart(64, '0')}`;
@@ -573,6 +595,8 @@ function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 
   report.codePass.withheld = [...report.codePass.withheld, ...Array.from({ length: withheld }, (_, k) => ({
     what: 'finding', text: long(k, withheldWords), kind: 'bug', lens: 'behaviour', reason: 'verify_refuted',
     check: { verdict: 'refuted', reason: 'incorrect', explanation: long(k, withheldWords) } }))];
+  const claim = report.findings.find((f) => f.kind === 'claim_contradicted' && f.status === 'DECIDE');
+  report.findings = [...report.findings, ...Array.from({ length: contradicted }, (_, k) => ({ ...claim, id: hex(k + 7000) }))];
   if (fences) {
     const lines = Array.from({ length: fences * 8 }, (_, i) => `const line${i} = "${'x'.repeat(130)}";`);
     const text = `${lines.join('\n')}\n`;
@@ -599,7 +623,7 @@ function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 
 /** D133 (R2): the lines of an item's evidence fold that a shortened fold keeps (`foldNotes`), taken out first. */
 const FOLD_NOTE_LINES = new RegExp(`^- (?:${[{ quoteMissing: true, quote: null }, { quote: null, scope: { askedUnknown: true } }]
   .flatMap(foldNotes).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\n`, 'gm');
-const shortened = (whole) => { const text = whole.replace(FOLD_NOTE_LINES, ''); return {
+const shortened = (whole) => { const all = whole.replace(FOLD_NOTE_LINES, ''); const text = withoutAgentPrompts(all); return {
   gtkEvidence: !/Why Good to know<\/summary>\n\n-/.test(text),
   askRows: /Sonah does not show your \d+ messages? here\./.test(text),
   knowEvidence: !/Why Must know<\/summary>\n\n-/.test(text),
@@ -609,11 +633,13 @@ const shortened = (whole) => { const text = whole.replace(FOLD_NOTE_LINES, ''); 
     && /<summary>Proposals of the code review that Sonah withheld \(\d+\)<\/summary>\n\nSonah does not show/.test(text),
   excerpts: !/\n```\n/.test(text),
   gtkCounts: /\n- A change of approach: \d+\n/.test(text),
+  // D144: no prompt for the agent is printed.
+  actPrompts: !all.includes(PROMPT_SUMMARY),
 }; };
 // D131 (R1): your prompt's asks that are done and your messages, then the lists, then the excerpts and Good to know's
 // items, and the evidence of Must know and Must act last of all.
-const STEPS = ['gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts', 'excerpts', 'gtkCounts', 'knowEvidence',
-  'actEvidence'];
+const STEPS = ['gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts', 'excerpts', 'gtkCounts', 'actPrompts',
+  'knowEvidence', 'actEvidence'];
 /** The steps up to and including `last`, applied; the rest, not. */
 const upTo = (last) => Object.fromEntries(STEPS.map((step, i) => [step, i <= STEPS.indexOf(last)]));
 
@@ -628,7 +654,8 @@ test('D97 (4): each shortening step is applied in its order, and only until the 
     false);
   // D131 (R1): then your prompt's done asks and your messages, then the lists of what the agent did keep their counts;
   // Must know and Must act keep their evidence. (What Sonah could not check keeps its count next: case c applies it.)
-  const b = grown({ gtk: 130, withheld: 100 });
+  // D144: retuned to the prompts' bytes (was gtk 130, withheld 100), so this case still stops at its step.
+  const b = grown({ gtk: 125, withheld: 95 });
   assert.ok(bytes(b) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(b), upTo('didCounts'));
   // Then the lists of what Sonah could not check keep their counts; the excerpts, Good to know and every evidence fold
@@ -646,7 +673,14 @@ test('D97 (4): each shortening step is applied in its order, and only until the 
   assert.ok(bytes(d) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(d), upTo('gtkCounts'));
   assert.match(d, /\n- A change of approach: 201\n/);
-  for (const text of [a, b, c, d]) assert.equal(text.split(REPORT_TRIM_WORDS.mdShortened).length - 1, 1);
+  // D144: then the prompts for the agent are left out, each whole (never a fold with nothing in it), before any
+  // evidence of Must know or Must act: each prompt is made from its item's evidence, which stays.
+  const e = grown({ contradicted: 100 });
+  assert.ok(bytes(e) <= REPORT_MD_LIMITS.maxBytes);
+  assert.deepEqual(shortened(e), upTo('actPrompts'));
+  assert.ok(grown({ contradicted: 60 }).includes(PROMPT_SUMMARY), 'a smaller report keeps them');
+  assert.equal((e.match(/Why Must act<\/summary>\n\n-/g) ?? []).length, 109, 'every Must act item keeps its evidence');
+  for (const text of [a, b, c, d, e]) assert.equal(text.split(REPORT_TRIM_WORDS.mdShortened).length - 1, 1);
 });
 
 test('D97 (4): the shortening order — messages, then Good to know\'s evidence, before any Must evidence', () => {

@@ -43,10 +43,11 @@ import { DISCLOSURE_REASONS, REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, 
 import { escapeSource } from '../evidence/src/review.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
 import { INTER_AGENT_GAP_NOTES } from '../evidence/adapters/sonah-ledger.js';
-import { reportModel, REPORT_LIMITS, scopeMarker, foldNotes, folderNameOf, promptAfterTiers } from './report-model.js';
+import { reportModel, REPORT_LIMITS, scopeMarker, foldNotes, folderNameOf, promptAfterTiers, agentPromptText }
+  from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
-  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS } from './report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS } from './report-words.js';
 
 /** The Markdown report's layout version. /32 (D97, owner decisions 2026-10-16): the story is now the report .md — the
  *  report model rendered for a pull request comment, in the page's order and with its counts: the header, the count
@@ -82,8 +83,12 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  know before your prompt, a long session's prompt folded after them, and the shortening order below
  *  (`MD_TRIM_STEPS`), which cuts your prompt's done asks and your messages, then the lists, before any evidence of Must
  *  act or Must know, and prints no evidence fold with nothing in it. D133 (R2): the lines about what Sonah could not
- *  check folded as the page folds them, and the asks table cut once at each compaction under one line that names it. */
-export const STORY_VERSION = 'sonah.session-story/40';
+ *  check folded as the page folds them, and the asks table cut once at each compaction under one line that names it.
+ *  /41 (0.3.0-beta.7, one move from 0.3.0-beta.6's /40). D144 (the owner, 2026-10-23): under each
+ *  item that leads in Must act and has a prompt, a fold "Prompt for the agent" holds it as a fence, and the
+ *  shortening order gains a step (`actPrompts`) after Good to know's counts and before any evidence of Must know or
+ *  Must act; a report with no such prompt renders as /40, but the versions it names. */
+export const STORY_VERSION = 'sonah.session-story/41';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -132,8 +137,8 @@ export function clip(text, n) {
   return points.length <= n ? whole : `${points.slice(0, Math.max(1, n - 1)).join('')}…`;
 }
 /** An inline code span that holds any text on one line, backticks included: its fence is longer than any run of
- *  backticks in it. */
-function codeSpan(text) {
+ *  backticks in it. D144: the prompt for the agent writes a place with it too (report-model.js `agentPromptText`). */
+export function codeSpan(text) {
   const value = oneLine(text);
   const run = Math.max(0, ...[...value.matchAll(/`+/g)].map((m) => m[0].length));
   const fence = '`'.repeat(run + 1);
@@ -1132,9 +1137,15 @@ const itemHead = (item, render) => {
   return render === 'html' ? `${item.n} ${escHtml(REPORT_TYPE_WORDS[item.type])}: ${partsHtml(item.what.parts)}${escHtml(scope)}`
     : `**${item.n} ${mdOwn(REPORT_TYPE_WORDS[item.type])}:** ${partsMd(item.what.parts)}${mdOwn(scope)}`;
 };
+/** D144: the prompt for the agent of an item that leads in Must act, folded: the note on its voice, then the
+ *  prompt as a fence (`fenced`: longer than any run of backticks in it, so no line of it closes the fence; GitHub shows a
+ *  copy button on it, and nothing in it pings or links). */
+const agentPromptMd = (prompt) => fold(escHtml(REPORT_AGENT_PROMPT_WORDS.fold), [mdOwn(REPORT_AGENT_PROMPT_WORDS.voice),
+  fenced({ lines: agentPromptText(prompt).split('\n').map((text) => ({ text })), more: 0 })]);
 /** An item or a member's lines (D97, D112) after `lines` (its head, when shown): each permalink on its own line, the
- *  excerpt as a fence when its place has no permalink, then its evidence, folded. */
-function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = true } = {}) {
+ *  excerpt as a fence when its place has no permalink, then (D144) the prompt for the agent of an item that has one,
+ *  unless the report is shortened past it (`agentPrompts` false), then its evidence, folded. */
+function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = true, agentPrompts = false } = {}) {
   if (item.quote) lines.push(`${item.quoteLabel ? `${mdOwn(item.quoteLabel)} ` : ''}${partMd(item.quote)}`);
   // D110: each premise of an item to verify that Sonah could not check, in its check's words.
   for (const parts of Array.isArray(item.restsOutside) ? item.restsOutside : [])
@@ -1149,15 +1160,17 @@ function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = 
   const first = item.where[0];
   const fence = !first?.url && first?.excerpt?.lines?.length ? first.excerpt : null;
   if (fence && !excerpts) blocks.push(fenced(fence));
+  if (agentPrompts && item.agentPrompt) blocks.push(agentPromptMd(item.agentPrompt));
   blocks.push(evidenceFold(item, evidence, keepNotes));
   return { text: blocks.filter(Boolean).join('\n\n'), fenced: fence !== null };
 }
 /** An item (D97): its visible lines in order (with its head unless the fold's summary shows it), then (D112) the line
  *  that counts its members and each member: its type word, what it is and its own tier word, then its lines, inside a
  *  fold when the report model folds it. */
-function itemMd(item, { head = true, evidence = false, excerpts = false, keepNotes = true } = {}) {
+function itemMd(item, { head = true, evidence = false, excerpts = false, keepNotes = true, agentPrompts = false } = {}) {
+  // D144: the prompt is the item's own (a member has none).
   const own = entryMd(item, head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [], { evidence, excerpts,
-    keepNotes });
+    keepNotes, agentPrompts });
   const members = list(item.members);
   if (!members.length) return own;
   const blocks = [own.text, mdOwn(REPORT_ITEM_WORDS.members(members.length))];
@@ -1174,13 +1187,17 @@ function itemMd(item, { head = true, evidence = false, excerpts = false, keepNot
   return { text: blocks.join('\n\n'), fenced: fencedAny };
 }
 
-function tierSection(model, tier, trim, notice) {
+function tierSection(model, tier, trim, notice, agentPrompts = true) {
   const items = model.tiers[tier];
   const evidence = tier === 'must_act' ? trim.actEvidence : trim.knowEvidence;
-  const rendered = items.map((item) => itemMd(item, { evidence, excerpts: trim.excerpts }));
+  // D144: the prompts for the agent (on the items that lead in Must act), until the report is shortened past them;
+  // none when the caller leaves them out (`agentPrompts` false), which is no shortening.
+  const rendered = items.map((item) => itemMd(item, { evidence, excerpts: trim.excerpts,
+    agentPrompts: agentPrompts && !trim.actPrompts }));
   const blocks = [`### ${mdOwn(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[tier], items.length))}`,
     notice ? mdOwn(notice) : null, ...rendered.map((r) => r.text)];
-  const shortened = items.length > 0 && (evidence || (trim.excerpts && rendered.some((r) => r.fenced)));
+  const shortened = items.length > 0 && (evidence || (trim.excerpts && rendered.some((r) => r.fenced))
+    || (agentPrompts && trim.actPrompts && items.some((item) => item.agentPrompt)));
   return { text: blocks.filter(Boolean).join('\n\n'), shortened };
 }
 
@@ -1343,13 +1360,14 @@ function footerBlocks(model) {
  * evidence folds of Good to know are left out; then (D131, R1) your prompt keeps its counts and the rows of the asks
  * that are not done, and your messages are counted, not shown; then the lists of what the agent did keep their counts
  * only; then those of what Sonah could not check; then the code excerpts give way to their place (`path:line`, on the
- * Where line); then Good to know becomes counts by kind; last of all (D131's review), the evidence folds of Must know are
- * left out, then those of Must act: they are the verbatim proof. The header, the count line, the prompt's counts and its rows of asks not done, and the visible lines
- * of Must act and Must know are never shortened. An evidence fold that is left out is not printed (never a fold with
- * nothing in it), and the report says once that it was shortened.
+ * Where line); then Good to know becomes counts by kind; then (D144) the prompts for the agent of Must act are left out:
+ * each is made from its item's evidence, so it goes before that evidence; last of all (D131's review), the evidence
+ * folds of Must know are left out, then those of Must act: they are the verbatim proof. The header, the count line, the prompt's counts and its rows of asks not done, and the visible lines
+ * of Must act and Must know are never shortened. An evidence fold or a prompt that is left out is not printed (never a
+ * fold with nothing in it), and the report says once that it was shortened.
  */
 const MD_TRIM_STEPS = Object.freeze(['messages', 'gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts',
-  'excerpts', 'gtkCounts', 'knowEvidence', 'actEvidence']);
+  'excerpts', 'gtkCounts', 'actPrompts', 'knowEvidence', 'actEvidence']);
 function* mdCompositions() {
   let trim = Object.fromEntries(MD_TRIM_STEPS.map((step) => [step, false]));
   yield trim;
@@ -1358,10 +1376,12 @@ function* mdCompositions() {
 
 /** One composition of the report: its sections in order, the shortening said once (`notice`, Sonah's sentence), at the
  *  top of the first section this composition shortened. */
-function composeMd(model, trim, notice) {
+function composeMd(model, trim, notice, { agentPrompts = true } = {}) {
   // D131 (R1, B12): Must act and Must know before your prompt (report-model.js `promptAfterTiers`).
   const prompt = (said) => promptSection(model, trim, said);
-  const must = [(said) => tierSection(model, 'must_act', trim, said), (said) => tierSection(model, 'must_know', trim, said)];
+  // D144: the prompts for the agent, unless the caller leaves them out (`agentPrompts` false: the terminal).
+  const must = [(said) => tierSection(model, 'must_act', trim, said, agentPrompts),
+    (said) => tierSection(model, 'must_know', trim, said, agentPrompts)];
   const sections = [...(promptAfterTiers(model) ? [...must, prompt] : [prompt, ...must]),
     (said) => goodToKnowSection(model, trim, said), (said) => didSection(model, trim, said),
     (said) => notCheckedSection(model, trim, said)];
@@ -1382,7 +1402,9 @@ function composeMd(model, trim, notice) {
  * facts (`repo`, `github`), from which the report model builds the code links; `folder`, the folder the code step looked
  * in, which this report names by its name alone, and `homes`, the home folder's spellings (`folderNameOf`); and `page`,
  * `{ whole }` when the same run wrote the HTML page (session-page.js `sessionPage`), so a shortened report says the page
- * holds every part only when that is so. Pure: the same inputs give the same bytes.
+ * holds every part only when that is so; and (D144) `agentPrompts`, false to leave out every prompt for the agent: the
+ * CLI prints the report to the terminal so, since a review run in the agent's own shell would hand the agent its
+ * prompts unasked. Pure: the same inputs give the same bytes.
  */
 export function renderReportMarkdown(session, report, options = {}) {
   const opts = plainObject(options) ? options : {};
@@ -1394,12 +1416,14 @@ export function renderReportMarkdown(session, report, options = {}) {
   // R2: the sentence that the HTML page holds every part only when this run wrote the page and the page kept every
   // part (`options.page`: `{ whole }` from session-page.js `sessionPage`; none with `--format md`, the default).
   const said = (base) => [base, ...(opts.page?.whole === true ? [REPORT_TRIM_WORDS.pageWhole] : [])].join(' ');
+  // D144: `agentPrompts` false leaves out every prompt for the agent (the CLI prints the report to the terminal so).
+  const how = { agentPrompts: opts.agentPrompts !== false };
   let trim = null;
   for (trim of mdCompositions()) {
-    const text = composeMd(model, trim, said(REPORT_TRIM_WORDS.mdShortened));
+    const text = composeMd(model, trim, said(REPORT_TRIM_WORDS.mdShortened), how);
     if (bytesOf(text) <= REPORT_MD_LIMITS.maxBytes) return text;
   }
   // Every shortening applied and still over the bound: the parts never shortened are longer on their own, and the
   // report says that it is still too long for one comment.
-  return composeMd(model, trim, said(REPORT_TRIM_WORDS.mdStillLong));
+  return composeMd(model, trim, said(REPORT_TRIM_WORDS.mdStillLong), how);
 }

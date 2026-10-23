@@ -49,7 +49,8 @@ git clone https://github.com/getsonah/sonah sonah && cd sonah && node scripts/in
 ```
 
 To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. To remove
-Sonah, run `npm uninstall -g getsonah`.
+Sonah, first run `sonah hook remove` in each repository where you ran `sonah hook add`, and `sonah skill remove` if you
+added /sonah; then run `npm uninstall -g getsonah`.
 
 ## Requirements
 
@@ -107,6 +108,9 @@ sonah review /path/to/session.jsonl --format html --output ~/review.html
 sonah review --format md --output ~/review.md         # the Markdown report only, no page
 sonah review --no-code-pass --format html --output ~/session.html   # the session only, no files read
 sonah review --backend codex-cli --model gpt-6.1-sol --format html --output ~/review.html   # your codex login, the session only
+sonah skill add                                       # once; then type /sonah in Claude Code to review that session
+sonah hook add                                        # once per repository: Claude Code's commits name their session
+sonah sessions --commits main..HEAD                   # the sessions behind your branch, after sonah hook add
 ```
 
 A review that stops partway resumes when you run the same command again. [Troubleshooting](docs/TROUBLESHOOTING.md)
@@ -122,7 +126,8 @@ lists the messages and exit codes.
   read-only agents open. They read your repository, any other git repository where the session changed a file, and
   any that you give with `--code-repo`. Turn the code review off with `--no-code-pass`, or for every review with `sonah config code-pass off`.
 - **Nothing else leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics, no update check. It
-  posts nothing to GitHub unless you ask and confirm.
+  asks GitHub only about a pull request you name with `--github`, and posts nothing to GitHub unless you ask and
+  confirm.
 - **Sonah masks nothing.** The page and the .md show the session as the recording holds it, secrets included. Read the
   report before you share it.
 

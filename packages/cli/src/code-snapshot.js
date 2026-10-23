@@ -72,7 +72,7 @@
 // Read opens them). A submodule's state is the commit git's index records for it. The state hashes every file git lists,
 // twice a review: on a repository of very many untracked, unignored files (a home folder kept in git with no ignore
 // file) that costs time in proportion, and a list larger than git's output bound leaves the state unknown (null).
-import { closeSync, constants, createReadStream, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, readSync,
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, readSync,
   realpathSync, statSync } from 'node:fs';
 import { lstat, open, realpath, stat } from 'node:fs/promises';
 import { execFile, execFileSync, spawn } from 'node:child_process';
@@ -80,6 +80,7 @@ import { createHash } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { strictJson } from '../../slicer/src/strict-json.js';
+import { recordingStream } from '../../slicer/src/recording-stream.js';
 import { codeSnapshotPlan, freezeCodeSnapshot, mayMissEdits, placeRanks, placesHolding } from '../../evidence/src/code-pass.js';
 import { displayPath, HOME_SPELLED, underRoot, unresolvedShellPaths } from '../../evidence/src/code-context.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES, CODE_CHANGE_TYPES, CODE_REPO_PROBLEMS }
@@ -308,12 +309,13 @@ const REFLOG_SELECTOR = /^HEAD@\{(\d+)\}$/;
  * carry an ISO `timestamp`) and the commit a Codex rollout's `session_meta` names (`payload.git.commit_hash`). Reads at
  * most the first `maxLines` lines; never a message's words. `{ at, commit }`, each null when not found.
  */
-export async function recordingStart(file, { maxLines = 200 } = {}) {
+export async function recordingStart(file, { maxLines = 200, byteEnd = null } = {}) {
   const found = { at: null, commit: null };
   if (typeof file !== 'string' || !file) return found;
   let input = null, lines = null;
   try {
-    input = createReadStream(file, { encoding: 'utf8' });
+    // D142: with `byteEnd`, the recording as it was when the review started (cli frozen-read.js).
+    input = recordingStream(file, byteEnd);
     lines = createInterface({ input, crlfDelay: Infinity });
     let seen = 0;
     for await (const line of lines) {
@@ -865,12 +867,12 @@ export const sessionWindow = (startAt, endAt) => {
 
 /** D113: the last timestamp a row of the recording carries (Claude Code rows and Codex lines carry an ISO `timestamp`),
  *  by structure: the end of the session's recorded window. Reads every line; never a message's words. Null when none is
- *  found. */
-export async function recordingEnd(file) {
+ *  found. D142: with `byteEnd`, only the lines the review read (the recording as it was when it started). */
+export async function recordingEnd(file, { byteEnd = null } = {}) {
   if (typeof file !== 'string' || !file) return null;
   let input = null, lines = null, last = null;
   try {
-    input = createReadStream(file, { encoding: 'utf8' });
+    input = recordingStream(file, byteEnd);
     lines = createInterface({ input, crlfDelay: Infinity });
     for await (const line of lines) {
       if (!line.trim()) continue;
@@ -933,7 +935,9 @@ export function namedSpellings(spellings, onDisk, changes, roots) {
  * one file may be (the review's request bound); `recording` the recording's path (its opening timestamp and commit
  * place the start commit; its last timestamp ends D113's window); D126 (N0): `startRecording` the first recording of a
  * session read with the recordings it continues, whose opening timestamp places the start (the recording itself when
- * omitted); `git` runs git (a test may pass another). `base` is `{ kind: 'git', commit, how, outside,
+ * omitted); D142: `recordingBytes` and `startBytes`, when the review read them only through those ends (a frozen
+ * read, cli frozen-read.js), bound the reads of `recording` and `startRecording` the same way; `git` runs git (a test
+ * may pass another). `base` is `{ kind: 'git', commit, how, outside,
  * changedOutside, written }` (D113: the paths that differ from the start commit that no recorded write of the session
  * touched, named apart and never part of the change; how many paths the session's recorded writes could have changed)
  * or `{ kind: 'recorded_edits', written }`; D117: with `places` when the session's writes make another git repository a
@@ -952,7 +956,8 @@ export function namedSpellings(spellings, onDisk, changes, roots) {
  * again after the code step leaves out the same places. Reads only; writes nothing.
  */
 export async function readCodeSnapshot(session, { root, maxBytes, recording = null, startRecording = recording,
-  git = runGit, own = [], harnessHomes = [], codeRepos = [] }) {
+  recordingBytes = null, startBytes = startRecording === recording ? recordingBytes : null, git = runGit, own = [],
+  harnessHomes = [], codeRepos = [] }) {
   const none = { root: false, plan: codeSnapshotPlan(session), files: [] };
   if (typeof root !== 'string' || !isAbsolute(root)) return none;
   const dir = resolve(root);
@@ -972,7 +977,7 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   const diskPlan = codeSnapshotPlan(session, { root: dir, literal: onDisk });
   // D126 (N0): a session read with the recordings it continues starts where the first of them starts
   // (`startRecording`); its window ends where the reviewed recording ends.
-  const start = await recordingStart(startRecording);
+  const start = await recordingStart(startRecording, { byteEnd: startBytes });
   // Git is read with the plan of the spellings the disk holds: its `recorded` reaches only the untracked paths git
   // lists, each of which the disk holds, so the spellings git alone names (deleted files) never change what it lists.
   const gitBase = await readGitBase({ root: dir, start, recorded: new Set(diskPlan.map((e) => e.path)), git, own });
@@ -985,7 +990,7 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   // (`codeSnapshotPlan`), and those whose last change lies inside the session's recorded window. A path git shows
   // differing from the start commit that is neither is no part of it: named apart (`changedOutside`), and (D113 amended)
   // read apart below.
-  const window = gitBase ? sessionWindow(start.at, await recordingEnd(recording)) : null;
+  const window = gitBase ? sessionWindow(start.at, await recordingEnd(recording, { byteEnd: recordingBytes })) : null;
   const timed = gitBase ? await Promise.all(gitBase.changes.map(async (c) => ({ ...c,
     recordedPath: join(gitBase.top, c.gitPath), mtimeMs: recorded.has(c.path) ? null
       : await mtimeOf(join(gitBase.top, c.gitPath)) }))) : [];
@@ -1108,7 +1113,8 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
       continue;
     }
     if (place.base) {
-      if (placeWindow === undefined) placeWindow = gitBase ? window : sessionWindow(start.at, await recordingEnd(recording));
+      if (placeWindow === undefined) placeWindow = gitBase ? window : sessionWindow(start.at,
+        await recordingEnd(recording, { byteEnd: recordingBytes }));
       const around = await readPlaceWindow({ top: place.at, commit: place.base.commit, start, written, own,
         homes: harnessHomes, git, window: placeWindow, realRoot });
       place.base = around === null ? null : { ...place.base, ...around };
