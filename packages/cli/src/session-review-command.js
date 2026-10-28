@@ -14,7 +14,8 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
   RUN_FAILURE_CODES, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
-import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
+import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL, rechecksUnexecuted }
+  from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILE_NAMES, reviewSpeedProfile, requestBoundOf } from '../../evidence/src/review-profiles.js';
 import { sessionPage } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
@@ -27,12 +28,13 @@ import { claudeProjectsDir, harnessHomePlaces } from './claude-home.js';
 import { answersFor, loadDecisionReviews } from './decision-reviews.js';
 import { loadRecordedSessionWithHash } from './recorded-session.js';
 import { openLocalPage, presentLocalPage } from './local-page.js';
-import { attestableModel, createReviewJudge, reviewJudgeConfig, selectedContextWindow, rateLimitRecordOf } from './review-judge.js';
+import { attestableModel, createReviewJudge, reviewEffortOf, reviewJudgeConfig, selectedContextWindow, rateLimitRecordOf }
+  from './review-judge.js';
 import { discoverSessions } from './session-discovery.js';
 import { SESSION_ID_SHAPE, resolveSessionId } from './session-id.js';
 import { commitRangeShape, commitSessionLines, sessionToReview, sessionsOfCommits } from './commit-sessions.js';
-import { freezeRecordings } from './frozen-read.js';
-import { createSessionReviewStore, dryRunReplay, reviewCodePass, reviewSession, sameRunIdentity }
+import { freezeRecordings, frozenReadValid } from './frozen-read.js';
+import { createSessionReviewStore, dryRunReplay, frozenRunOf, reviewCodePass, reviewSession, sameRunIdentity }
   from './session-review.js';
 import { codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES } from '../../evidence/src/ledger.js';
@@ -79,6 +81,9 @@ export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
   '  --model ID               the reviewer\'s model, needed for codex-cli and',
   '                           anthropic-api (leave it out for claude-cli: its',
   '                           default is the 1M-token model)',
+  '  --effort LEVEL           the effort Sonah asks claude-cli for: low, medium,',
+  '                           high (the default), xhigh or max. The code review',
+  '                           asks at it too',
   '  --timeout MS             how long one model call can take (default 20 minutes)',
   '  --concurrency N          parts of the session reviewed at a time (default 4,',
   '                           at most 12, or 3 with --profile standard)',
@@ -141,7 +146,8 @@ export function parseSessionReviewArgs(argv) {
     ['--timeout', 'timeoutMs'], ['--concurrency', 'concurrency'], ['--profile', 'profile'],
     ['--format', 'format'], ['--output', 'output'], ['--state-dir', 'stateDir'],
     ['--max-calls', 'maxCalls'], ['--max-input-bytes', 'maxInputBytes'], ['--stop-at-utilization', 'stopAtUtilization'],
-    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel'], ['--commits', 'commits']]);
+    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel'], ['--commits', 'commits'],
+    ['--effort', 'effort']]);
   const seen = new Set();
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -266,6 +272,11 @@ export const REVIEW_FIX_WORDS = Object.freeze({
   invalid_model: 'Choose an exact model ID. A review on claude-cli needs a full model ID that Sonah can attest, and the '
     + '1M default is best. Run sonah doctor.',
   explicit_api_model_required: 'Add --model with the exact Anthropic model ID that your account supports.',
+  // D160: an effort (--effort, else SONAH_EFFORT) that the review cannot ask for; checked before anything is read.
+  invalid_effort: 'Choose --effort low, medium, high, xhigh or max, or leave it out for high. SONAH_EFFORT takes the '
+    + 'same values. Sonah read and sent nothing.',
+  effort_claude_cli_only: 'Sonah sets the effort only on claude-cli. Remove --effort and SONAH_EFFORT, or use --backend '
+    + 'claude-cli. Sonah read and sent nothing.',
   anthropic_key_missing: 'Set ANTHROPIC_API_KEY in your terminal or secret manager, then retry.',
   review_in_progress: 'Wait for the other review to finish, then retry. If a review crashed, Sonah takes back its lock '
     + 'by itself.',
@@ -369,6 +380,7 @@ export const STYLE_KINDS = Object.freeze({
   'SAVED_COMMENT_WORDS.unreadable': 'fragment',
   SESSION_ID_WORDS: 'notice',
   RUN_STATE_WORDS: 'fragment', 'RUN_STATE_WORDS.line': 'notice', CODE_STEP_SOURCE_WORDS: 'fragment',
+  WINDOW_LINE_WORDS: 'fragment',
   CODE_STEP_WORDS: 'notice', CODE_PASS_NO_ROOT: 'notice', CODE_STEP_BACKEND_LINE: 'notice', CODE_SNAPSHOT_WORDS: 'notice',
   REPLAY_UNREAD: 'notice', REPLAY_WORDS: 'notice', DRY_RUN_WORDS: 'notice',
 });
@@ -377,7 +389,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'SAVED_COMMENT_WORDS.target': [['owner/repo', 7]],
   'NO_SESSION_WORDS.searched': [['/folder/one', '/folder/two']],
   'ANSWER_REUSE_WORDS.session': [[1, 2], [5, 5]], 'ANSWER_REUSE_WORDS.code': [[0, 3], [3, 3]],
-  'CONTINUED_RECORDING_WORDS.read': [[1], [2]],
+  'CONTINUED_RECORDING_WORDS.read': [[1], [2]], 'WINDOW_LINE_WORDS.rechecksUnexecuted': [[1], [2]],
   'SESSION_ID_WORDS.started': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
     '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.log']],
   'SESSION_ID_WORDS.startedNoOpen': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
@@ -436,10 +448,11 @@ export const codeModelOf = (codeStep, options, env) => (codeStep?.on === true
 
 /** --code-model: the code step's reviewer settings — `codeModel` on the session's backend, accepted as `--model` is
  *  (reviewJudgeConfig: an exact id, the CLI's context selector only on a full claude-cli id) and, on claude-cli, only an
- *  id whose served model can be attested (`invalid_model` otherwise) — or null for none. */
-export function codeJudgeConfig(env, { backend, codeModel }) {
+ *  id whose served model can be attested (`invalid_model` otherwise) — or null for none. D160: at the review's effort
+ *  (`effort`, as the person named it), as the session's settings are: one effort for the whole review. */
+export function codeJudgeConfig(env, { backend, codeModel, effort = undefined }) {
   if (codeModel === null || codeModel === undefined) return null;
-  const config = reviewJudgeConfig(env, { backend, model: codeModel });
+  const config = reviewJudgeConfig(env, { backend, model: codeModel, effort });
   if (config.backend === 'claude-cli' && !attestableModel(config.model)) throw failure('invalid_model');
   return config;
 }
@@ -505,7 +518,13 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   let usageStore = null, failedWith = null;
   // D132's review (finding 4): what this run asks with (backend, model, code model), kept with its cost.
   let runIdentity = null;
+  // D159: the cut a review by session id read (frozen-read.js `record()`), kept in its state folder and its run's entry.
+  let frozenRead = null;
   try {
+    // D160: the effort the person named — the flag, else SONAH_EFFORT — checked before anything is read, on the backend
+    // the review will use (reviewEffortOf: only claude-cli takes one, and only a REVIEW_EFFORTS value).
+    const effort = options.effort ?? env.SONAH_EFFORT;
+    reviewEffortOf(options.backend ?? env.SONAH_REVIEW_BACKEND ?? 'claude-cli', effort);
     budget = createReviewBudget(options);
     setMaxListeners(REVIEW_SIGNAL_MAX_LISTENERS, budget.signal);
     // B3: the principal ids a post needs are checked before anything is read; the token and the pull request itself
@@ -599,6 +618,9 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       }
       // D142: every recording this review reads, read as it was now (frozen-read.js).
       frozen = await freeze(file, { adapter, codexHome: roots.codex });
+      // A cut that cannot be kept as a record is not kept; the review reads as before.
+      frozenRead = typeof frozen?.record === 'function' ? frozen.record() : null;
+      if (!frozenReadValid(frozenRead)) frozenRead = null;
     } else if (options.file) file = resolve(cwd, options.file);
     else {
       const discovered = await discover({ repo, claudeProjects: roots.claude, codexHome: roots.codex });
@@ -674,11 +696,12 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
           : undefined);
         let replay = null, codeModel = null;
         try {
-          const config = reviewJudgeConfig(env, { backend, model });
-          codeModel = codeJudgeConfig(env, { backend, codeModel: codeModelOf(codeStep, options, env) })?.model ?? null;
+          const config = reviewJudgeConfig(env, { backend, model, effort });
+          codeModel = codeJudgeConfig(env, { backend, codeModel: codeModelOf(codeStep, options, env), effort })?.model
+            ?? null;
           replay = await dryRunReplay({ session, snapshot, backend, model: config.model, speedProfile: options.profile,
             concurrency: options.concurrency, answerCache: createAnswerCache(join(state, STATE_ANSWERS),
-              { ...config, readOnly: true }) });
+              { ...config, readOnly: true }), startFolderAt: join(state, STATE_CODE_PASS, 'start-commit') });
         } catch { replay = null; }
         for (const line of replay ? replayLines({ ...replay, codeModel }) : [REPLAY_UNREAD]) stdout.write(`${line}\n`);
       }
@@ -699,13 +722,17 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       await (await import('./pr-sharing.js')).readPrTarget({ client, github: { owner, repo, number: options.number } });
     }
     const model = options.model ?? env.SONAH_MODEL ?? (backend === 'claude-cli' ? SESSION_REVIEW_CLAUDE_CLI_MODEL : undefined);
-    const config = reviewJudgeConfig(env, { backend, model });
+    // D160: every call of the review at the effort the person named; the settings carry it only when it is not the
+    // default (`config.effort`), and the code step's are made at the same one.
+    const config = reviewJudgeConfig(env, { backend, model, effort });
     if (backend === 'claude-cli' && !attestableModel(config.model)) throw failure('invalid_model');
     // --code-model (or SONAH_CODE_MODEL): the code step's own model, checked as the session's is, before any call; with
     // neither, null, and the code step runs on the session's model and transport, as before.
-    const codeConfig = codeJudgeConfig(env, { backend, codeModel: codeModelOf(codeStep, options, env) });
+    const codeConfig = codeJudgeConfig(env, { backend, codeModel: codeModelOf(codeStep, options, env), effort });
     runIdentity = { backend, model: typeof config.model === 'string' && config.model ? config.model : null,
-      codeModel: typeof codeConfig?.model === 'string' && codeConfig.model ? codeConfig.model : null };
+      codeModel: typeof codeConfig?.model === 'string' && codeConfig.model ? codeConfig.model : null,
+      // D160: and the effort, only when it is not the default, so an entry at the default is written as before.
+      ...(config.effort ? { effort: config.effort } : {}) };
     if (signal?.aborted) throw failure('review_interrupted');
     // Same admission facts as the existing session harness: one successful transport report,
     // attested Claude identity, and the requested context window when the model has a selector.
@@ -755,9 +782,11 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     try {
       result = await runSession({ session, judge, backend, model: config.model,
         answerCache: createAnswerCache(join(state, STATE_ANSWERS), config),
+        // D160: the run record names the effort, only when it is not the default.
+        ...(config.effort ? { effort: config.effort } : {}),
         store: createSessionReviewStore(join(state, STATE_REVIEW)),
         speedProfile: options.profile, concurrency: options.concurrency, signal: admission.signal,
-        rateLimitTally: () => latestRateLimit, census: loaded.census ?? null,
+        rateLimitTally: () => latestRateLimit, census: loaded.census ?? null, ...(frozenRead ? { frozenRead } : {}),
         // D129 (C7): the review's cost in its run record; with the code step on, the code step's record carries it.
         ...(snapshot ? {} : { usage: () => budget.usageRecord() }),
         onWindowRecord: (event) => stderr.write(`Review window ${event.window}/${event.of} finished\n`) });
@@ -774,12 +803,23 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       // (`repoState`), so an answer an agent gave from the repository is replayed only while it is unchanged.
       // The release review (owner, 2026-10-14): only --code-pass on the command line makes the code step's coverage
       // decide the exit code; on by default or by the setting, its coverage is shown and the session review decides.
-      ({ report } = await runCode({ session, report, snapshot, judge: codeJudge, backend, speedProfile: options.profile,
-        required: codeStep.source === 'flag' && codeStep.on === true,
-        signal: admission.signal, answerCache: createAnswerCache(join(state, STATE_CODE_PASS, 'answers'),
-          { ...(codeConfig ?? config), repoState: snapshot.repoState ?? null }),
-        store: createSessionReviewStore(join(state, STATE_REVIEW)),
-        ...(codeConfig ? { model: codeConfig.model } : {}), usage: () => budget.usageRecord() }));
+      // D149: the same stop signals as the session review's, around the code step too, so a stop ends its calls and the
+      // step removes what it made (its start-commit folder) before it ends.
+      signal?.addEventListener('abort', abort, { once: true });
+      if (installSignals) { process.on('SIGINT', abort); process.on('SIGTERM', abort); }
+      try {
+        ({ report } = await runCode({ session, report, snapshot, judge: codeJudge, backend, speedProfile: options.profile,
+          required: codeStep.source === 'flag' && codeStep.on === true,
+          signal: admission.signal, answerCache: createAnswerCache(join(state, STATE_CODE_PASS, 'answers'),
+            { ...(codeConfig ?? config), repoState: snapshot.repoState ?? null }),
+          store: createSessionReviewStore(join(state, STATE_REVIEW)),
+          // D149: where a review of several units makes its start-commit folder, under the code step's own entry.
+          startFolderAt: join(state, STATE_CODE_PASS, 'start-commit'),
+          ...(codeConfig ? { model: codeConfig.model } : {}), usage: () => budget.usageRecord() }));
+      } finally {
+        signal?.removeEventListener('abort', abort);
+        if (installSignals) { process.off('SIGINT', abort); process.off('SIGTERM', abort); }
+      }
     }
     // D97: the repository's facts for the report's code links (local git only, from the code step's snapshot), and
     // the count line in place of the attention lines. D118 (a): the folder the code step looked in (its snapshot's, or
@@ -803,7 +843,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // coverage and "Not covered" lines (their functions are gone since D133's review); every cause they named, with
     // its count, is in the page's and the report's fold What Sonah could not check, also in a shortened report, and the
     // exit code is as before (`reviewExitCode`).
-    const windows = windowCompletionLine(report.instrument?.windowCompletion);
+    // D155: with the decisions Sonah left out because their second check did not run (`rechecksUnexecuted`).
+    const windows = windowCompletionLine(report.instrument?.windowCompletion, rechecksUnexecuted(report));
     if (windows) stdout.write(`${windows}\n`);
     for (const line of countLines(reportView)) stdout.write(`${line}\n`);
     const answers = report.instrument?.answers;
@@ -868,8 +909,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       if (paused) stdout.write(`${paused}\n`);
       // D129's review: what this run cost is kept in the review's state folder however it ended — finished, stopped at a
       // budget, interrupted or failed — beside each earlier run's, so a review resumed over several runs keeps them all.
+      // D159: and, for a review by session id, the cut its frozen read used (`frozenRunOf`).
+      const frozenRun = frozenRunOf(frozenRead);
       await keepRunUsage(usageStore, { usage: budget.usageRecord(), paused: budget.snapshot().reason,
-        failure: failedWith, ...(runIdentity ? { identity: runIdentity } : {}) });
+        failure: failedWith, ...(runIdentity ? { identity: runIdentity } : {}), ...(frozenRun ? { frozen: frozenRun } : {}) });
     }
   }
 }
@@ -984,14 +1027,21 @@ async function savedCommentLines(state, { github, number }) {
   return [W.lead(target), text, W.after];
 }
 
+/** D155: what the window line adds for the decisions that Sonah left out because their second check did not run. */
+export const WINDOW_LINE_WORDS = Object.freeze({
+  rechecksUnexecuted: (n) => `${n} ${n === 1 ? 'decision' : 'decisions'} left out because ${n === 1 ? 'its' : 'their'} `
+    + `second check did not run (run the same review again to check ${n === 1 ? 'it' : 'them'})`,
+});
 /**
  * F177. One closed line after the window progress lines: how many windows completed of how many,
  * each recorded reason the others did not with its count, in the vocabulary's order, and — only
  * when there are any — how many are incomplete with no recorded reason. Tokens and counts only:
  * a token outside `WINDOW_INCOMPLETE_REASONS` or a count that is not a count never prints, and a
- * record that cannot be read prints nothing.
+ * record that cannot be read prints nothing. D155: and, only when there are any, how many decisions Sonah left out
+ * because their second check did not run (`rechecks`, run-review.js `rechecksUnexecuted`), with the remedy; these
+ * checks never make a window incomplete, so the windows' count stays as it was.
  */
-export function windowCompletionLine(completion) {
+export function windowCompletionLine(completion, rechecks = 0) {
   const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
   if (!completion || !isCount(completion.windows) || !isCount(completion.complete) || !isCount(completion.unexplained)
       || completion.complete > completion.windows) return null;
@@ -1001,6 +1051,7 @@ export function windowCompletionLine(completion) {
   let line = `Windows complete: ${completion.complete} of ${completion.windows}`;
   if (completion.complete < completion.windows && reasons.length) line += `; incomplete: ${reasons.join(', ')}`;
   if (completion.unexplained > 0) line += `; incomplete with no recorded reason: ${completion.unexplained}`;
+  if (isCount(rechecks) && rechecks > 0) line += `; ${WINDOW_LINE_WORDS.rechecksUnexecuted(rechecks)}`;
   return line;
 }
 

@@ -27,14 +27,18 @@ import { join } from 'node:path';
 import { canonicalJson } from '../../evidence/contracts/canonical.js';
 import { CLI_SAFE_ERROR_CODES, RUN_FAILURE_CODES } from '../../evidence/src/ledger.js';
 import { NARRATIVE_SHORTFALL, TRANSPORT_SHORTFALL, WINDOW_FAILURE_CODES,
-  WINDOW_INCOMPLETE_REASONS, WINDOW_STATES, planWindowRequests, runProfile, runReview,
+  WINDOW_INCOMPLETE_REASONS, WINDOW_STATES, planWindowRequests, rechecksToReask, runProfile, runReview,
   windowIncompleteReasons } from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILES, isStandardProfile, requestBoundOf, reviewSpeedProfile } from '../../evidence/src/review-profiles.js';
 import { strictJson } from '../../slicer/src/strict-json.js';
 import { markSourceChanged, placesHolding, runCodePass, withCodePass } from '../../evidence/src/code-pass.js';
 import { withAskCodeLinks } from '../../evidence/src/ask-code-links.js';
 import { memoizeJudge } from './answer-cache.js';
-import { changeState, createRepositoryReader, repositoryState } from './code-snapshot.js';
+import { REVIEW_EFFORT, REVIEW_EFFORTS } from './review-judge.js';
+import { frozenReadValid } from './frozen-read.js';
+import { changeState, createRepositoryReader, repositoryState, makeStartFolder, removeStartFolder }
+  from './code-snapshot.js';
+import { readCodeMap } from './code-map.js';
 import { RATE_LIMIT_STATUSES, RATE_LIMIT_TYPES, RATE_LIMIT_WINDOWS, REVIEW_CANCELLED,
   withTransportRetry } from './review-judge.js';
 
@@ -44,6 +48,8 @@ export const SESSION_REVIEW_PROGRESS_SCHEMA = 'sonah.session-review-progress/1';
  *  store's `appendUsageRun`). */
 export const REVIEW_USAGE_RUNS_SCHEMA = 'sonah.review-usage-runs/1';
 const USAGE_RUNS_FILE = 'usage.private.json';
+/** D159: the cut of the frozen read the latest run of a review by session id read (frozen-read.js FROZEN_READ_SCHEMA). */
+export const FROZEN_READ_FILE = 'frozen-read.json';
 const SESSION_ONLY = runProfile('session-only').reviewScope;
 /** Where a non-regular entry found at a record's name is moved, inside the records' directory. */
 const DISCARDED = '.discarded';
@@ -319,21 +325,38 @@ export async function readSessionReviewProgress(directory) {
 /** D129's review: one run's entry — its usage record (review-budget.js `usageRecord`), the budget stop it ended at
  *  (REVIEW_BUDGET_REASONS) or null, and the closed code it failed with or null. D132's review (finding 4): and, since
  *  then, `identity`, what the run asked with — its backend, its model and the code step's own model (null without
- *  --code-model) — so that only runs that could share answers are summed. An entry written before has none. */
+ *  --code-model) — so that only runs that could share answers are summed. An entry written before has none.
+ *  D160: and the effort it asked with (`effort`, a REVIEW_EFFORTS member), only when it is not the default: an identity
+ *  without one asked at REVIEW_EFFORT, so an entry at the default is written, and read, as before. */
 const USAGE_RUN_FIELDS = Object.freeze(['usage', 'paused', 'failure']);
 const IDENTITY_FIELDS = Object.freeze(['backend', 'model', 'codeModel']);
 const optionalName = (value) => value === null || (typeof value === 'string' && value.length > 0 && value.length <= 200);
-export const usageRunIdentityValid = (identity) => exactKeys(identity, IDENTITY_FIELDS)
+const identityEffortValid = (identity) => !Object.hasOwn(identity, 'effort')
+  || (REVIEW_EFFORTS.includes(identity.effort) && identity.effort !== REVIEW_EFFORT);
+export const usageRunIdentityValid = (identity) => (exactKeys(identity, IDENTITY_FIELDS)
+  || exactKeys(identity, [...IDENTITY_FIELDS, 'effort'])) && identityEffortValid(identity)
   && typeof identity.backend === 'string' && identity.backend.length > 0 && identity.backend.length <= 64
   && optionalName(identity.model) && optionalName(identity.codeModel);
-const usageRunValid = (run) => (exactKeys(run, USAGE_RUN_FIELDS)
-  || (exactKeys(run, [...USAGE_RUN_FIELDS, 'identity']) && usageRunIdentityValid(run.identity))) && plainObject(run.usage)
-  && typeof run.usage.version === 'string' && (run.paused === null || typeof run.paused === 'string')
-  && (run.failure === null || typeof run.failure === 'string');
+/** D159: a frozen run's cut, in its entry (`frozenRunOf`): the instant its sizes were taken, the reviewed recording's
+ *  size then (null when it was not a regular file), how many files the cut holds, and the SHA-256 (hex) of its record
+ *  (FROZEN_READ_FILE's bytes as this run wrote them). An entry of a run that read no frozen set has none. */
+const FROZEN_RUN_FIELDS = Object.freeze(['at', 'bytes', 'files', 'digest']);
+export const frozenRunValid = (frozen) => exactKeys(frozen, FROZEN_RUN_FIELDS) && typeof frozen.at === 'string'
+  && Number.isFinite(Date.parse(frozen.at)) && new Date(Date.parse(frozen.at)).toISOString() === frozen.at
+  && (frozen.bytes === null || isCount(frozen.bytes)) && isCount(frozen.files) && isHex64(frozen.digest);
+/** D159: a run entry's cut of a frozen read's record (frozen-read.js `record()`), or null for none. */
+export const frozenRunOf = (record) => (frozenReadValid(record) ? { at: record.at, bytes: record.bytes,
+  files: record.files.length, digest: sha256(JSON.stringify(record)) } : null);
+const OPTIONAL_RUN_FIELDS = Object.freeze({ identity: usageRunIdentityValid, frozen: frozenRunValid });
+const usageRunValid = (run) => plainObject(run) && USAGE_RUN_FIELDS.every((key) => Object.hasOwn(run, key))
+  && Object.keys(run).every((key) => USAGE_RUN_FIELDS.includes(key)
+    || (Object.hasOwn(OPTIONAL_RUN_FIELDS, key) && OPTIONAL_RUN_FIELDS[key](run[key])))
+  && plainObject(run.usage) && typeof run.usage.version === 'string'
+  && (run.paused === null || typeof run.paused === 'string') && (run.failure === null || typeof run.failure === 'string');
 /** D132's review (finding 4): whether two runs asked with the same backend, model and code model; an entry with no
- *  identity matches none. */
+ *  identity matches none. D160: and at the same effort (none named is REVIEW_EFFORT), as only those share answers. */
 export const sameRunIdentity = (a, b) => usageRunIdentityValid(a) && usageRunIdentityValid(b)
-  && IDENTITY_FIELDS.every((key) => a[key] === b[key]);
+  && IDENTITY_FIELDS.every((key) => a[key] === b[key]) && (a.effort ?? REVIEW_EFFORT) === (b.effort ?? REVIEW_EFFORT);
 /** The store's runs (`{ runs }`), none when there is no file, or none with the closed reason the file was not read. */
 async function readUsageRunsFile(directory) {
   const read = await readPrivate(join(directory, USAGE_RUNS_FILE));
@@ -404,6 +427,25 @@ export function createSessionReviewStore(directory) {
       await writePrivate(directory, USAGE_RUNS_FILE, JSON.stringify({ schema: REVIEW_USAGE_RUNS_SCHEMA,
         runs: [...prior.runs, run] }));
     },
+    /** D159: keep the cut of the frozen read a run of a review by session id reads (frozen-read.js `record()`), under
+     *  the caller's lock; it replaces the one an earlier run kept. A non-regular entry at its name is moved aside. */
+    async saveFrozenRead(record) {
+      if (!frozenReadValid(record)) throw new TypeError('A frozen read is kept as its record');
+      await prepare();
+      if ((await readPrivate(join(directory, FROZEN_READ_FILE))).discard === NOT_REGULAR_FILE)
+        await moveAside(directory, FROZEN_READ_FILE);
+      await writePrivate(directory, FROZEN_READ_FILE, JSON.stringify(record));
+    },
+    /** D159: the kept cut, `{ record }` (null when there is none), with the closed reason when it was not read. */
+    async readFrozenRead() {
+      const read = await readPrivate(join(directory, FROZEN_READ_FILE));
+      if (read.absent) return { record: null };
+      if (read.discard) return { record: null, discard: read.discard };
+      const parsed = strictJson(read.text);
+      if (!parsed.json) return { record: null, discard: UNREADABLE };
+      return parsed.strict && frozenReadValid(parsed.value) ? { record: parsed.value }
+        : { record: null, discard: SCHEMA_INVALID };
+    },
   };
 }
 
@@ -429,10 +471,24 @@ export function createSessionReviewStore(directory) {
  * `rateLimitTally` (M33 K, optional): returns the latest rate-limit fields the caller's transport reported
  * (`{ status, rateLimitType, utilization, resetsAt, windows }`, closed codes and numbers only: review-judge.js
  * rateLimitRecordOf) or null; each progress then carries it as `rateLimit`. Without it, progress is exactly as before.
+ *
+ * `afterPointRecheck` (D153, off by default; no CLI flag names it): run the after-point re-check of the accusing asks
+ * (run-review.js `runReview`). Off, nothing this function sends, stores or saves moves.
+ *
+ * `sessionEdgeMaps` (D158, off by default; no CLI flag names it): the report gains the session's edge maps (run-review.js
+ * `runReview`), with no call. Off, nothing this function sends, stores or saves moves.
+ *
+ * `frozenRead` (D159, optional): the cut of the frozen read `session` was loaded through (frozen-read.js `record()`),
+ * kept in the store (`saveFrozenRead`) once this run holds its lock, before any call. Without it, nothing is kept.
+ *
+ * `effort` (D160, optional): the effort the review's calls ask with, when it is not the default, recorded in the run
+ * record as `instrument.effort` (the code step's record keeps it). The calls carry it in their own settings and answer
+ * keys (`judge`, `answerCache`); this only records it. Without it, nothing moves.
  */
 export async function reviewSession({ session, judge, answerCache, store, backend, model, signal = null,
   onProgress = () => {}, onWindowRecord = () => {}, servedModelTally = () => null, concurrency = undefined,
-  speedProfile = undefined, rateLimitTally = null, census = null, usage = null }) {
+  speedProfile = undefined, rateLimitTally = null, census = null, usage = null, afterPointRecheck = false,
+  sessionEdgeMaps = false, frozenRead = null, effort = null }) {
   if (typeof backend !== 'string' || !backend || typeof model !== 'string' || !model)
     throw new TypeError('A session review is keyed by the backend and model that answer');
   const { name: speed, windowConcurrency } = reviewSpeedProfile(speedProfile);
@@ -442,6 +498,7 @@ export async function reviewSession({ session, judge, answerCache, store, backen
   const release = await store.lock();
   let writes = Promise.resolve();
   try {
+    if (frozenRead !== null) await store.saveFrozenRead(frozenRead);
     const prior = await store.readProgress();
     const attempt = (prior?.attempt ?? 0) + 1;
     // D103: the window keys bind the skim the recording's harness resolves to, as the plan below windows by it.
@@ -502,7 +559,11 @@ export async function reviewSession({ session, judge, answerCache, store, backen
     let report;
     try {
       report = await runReview({ session, pr: null, diff: null, reviewScope: SESSION_ONLY, judge: memo, signal,
-        onWindowFinished, onProgress, concurrency: lanes, plan, speedProfile: speed, backend });
+        onWindowFinished, onProgress, concurrency: lanes, plan, speedProfile: speed, backend,
+        // D153: the after-point re-check, only when a caller of this function turns it on (no CLI flag names it).
+        ...(afterPointRecheck === true ? { afterPointRecheck } : {}),
+        // D158: the session's edge maps, only when a caller of this function turns them on (no CLI flag names it).
+        ...(sessionEdgeMaps === true ? { sessionEdgeMaps } : {}) });
     } catch (error) {
       const code = RUN_FAILURE_CODES.includes(error?.code) ? error.code : REVIEW_FAILED;
       await writeProgress(code === REVIEW_INTERRUPTED ? INTERRUPTED : FAILED, code).catch(() => {});
@@ -512,7 +573,11 @@ export async function reviewSession({ session, judge, answerCache, store, backen
       // W3f-2 / F226, when the review completes: a window an answer left incomplete is asked again
       // next review. F228: the answer store stays bounded.
       const reask = windowsToReask(report.windowResults);
-      if (reask.size) await memo.forget((label) => reask.has(windowOfLabel(label)));
+      // D155 (its fix round): and the run of each second check that left a decision unexecuted (`rechecksToReask`),
+      // whatever its stored replies held, so that running the same review again asks it.
+      const rechecks = rechecksToReask(report.windowResults);
+      if (reask.size || rechecks.length) await memo.forget((label) => reask.has(windowOfLabel(label))
+        || (typeof label === 'string' && rechecks.some((prefix) => label.startsWith(prefix))));
       if (typeof answerCache.prune === 'function') await answerCache.prune();
       const perWindow = report.windowResults.map((w) => windowCalls(w.windowIndex + 1));
       report.instrument = { ...report.instrument, answers: memo.answers, resume: { attempt,
@@ -525,7 +590,9 @@ export async function reviewSession({ session, judge, answerCache, store, backen
         ...(census !== null && typeof census === 'object' ? { recorderCensus: census } : {}),
         // D129 (C7): what the review cost (`usage`, the caller's review-budget.js `usageRecord`), when no code step
         // follows it: the code step's own record carries the whole review's then (`reviewCodePass`).
-        ...(typeof usage === 'function' ? { usage: usage() } : {}) };
+        ...(typeof usage === 'function' ? { usage: usage() } : {}),
+        // D160: the effort, only when it is not the default.
+        ...(REVIEW_EFFORTS.includes(effort) && effort !== REVIEW_EFFORT ? { effort } : {}) };
       // The recording is rebuilt from the recording; it is never stored beside the report.
       const { session: omitted, ...saved } = report;
       await store.saveReport(saved);
@@ -586,9 +653,15 @@ function codeStepReader(snapshot, bound) {
  * `codePass.model`. `required` (the release review): whether the person asked for the code step on the command line
  * (`--code-pass`), recorded as `codePass.required`; only then does its coverage decide whether the review is complete
  * (ledger.js `reviewRunState`).
+ *
+ * D157: `codeMap` (false unless a caller passes true; no command-line flag or profile selects it): the code map of the
+ * snapshot (code-map.js `readCodeMap`), read before the step's first call and recorded as `codePass.map`. An index
+ * only: no request, gate or reader reads it, so with it on no request byte moves, and with it off nothing is read and
+ * no byte of the record moves. `readMap` is injectable for tests.
  */
 export async function reviewCodePass({ session, report, snapshot, judge, answerCache, store, backend,
-  speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null, usage = null }) {
+  speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null, usage = null,
+  startFolderAt = null, codeMap = false, readMap = readCodeMap }) {
   const { name: speed } = reviewSpeedProfile(speedProfile);
   const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
   const memo = memoizeJudge(boundedJudge(judge, () => {}, { signal, speedProfile: speed, reviewScope: SESSION_ONLY,
@@ -596,13 +669,27 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
   const place = codeStepPlace(snapshot);
   const reader = repo ?? codeStepReader(snapshot, bound);
   const release = await store.lock();
+  // D149: the start-commit folder of a review of several units (code-snapshot.js `makeStartFolder`), under the state
+  // folder (`startFolderAt`), removed once the step's last call is done, its removal recorded (`removed`).
+  // A folder an earlier review left behind (stopped with no chance to remove it) is removed first, when it is Sonah's.
+  let made = null;
+  if (typeof startFolderAt === 'string') await removeStartFolder(startFolderAt);
+  const startFolder = typeof startFolderAt === 'string' ? async (ask) => {
+    made = await makeStartFolder({ snapshot, ...ask, into: startFolderAt });
+    return made;
+  } : null;
   try {
+    // D157: the code map, from the snapshot as it was read, before the step's first call; only when a caller asks.
+    const map = codeMap === true && place.ran && place.gate === null ? await readMap(snapshot) : null;
     // D113 amended: the files outside the evaluated session too (`outsideFiles`), which the code review is given apart.
     const result = await runCodePass({ report, session, snapshot: Array.isArray(snapshot?.files) ? snapshot.files : [],
       outsideSnapshot: Array.isArray(snapshot?.outsideFiles) ? snapshot.outsideFiles : [], repo: reader, bound,
-      judge: memo, ...place });
+      judge: memo, ...place, ...(startFolder ? { startFolder } : {}) });
     if (signal?.aborted === true) throw failure(REVIEW_INTERRUPTED);
     let { codePass } = result;
+    if (map !== null && map !== undefined && codePass?.ran === true) codePass = { ...codePass, map };
+    if (made && codePass?.startFolder) codePass = { ...codePass, startFolder: { ...codePass.startFolder,
+      removed: await removeStartFolder(made.at) } };
     // The repository's state after the step's last request, against its state before the first (code-snapshot.js).
     if (codePass.ran === true && typeof snapshot?.repoState === 'string') {
       let after = null;
@@ -628,7 +715,10 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
     const { session: omitted, ...saved } = joined;
     await store.saveReport(saved);
     return { report: joined };
-  } finally { await release(); }
+  } finally {
+    if (made) await removeStartFolder(made.at);
+    await release();
+  }
 }
 
 /**
@@ -639,30 +729,37 @@ export async function reviewCodePass({ session, report, snapshot, judge, answerC
  * counted (a lower bound: what such a failure would have led to is not asked either). Then the code step runs on that
  * report the same way: its first request (the review agent) is counted by its label and size and not sent, and the
  * checking agents, which follow from its answer, are not planned. Resolves `{ answers: { calls, reused }, codeRequests:
- * [{ label, bytes }] }`.
+ * [{ label, bytes }], codeHunks }`: D149, `codeHunks` the code step's hunk ledger as its record keeps it
+ * (code-pass.js `hunkLedger`; `shownIn` names the first request, which the dry run counts and does not send), or null
+ * with no code step or no review request.
  */
 export async function dryRunReplay({ session, answerCache, snapshot, backend, model, speedProfile = undefined,
-  concurrency = undefined }) {
+  concurrency = undefined, startFolderAt = null }) {
   const unsent = async () => { throw error('invalid_model_input'); };
   const memory = { lock: async () => async () => {}, readProgress: async () => null, writeProgress: async () => {},
     readWindow: async () => ({ present: false }), writeWindow: async () => {}, saveReport: async () => {} };
   const { report } = await reviewSession({ session, judge: unsent, answerCache, store: memory, backend, model,
     speedProfile, concurrency });
   const codeRequests = [];
+  let codeHunks = null;
   if (snapshot) {
     const { name: speed } = reviewSpeedProfile(speedProfile);
     const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
     // The same request a review would send first: the same reader, so the same project and skill files.
-    await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [],
+    const { codePass } = await runCodePass({ report, session, snapshot: Array.isArray(snapshot.files) ? snapshot.files : [],
       outsideSnapshot: Array.isArray(snapshot.outsideFiles) ? snapshot.outsideFiles : [], bound,
       repo: codeStepReader(snapshot, bound), ...codeStepPlace(snapshot),
+      // D149: the start-commit folder a review would make, named and not made (nothing written).
+      ...(typeof startFolderAt === 'string' ? { startFolder: (ask) => makeStartFolder({ snapshot, ...ask,
+        into: startFolderAt, dryRun: true }) } : {}),
       judge: async (request) => {
         codeRequests.push({ label: request.label, bytes: Buffer.byteLength(request.system ?? '', 'utf8')
           + Buffer.byteLength(request.prompt ?? '', 'utf8') });
         throw error('invalid_model_input');
       } });
+    codeHunks = Array.isArray(codePass?.manifest?.hunks) ? codePass.manifest.hunks : null;
   }
-  return { answers: report.instrument?.answers ?? { calls: 0, reused: 0 }, codeRequests };
+  return { answers: report.instrument?.answers ?? { calls: 0, reused: 0 }, codeRequests, codeHunks };
 }
 
 const hash = (value) => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
@@ -900,12 +997,13 @@ export const ANSWER_INCOMPLETE_REASONS = Object.freeze(['challenge:votes_invalid
 // `narrative:wN` (joint `code+narrative:wN`, its one `…:receipt-repair`; M36 phase 3, D68 Q: a session-only window's
 // evidence re-ask `narrative:wN:evidence`, a later one `…:evidenceK`; S3: the re-ask of its refuted requirement K
 // `narrative:wN:restatus:K`; W1 A: the re-ask of its decision K refuted on who decided it `narrative:wN:recolumn:K`; G2:
-// the re-ask of its choice not to act K whose existence check refuted it `narrative:wN:reanchor:K`), the
-// challenges `challenge:wN:…`, and the joint challenges
+// the re-ask of its choice not to act K whose existence check refuted it `narrative:wN:reanchor:K`; D153: its after-point
+// re-check of earlier windows' accusing asks `narrative:wN:recheck`), the challenges `challenge:wN:…`, and the joint
+// challenges
 // `challenge:narrative:wN:joint:…`. A code-only chunk (`code+chunk:N`, `challenge:chunk:N:…`) belongs to no window:
 // null.
 const WINDOW_LABEL = new RegExp('^(?:code\\+)?narrative:w([1-9]\\d*)'
-  + '(?::receipt-repair|:evidence(?:[2-9]|[1-9]\\d+)?|:(?:restatus|recolumn|reanchor):(?:0|[1-9]\\d*))?$'
+  + '(?::receipt-repair|:evidence(?:[2-9]|[1-9]\\d+)?|:(?:restatus|recolumn|reanchor):(?:0|[1-9]\\d*)|:recheck)?$'
   + '|^challenge:(?:narrative:)?w([1-9]\\d*):');
 export function windowOfLabel(label) {
   const match = typeof label === 'string' ? WINDOW_LABEL.exec(label) : null;

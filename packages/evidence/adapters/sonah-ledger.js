@@ -194,6 +194,29 @@ const humanInteractionFlags = (adapter, tool) => {
  *  `INTERJECTION_KINDS`, re-declared: this package never imports the slicer; asserted equal in
  *  test/m33-u-unasked-adapter.test.js). Closed: any other kind is not placed, and is declared. */
 export const INTERJECTION_KINDS = Object.freeze(['queued', 'answer', 'attached', 'peer']);
+/** D150: the notes of the `unsupported_message` gaps that count recording rows the slicer left unread (its
+ *  `capture.unclassifiedRows` and `unsupportedRowChannels`), whose rows the slicer also counts once each by kind
+ *  (`unreadRows`, records.js UNREAD_ROW_KINDS, re-declared below; this package never imports the slicer). */
+export const UNSUPPORTED_ROW_NOTES = Object.freeze({
+  identity: 'unsupported recording rows carried content whose T/A/O channel could not be identified',
+  channel: 'recording rows in an unsupported schema carried content for this channel',
+});
+/** D150: the kinds of an unread row (slicer records.js UNREAD_ROW_KINDS), re-declared and held equal by a test. */
+export const UNREAD_ROW_KINDS = Object.freeze(['request_copy', 'hook_output', 'edited_file', 'other']);
+/** D150: the session's own rows the slicer left unread, by kind (its ledger's `unreadRows`, each a count), with the
+ *  in-turn instructions this adapter could not place (`other`, counted as the instructions gap counts them) and every
+ *  transferred child's; null when it holds none. Read by the coverage facts only (ledger.js `sessionCoverageFacts`). */
+function unreadRowsOf(ledger, unplacedHeard, transfers) {
+  const out = Object.fromEntries(UNREAD_ROW_KINDS.map((kind) => [kind, 0]));
+  const own = ledger?.unreadRows !== null && typeof ledger?.unreadRows === 'object' ? ledger.unreadRows : {};
+  for (const kind of UNREAD_ROW_KINDS) if (Number.isSafeInteger(own[kind]) && own[kind] > 0) out[kind] += own[kind];
+  if (Number.isSafeInteger(unplacedHeard) && unplacedHeard > 0) out.other += unplacedHeard;
+  for (const transfer of transfers ?? []) {
+    const child = transfer?.session?.unreadRows;
+    for (const kind of UNREAD_ROW_KINDS) if (Number.isSafeInteger(child?.[kind]) && child[kind] > 0) out[kind] += child[kind];
+  }
+  return UNREAD_ROW_KINDS.some((kind) => out[kind] > 0) ? Object.freeze(out) : null;
+}
 const [QUEUED_KIND, ANSWER_KIND, ATTACHED_KIND, PEER_KIND] = INTERJECTION_KINDS;
 /** M34 labels: the markers an instruction event carries (slicer labels.js `MARKERS`, those an instruction can carry;
  *  re-declared, held equal by test/m34-labels-adapter.test.js). Closed, in this order. M34 labels review (F3): a refusal
@@ -2521,6 +2544,9 @@ export function sessionFromLedger(ledger, options = {}) {
     strippedIds, queuedRead, unplacedHeard, labelGapIds: Object.fromEntries(LEDGER_POSITIONED_GAPS.map((gap) =>
       [gap, labelGapAnchors(ledger, session, gap)])) }, delegationEventIds,
     [...transferred.values()], unrecordedWrites(events), withheldAsks, events, ids);
+  // D150: the rows left unread, by kind, non-enumerable like the facts above (no reader of the session's
+  // own fields changes); the coverage facts name them by kind.
+  Object.defineProperty(session, 'unreadRows', { value: unreadRowsOf(ledger, unplacedHeard, [...transferred.values()]) });
   // C-03 M33 P: every helper segment whose receipt is not proven is declared once per closed note — none recorded
   // (`unreceived`), or a queued assignment's shared report (`shared`, M33 P repair) — counted by segment, naming each
   // such segment's delivery and its helper's spawn; and every send that split nothing, by its closed reason, naming the
@@ -3475,8 +3501,7 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     note: 'source rows could not be parsed or their recording schema was unsupported; their T/A/O channel is unknown' });
   if (Number.isSafeInteger(ledger.capture?.unclassifiedRows) && ledger.capture.unclassifiedRows > 0)
     gaps.push({ code: 'unsupported_message', channel: 'identity', scope: 'session',
-      count: ledger.capture.unclassifiedRows,
-      note: 'unsupported recording rows carried content whose T/A/O channel could not be identified' });
+      count: ledger.capture.unclassifiedRows, note: UNSUPPORTED_ROW_NOTES.identity });
   for (const channel of ['instructions', 'commentary', 'actions', 'observations']) {
     const recorded = ledger.capture?.unsupportedRowChannels?.[channel];
     // OWNER DECISION B (2026-10-01): the slicer still counts a queued prompt it read as an unsupported instructions row
@@ -3487,8 +3512,7 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     const count = channel !== 'instructions' ? recorded
       : (rows - queuedRead >= 0 ? rows - queuedRead : rows) + unplacedHeard;
     if (Number.isSafeInteger(count) && count > 0)
-      gaps.push({ code: 'unsupported_message', channel, scope: 'session', count,
-        note: 'recording rows in an unsupported schema carried content for this channel' });
+      gaps.push({ code: 'unsupported_message', channel, scope: 'session', count, note: UNSUPPORTED_ROW_NOTES.channel });
   }
   // Codex's `unmapped` counts results the reader saw but could not attach safely to an
   // invocation. In particular, a conflicting wrapper replay retracts an earlier result while

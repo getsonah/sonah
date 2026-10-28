@@ -1,7 +1,8 @@
 // Session page (D97). ONE recorded session's review as a self-contained HTML page: the report model
 // (report-model.js `reportModel`) rendered for a browser, in its order — the header and the count line, Must act, Must
-// know, your prompt with each ask marked (D131: after Must act and Must know, folded on a long session), Good to know
-// (folded), what the agent did (folded), what Sonah could not check (folded) and the footer. The Markdown report renders the same model, so both say the same things, in the same
+// know, Good to know (folded), the agent's decisions in the session order (D161: the report's second part, one fold a
+// group), your prompt with each ask marked (D131: after Must act and Must know, folded on a long session), what the agent
+// did (folded), what Sonah could not check (folded) and the footer. The Markdown report renders the same model, so both say the same things, in the same
 // order, with the same counts. Styled as sonah.dev's "What a Sonah review looks like" card (light from the site's
 // tokens, a derived warm dark, the reader's own setting unless asked).
 //
@@ -28,11 +29,11 @@
 import { visible, backtickPieces, noFilesWords } from './session-story.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
 import { reportModel, REPORT_MODEL_VERSION, REPORT_LIMITS, scopeMarker, foldNotes, askStatusWord, promptAfterTiers,
-  agentPromptText } from './report-model.js';
+  agentPromptText, reportItems } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
   REPORT_FOOTER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS, REPORT_ANSWER_WORDS,
-  REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS } from './report-words.js';
+  REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS, REPORT_TRAIL_WORDS } from './report-words.js';
 
 /** The page's layout version, in its generator meta. /37 (D97, owner decisions 2026-10-16): the page
  *  renders the report model — the header (its size line, the runs after the last edit, what Sonah did not check), the
@@ -91,7 +92,17 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  Must act and has a prompt, after its visible lines, a fold "Prompt for the agent" holds it, as plain
  *  text in a `<pre>` that one click selects whole (CSS, no script), left out with the evidence when the page is
  *  shortened; a page with no such prompt differs from /45 only by the versions it names and the fold's three style
- *  rules, which every page carries. */
+ *  rules, which every page carries. D161 (the owner, 2026-10-27; 0.3.0-beta.9's content moves ride the report model's one
+ *  move, D152's /8, as D153's did):
+ *  the page has two parts. First what to act on: Must act, Must know, Good to know (folded); then the agent's decisions
+ *  (`#decisions`), in the order the session recorded them, one fold a group by the message of yours they follow (open
+ *  when it holds an item tagged Must act or Must know), one folded line a decision with its tier as a tag; then your
+ *  prompt and the rest. The count line counts the decisions after the tiers. D163 (the owner, 2026-10-28; it rides
+ *  the same move): Must act and Must know end with their pointers to the decisions tagged with them (`pointersHtml`),
+ *  Must act's heading counting its own; a decision that the first part keeps has its line at its place in the second
+ *  (`trailAboveHtml`); an open group folds its decisions tagged Good to know under one counted line after its Must ones
+ *  (`trail-more`); a change of approach's reading of why is a line of its own (`review-why`). Three style rules more,
+ *  which every page carries. */
 export const PAGE_VERSION = 'sonah.session-page/46';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
@@ -177,9 +188,13 @@ function headerHtml(model) {
   if (notChecked.length) out.push(`<p class="meta not-checked">${notChecked.join(' ')}</p>`);
   const tiers = countLine.tiers.map((t) => `<a href="#${t.tier.replace(/_/g, '-')}">${esc(REPORT_COUNT_WORDS.tier(t.words, t.n))}`
     + `${t.folded ? ` ${esc(REPORT_COUNT_WORDS.folded)}` : ''}</a>`).join(' · ');
-  out.push(`<p class="count">${tiers} · <a href="#prompt">${esc(countLine.prompt)}</a></p>`);
+  // D161: the agent's decisions, counted after the tiers.
+  const decisions = countLine.decisions ? ` · <a href="#decisions">${esc(countLine.decisions.words)}</a>` : '';
+  out.push(`<p class="count">${tiers}${decisions} · <a href="#prompt">${esc(countLine.prompt)}</a></p>`);
   // D113 amended: how many items are about code outside the evaluated session.
   if (countLine.outside) out.push(`<p class="count-outside">${esc(countLine.outside)}</p>`);
+  // D153: what the after-point re-check took out of Must act, by mechanism (only a report it ran on).
+  if (countLine.recheck) out.push(`<p class="count-recheck">${esc(countLine.recheck)}</p>`);
   if (countLine.empty) out.push(`<p class="count-empty">${esc(countLine.empty)}</p>`);
   else if (countLine.labels.length) out.push(`<p class="count-labels">${esc(REPORT_COUNT_WORDS.mustActLead)} `
     + `${countLine.labels.map((l) => `<a href="#item-${l.n}">${partsHtml(l.parts)}</a>`).join(' · ')}`
@@ -338,6 +353,8 @@ function linesHtml(item, trimmed) {
   if (item.impact) out.push(labelled(REPORT_ITEM_WORDS.impact, partsHtml(item.impact), 'line impact'));
   if (item.agentSaid) out.push(labelled(item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid, partHtml(item.agentSaid),
     'line agent-said'));
+  // D163: a change of approach's reason in the session review's words, on its own line, after the agent's own.
+  if (item.reviewWhy) out.push(labelled(REPORT_ITEM_WORDS.reviewWhy, partsHtml(item.reviewWhy), 'line review-why'));
   if (item.action) out.push(labelled(REPORT_ITEM_WORDS.action, partsHtml(item.action), 'line action'));
   out.push(whereHtml(item));
   out.push(excerptHtml(item.where[0]?.excerpt));
@@ -380,13 +397,76 @@ function goodToKnowHtml(item, trimmed) {
 function tiersHtml(model, trim) {
   const [act, know, good] = ['must_act', 'must_know', 'good_to_know'];
   const note = (on) => (on ? `<p class="cut">${esc(REPORT_TRIM_WORDS.trimmed)}</p>` : '');
+  // D163: a tier's heading counts as the count line does (Must act with its pointers), and after its own items come its
+  // pointers to the decisions of the second part tagged with it.
   const open = (tier) => `<section class="part tier" id="${tier.replace(/_/g, '-')}"><h2>${esc(REPORT_SECTION_WORDS
-    .tier(REPORT_TIER_WORDS[tier], model.tiers[tier].length))}</h2>${tier === act ? note(trim.items) : ''}`
-    + `${model.tiers[tier].map((item) => itemHtml(item, trim.items)).join('')}</section>`;
+    .tier(REPORT_TIER_WORDS[tier], model.countLine.counts[tier]))}</h2>${tier === act ? note(trim.items) : ''}`
+    + `${model.tiers[tier].map((item) => itemHtml(item, trim.items)).join('')}${pointersHtml(model, tier)}</section>`;
   const gtk = `<details class="part tier fold-tier" id="good-to-know"><summary><h2>${esc(REPORT_SECTION_WORDS
     .tier(REPORT_TIER_WORDS[good], model.tiers[good].length))}</h2></summary>${note(trim.goodToKnow)}`
     + `${model.tiers[good].map((item) => goodToKnowHtml(item, trim.goodToKnow)).join('')}</details>`;
-  return { must: open(act) + open(know), good: gtk };
+  return { must: open(act) + open(know), good: gtk, trail: trailHtml(model, trim) };
+}
+/** D163 (L1): a tier's pointers to the decisions of the second part tagged with it, under their heading: each the
+ *  decision's number, type word and what it is, linked to its line there, then its marker and its ask. Empty with
+ *  none. Never shortened: a line each. */
+function pointersHtml(model, tier) {
+  const pointers = list(model.pointers?.[tier]);
+  if (!pointers.length) return '';
+  const line = (p) => {
+    const marker = scopeMarker(p.scope).trim();
+    return `<li><a href="#item-${p.n}"><span class="n">${p.n}</span> <strong class="type">`
+      + `${esc(REPORT_TYPE_WORDS[p.type])}:</strong> ${partsHtml(p.what.parts)}</a>`
+      + `${marker ? ` <span class="scope">${esc(marker)}</span>` : ''}${p.scope.asks.length ? ` · <a href="#ask-`
+        + `${p.scope.asks[0]}">${esc(REPORT_ITEM_WORDS.asked(p.scope.asks[0]))}</a>` : ''}</li>`;
+  };
+  return `<h3 class="sub-h">${esc(REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS[tier], pointers.length))}</h3>`
+    + `<ul class="rows pointers">${pointers.map(line).join('')}</ul>`;
+}
+/** D163: the line of a decision that the first part shows, at its place in the second part: its type word, what it
+ *  is and its marker, a link to its item there, and its tag. */
+function trailAboveHtml(entry) {
+  const marker = scopeMarker(entry.scope).trim();
+  return `<p class="trail-above"><strong class="type">${esc(REPORT_TYPE_WORDS[entry.type])}:</strong> `
+    + `${partsHtml(entry.what.parts)}${marker ? ` <span class="scope">${esc(marker)}</span>` : ''} · `
+    + `<a href="#item-${entry.n}">${esc(REPORT_TRAIL_WORDS.shownAbove(entry.n))}</a> · `
+    + `<span class="tag tier-tag">${esc(REPORT_TIER_WORDS[entry.tier])}</span></p>`;
+}
+/** D161: one decision of the report's second part: a fold whose summary is its line (its number, type word, what it is,
+ *  its marker, the ask its instruction ties it to, and its tier as a tag), and whose body is the item's own lines. */
+function trailItemHtml(item, trimmed) {
+  const { head, body } = itemBody(item, trimmed);
+  const ask = item.scope.asks.length ? ` · <a href="#ask-${item.scope.asks[0]}">${esc(REPORT_ITEM_WORDS
+    .asked(item.scope.asks[0]))}</a>` : '';
+  return `<details class="item gtk trail-item t-${esc(item.type)}" id="item-${item.n}"><summary>${head}${ask} · `
+    + `<span class="tag tier-tag">${esc(REPORT_TIER_WORDS[item.tier.final])}</span></summary>${body}</details>`;
+}
+/** D161: the report's second part, the agent's decisions in the order the session recorded them: one fold a group, open
+ *  when the model opens it, its summary whose message it follows and its count; inside, that message's asks, then each
+ *  decision's line. D163: each entry the model shows in it (`shown`), a decision that the first part shows by its line
+ *  there; then, in an open group, one fold that counts the rest (`more`, tagged Good to know) and holds them in order.
+ *  Empty with no decision. */
+function trailHtml(model, trim) {
+  const decisions = model.decisions;
+  if (!decisions?.total) return '';
+  // Lowest tier first, as the first part (its review): a decision tagged Good to know keeps only its summary with Good to
+  // know's (`trail`); one tagged Must act or Must know only with Must act's and Must know's (`items`). Every line stays.
+  const cut = (item) => (['must_act', 'must_know'].includes(item.tier.final) ? trim.items : trim.trail);
+  const all = decisions.groups.flatMap((g) => g.items);
+  const note = all.some(cut) ? `<p class="cut">${esc(REPORT_TRIM_WORDS.trimmed)}</p>` : '';
+  const entryHtml = (e) => (e.above ? trailAboveHtml(e) : trailItemHtml(e.item, cut(e.item)));
+  const groups = decisions.groups.map((g) => {
+    const asks = g.askLines.map((a) => `<li><a href="#ask-${a.n}">${esc(REPORT_PROMPT_WORDS.askLine(a.n))}</a> · `
+      + `<span class="tag s-${esc(a.state)}">${esc(a.status)}</span> · ${partsHtml(a.words)}</li>`).join('')
+      + (g.asksMore ? `<li>${esc(REPORT_TRAIL_WORDS.moreAsks(g.asksMore))}</li>` : '');
+    const more = g.more.length ? `<details class="trail-more"><summary>${esc(g.moreWords)}</summary>`
+      + `${g.more.map(entryHtml).join('')}</details>` : '';
+    return `<details class="trail-group"${g.open ? ' open' : ''}><summary>${esc(g.words)} · ${esc(g.count)}</summary>`
+      + `${asks ? `<ul class="rows trail-asks">${asks}</ul>` : ''}`
+      + `${g.shown.map(entryHtml).join('')}${more}</details>`;
+  }).join('');
+  return `<section class="part tier trail" id="decisions"><h2>${esc(REPORT_TRAIL_WORDS.heading(decisions.total))}</h2>`
+    + `${note}${groups}</section>`;
 }
 
 // ---- what the agent did -------------------------------------------------------------------------------------------
@@ -511,7 +591,8 @@ function notCheckedHtml(model, factor) {
 
 function footerHtml(model) {
   const { footer } = model;
-  const items = ['must_act', 'must_know', 'good_to_know'].flatMap((tier) => model.tiers[tier]);
+  // D161: the agent's decisions among them: an answer is about a decision first.
+  const items = reportItems(model);
   const answer = footer.sessionHash && items.some((item) => item.rowId)
     ? `<details class="fold answer"><summary>${esc(REPORT_SECTION_WORDS.answer)}</summary>`
       + `<p>${esc(REPORT_FOOTER_WORDS.answerIntro)} ${esc(REPORT_FOOTER_WORDS.answerParts)}</p>`
@@ -640,6 +721,12 @@ details.item.gtk > summary { font: 500 15px/1.45 var(--display); color: var(--in
 .member-head, details.member > summary { font: 500 15px/1.45 var(--display); color: var(--ink); overflow-wrap: anywhere; }
 .member .tier-word { color: var(--muted); }
 .fold-tier { display: flex; flex-direction: column; gap: 12px; }
+.trail-group { display: flex; flex-direction: column; gap: 8px; }
+.trail-group > summary { font: 600 15px/1.45 var(--display); color: var(--ink); }
+.trail-more { display: flex; flex-direction: column; gap: 8px; }
+.trail-more > summary { font: 500 15px/1.45 var(--display); color: var(--muted); }
+.trail-above { font: 500 15px/1.45 var(--display); color: var(--ink); overflow-wrap: anywhere; }
+.tier-tag { margin: 0 0 0 2px; }
 .fold-part > summary.card-bar { color: var(--ink); }
 .fold-part:not([open]) > summary.card-bar { border-bottom: none; }
 .sub-h { font: 600 14px/1.3 var(--display); margin-top: 12px; }
@@ -682,7 +769,10 @@ function compose(model, theme, trim) {
   const tiers = tiersHtml(model, trim);
   const prompt = promptHtml(model, trim);
   const body = [`<header class="masthead"><p class="wordmark">${LOGO}Sonah</p></header>`, card,
-    ...(promptAfterTiers(model) ? [tiers.must, prompt] : [prompt, tiers.must]), tiers.good, didHtml(model, trim.did),
+    // D161: the first part (Must act, Must know, Good to know), then the second (the agent's decisions), then your prompt
+    // when it comes after the tiers.
+    ...(promptAfterTiers(model) ? [tiers.must, tiers.good, tiers.trail, prompt]
+      : [prompt, tiers.must, tiers.good, tiers.trail]), didHtml(model, trim.did),
     notCheckedHtml(model, trim.notChecked), footerHtml(model)];
   // One list item a line, so a reader of the source (and a snapshot's diff) can follow it. Recorded text never holds a
   // tag (it is escaped), and no list item is inside a <pre>, so this changes no rendered text.
@@ -714,15 +804,18 @@ ${html}
 /**
  * What each composition leaves out, in order, until the page fits `maxBytes` (D97): nothing; a long message keeps only
  * its start, and a message that holds no ask its start (your own words, which you hold: the evidence is what only the
- * page shows); then the evidence folds of Good to know keep their summary only; then those of Must know and Must act;
+ * page shows); then (D161) the detail folds of the agent's decisions keep their summary only; then the evidence folds of
+ * Good to know keep their summary only; then those of Must know and Must act;
  * then the lists of what the agent did and the messages that hold no ask are halved until empty; then the lists of what
  * Sonah could not check. The visible lines of every item stay, and so does the open start of each message that holds
  * an ask.
  */
 function* compositions() {
-  const none = { messages: false, goodToKnow: false, items: false, did: 1, notChecked: 1 };
+  const none = { messages: false, trail: false, goodToKnow: false, items: false, did: 1, notChecked: 1 };
   yield none;
-  const cut = { ...none, messages: true };
+  yield { ...none, messages: true };
+  // D161: the agent's decisions' detail folds keep their summary first, before any fold of the first part.
+  const cut = { ...none, messages: true, trail: true };
   yield cut;
   yield { ...cut, goodToKnow: true };
   yield { ...cut, goodToKnow: true, items: true };

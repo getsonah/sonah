@@ -184,7 +184,9 @@ test('D101 beside D104: a quote in the cut part reads not found there, and the s
     assert.deepEqual(failure.seenInPart, [record]);
     assert.equal(checklistReasonWords(failure, 'failure'), NOT_FOUND);
     // The readers: the ask's line says the cause's words; the run's failure row shows the mark; what Sonah could not
-    // check counts the result. Neither replaces the other, on the page and in the .md alike.
+    // check counts the result. Neither replaces the other, on the page and in the .md alike. D167: the .md counts the
+    // runs in place of listing them, so the run's own mark is on the page alone, with its run; the .md keeps the count.
+    // Its review: no other part of the .md names that run (its failure is no item), so it keeps no line there.
     const model = reportModel(s, report, {});
     const askLines = model.prompt.asks.map((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join('')));
     assert.ok(askLines.some((lines) => lines.includes(asSentence(NOT_FOUND))), JSON.stringify(askLines));
@@ -194,11 +196,14 @@ test('D101 beside D104: a quote in the cut part reads not found there, and the s
     const left = REPORT_SEEN_WORDS.cut(record);
     assert.ok(seen.some((line) => line.includes(left)), JSON.stringify(seen));
     const counted = asSentence(COVERAGE_SENTENCE.results_seen_in_part({ n: 1 }));
-    for (const text of [renderSessionPage(s, report, { sessionHash: 'a'.repeat(64) }), renderReportMarkdown(s, report, {})]) {
+    const page = renderSessionPage(s, report, { sessionHash: 'a'.repeat(64) });
+    const md = renderReportMarkdown(s, report, {});
+    for (const text of [page, md]) {
       assert.ok(text.includes(asSentence(NOT_FOUND).slice(0, -1)), 'the cause\'s words');
-      assert.ok(text.includes(left.split(' (')[0]), 'the mark\'s left-out lines');
       assert.ok(text.includes(counted.slice(0, -1)), 'the count');
     }
+    assert.ok(page.includes(left.split(' (')[0]), 'the mark\'s left-out lines');
+    assert.equal(md.includes(left.split(' (')[0]), false, 'the .md lists no run, so no run\'s own mark');
   });
 
 // ---- 2. D99 inside D102 -------------------------------------------------------------------------------------------

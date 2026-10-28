@@ -7,6 +7,7 @@ import { isAbsolute, join } from 'node:path';
 import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES, CODE_READ_FAILURES } from '../../evidence/src/ledger.js';
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { codexExecutable, codexJudgeArgs } from './codex-model.js';
+import { claudeConfigDirForCalls } from './claude-home.js';
 import { IMAGE_BACKENDS, REQUEST_IMAGE_LIMITS } from '../../evidence/src/images.js';
 import { REPLY_BEGUN } from '../../evidence/src/challenge.js';
 
@@ -102,7 +103,8 @@ const API_ERROR_STATUS_FIELD = 'api_error_status';
  *  that answered under a full requested id with every condition proved. `mismatch` (M33 refreeze):
  *  a call that failed on identity evidence — an init or a served model naming another id, a
  *  model-fallback event, an assistant that is not top-level, or an alias answer inconsistent with its
- *  init. `unattested`: everything else — an alias answer, any failure without identity evidence, and
+ *  init. `unattested`: everything else — an alias answer, an answer under a context selector whose init names the id
+ *  without it and whose usage does not give the selector's window (D162), any failure without identity evidence, and
  *  every codex-cli or anthropic-api call, whose stream cannot say. */
 const ATTESTED = 'attested', MISMATCH = 'mismatch', UNATTESTED = 'unattested';
 export const ATTESTATION_STATES = Object.freeze([ATTESTED, MISMATCH, UNATTESTED]);
@@ -122,8 +124,26 @@ export const KILL_GRACE_MS = 5000;
 /** After SIGKILL, how long a stopped call still waits for its child's `close` before it destroys the
  *  child's stdio pipes (held open by a grandchild that inherited them) and settles without it. */
 export const STDIO_GRACE_MS = 2000;
-/** The effort every review call asks for; `claude --help` (2.1.278) lists it for `--effort`. */
+/** The effort every review call asks for when the review names none; `claude --help` (2.1.278) lists it for `--effort`.
+ *  D160: the default of REVIEW_EFFORTS. A review that names no effort, or names this one, sends every byte as before. */
 export const REVIEW_EFFORT = 'high';
+/** D160: the efforts a review may ask for (`sonah review --effort`, SONAH_EFFORT), exactly the levels `claude --help`
+ *  lists for `--effort` (2.1.308 and 2.1.310: "low, medium, high, xhigh, max"), in its order. */
+export const REVIEW_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
+ * D160: the effort a review asks with: `effort` as the caller named it (`--effort`, else SONAH_EFFORT: the commands
+ * resolve which), or REVIEW_EFFORT when it names none (undefined or null). Only claude-cli takes an effort (its
+ * `--effort`): on any other backend a named effort, the default's name included, is refused (`effort_claude_cli_only`),
+ * never ignored and never mapped to another setting. On claude-cli a value outside REVIEW_EFFORTS is refused
+ * (`invalid_effort`).
+ */
+export function reviewEffortOf(backend, effort) {
+  if (effort === undefined || effort === null) return REVIEW_EFFORT;
+  if (backend !== 'claude-cli') throw failure('effort_claude_cli_only');
+  if (!REVIEW_EFFORTS.includes(effort)) throw failure('invalid_effort');
+  return effort;
+}
 
 /**
  * D77 (H). The most output tokens one checker (challenge) call may produce through the claude CLI: a cost guard
@@ -137,7 +157,7 @@ export const REVIEW_EFFORT = 'high';
  *
  * How it is applied: the CLI reads CLAUDE_CODE_MAX_OUTPUT_TOKENS from its environment as the `max_tokens` of each API
  * call (2.1.296: a value above the model's ceiling is capped to the ceiling, an invalid one ignored for the default;
- * the CLI never refuses the call over it). `localEnvironment` sets it on a challenge call only (`isChallengeRequest`),
+ * the CLI never refuses the call over it). `claudeEnvironment` sets it on a challenge call only (`isChallengeRequest`),
  * so it changes no argv and so no answer key (answer-cache.js binds the argv, never the environment). What happens when
  * a reply hits it: the CLI stops that API call at the limit and, in print mode, may ask the model to continue up to
  * three times (its `maxOutputTokensRecoveryCount`, 2.1.296), each continuation bounded by the same number, so one
@@ -237,9 +257,11 @@ const REQUESTED_MODEL = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/;
  * on a model id (Claude Code 2.1.278's own help: "/model sonnet[1m] for a 1M context window"; its model list reads
  * "`claude-sonnet-5[1m]` is shorthand for the same entry", "a 1M variant"). It is the CLI's context-window setting —
  * the CLI raises its own request limit to that window and asks the API for it — never part of the served model's
- * identity: the CLI's `init` names the id with the selector, and the API's answer names the id without it (a
- * `claude-sonnet-5-5[1m]` request is answered as `claude-sonnet-5-5`). A closed table of one frozen
- * literal; nothing else is read as a selector.
+ * identity: the API's answer names the id without it (a `claude-sonnet-5-5[1m]` request is answered as
+ * `claude-sonnet-5-5`). The CLI's `init` named the id with the selector on Claude Code 2.1.278 and names it without
+ * on 2.1.311 (D162, measured 2026-10-28), where only the result's `modelUsage` window tells that the selector was
+ * applied (`acceptedInitModels`, `selectorWindowAttested`). A closed table of one frozen literal; nothing else is read
+ * as a selector.
  */
 export const CLI_CONTEXT_SELECTORS = Object.freeze({ '[1m]': 1_000_000 });
 
@@ -263,15 +285,27 @@ export function selectedContextWindow(model) {
   return selector ? CLI_CONTEXT_SELECTORS[selector] : null;
 }
 
+/**
+ * D70 (a), D162. The model values the one `init` of a call under a full requested id may name: the requested value,
+ * and, when it carries a context selector, also the id without it. Claude Code 2.1.278 named the value as configured,
+ * selector included; 2.1.311 names the id without it (measured 2026-10-28). A plain id has one value: itself. An init
+ * that names the id without the selector proves nothing of the window, so that call is attested only on the window its
+ * result's usage states (`selectorWindowAttested`).
+ */
+export function acceptedInitModels(requested) {
+  return [...new Set([requested, servedModelId(requested)])];
+}
+
 /** SemVer 2.0.0's normal version (semver.org, item 2): `X.Y.Z`, each a non-negative integer without leading zeros. */
 const SEMVER_NORMAL_VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 /**
  * D70 review (S0). The claude CLI's version as its `init` states it (`claude_code_version`), when it is a SemVer normal
- * version, else null. Count-only instrumentation, never deciding attestation: the selector's attestation shape (the
- * init names the requested value with the selector; every top-level assistant the id without it) and the window read
- * (the result's `modelUsage` keyed by the value as configured) were measured on Claude Code 2.1.278 only, and no
- * documentation states either, so a run records the version it ran on and `sonah doctor` checks the shape with one call
- * before a paid run.
+ * version, else null. Count-only instrumentation, never deciding attestation: no documentation states the selector's
+ * stream shape, so a run records the version it ran on and `sonah doctor` checks the shape with one call before a paid
+ * run. Two shapes are measured, and both are attested (D162): on Claude Code 2.1.278 the init names the requested value
+ * with the selector, every top-level assistant the id without it, and the result's `modelUsage` is keyed by the value
+ * as configured; on 2.1.311 (2026-10-28) the init and every top-level assistant name the id without the selector, and
+ * `modelUsage` is keyed by that id.
  */
 export function cliVersionOf(value) {
   return typeof value === 'string' && value.length <= 32 && SEMVER_NORMAL_VERSION.test(value) ? value : null;
@@ -370,7 +404,24 @@ function localTransportClass({ stop, exitCode, result }) {
 // D78: not bumped. A challenge reply that is a bare list of the batch's votes is now read as `{ votes }` (`answerOf`);
 // no argv, environment or body moves, so no key moves. A stored answer is always an object the transport accepted and
 // is replayed as it was stored, never through answerOf: an answer stored before reads exactly as it did.
+// D151: not bumped (the owner's call). Every call's environment now keeps the person's CLAUDE_CONFIG_DIR and
+// CLAUDE_CODE_OAUTH_TOKEN and sets safe mode and the CLAUDE.md switch (`claudeEnvironment`). No argv, system prompt or
+// prompt byte moves, so no key moves. The request was measured unchanged on a setup with no managed settings. Where safe
+// mode or the CLAUDE.md switch removes something (a plugin or a CLAUDE.md that managed settings add), or the login moves
+// to another account or organisation, an answer stored before D151 was made with it and replays as it was; a review
+// with a fresh state folder asks again.
+// D160: not bumped. The effort was always in the argv (`--effort high`), which every answer key binds (answer-cache.js);
+// a review that names no effort, or the default, sends the same argv byte for byte, and one that names another sends
+// `--effort` with it, so its key is another and nothing stored at one effort replays for another.
+// D162: not bumped. What the claude CLI's stream attests under the context selector widened to Claude Code 2.1.311's
+// shape (an init naming the id without the selector, attested only by the window its usage reports); no argv,
+// environment, prompt or key byte moves, so no key moves. An answer stored before was accepted under 2.1.278's rule,
+// which still holds, and replays as it was stored.
 export const REVIEW_TRANSPORT_VERSION = 'sonah.review-transport/3';
+/** The reviewer's settings: `{ backend, model, version }`, and (D160) `effort` when `options.effort` names one other
+ *  than the default (reviewEffortOf), so a review at the default is set up byte for byte as before. SONAH_EFFORT is the
+ *  commands' to read (the flag wins over it), never this function's: a settings object made without an effort is at the
+ *  default, whatever the environment holds. */
 export function reviewJudgeConfig(env = process.env, options = {}) {
   const backend = options.backend ?? env.SONAH_REVIEW_BACKEND ?? 'claude-cli';
   if (!['claude-cli', 'anthropic-api', 'codex-cli'].includes(backend)) throw failure('unsupported_backend');
@@ -382,33 +433,63 @@ export function reviewJudgeConfig(env = process.env, options = {}) {
       || (selector !== null && (backend !== 'claude-cli' || !attestableModel(model)))) throw failure('invalid_model');
   if (backend === 'anthropic-api' && (!model.startsWith('claude-') || ['claude-sonnet', 'claude-opus', 'claude-haiku'].includes(model)))
     throw failure('explicit_api_model_required');
-  return { backend, model, version: REVIEW_TRANSPORT_VERSION };
+  const effort = reviewEffortOf(backend, options.effort);
+  return { backend, model, version: REVIEW_TRANSPORT_VERSION, ...(effort === REVIEW_EFFORT ? {} : { effort }) };
 }
 
 /** The claude CLI's environment setting that loads no CLAUDE.md file of any kind (2.1.296, byte search of its bundle:
  *  it gates the project, user and managed files alike, beside `--setting-sources`). */
 const CLI_DISABLE_CLAUDE_MDS_VARIABLE = 'CLAUDE_CODE_DISABLE_CLAUDE_MDS';
+/** D151: the claude CLI's safe mode, by its environment setting: the documented equivalent of `--safe-mode` (its help:
+ *  "Sets CLAUDE_CODE_SAFE_MODE=1"; 2.1.310, one predicate reads either). An environment setting, never the flag: the
+ *  argv is bound in every answer key (answer-cache.js), and a CLI without safe mode ignores the setting where it would
+ *  refuse the flag. */
+export const CLI_SAFE_MODE_VARIABLE = 'CLAUDE_CODE_SAFE_MODE';
+/** D151: the claude CLI's setting for a subscription login given by environment (`claude setup-token`). */
+const CLI_OAUTH_TOKEN_VARIABLE = 'CLAUDE_CODE_OAUTH_TOKEN';
+/** The names of the person's environment every claude process Sonah starts keeps as they are: the home, the user and
+ *  shell, the path, the language and the network's certificate settings. */
+const CLAUDE_KEPT_NAMES = Object.freeze(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'LOGNAME', 'SHELL',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS']);
 
-// Only account/runtime environment reaches the subscription CLI. In particular API credentials,
-// provider overrides, inherited Claude options and repository configuration cannot change billing.
-// D77 (H): `request` decides one setting of Sonah's own, the checker's output-token limit (below); the
-// person's own CLAUDE_CODE_MAX_OUTPUT_TOKENS, like every other inherited Claude option, never reaches a call.
-function localEnvironment(env, request = null) {
-  const clean = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'LOGNAME', 'SHELL',
-    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS'].filter((k) => env[k] != null).map((k) => [k, env[k]]));
-  // Supported in print mode: skip the small/fast-model session-title request while preserving
-  // subscription authentication and the primary review. https://code.claude.com/docs/en/env-vars
-  // M33: the installed 2.1.278 binary reads both names below (byte search): refusal fallback is on
-  // unless CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK is set, and a truthy CLAUDE_CODE_DISABLE_AUTO_MEMORY
-  // turns automatic memory off whatever the setting sources. A fallback reply would otherwise be
-  // another model's answer under the requested model's name.
-  return { ...clean, CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1', CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1',
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-    // D77 (H): the checker's output-token limit, on a challenge call only (CHALLENGE_MAX_OUTPUT_TOKENS).
-    ...(isChallengeRequest(request) ? { [CLI_MAX_OUTPUT_TOKENS_VARIABLE]: String(CHALLENGE_MAX_OUTPUT_TOKENS) } : {}),
-    // The agent transport: an agent request runs in a repository, whose CLAUDE.md files the CLI would otherwise load as
-    // the agent's own instructions. The agent reads them with its tools, as evidence, never as instructions.
-    ...(isAgentRequest(request) ? { [CLI_DISABLE_CLAUDE_MDS_VARIABLE]: '1' } : {}) };
+/**
+ * D151: the environment of every claude process Sonah starts, the one builder for the review's calls (session window,
+ * re-ask, challenge, the code step's agents) and for doctor's (its checks and its probe).
+ *
+ * The account part, on every process: the names above as set; the person's CLAUDE_CONFIG_DIR when set and non-empty
+ * (claude-home.js `claudeConfigDirForCalls`): an absolute value exactly as written, since Claude Code names the login
+ * after that string, and a relative one resolved against Sonah's own working folder, the folder Sonah reads the
+ * recordings from (as written it would name another folder from the call's own working directory); and
+ * CLAUDE_CODE_OAUTH_TOKEN when set and non-empty, the person's subscription login given by environment. Nothing else of
+ * the person's reaches a claude process: no API key or endpoint (billing), no provider override, no proxy setting, no
+ * inherited Claude option and no repository configuration. `accountOnly` (doctor's `--version` and `auth status`
+ * checks, which ask no model) stops there.
+ *
+ * A model call adds Sonah's own settings, whatever the person set them to:
+ * - CLAUDE_CODE_DISABLE_TERMINAL_TITLE: skips the small model's session-title request in print mode, keeping the
+ *   subscription login (https://code.claude.com/docs/en/env-vars).
+ * - CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK and CLAUDE_CODE_DISABLE_AUTO_MEMORY (M33: 2.1.278, byte search): a fallback
+ *   reply would be another model's answer under the requested model's name, and automatic memory is off whatever the
+ *   setting sources.
+ * - D151: CLAUDE_CODE_SAFE_MODE: what the flags leave on stays off (installed plugins and their hooks, plugins that
+ *   managed settings enable among them, the claude.ai connector fetch, skill folders, organisation memory, LSP
+ *   servers); the login, model selection, built-in tools and managed policy work as before.
+ * - CLAUDE_CODE_DISABLE_CLAUDE_MDS: no CLAUDE.md file is loaded as instructions, the managed one included, which
+ *   `--setting-sources ''` does not stop. An agent request runs in a repository and reads its CLAUDE.md files with its
+ *   tools, as evidence, never as instructions (D151: on every call, no longer on agent requests only).
+ * - D77 (H): on a challenge call only (`isChallengeRequest`), the checker's output-token limit
+ *   (CHALLENGE_MAX_OUTPUT_TOKENS). The person's own CLAUDE_CODE_MAX_OUTPUT_TOKENS never reaches a call.
+ */
+export function claudeEnvironment(env, { request = null, accountOnly = false } = {}) {
+  const kept = Object.fromEntries(CLAUDE_KEPT_NAMES.filter((k) => env[k] != null).map((k) => [k, env[k]]));
+  const folder = claudeConfigDirForCalls(env);
+  const token = env[CLI_OAUTH_TOKEN_VARIABLE];
+  const account = { ...kept, ...(folder === null ? {} : { CLAUDE_CONFIG_DIR: folder }),
+    ...(typeof token === 'string' && token !== '' ? { [CLI_OAUTH_TOKEN_VARIABLE]: token } : {}) };
+  if (accountOnly) return account;
+  return { ...account, CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1', CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1',
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', [CLI_SAFE_MODE_VARIABLE]: '1', [CLI_DISABLE_CLAUDE_MDS_VARIABLE]: '1',
+    ...(isChallengeRequest(request) ? { [CLI_MAX_OUTPUT_TOKENS_VARIABLE]: String(CHALLENGE_MAX_OUTPUT_TOKENS) } : {}) };
 }
 
 // Keep the desktop CLI's account location, but no API credentials, provider endpoint overrides,
@@ -479,9 +560,10 @@ export function reviewCodexArgs({ model, images = [] }) {
 /** `images` (Gain I): whether the request carries images. With none the argv is byte for byte as before; with some the
  *  request is one stream-json user message on stdin (`claudeStreamInput`): `--input-format stream-json`, which the
  *  installed CLI accepts only with `--print` and `--output-format stream-json` (its own checks, and `claude --help`).
+ *  `effort` (D160): the review's effort (reviewEffortOf), REVIEW_EFFORT when none is given.
  */
-export function reviewCliArgs({ system, model, images = false }) {
-  return ['--print', '--model', model, '--effort', REVIEW_EFFORT, '--output-format', 'stream-json', '--verbose',
+export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false }) {
+  return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',
     ...(images ? ['--input-format', 'stream-json'] : []),
     '--include-partial-messages', '--tools', '', '--disable-slash-commands',
     '--setting-sources', '', '--mcp-config', '{"mcpServers":{}}', '--strict-mcp-config',
@@ -496,10 +578,22 @@ export function reviewCliArgs({ system, model, images = false }) {
 // exactly as before (reviewCliArgs, REVIEW_TRANSPORT_VERSION).
 
 /** Its version, bound in the answer key of agent requests only (answer-cache.js); REVIEW_TRANSPORT_VERSION stays the
- *  version of every other request. A change to the agent argv, its environment or how its answer is read is a new
- *  version. /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the file's
- *  total lines, from the CLI's typed tool results (`readRanges`, `readsUnranged`), and each Read that read nothing apart
- *  (`readsFailed`), and the answer store keeps it beside the answer; no stored agent answer of /1 replays. */
+ *  version of every other request. A change to the agent argv, to an environment setting that changes what the agent is
+ *  sent or may do, or to how its answer is read is a new version (D151 amends the rule, which named any change to the
+ *  environment). /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the
+ *  file's total lines, from the CLI's typed tool results (`readRanges`, `readsUnranged`), and each Read that read
+ *  nothing apart (`readsFailed`), and the answer store keeps it beside the answer; no stored agent answer of /1
+ *  replays. D151: not bumped (the owner's call). Safe mode on every call, and the person's CLAUDE_CONFIG_DIR and
+ *  CLAUDE_CODE_OAUTH_TOKEN kept (`claudeEnvironment`), leave the argv, the system prompt and the prompt as they were,
+ *  so every stored code-step answer still replays. Measured on Claude Code 2.1.310 on a setup with no managed settings,
+ *  the agent's request was byte for byte the same with safe mode on: its prompt cache served 3,636 of its 3,638 input
+ *  tokens. The CLAUDE.md switch was on every agent call already. The scope of that measure: where safe mode removes
+ *  something (a plugin that managed settings enable, with its hooks), or the login moves to another account or
+ *  organisation, an answer stored before D151 was made with it and replays as it was; a review with a fresh state
+ *  folder asks again. D162: not bumped. The agent's answer is judged by the same widened attestation as every other
+ *  claude-cli call (Claude Code 2.1.311's shape, attested by the window its usage reports); the agent argv, the
+ *  environment, the system prompt and the prompt are byte for byte as before, so every stored code-step answer, accepted
+ *  under 2.1.278's rule, which still holds, replays. */
 export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/2';
 /** The tools an agent request is given (`--tools`, `--allowedTools`): it can read and search, never write or run. */
 export const AGENT_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
@@ -562,10 +656,10 @@ export function agentRequestOf(request) {
  * a prompt (`dontAsk`, `--permission-prompts none`), confined to the working directory and each `--add-dir` (`--restricted`:
  * a Read outside them, through a link included, is refused), at most `agent.maxTurns` turns, and the answer through the
  * CLI's structured output tool (`--json-schema`). No `--include-partial-messages`: nothing reads a partial message. The
- * system prompt comes last, as in reviewCliArgs.
+ * system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs.
  */
-export function reviewAgentCliArgs({ system, model, agent, schema }) {
-  return ['--print', '--model', model, '--effort', REVIEW_EFFORT, '--output-format', 'stream-json', '--verbose',
+export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema }) {
+  return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',
     '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,
     '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--restricted',
     ...(agent.addDirs ?? []).flatMap((dir) => ['--add-dir', dir]), '--max-turns', String(agent.maxTurns),
@@ -625,11 +719,14 @@ export function reviewApiBody({ system, prompt, model, images = [] }) {
  * `null` for a backend this module has no transport for.
  * The agent transport: with `agent` and `schema` (an agent request's, `agentRequestOf`), the agent argv the call is
  * spawned with (`reviewAgentCliArgs`), on claude-cli only; null on any other backend, which has no agent transport.
+ * `effort` (D160): the review's, in the claude-cli argv; REVIEW_EFFORT when none is given. No other backend takes one
+ * (reviewJudgeConfig refuses it there), so theirs never carries it.
  */
-export function reviewTransportArguments({ backend, model, system, images = [], agent = undefined, schema = undefined }) {
+export function reviewTransportArguments({ backend, model, effort = REVIEW_EFFORT, system, images = [], agent = undefined,
+  schema = undefined }) {
   if (agent !== undefined)
-    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, agent, schema }) } : null;
-  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, images: images.length > 0 }) };
+    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, effort, agent, schema }) } : null;
+  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, effort, images: images.length > 0 }) };
   if (backend === 'codex-cli') return { argv: reviewCodexArgs({ model, images }), instructions: system };
   if (backend === 'anthropic-api') {
     const { messages: omitted, ...body } = reviewApiBody({ system, prompt: '', model });
@@ -948,13 +1045,36 @@ export function highestUtilization(value) {
 /** M33 J. A duration the result event states, in milliseconds: a finite non-negative number, else null. */
 const durationOf = (value) => (Number.isFinite(value) && value >= 0 ? value : null);
 
-/** D70 (a). The context window, in tokens, the CLI states it ran the call under: the result's `modelUsage` entry for
- *  the requested model value (the CLI keys it by the value as configured, its context selector included) and that
- *  entry's `contextWindow`, a positive integer — else null. Count-only instrumentation, never part of an answer. */
+/** D70 (a), D162. The result's `modelUsage` entries for the requested model value and for the id that serves it (one key
+ *  when they are the same), each present one read to its `contextWindow` when that is a positive integer, else null.
+ *  Claude Code 2.1.278 keyed the entry by the value as configured, its context selector included; 2.1.311 keys it by
+ *  the served id (measured 2026-10-28). Any other key is never read. */
+function usageWindows(modelUsage, requested) {
+  if (!isRecord(modelUsage)) return [];
+  return acceptedInitModels(requested).filter((key) => Object.hasOwn(modelUsage, key)).map((key) => {
+    const window = isRecord(modelUsage[key]) ? modelUsage[key].contextWindow : null;
+    return Number.isSafeInteger(window) && window > 0 ? window : null;
+  });
+}
+
+/** D70 (a), D162. The context window, in tokens, the CLI states it ran the call under: the window of the `modelUsage`
+ *  entry for the requested value, else of the one for the served id (`usageWindows`); null when neither is there, or
+ *  when an entry there gives no window or the two disagree. Instrumentation, never part of an answer: the review's
+ *  admission compares it with the window the selector asks for. */
 function reportedContextWindow(modelUsage, requested) {
-  if (!isRecord(modelUsage) || !Object.hasOwn(modelUsage, requested) || !isRecord(modelUsage[requested])) return null;
-  const window = modelUsage[requested].contextWindow;
-  return Number.isSafeInteger(window) && window > 0 ? window : null;
+  const windows = usageWindows(modelUsage, requested);
+  return windows.length > 0 && windows.every((window) => window !== null && window === windows[0]) ? windows[0] : null;
+}
+
+/** D162. Whether the result's typed `modelUsage` attests the window a requested value's context selector asks for: the
+ *  window the CLI states it ran under (`reportedContextWindow`: one window, from the entry for the requested value or
+ *  the served id's, or from both when they agree) is that window. A missing, other or conflicting window is not
+ *  attested; a value without a selector asks for none. It is the reported window's own rule, so an answer of this
+ *  shape is unattested exactly when the window it reports is not the selector's, and the scripted runner's
+ *  `context_window` breaker, which reads that window, stops the run at it. */
+function selectorWindowAttested(modelUsage, requested) {
+  const window = selectedContextWindow(requested);
+  return window !== null && reportedContextWindow(modelUsage, requested) === window;
 }
 
 /** M44. extractJson's fence (above), character for character, and the closing fence's length. */
@@ -1086,13 +1206,15 @@ const namesModel = (model) => typeof model === 'string' && model !== SYNTHETIC_M
  * top-level assistant naming another model; for an alias, inits naming different models, or a
  * top-level assistant naming another model than the init does. A missing, repeated or non-string
  * init, or no top-level assistant at all, fails the call but proves nothing either way.
- * D70 (a): the init names the requested value as configured, the CLI's context selector included; a top-level
- * assistant names the model that served it, the id without the selector (`servedModelId`).
+ * D70 (a), D162: under a full id with the CLI's context selector, the init names the requested value as configured,
+ * selector included (Claude Code 2.1.278), or the id without it (2.1.311; `acceptedInitModels`), and any other init
+ * value is identity evidence; a top-level assistant names the model that served it, the id without the selector
+ * (`servedModelId`), on both. Under a plain id the init names exactly that id, as before.
  */
 function identityFailed(stream, requested, attestable) {
   if (stream.fallbacks > 0 || stream.nestedModels.length > 0) return true;
   const initNamed = [...new Set(stream.initModels.filter(namesModel))];
-  if (attestable) return initNamed.some((model) => model !== requested)
+  if (attestable) return initNamed.some((model) => !acceptedInitModels(requested).includes(model))
     || stream.topLevelModels.some((model) => namesModel(model) && model !== servedModelId(requested));
   if (initNamed.length > 1) return true;
   return initNamed.length === 1 && stream.topLevelModels.some((model) => namesModel(model) && model !== initNamed[0]);
@@ -1105,8 +1227,12 @@ function identityFailed(stream, requested, attestable) {
  * `<synthetic>`, API-error marker or `error` field on any assistant; no model-fallback event;
  * exactly one result with `subtype: "success"`, `is_error: false` and no API error status; exit 0
  * and no stop. `attested`: accepted under a full requested id. An alias is never attested — an
- * accepted alias answer is `unattested`. `identityFailed`: identityFailed() above. D70 (a): under a full id with
- * the CLI's context selector, the init names the requested value and every top-level assistant the id without it.
+ * accepted alias answer is `unattested`. `identityFailed`: identityFailed() above. D70 (a), D162: under a full id
+ * with the CLI's context selector, the one init names the requested value (Claude Code 2.1.278) or the id without
+ * the selector (2.1.311), and every top-level assistant the id without it. An init that names the requested value is
+ * attested as before (the review's admission checks the window it reports); one that names the id without the
+ * selector says nothing of the window, so the call is attested only when the result's usage gives the selector's
+ * window (`selectorWindowAttested`) — accepted and `unattested` otherwise, never an identity failure.
  */
 function judgeClaudeCall(stream, requested, { exitCode, stop }) {
   const attestable = attestableModel(requested);
@@ -1115,14 +1241,16 @@ function judgeClaudeCall(stream, requested, { exitCode, stop }) {
     && (result.api_error_status === undefined || result.api_error_status === null);
   const noApiError = stream.syntheticMessages === 0 && stream.apiErrorMarkers === 0 && stream.errorValues.length === 0;
   const clean = exitCode === 0 && !stop && cleanResult && noApiError;
-  const configured = attestable ? requested : stream.initModels[0];
-  const served = attestable ? servedModelId(requested) : stream.initModels[0];
-  const proved = stream.inits === 1 && typeof configured === 'string' && stream.initModels[0] === configured
+  const init = stream.initModels[0];
+  const initProved = attestable ? acceptedInitModels(requested).includes(init) : typeof init === 'string';
+  const served = attestable ? servedModelId(requested) : init;
+  const proved = stream.inits === 1 && initProved
     && stream.nestedModels.length === 0 && stream.topLevelModels.length > 0
     && stream.topLevelModels.every((model) => model === served);
   const failedIdentity = identityFailed(stream, requested, attestable);
   const accepted = clean && proved && !failedIdentity;
-  return { accepted, attested: accepted && attestable, identityFailed: failedIdentity };
+  const windowAttested = init === requested || selectorWindowAttested(result?.modelUsage, requested);
+  return { accepted, attested: accepted && attestable && windowAttested, identityFailed: failedIdentity };
 }
 
 /** M33 refreeze. An `api_error_status` value to its class: API_ERROR_STATUS_CLASS, else any other
@@ -1268,10 +1396,12 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
       };
       // Gain I: a request with images is one stream-json user message (`claudeStreamInput`); any other, its prompt.
       const images = requestImagesOf(request);
-      const argv = agent ? reviewAgentCliArgs({ system: request.system, model: config.model, agent, schema: agent.schema })
-        : reviewCliArgs({ system: request.system, model: config.model, images: images.length > 0 });
+      // D160: at the review's effort (`config.effort`, set only when it is not the default).
+      const argv = agent ? reviewAgentCliArgs({ system: request.system, model: config.model, effort: config.effort, agent,
+        schema: agent.schema })
+        : reviewCliArgs({ system: request.system, model: config.model, effort: config.effort, images: images.length > 0 });
       try { child = spawnProcess('claude', argv, {
-        cwd: agent ? agent.root : directory, env: localEnvironment(env, request), stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: agent ? agent.root : directory, env: claudeEnvironment(env, { request }), stdio: ['pipe', 'pipe', 'pipe'],
       }); } catch { finish({ ok: false, code: 'model_unavailable', transportClass: 'spawn_failed' }); return; }
       timer = setTimeout(() => halt('model_timeout'), callTimeoutMs);
       unregister = cancellation.register(() => halt(REVIEW_CANCELLED));
@@ -1315,7 +1445,7 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           // M33 J: count-only instrumentation — the result's own durations and the last rate-limit event.
           durationMs: durationOf(result?.duration_ms), durationApiMs: durationOf(result?.duration_api_ms),
           rateLimit: stream.rateLimit,
-          // D70 (a): the context window the CLI states it ran this call under, a count.
+          // D70 (a), D162: the context window the CLI states it ran this call under, a count.
           contextWindow: reportedContextWindow(result?.modelUsage, config.model),
           // D70 review (S0): the CLI version its one init states, a SemVer normal version, or null.
           cliVersion: stream.inits === 1 ? cliVersionOf(stream.initVersions[0]) : null,

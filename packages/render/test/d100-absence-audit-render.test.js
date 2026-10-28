@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { reportModel } from '../report-model.js';
+import { reportModel, reportItems } from '../report-model.js';
 import * as words from '../report-words.js';
 import { RESULT_OUTCOME_CLASSES, resultOutcome } from '../../evidence/src/ledger.js';
 import { sliceLineage } from '../../slicer/index.js';
@@ -73,7 +73,7 @@ test('D100: a failure whose result Sonah cannot find, or now reads otherwise, st
   const model = reportModel(s, { windowResults: window(s), failures: [failure('E9-r', 'E9', 'no-terminal-status',
     'none'), failure('E2-r', 'E2', 'no-terminal-status', 'background'),
   failure('E3-r', 'E3', 'no-terminal-status', 'background')] }, {});
-  const items = Object.values(model.tiers).flat().filter((item) => item.kind === 'failure_passed_over');
+  const items = reportItems(model).filter((item) => item.kind === 'failure_passed_over');
   assert.deepEqual(items.map((item) => textOf(item.what.parts)).sort(), [
     'A Bash call has no result that Sonah found. The agent did not act on it or tell you.',
     'A bash call has an outcome that Sonah could not read as a failure. The agent did not act on it or tell you.',

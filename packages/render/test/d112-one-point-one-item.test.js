@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as reportModelModule from '../report-model.js';
-import { reportModel, reportPlacement, itemVisibleText } from '../report-model.js';
+import { reportModel, reportPlacement, itemVisibleText, reportItems } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_TIER_WHY, REPORT_ITEM_WORDS, REPORT_KIND_WORDS, REPORT_TIER_WORDS } from '../report-words.js';
@@ -19,7 +19,7 @@ import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
 const TIERS = ['must_act', 'must_know', 'good_to_know'];
 const RANK = { good_to_know: 0, must_know: 1, must_act: 2 };
-const itemsOf = (model) => TIERS.flatMap((tier) => model.tiers[tier]);
+const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 const holds = (entry, source, index) => entry.rows.some((r) => r.source === source && r.index === index);
 const receipt = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
@@ -106,7 +106,9 @@ test('D112 (1): a question the code review wrote joins the item of the row it co
   const [question] = item.members;
   assert.deepEqual([question.kind, question.tie, question.rows], ['code_question', 'concerns',
     [{ source: 'codePass.questions', index: 0 }]]);
+  // D161 (its review): the decision leads, but its member is a question in Must know: the item stays in the first part.
   assert.deepEqual(reportPlacement(model)['codePass.questions:0'], { memberOf: item.n });
+  assert.ok(model.tiers.must_know.includes(item));
   // The higher of the two tiers: the decision alone is Good to know, the question Must know.
   assert.deepEqual([item.own.final, question.tier.final, item.tier.final, item.tier.from],
     ['good_to_know', 'must_know', 'must_know', 'member']);
@@ -239,7 +241,7 @@ test('D112 amended (2026-10-18): two decisions whose stated quotes nest on one e
   const placement = reportPlacement(model);
   for (const index of [0, 1, 2, 3]) {
     const own = itemsOf(model).find((item) => holds(item, 'decisions', index));
-    assert.deepEqual(placement[`decisions:${index}`], { item: own.n });
+    assert.deepEqual(placement[`decisions:${index}`], { item: own.n, part: 'decisions' });
   }
   // The decision not to act is listed under what the agent said it did not do, by its own item.
   const notActing = itemsOf(model).find((item) => holds(item, 'decisions', 0));
@@ -265,7 +267,9 @@ test('D112 amended (2026-10-18): a decision cut from the same sentence as a deci
   // Nothing lifts the "you asked" decision: it stays in Good to know, by its own default.
   assert.deepEqual([of('decision_chose').own.final, of('decision_chose').tier.final, of('decision_chose').tier.from],
     ['good_to_know', 'good_to_know', 'lead']);
-  assert.ok(model.tiers.must_know.includes(of('decision_not_acting')));
+  // D161: both in the report's second part, each with its own tag.
+  assert.equal(of('decision_not_acting').tier.final, 'must_know');
+  assert.equal(model.decisions.total, 2);
 });
 
 // ---- (3) the order inside a section --------------------------------------------------------------------------------
@@ -273,15 +277,16 @@ test('D112 amended (2026-10-18): a decision cut from the same sentence as a deci
 test('D112 (3): inside each section, items come by final level (high, medium, low, then none), then by kind', () => {
   const model = reportModel(reportSession(), triagedReport(reportSession()), repoFacts());
   const order = (tier) => model.tiers[tier].map((item) => [item.kind, item.tier.proposed]);
-  // Must act: the two items the code review rated high, then the unrated ones; D138: among those, the two backed by two
-  // recorded quotes that disagree first, then by kind.
-  assert.deepEqual(order('must_act').slice(0, 5), [['code_bug', 'must_act'], ['decision_unasked', 'must_act'],
-    ['claim_contradicted', null], ['edit_against_instruction', null], ['ask_not_done', null]]);
+  // Must act: the item the code review rated high, then the unrated ones; D138: among those, the two backed by two
+  // recorded quotes that disagree first, then by kind. D161: the decision rated high is in the report's second part.
+  assert.deepEqual(order('must_act').slice(0, 4), [['code_bug', 'must_act'], ['claim_contradicted', null],
+    ['edit_against_instruction', null], ['ask_not_done', null]]);
   // Must know: rated high (held at Must know by a ceiling), then medium, then low (lifted by a floor), then none.
   const levels = model.tiers.must_know.map((item) => levelRank(item.tier));
-  // D122 (b): the fixture's refused read, a failure passed over, is unrated Must know (no refused-read default).
-  assert.deepEqual(levels, [0, 0, 0, 0, 1, 1, 2, 3, 3, 3, 3, 3]);
-  assert.deepEqual(order('must_know').slice(6, 7), [['code_bug', 'good_to_know']], 'the floored bug follows the rated');
+  // D122 (b): the fixture's refused read, a failure passed over, is unrated Must know (no refused-read default). D161: the
+  // decisions are in the report's second part.
+  assert.deepEqual(levels, [0, 0, 1, 1, 2, 3, 3, 3]);
+  assert.deepEqual(order('must_know').slice(4, 5), [['code_bug', 'good_to_know']], 'the floored bug follows the rated');
   // Good to know: the low-rated weak test before the unrated items.
   assert.deepEqual(order('good_to_know')[0], ['code_weak_test', 'good_to_know']);
 });

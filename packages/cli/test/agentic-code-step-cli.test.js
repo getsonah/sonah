@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,15 +28,18 @@ const TITLE = 'SYNTHETIC parse("") returns [""] instead of []';
  * one bug on parse.js line 2 and one statement that holds on line 1; a finding's checking agent upholds the finding it
  * is shown, quoting its trace (its one premise a line of the repository, D110); the batch checking agent upholds every statement. Each call is logged by kind.
  */
-const FAKE = (log) => `#!${process.execPath}
+const FAKE = (log, { initServed = false, window = 1000000 } = {}) => `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path');
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === '--version') { console.log('2.1.296 (Claude Code)'); process.exit(0); }
 const valueOf = (flag) => args[args.indexOf(flag) + 1];
 const model = valueOf('--model');
 const served = String(model).replace('[1m]', '');
+// D162: Claude Code 2.1.278's shape names the model value as configured in the init and keys the usage by it; 2.1.311's
+// names the served id in both (\`initServed\`).
+const named = ${initServed} ? served : model, version = ${initServed} ? '2.1.311' : '2.1.296';
 const emit = (event) => process.stdout.write(JSON.stringify(event) + '\\n');
-const usage = { [model]: { contextWindow: 1000000, maxOutputTokens: 128000, inputTokens: 2, outputTokens: 4 } };
+const usage = { [named]: { contextWindow: ${window}, maxOutputTokens: 128000, inputTokens: 2, outputTokens: 4 } };
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
@@ -46,7 +49,7 @@ process.stdin.on('end', () => {
     fs.appendFileSync(${JSON.stringify(log)}, 'session\\n');
     const review = JSON.stringify({ decisions: [], pivots: [], claims: [], requirements: [], failures: [], notClaims: [],
       forbiddenEdits: [] });
-    emit({ type: 'system', subtype: 'init', model, claude_code_version: '2.1.296' });
+    emit({ type: 'system', subtype: 'init', model: named, claude_code_version: version });
     emit({ type: 'assistant', parent_tool_use_id: null, message: { model: served, role: 'assistant',
       content: [{ type: 'text', text: review }] } });
     emit({ type: 'result', subtype: 'success', is_error: false, result: review, modelUsage: usage });
@@ -71,9 +74,10 @@ process.stdin.on('end', () => {
     // D110 (code-verify/3): its one premise, a line of the repository that the trace quotes.
     const receipts = shown.trace.filter((t) => t.side !== 'session').map(({ path, side, startLine, endLine, quote }) => ({
       path, side, startLine, endLine, quote }));
+    // D152 (code-verify/5): what the behaviour breaks, the traced line, so that the finding is tied and published.
     answer = { verdict: 'holds', reason: null, claims: shown.claims.map(({ claim }) => ({ claim, verdict: 'holds' })),
       premises: [{ premise: 'SYNTHETIC: the traced line shows it.', source: 'repository', receipts }],
-      receipts, explanation: 'SYNTHETIC: traced and found to hold.' };
+      breaks: receipts.slice(0, 1), receipts, explanation: 'SYNTHETIC: traced and found to hold.' };
   } else if (required.includes('entries')) {
     // F3b (D111): an accounting agent: every item it was shown holds, quoting the changed line.
     kind = 'account';
@@ -89,8 +93,8 @@ process.stdin.on('end', () => {
   }
   fs.appendFileSync(${JSON.stringify(log)}, kind + '\\n');
   const read = 'toolu_synthetic_read', out = 'toolu_synthetic_out';
-  emit({ type: 'system', subtype: 'init', cwd: process.cwd(), model, permissionMode: 'dontAsk',
-    tools: ['Glob', 'Grep', 'Read', 'StructuredOutput'], mcp_servers: [], claude_code_version: '2.1.296' });
+  emit({ type: 'system', subtype: 'init', cwd: process.cwd(), model: named, permissionMode: 'dontAsk',
+    tools: ['Glob', 'Grep', 'Read', 'StructuredOutput'], mcp_servers: [], claude_code_version: version });
   emit({ type: 'assistant', parent_tool_use_id: null, message: { model: served, role: 'assistant',
     content: [{ type: 'tool_use', id: read, name: 'Read', input: { file_path: path.join(process.cwd(), 'src', 'parse.js') } }] } });
   emit({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ tool_use_id: read,
@@ -107,7 +111,7 @@ process.stdin.on('end', () => {
 
 /** A git repository whose base commit (dated before the session) holds the old parse.js, with the session's edit in the
  *  working tree; and the recording of that session, its rows dated when it began. */
-async function project(t) {
+async function project(t, fake = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'sonah agentic cli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const repo = join(dir, 'repo');
@@ -130,7 +134,7 @@ async function project(t) {
   await writeFile(recording, `${toJsonl(rows)}\n`);
   const home = join(dir, 'home'), bin = join(dir, 'bin'), log = join(dir, 'calls.log');
   await mkdir(home); await mkdir(bin);
-  await writeFile(join(bin, 'claude'), FAKE(log), { mode: 0o700 });
+  await writeFile(join(bin, 'claude'), FAKE(log, fake), { mode: 0o700 });
   const runEnv = { HOME: home, SONAH_HOME: join(dir, 'sonah-home'), CODEX_HOME: join(dir, 'codex'),
     SONAH_CLAUDE_PROJECTS: join(dir, 'claude-projects'), PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
     LANG: 'C.UTF-8', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
@@ -181,4 +185,34 @@ test('agentic code step end to end: the review agent and its checking agents thr
   const third = await review(p, ['--code-pass', '--state-dir', state, '--format', 'html', '--output', page(3), '--no-open']);
   assert.equal(third.code, 0, `${third.out}\n${third.err}`);
   assert.deepEqual(agents((await calls(p)).slice(asked.length)), ['review', 'account', 'batch', 'verify']);
+});
+
+test('D162: Claude Code 2.1.311\'s stream — no selector in the init, the usage keyed by the served id — is admitted for the session review and the code step\'s agents under the 1M window; a rerun asks nothing; under another window the review stops at its first call', { timeout: 120_000 }, async (t) => {
+  const p = await project(t, { initServed: true });
+  const state = join(p.dir, 'state');
+  const page = (n) => join(p.dir, `review-${n}.html`);
+  const first = await review(p, ['--code-pass', '--state-dir', state, '--format', 'html', '--output', page(1), '--no-open']);
+  assert.equal(first.code, 0, `${first.out}\n${first.err}`);
+  const asked = await calls(p);
+  const agents = (kinds) => { const [head, ...rest] = kinds; return [head, ...rest.sort()]; };
+  assert.ok(asked.includes('session'));
+  assert.deepEqual(agents(asked.filter((kind) => kind !== 'session')), ['review', 'account', 'batch', 'verify']);
+  const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
+  assert.deepEqual(report.codePass.findings.map((f) => [f.title, f.check.verdict]), [[TITLE, 'holds']]);
+  assert.equal(report.codePass.coverage, 'complete');
+  // The answers stored under this shape replay as any stored answer does: nothing is asked.
+  const second = await review(p, ['--code-pass', '--state-dir', state, '--format', 'html', '--output', page(2), '--no-open']);
+  assert.equal(second.code, 0, `${second.out}\n${second.err}`);
+  assert.deepEqual(await calls(p), asked, 'no call');
+
+  // The same shape under the CLI's 200,000-token window: the first answer is not attested, so the review admits nothing
+  // and stops there, and no answer is stored.
+  const q = await project(t, { initServed: true, window: 200000 });
+  const refusedState = join(q.dir, 'state');
+  const refused = await review(q, ['--code-pass', '--state-dir', refusedState, '--format', 'html', '--output',
+    join(q.dir, 'review.html'), '--no-open']);
+  assert.equal(refused.code, 3, `${refused.out}\n${refused.err}`);
+  assert.match(refused.err, /model_unavailable/);
+  assert.deepEqual(await calls(q), ['session'], 'one call, then nothing');
+  assert.deepEqual(await readdir(join(refusedState, 'answers')).catch(() => []), [], 'no answer is stored');
 });

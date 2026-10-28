@@ -18,6 +18,7 @@ import { createInterface } from 'node:readline';
 import { recordingIdentity } from './recording-identity.js';
 import { recordingStream } from './recording-stream.js';
 import { duplicateJsonKeys } from './strict-json.js';
+import { requestCopyIndex } from './request-copies.js';
 import { isWhollyElements, startsWithElement, recorderCommand, recorderNotificationCallId, claudeNotificationCarrier,
   isLocalCommandCaveat, LOCAL_COMMAND_OUTPUT_SUBTYPE } from './harness-context.js';
 import { LABELS, LABEL_BASIS, LABEL_GAPS, MARKERS, LINEAGE_ROLES, SONAH_SKILL_NAMES, labelOf, applyLabel, humanPart,
@@ -87,6 +88,24 @@ export const CLAUDE_ROW_CLASSES = Object.freeze({ harness: 'harness', instructio
 const shape = (cls, required, optional = []) => Object.freeze({ cls, required: Object.freeze(['type', ...required]),
   optional: Object.freeze(optional) });
 const H = CLAUDE_ROW_CLASSES.harness, I = CLAUDE_ROW_CLASSES.instructions, O = CLAUDE_ROW_CLASSES.observations;
+/** D150: the reader's own count of a queued task notification it reads by its status (`readClaudeSession`): no class a
+ *  classifier returns, no loss, and another agent's still unclassified. */
+const NOTICE = 'notice';
+/**
+ * D150: the kinds of row the reader leaves unread (a declared loss on a channel, or unclassified), each row
+ * counted once, by its recorder structure: a request blob no structural twin settles as a copy, a hook's row, a file
+ * changed outside the agent's edits, any other. Closed, so the page can say what it could not read by kind.
+ */
+export const UNREAD_ROW_KINDS = Object.freeze({ requestCopy: 'request_copy', hookOutput: 'hook_output',
+  editedFile: 'edited_file', other: 'other' });
+const HOOK_ATTACHMENTS = Object.freeze(['hook_additional_context', 'hook_success', 'hook_non_blocking_error']);
+const unreadKindOf = (d) => (d?.type === 'api-request-blob' ? UNREAD_ROW_KINDS.requestCopy
+  : d?.type === 'attachment' && HOOK_ATTACHMENTS.includes(d.attachment?.type) ? UNREAD_ROW_KINDS.hookOutput
+    : d?.type === 'attachment' && d.attachment?.type === 'edited_text_file' ? UNREAD_ROW_KINDS.editedFile
+      : UNREAD_ROW_KINDS.other);
+/** D150: canonical JSON (object keys sorted at every depth), for a structured output's twin. */
+const canonicalJson = (value) => JSON.stringify(value, (key, item) => (item !== null && typeof item === 'object'
+  && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map((k) => [k, item[k]])) : item));
 const CLAUDE_ATTACHMENTS = Object.freeze({
   total_tokens_reminder: shape(H, ['text']),
   silent_turn_reminder: shape(H, ['text']),
@@ -138,7 +157,8 @@ const CLAUDE_ATTACHMENTS = Object.freeze({
   pdf_reference: shape(I, ['displayPath', 'fileSize', 'filename', 'pageCount']),
   compact_file_reference: shape(I, ['displayPath', 'filename']),
   // Its class is decided by its closed `commandMode` below.
-  queued_command: shape(null, ['commandMode', 'prompt'], ['origin', 'source_uuid', 'timestamp', 'humanTurn',
+  // D150: `commandMode` may be absent only on a command the recorder flagged `isMeta: true` (below).
+  queued_command: shape(null, ['prompt'], ['commandMode', 'origin', 'source_uuid', 'timestamp', 'humanTurn',
     'isMeta', 'usage', 'delivery_id', 'reminderId', 'runId']),
 });
 const QUEUED_COMMAND_CLASSES = Object.freeze({ prompt: I, 'task-notification': O });
@@ -167,10 +187,15 @@ const renderedFacts = (row) => (row.renderedRole === undefined
   || CLAUDE_RENDERED_ROLES.includes(row.renderedRole) && row.rendered !== undefined)
   && (row.renderedBesideToolResult === undefined || typeof row.renderedBesideToolResult === 'boolean');
 /** The row's own agentId, when it may carry one: only a sidechain row, only a valid value. The caller
- *  admits it only if it equals the recording's single child identity at the end of the read. */
+ *  admits it only if it equals the recording's single child identity at the end of the read.
+ *  D150: a row that records no `isSidechain` at all may carry one too. The recorder writes its request rows
+ *  (`api-request`, `api-request-shape`, `api-request-blob`) without that key, and a helper's own carry its agentId; the
+ *  key's absence is the recorder's structure, a recorded `false` beside an agentId is not (it stays refused). Such a row
+ *  is admitted as the recording's own only by the same end-of-read check: its agentId is the recording's single child
+ *  identity. */
 function rowAgent(row) {
   if (!Object.hasOwn(row, 'agentId')) return { ok: true, agentId: null };
-  return row.isSidechain === true && validAgentId(row.agentId)
+  return (row.isSidechain === true || !Object.hasOwn(row, 'isSidechain')) && validAgentId(row.agentId)
     ? { ok: true, agentId: row.agentId } : { ok: false, agentId: null };
 }
 /**
@@ -231,11 +256,60 @@ export function canHoldSessionContent(value) {
  *  its value can (`canHoldSessionContent`). */
 const unlistedHoldContent = (pairs) => pairs.some(([key, value]) => CLAUDE_CONTENT_CARRIERS.includes(key)
   || !isToken(key) || canHoldSessionContent(value));
+/**
+ * D150: the recorder's record of a model request's shape (Claude Code 2.1.303 and later), `api-request-shape`: the
+ * request's system prompt and its tool definitions (`shape`, exactly `system` and `tools`), stored once under their hash
+ * (`shapeHash`). What the harness gave the model, as a `prompt_snapshot` attachment's `systemPrompt` and `tools` are:
+ * harness context, listed by its keys. Its words are never read. Another key on the row or in `shape` (a request's
+ * messages above all) is no listed form: the row is read by its structure, as before (`claudeOtherRow`).
+ */
+const REQUEST_SHAPE_ROW = Object.freeze({ type: 'api-request-shape',
+  required: Object.freeze(['sessionId', 'shape', 'shapeHash', 'timestamp', 'type', 'version']),
+  optional: Object.freeze(['agentId']), shape: Object.freeze(['system', 'tools']) });
+const requestShapeRow = (row) => row.type === REQUEST_SHAPE_ROW.type
+  && keySet(row, REQUEST_SHAPE_ROW.required, REQUEST_SHAPE_ROW.optional) && exactKeys(row.shape, REQUEST_SHAPE_ROW.shape)
+  && ['sessionId', 'shapeHash', 'timestamp', 'version'].every((key) => typeof row[key] === 'string');
+/**
+ * D150: the recorder's copy of one message of a model request (Claude Code 2.1.303 and later), `api-request-blob`, of its
+ * listed form: exactly `hash`, `message`, `sessionId`, `type` (and an `agentId` the row may carry, `rowAgent`), a
+ * `message` of exactly `role` (a string) and `content` (a string or a list), and an `output_config` that can hold no
+ * session content. Its class stays unclassified (its message can hold content: `claudeOtherRow`); its label decides
+ * (`claudeLabeller`): harness when every block of its message has its structural twin in the same recording
+ * (request-copies.js, LABEL_BASIS `request_copy`), else no label and the gap `unknown_row`. The reader counts it at the
+ * end of the read by that label (`readClaudeSession`).
+ */
+export const REQUEST_BLOB_TYPE = 'api-request-blob';
+export function requestBlobRow(row) {
+  return plainObject(row) && row.type === REQUEST_BLOB_TYPE && keySet(row, ['hash', 'message', 'sessionId', 'type'], ['agentId'])
+    && typeof row.hash === 'string' && typeof row.sessionId === 'string'
+    && keySet(row.message, ['content', 'role'], ['output_config']) && typeof row.message.role === 'string'
+    && (typeof row.message.content === 'string' || Array.isArray(row.message.content))
+    && !canHoldSessionContent(row.message.output_config) && rowAgent(row).ok;
+}
+/** The message channels a row outside the conversation carries (`message.role` and its content blocks): `instructions`
+ *  and `commentary` for a user's or an assistant's prose, `actions` for a tool call, `observations` for a result. */
+function messageChannels(d) {
+  const blocks = d.message?.content;
+  const role = d.message?.role;
+  const has = (types) => Array.isArray(blocks) && blocks.some((block) => types.includes(block?.type));
+  const prose = typeof blocks === 'string' && !!blocks.trim() || has(['text', 'image', 'document', 'audio']);
+  const channels = [];
+  if (role === 'user' && prose) channels.push('instructions');
+  if (role === 'assistant' && prose) channels.push('commentary');
+  if (has(['tool_use'])) channels.push('actions');
+  if (has(['tool_result'])) channels.push('observations');
+  return channels;
+}
 /** D128: a row of a type this reader does not list (not a conversation row, an attachment, a queue operation or a listed
  *  metadata row, which the caller tries first), read by its structure: harness context when nothing beside its envelope
- *  can hold session content, else null (unclassified). Its kind is its row type. */
+ *  can hold session content, else null (unclassified). Its kind is its row type. D150: an `api-request-shape` row of its
+ *  listed form (`requestShapeRow`) is harness context, not read by its structure. */
 function claudeOtherRow(row) {
   if (typeof row.type !== 'string' || KEPT_TYPES.has(row.type) || row.type === 'attachment') return null;
+  if (requestShapeRow(row)) {
+    const agent = rowAgent(row);
+    return agent.ok ? { cls: H, agentId: agent.agentId } : null;
+  }
   const unlisted = Object.entries(row).filter(([key, value]) => !(CLAUDE_ROW_ENVELOPE.includes(key)
     && (value === null || typeof value !== 'object')));
   if (unlistedHoldContent(unlisted)) return null;
@@ -277,9 +351,12 @@ function listedAttachment(row) {
   if (!renderedBlocks(row.rendered) || (row.slug !== undefined && typeof row.slug !== 'string')
     || !renderedFacts(row)) return null;
   // A queued command's `renderedInHumanTurn` is the same block list as `rendered` (as recorded).
+  // D150: a queued command with no `commandMode` is listed only when the recorder flagged it `isMeta: true` (a reminder
+  // it wrote itself, as Release fix 3b reads every `isMeta` queued command): harness context. Any other stays unclassified.
+  const meta = queued && item.commandMode === undefined && item.isMeta === true;
   if (queued && (row.renderedInHumanTurn !== undefined && !renderedBlocks(row.renderedInHumanTurn)
-    || typeof item.prompt !== 'string' || typeof item.commandMode !== 'string'
-    || !Object.hasOwn(QUEUED_COMMAND_CLASSES, item.commandMode))) return null;
+    || typeof item.prompt !== 'string' || !meta && (typeof item.commandMode !== 'string'
+    || !Object.hasOwn(QUEUED_COMMAND_CLASSES, item.commandMode)))) return null;
   // D72 (R1R review): `reminderId` and `runId` are listed only in the co-occurrence the recorder writes:
   // `reminderId` on a command the recorder flagged `isMeta: true`, `runId` on a `task-notification`. Elsewhere, above all beside a `prompt` of human origin (which the labeller reads as the human's own
   // words), either key stays unclassified: a reminder or a workflow run is not shown to be a human (fail closed).
@@ -287,7 +364,7 @@ function listedAttachment(row) {
     || Object.hasOwn(item, 'runId') && item.commandMode !== 'task-notification')) return null;
   const agent = rowAgent(row);
   if (!agent.ok) return null;
-  return { cls: queued ? QUEUED_COMMAND_CLASSES[item.commandMode] : known.cls, agentId: agent.agentId };
+  return { cls: meta ? H : queued ? QUEUED_COMMAND_CLASSES[item.commandMode] : known.cls, agentId: agent.agentId };
 }
 /** The one new system row that carries no conversation: an API retry notice. Harness
  *  context, counted like an attachment. `informational` and `model_refusal_fallback` carry text or
@@ -519,20 +596,37 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
   // C-03 M33 D: harness-context rows, counted and never read; per-agentId tallies await the end.
   let harnessContextRows = 0;
   const pendingByAgent = new Map();
+  const deferredBlobs = [];
   // D128: each row read by its structure, by its kind and its row's recorder version (the recorder census).
   const structuralRows = new Map();
   const readByStructure = (kind, d) => {
     const key = JSON.stringify([kind, typeof d.version === 'string' ? d.version : null]);
     structuralRows.set(key, (structuralRows.get(key) ?? 0) + 1);
   };
+  // D150: each row left unread, once, in order, with whether its loss is on its channel. It is counted by its
+  // kind (`UNREAD_ROW_KINDS`) once every label is settled: a row whose words are read at its record (a queued prompt or a
+  // file the human attached, `interjectionWordsOf`) is then no unread row, though its loss stays counted for readers of
+  // `ask`; one whose record yields no words (a PDF, an image, an empty prompt) stays one.
+  const unreadList = [];
+  const unreadSeen = new WeakSet();
+  const unread = (d, onChannel = false) => {
+    if (unreadSeen.has(d)) return;
+    unreadSeen.add(d);
+    unreadList.push([d, onChannel]);
+  };
   const classify = ({ cls, agentId, structural }, d) => {
     if (typeof structural === 'string') readByStructure(structural, d);
     if (agentId !== null) {
-      const pending = pendingByAgent.get(agentId) ?? { harness: 0, instructions: 0, observations: 0 };
-      pending[cls === H ? 'harness' : cls]++;
+      const pending = pendingByAgent.get(agentId) ?? { harness: 0, instructions: 0, observations: 0, notices: 0,
+        rows: [] };
+      pending[cls === H ? 'harness' : cls === NOTICE ? 'notices' : cls]++;
+      pending.rows.push({ d, lost: cls !== H && cls !== NOTICE });
       pendingByAgent.set(agentId, pending);
     } else if (cls === H) harnessContextRows++;
-    else { unsupportedContentRows++; unsupportedRowChannels[cls]++; }
+    else if (cls !== NOTICE) {
+      unsupportedContentRows++; unsupportedRowChannels[cls]++;
+      unread(d, true);
+    }
   };
 
   const rl = createInterface({
@@ -587,7 +681,7 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
         const attached = claudeAttachment(d);
         const scaffold = attached?.cls === H ? attached : knownQueueRow(d) || knownMetadataRow(d) ? {}
           : claudeOtherRow(d);
-        if (!scaffold) unclassifiedRows++;
+        if (!scaffold) { unclassifiedRows++; unread(d); }
         else if (typeof scaffold.structural === 'string') readByStructure(scaffold.structural, d);
       }
       continue;
@@ -602,20 +696,13 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
     if (isCompactionMarker(d)) { push({ kind: 'compaction', line: lineNo, raw: d }); continue; }
 
     if (!KEPT_TYPES.has(d.type)) {
-      const blocks = d.message?.content;
-      const role = d.message?.role;
-      const has = (types) => Array.isArray(blocks)
-        && blocks.some((block) => types.includes(block?.type));
-      const prose = typeof blocks === 'string' && !!blocks.trim()
-        || has(['text', 'image', 'document', 'audio']);
-      const channels = [];
-      if (role === 'user' && prose) channels.push('instructions');
-      if (role === 'assistant' && prose) channels.push('commentary');
-      if (has(['tool_use'])) channels.push('actions');
-      if (has(['tool_result'])) channels.push('observations');
+      // D150: a request blob of its listed form is counted at the end of the read, by its settled label.
+      if (requestBlobRow(d)) { deferredBlobs.push({ d, value: label }); continue; }
+      const channels = messageChannels(d);
       if (channels.length) {
         unsupportedContentRows++;
         for (const channel of channels) unsupportedRowChannels[channel]++;
+        unread(d);
       }
       // C-03 M33 D: a typed Claude attachment is harness context (counted scaffold) or a declared
       // loss on its own channel; a row carrying an agentId waits for the recording's own identity.
@@ -624,18 +711,28 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
       const other = channels.length || attached || isOrdinaryScaffoldRow(d) ? null : claudeOtherRow(d);
       if (attached) {
         // Release fix 3b: an instructions-class row its label gives to the harness (no gap) is harness context.
-        classify(attached.cls === I && label?.label === LABELS.harness && !Object.hasOwn(label, 'gap')
-          ? { ...attached, cls: H } : attached, d);
+        // D150: a queued task notification (the one carrier rule, labelled an observation of a task notification) is
+        // read, as one the recorder writes as a user row is: by its typed status (events.js), never as a loss.
+        const notice = attached.cls === O && claudeNotificationCarrier(d) && label?.label === LABELS.observation
+          && label.basis === LABEL_BASIS.taskNotification;
+        // D150: a structured output its label gives to the harness as a copy of the agent's own call is harness context.
+        const copy = label?.label === LABELS.harness && label.basis === LABEL_BASIS.structuredOutputCopy;
+        // A queued prompt or a file the human attached whose words are read at its record (below) is no unread row: that
+        // is settled with the labels (`interjectionWordsOf`), never by its label alone.
+        classify(notice ? { ...attached, cls: NOTICE }
+          : copy || attached.cls === I && label?.label === LABELS.harness && !Object.hasOwn(label, 'gap')
+            ? { ...attached, cls: H } : attached, d);
       } else if (other) classify(other, d);
       else if ((!channels.length && !isOrdinaryScaffoldRow(d))
         || (channels.length && Object.hasOwn(d, 'body'))) {
         // A future row or separate body can carry any T/A/O channel. In a mixed file, the
         // zero-record unknown-schema guard cannot see this one row; declare unknown scope.
         unclassifiedRows++;
+        unread(d);
       }
-      // C-02 M33 D: a queued task notification is still a declared loss (its text is not read; the classifier above
-      // counts it as an observation, or as unclassified when its key sets are not the ones it knows), but its typed
-      // status may close the launch it names (events.js). D98 (F1): which row is one is the one carrier rule
+      // C-02 M33 D: a queued task notification's typed status may close the launch it names (events.js); its text is not
+      // read. D150: one of a listed form is read so, as one written as a user row is (above); one whose key sets are not
+      // the ones the classifier knows stays unclassified. D98 (F1): which row is one is the one carrier rule
       // every reader of the fact calls (harness-context.js `claudeNotificationCarrier`), alone. The classifier's
       // closed key sets decide only how the row's loss is counted, never whether it is a notification: a recorder key
       // added to the row or to its attachment no longer drops the notice here while the labeller still labels it.
@@ -655,6 +752,12 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
         // own files only; it keeps its harness label (counted with its record, as a queued prompt's is with its own).
         else if (INSTRUCTION_ATTACHMENTS.includes(d.attachment.type))
           push({ kind: PROJECT_INSTRUCTIONS_RECORD, line: lineNo, raw: d });
+        // D150: a file changed outside the agent's edit calls (an `edited_text_file` attachment) is read at its row
+        // (events.js `editedFiles`: its path and recorded snippet). Its label stays the harness's and it keeps its declared
+        // loss until a reader of a review reads it: then its relabel and its place in slice_hash land together, so no
+        // hash moves twice for it.
+        else if (d.attachment.type === EDITED_TEXT_FILE_TYPE)
+          push({ kind: EDITED_FILE_RECORD, line: lineNo, raw: d });
         else if (label) countOnly(d);
       }
       // M34 labels: any other attachment row (one this reader does not classify included) is still counted by its label.
@@ -664,17 +767,29 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
 
     // A familiar row type alone does not mean its payload was read. Claude can move a
     // user/assistant turn into a new top-level carrier while leaving type unchanged.
-    if (driftedTurn(d)) unclassifiedRows++;
+    if (driftedTurn(d)) { unclassifiedRows++; unread(d); }
     if (d.type === 'system' && !keptSystemRow(d)) {
       const notice = claudeSystemNotice(d);
       if (notice) classify(notice, d);
-      else unclassifiedRows++;
+      else { unclassifiedRows++; unread(d); }
     }
 
     push({ kind: d.type, line: lineNo, raw: d });
   }
   // M34 labels: settle the recording-wide labels, then put each on its record (with the row's own lineage).
   labeller.finish();
+  // D150: each request blob by its settled label. One labelled harness (a request copy; or, D142, a row of Sonah's own
+  // turn) is harness context, its agentId waiting for the recording's own identity as any row's does. Any other is
+  // counted as before: a declared loss on each channel its message carries, else unclassified.
+  for (const { d, value } of deferredBlobs) {
+    if (value?.label === LABELS.harness) { classify({ cls: H, agentId: rowAgent(d).agentId }, d); continue; }
+    const channels = messageChannels(d);
+    if (channels.length) {
+      unsupportedContentRows++;
+      for (const channel of channels) unsupportedRowChannels[channel]++;
+    } else unclassifiedRows++;
+    unread(d);
+  }
   const counted = [];
   // D142: a row of Sonah's own turn is not read: no record is kept of it, and it is counted by its label, so the
   // command is no ask, and nothing the agent did or said in that turn is an action, an observation or a claim.
@@ -711,8 +826,23 @@ async function readClaudeSession(file, { sidechainAsMain = undefined, childRecor
         unsupportedContentRows += pending[channel];
         unsupportedRowChannels[channel] += pending[channel];
       }
-    } else unclassifiedRows += pending.harness + pending.instructions + pending.observations;
+      for (const { d, lost } of pending.rows) if (lost) unread(d, true);
+    } else {
+      unclassifiedRows += pending.harness + pending.instructions + pending.observations + pending.notices;
+      for (const { d } of pending.rows) unread(d);
+    }
   }
+  // D150: the rows left unread by kind, in UNREAD_ROW_KINDS order; only when there is one. A row whose loss
+  // is on its channel and whose words are read at its record (`interjectionWordsOf`, on its settled label) is read.
+  const readAtRecord = new WeakSet(records.filter((rec) => interjectionWordsOf(rec) !== '').map((rec) => rec.raw));
+  const unreadRows = new Map();
+  for (const [d, onChannel] of unreadList) {
+    if (onChannel && readAtRecord.has(d)) continue;
+    const kind = unreadKindOf(d);
+    unreadRows.set(kind, (unreadRows.get(kind) ?? 0) + 1);
+  }
+  if (unreadRows.size) meta.unreadRows = Object.fromEntries(Object.values(UNREAD_ROW_KINDS)
+    .filter((kind) => unreadRows.has(kind)).map((kind) => [kind, unreadRows.get(kind)]));
 
   // A transcript full of valid JSON that yields ZERO records is not an empty session — it is a
   // schema this parser does not speak (locality audit: an unadapted harness must be a declared
@@ -1011,6 +1141,9 @@ export function claudeSessionType(records) {
 
 /** OWNER DECISION B: the record kind of a `queued_command` attachment labelled `human` with marker `queued`. */
 export const QUEUED_PROMPT_RECORD = 'queued_prompt';
+/** D150: the record kind of an `edited_text_file` attachment (its attachment type, `EDITED_TEXT_FILE_TYPE`). */
+export const EDITED_FILE_RECORD = 'edited_file';
+export const EDITED_TEXT_FILE_TYPE = 'edited_text_file';
 /** M34 labels: the record kind of an attachment the human attached (an @-mention), labelled `human` + `attached`. */
 export const ATTACHED_RECORD = 'attached_file';
 /**
@@ -1054,8 +1187,13 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  * `isCompactSummary`, `isSidechain`, `parentUuid`, `toolDenialKind`, the tool a result answers, and the recorder's own
  * command elements — never from what the text says. Stateful across one recording: a result is labelled by the call it
  * answers, and a prompt by the enqueue rows before it. `finish()` settles what only the whole recording shows (a
- * refusal in a session no human submitted). Returns null for a row that is no record (recording metadata).
+ * refusal in a session no human submitted). D150: it returns null for no row (before, it did for every row that is no
+ * record, recording metadata among them).
  *
+ *   other      any other row type (a queue operation, recording metadata, a request record, a form no list names) and a
+ *              row that is no JSON object: labelled by the class the reader gives it (`claudeRowClass`), never by a
+ *              word: harness context or recording metadata → harness (`recorder_row`); a form the reader leaves
+ *              unclassified → no label, the gap `unknown_row` (the reader's own unclassified count declares the row).
  *   assistant  `text` → thought; `tool_use` → action; thinking → private (never used); a row the recorder wrote itself
  *              (`model: <synthetic>`, `isApiErrorMessage`) → harness.
  *   system     harness; `compact_boundary` also carries `compaction`. D120: a `local_command` output row (the recorder's
@@ -1103,6 +1241,7 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
 export function claudeLabeller() {
   const L = LABELS, B = LABEL_BASIS, M = MARKERS, G = LABEL_GAPS;
   const calls = new Map();
+  const callInputs = new Map();
   const enqueues = [];
   const refusals = [];
   const typedRows = [];
@@ -1244,6 +1383,8 @@ export function claudeLabeller() {
         if (block.id !== undefined && block.id !== null) callIds.add(JSON.stringify(block.id));
         if (block.id !== undefined && block.id !== null && typeof block.name === 'string')
           calls.set(JSON.stringify(block.id), block.name);
+        // D150: each call's input, by its id, for a structured output's twin (`structuredOutputCopy`).
+        if (block.id !== undefined && block.id !== null) callInputs.set(JSON.stringify(block.id), block.input);
         return value(L.action, B.toolUse);
       }
       if (PRIVATE_BLOCKS.includes(block?.type)) return PRIVATE_LABEL;
@@ -1284,6 +1425,14 @@ export function claudeLabeller() {
     // M34 labels review (F1): an @-mention only when its recorded chain hangs from the human's submission; a file the
     // recorder restored after a compaction, or attached mid-turn, is harness. D127 (A19): and only when that submission
     // is not one that the latest compaction before it kept (`keptByCompaction`).
+    // D150: hook rows by their type, the harness's (their content stays a declared loss: no review reads it yet); a
+    // structured output whose data is the recorded input of the call it names is the harness's copy of that call.
+    if (item.type === 'hook_additional_context') return value(L.harness, B.hookContext);
+    if (item.type === 'hook_success' || item.type === 'hook_non_blocking_error') return value(L.harness, B.hookRun);
+    if (item.type === 'structured_output' && item.toolUseID !== undefined && item.toolUseID !== null
+      && callInputs.has(JSON.stringify(item.toolUseID))
+      && canonicalJson(callInputs.get(JSON.stringify(item.toolUseID))) === canonicalJson(item.data))
+      return value(L.harness, B.structuredOutputCopy);
     const submission = ATTACHED_TYPES.includes(item.type) && d.isSidechain === false ? submittedWithHuman(d) : null;
     if (submission !== null) return keptByCompaction?.has(submission)
       ? value(L.harness, B.compactionRestored) : value(L.human, B.attachedFile, { markers: [M.attached] });
@@ -1332,9 +1481,14 @@ export function claudeLabeller() {
     }
   };
 
+  // D150: the rows a request blob's twins are looked for in, each with its label value, and the blobs (`finish`).
+  const recordedRows = [];
+  const requestBlobs = [];
   /** The label of one row (`label` below), remembered by its recorded uuid for the attachment chain (F1). */
   const labelRow = (d) => {
     const result = labelOne(d);
+    if (plain(d) && d.type === REQUEST_BLOB_TYPE) requestBlobs.push([d, result]);
+    else if (plain(d) && ['user', 'assistant', 'system', 'attachment'].includes(d.type)) recordedRows.push([d, result]);
     if (result !== null && plain(d) && d.isSidechain !== true && !isCompactionMarker(d))
       mainRows.push({ kind: d.type, value: result, named: result.label === L.human && sonahNamed(d) });
     if (plain(d) && typeof d.uuid === 'string' && d.uuid && !rows.has(d.uuid))
@@ -1343,8 +1497,15 @@ export function claudeLabeller() {
     return result;
   };
 
+  /** D150: a row of any other row type, or one that is no JSON object, by the class the reader gives it (a compaction
+   *  mark of another row type as the reader keeps it: a compaction record). */
+  const otherRow = (d) => {
+    if (plain(d) && isCompactionMarker(d)) return value(L.harness, B.compactBoundary, { markers: [M.compaction] });
+    return plain(d) && claudeRowClass(d) !== null ? value(L.harness, B.recorderRow)
+      : value(null, B.recorderRow, { gap: G.unknownRow });
+  };
   const labelOne = (d) => {
-    if (!plain(d)) return null;
+    if (!plain(d)) return otherRow(d);
     if (d.type === 'queue-operation') {
       if (d.operation === 'enqueue' && typeof d.content === 'string')
         enqueues.push({ content: d.content, at: typeof d.timestamp === 'string' ? d.timestamp : null, working: false });
@@ -1352,9 +1513,9 @@ export function claudeLabeller() {
         const at = enqueues.findIndex((entry) => entry.content === d.content);
         if (at !== -1) enqueues.splice(at, 1);
       }
-      return null;
+      return otherRow(d);
     }
-    if (!['user', 'assistant', 'system', 'attachment'].includes(d.type)) return null;
+    if (!['user', 'assistant', 'system', 'attachment'].includes(d.type)) return otherRow(d);
     if (d.type === 'user' || d.type === 'attachment') typedRows.push({ adapter: 'claude', raw: d });
     if (d.type === 'assistant') {
       // The agent was working after the prompt was enqueued: an assistant row recorded, and timestamped, after it.
@@ -1392,6 +1553,15 @@ export function claudeLabeller() {
         for (const refused of refusals) {
           refused.label = L.observation; refused.basis = B.toolResult;
           delete refused.markers; delete refused.links;
+        }
+      }
+      // D150: a request blob every block of whose message has its structural twin in this recording is a copy of it.
+      if (requestBlobs.length) {
+        const index = requestCopyIndex(recordedRows);
+        for (const [d, v] of requestBlobs) {
+          if (v.gap !== G.unknownRow || !requestBlobRow(d) || !index.copies(d.message)) continue;
+          delete v.gap;
+          Object.assign(v, { label: L.harness, basis: B.requestCopy });
         }
       }
       // D142: Sonah's own turn, on the final labels.
@@ -1467,6 +1637,22 @@ export function humanWordsOf(rec) {
   }
   return text;
 }
+
+/**
+ * D150: the words of a queued prompt or of a file the human attached that are read at its record (events.js makes them
+ * an in-turn instruction), or '' when none are (a PDF, an image, an empty prompt). The one predicate of whether such a
+ * row is read: the reader counts a row it reads no words of as unread (`readClaudeSession`).
+ */
+export function interjectionWordsOf(rec) {
+  if (rec?.kind !== QUEUED_PROMPT_RECORD && rec?.kind !== ATTACHED_RECORD) return '';
+  const words = humanWordsOf(rec);
+  return words.trim() ? words : '';
+}
+
+/** D150: whether a Claude row is a `user` or `assistant` row the reader counts as unclassified, and as an unread row,
+ *  because it cannot read its turn where it reads one (`driftedTurn`). */
+export const claudeDriftedTurn = (row) => row !== null && typeof row === 'object' && !Array.isArray(row)
+  && driftedTurn(row);
 
 /** The recorder block types a human message's nontext content arrives as (counted as `instructionsNonText`, events.js).
  */

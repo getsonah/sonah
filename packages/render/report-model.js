@@ -24,17 +24,18 @@ import { honestStatuses, resultOutcome, actionOutcome, DECISION_COLUMNS, REQUIRE
   CONTRADICTION_ROLES, OWN_WRITTEN_SOURCE, REPORT_TIERS, REPORT_ITEM_KINDS, TRIAGE_LEVELS, PART_REASONS,
   windowRecordComplete, TRIAGE_ERRORS, STOPPED_OUTCOME_FORMS, PROVED_NO_END_FORM, NO_RESULT_OUTCOME_FORM,
   REPORT_GROUP_TIES, REPORT_TIER_SOURCES, CODE_ACCOUNT_ASK_SOURCES, CODE_NOT_REVIEWED_REASONS,
-  AGENT_PROMPT_NONE_REASONS } from '../evidence/src/ledger.js';
-import { boundTier, itemKindOf, PERMISSION_DENIALS, ITEM_KIND_TABLE } from '../evidence/src/triage.js';
+  AGENT_PROMPT_NONE_REASONS, RECHECK_OUTCOMES, PUBLIC_STATUSES } from '../evidence/src/ledger.js';
+import { boundTier, itemKindOf, PERMISSION_DENIALS, kindBounds, unsettledAsk, unsettledRow, laterChecked,
+  UNTIED_TIER_RULE } from '../evidence/src/triage.js';
 import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, uncappedCauses, COVERAGE_SENTENCE,
-  checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS, askCodeHoldsNote }
+  UNCAPPED_CAUSES_SAID_WHOLE, checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS, askCodeHoldsNote }
   from '../evidence/src/review.js';
 import { seenInPartOf, SEEN_IN_PART_SOURCES } from '../evidence/src/seen-in-part.js';
 import { requirementRowId, failureRowId } from '../evidence/src/checklist.js';
 import { statusUncovered } from '../evidence/src/status-fact.js';
-import { askSourceOf } from '../evidence/src/code-context.js';
-import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, findingConfirmed, premiseConfirms,
-  premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
+import { askSourceOf, actorOf, SESSION_ACTORS } from '../evidence/src/code-context.js';
+import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen, findingConfirmed,
+  premiseConfirms, premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
   placesOf } from '../evidence/src/code-pass.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound, findingClaims, withheldWhy,
   codeNoFindingLine, codeStepWithheld, codeUnseenFiles, codeUnseenReadByChecks, codeQuestionsLine, codeBaseLine,
@@ -48,8 +49,8 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
   REPORT_CONTRADICTION_SOURCES, REPORT_DISCLOSURE_WORDS, REPORT_KIND_LABELS, REPORT_TIER_WHY, REPORT_KIND_WORDS,
   REPORT_LEVEL_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_OUTCOME_WORDS, REPORT_NOT_CHECKED_WORDS,
   REPORT_FOOTER_WORDS, REPORT_ANSWER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS,
-  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS }
-  from './report-words.js';
+  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS,
+  REPORT_RECHECK_PARTS, REPORT_TRAIL_WORDS } from './report-words.js';
 
 /** The report model's version: reported in the page's generator meta and the footer. /2 (D101, owner decision
  *  2026-10-17): an ask's line for why it is not checked reads the cause of the test that refused its quote
@@ -113,8 +114,26 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  leads in Must act carries a prompt for the agent (`agentPrompt`, `agentPromptOf`) made from its own checked parts in
  *  your voice, or the closed reason it has none (`agentPromptNone`); every field of /6 is as it was, but the version
  *  that the footer names.
+ *  /8 (0.3.0-beta.9, one move from 0.3.0-beta.7's /7). D152: a code finding its check found to hold that Sonah confirms,
+ *  tied to no written promise (evidence code-pass.js `codePassOpen`), is an item of its own kind (`code_finding_open`),
+ *  shown as checked with the line that Sonah found no written promise it breaks; a report made before the tie rule reads
+ *  as /7 read it, byte for byte, but the version that the footer names.
+ *  D161 (the owner, 2026-10-27; it rides /8, 0.3.0-beta.9's one move of this reader): the report has two parts.
+ *  `tiers` holds what to act on (every item but the agent's decisions; D163: a decision item that holds a Must row of
+ *  another kind stays there, `trailItem`); `decisions` holds the agent's decisions, each
+ *  with its tier as a tag, in the order the session recorded them, grouped by the message of yours that they follow
+ *  (`trailOf`), numbered after the tiers. The count line counts them (`decisions`). A question of the code review that
+ *  Sonah could not tie (D116) is at most Good to know (triage.js UNTIED_TIER_RULE).
+ *  D163 (the owner, 2026-10-28; it rides /8 too): `pointers` (the first part's pointers to the decisions of the second
+ *  tagged Must act or Must know, `pointersOf`); Must act counts and names the decisions tagged Must act, and each gets
+ *  D144's record as any item in Must act; the second part lists every decision, a decision item that the first part
+ *  keeps by an entry that says so (a group's `entries`, `shown`, `more`, `moreWords`: an open group folds its decisions
+ *  tagged Good to know under one counted line); a change of approach labels its quotes by role and carries the session
+ *  review's reading of why (`reviewWhy`).
+ *  D167 (the owner, 2026-10-28; it rides /8 too): `did.runs.parts`, every run's result part counted, which the .md says
+ *  in place of its list of runs; nothing else moves, and the page does not read it.
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/7';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/8';
 
 /**
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
@@ -128,7 +147,7 @@ export const REPORT_MODEL_VERSION = 'sonah.report-model/7';
 export const REPORT_LIMITS = Object.freeze({ quoteChars: 120, askPrefixWords: 12, messageChars: 300, excerptLines: 8,
   excerptLineChars: 160, permalinkLines: 8, where: 3, runs: 40, claims: 50, files: 200, mustActLabels: 3, titleChars: 80,
   questionChars: TRACE_LIMITS.questionChars, commandChars: 80, wordsChars: 160, notCheckedPhrases: 4, closingLines: 200, withheld: 100,
-  unreadIds: 20, labelWords: 6, folderChars: 300, openAsks: 30 });
+  unreadIds: 20, labelWords: 6, folderChars: 300, openAsks: 30, groupAsks: 5 });
 
 /**
  * D131 (R1, B12; the owner: "Must act comes first"): whether Must act and Must know come before your prompt on every
@@ -166,6 +185,7 @@ const [ACTED_ON, TOLD_HUMAN, PASSED_OVER, FAILURE_NOT_CHECKED] = FAILURE_HANDLIN
 const [, PROMISE_VERIFIED, PROMISE_INCOMPLETE] = PROMISE_STATUSES;
 const [, WRITTEN_CONTRADICTED] = WRITTEN_LABELS;
 const [, ASKED_IN_BRIEF] = CODE_ACCOUNT_ASK_SOURCES;
+const [PERSON_ACTOR, RECORDED_ACTOR] = SESSION_ACTORS;
 const CODE_REVIEW = 'code-review';
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -497,9 +517,10 @@ function findingExcerpt(report, f) {
 
 // ---- the item kinds -------------------------------------------------------------------------------------------------
 
-/** Each item kind's type (triage.js ITEM_KIND_TABLE): set by the kind, never by the code review. */
+/** Each item kind's type (triage.js ITEM_KIND_TABLE, and D153's RECHECK_KIND_TABLE: `kindBounds`): set by the kind,
+ *  never by the code review. */
 export const ITEM_TYPES = Object.freeze(Object.fromEntries(REPORT_ITEM_KINDS.map((kind) => [kind,
-  ITEM_KIND_TABLE[kind].type])));
+  kindBounds(kind).type])));
 const KIND_ORDER = new Map(REPORT_ITEM_KINDS.map((kind, i) => [kind, i]));
 /**
  * D138 (the owner, 2026-10-22: "1 B"): the item kinds whose row sets two recorded quotes against each other, and how to
@@ -536,7 +557,8 @@ function contradictionBacked(session, item) {
 }
 /** The source sets, in the order a tie is broken (D97). */
 export const REPORT_SOURCES = Object.freeze(['requirements', 'decisions', 'pivots', 'writtenClaims', 'findings',
-  'failures', 'promises', 'codePass.findings', 'codePass.questions', 'codePass.unconfirmed', 'codePass.withheld']);
+  'failures', 'promises', 'codePass.findings', 'codePass.questions', 'codePass.unconfirmed', 'codePass.open',
+  'codePass.withheld']);
 const SOURCE_ORDER = new Map(REPORT_SOURCES.map((source, i) => [source, i]));
 const rowKey = (source, index) => `${source}:${index}`;
 const DECIDE_KINDS = Object.freeze(['decision_not_acting', 'decision_unasked', 'decision_chose', 'decision_whether_asked',
@@ -553,6 +575,8 @@ export function reportSources(report) {
   codePassQuestions(report).forEach((row, index) => out.push({ source: 'codePass.questions', index, row }));
   // D110: the findings code's label does not confirm, computed again from each one's stored check.
   codePassUnconfirmed(report).forEach((row, index) => out.push({ source: 'codePass.unconfirmed', index, row }));
+  // D152: the confirmed findings tied to no written promise, computed again from each one's stored check and ties.
+  codePassOpen(report).forEach((row, index) => out.push({ source: 'codePass.open', index, row }));
   codePassWithheld(report).forEach((row, index) => out.push({ source: 'codePass.withheld', index, row }));
   return out;
 }
@@ -587,20 +611,30 @@ const NOT_DONE_STATUSES = Object.freeze([NOT_DONE, OPEN]);
  */
 const citesOnlyAgentWords = (checked) => plain(checked) && plain(checked.deliverable)
   && checked.deliverable.role === 'commentary';
+/** D153: the re-check's outcomes of a row a later window moved, and of one it reaffirmed. */
+const [RECHECK_MOVED, RECHECK_REAFFIRMED] = RECHECK_OUTCOMES;
+/** D153: the later shortfall of an ask row the re-check reaffirmed (its earlier one kept in `recheck.earlier`), or null.
+ *  Pure. */
+const reaffirmedShortfall = (row) => (plain(row) && plain(row.recheck) && row.recheck.outcome === RECHECK_REAFFIRMED
+  && plain(row.recheck.earlier) && plain(row.recheck.earlier.shortfall) && plain(row.shortfall) ? row.shortfall : null);
 /** An ask's place on the count line (D93 split); its links read against the report (D110's review: `askRowKind`). */
 function askState(req, report) {
   const code = askRowKind(req, report) === 'asksCodeFinding';
   if (DONE_STATUSES.includes(req.status)) return code ? 'doneCode' : 'done';
+  // D153: with the after-point re-check, an ask no later window settled or one reaffirmed (`unsettledAsk`), as a partly
+  // done ask is placed, whatever the code review tied to it; one a later window checked (`laterChecked`) by its own word.
+  if (unsettledAsk(req.checked)) return laterChecked('requirements', req.checked) ? 'laterWork' : 'notCheckedLater';
   if (PARTLY_STATUSES.includes(req.status)) return 'partly';
   if (NOT_DONE_STATUSES.includes(req.status)) return 'notDone';
   return code ? 'notCheckedCode' : 'notChecked';
 }
 const STATE_WORD = Object.freeze({ done: 'done', doneCode: 'done', partly: 'partly', notDone: 'notDone',
-  notChecked: 'notChecked', notCheckedCode: 'notChecked' });
+  notChecked: 'notChecked', notCheckedCode: 'notChecked', notCheckedLater: 'notCheckedLater', laterWork: 'laterWork' });
 /** An ask's status word by its state (`askState`): the prompt table's and the page's mark of the ask, by one map. */
 export const askStatusWord = (state) => (Object.hasOwn(STATE_WORD, state) ? REPORT_PROMPT_WORDS.status[STATE_WORD[state]]
   : undefined);
-const PROMPT_PART_ORDER = Object.freeze(['done', 'doneCode', 'partly', 'notDone', 'notChecked', 'notCheckedCode']);
+const PROMPT_PART_ORDER = Object.freeze(['done', 'doneCode', 'partly', 'notDone', 'laterWork', 'notCheckedLater', 'notChecked',
+  'notCheckedCode']);
 
 /**
  * The report rows each requirement stands for: a checklist row is its own (`checked`); a legacy requirement, grouped
@@ -703,14 +737,21 @@ function promptAsks(session, report, facts) {
  *   answer ({ words, reason } or null), rows ([{ source, index }], the primary row first), agentPrompt (D144: on an item that leads in Must act, the
  *   prompt for the agent `{ lines }`, each line a Part list (`agentPromptOf`, shown as `agentPromptText`), or null; null
  *   on every other item; a member has none), agentPromptNone (D144: why an item that leads in Must act has no prompt, a
- *   member of ledger.js AGENT_PROMPT_NONE_REASONS; else null) }`.
+ *   member of ledger.js AGENT_PROMPT_NONE_REASONS; else null), reviewWhy (D163: a change of approach's reason in the
+ *   session review's words, Parts, or null) }`.
+ * - `pointers` (D163): `{ must_act, must_know }`, each `[{ n, type, what, scope }]`, the first part's pointers to the
+ *   decisions of `decisions` tagged with that tier, in number order (`pointersOf`).
+ * - `decisions` (D161): `{ total, tagged, groups }` (`trailOf`; D163: each group's `entries`, `shown`, `more`,
+ *   `moreWords`).
  * - `did`: `files` (`{ groups: [{ ask, files: [{ path, type, counts, state, what, asks, link, items }] }], grouped,
  *   total, shown, more, outside: { n, paths, more, notInChange } | null, unresolved: { n, paths, more } | null (D118 b: the
  *   paths the recording does not resolve), unconfirmed, none }`; `none` (D123): with no file, which sentence says so (one of
  *   REPORT_NO_FILES_KINDS), else null; `notInChange`: the code step's
  *   writes that are no file of its change, D109), `runs` (`{ shown: [{ k, text, tool, afterEdit, outcome, handling,
- *   item, failureIndex }], total, commands, others, quietExit0, cut, cutParts, neverRan, cutRuns }`: `commands` the
- *   runs that are commands, as the header counts them; `others` the calls of other tools a failure row answers for), `claims` (`{ shown: [{ anchor,
+ *   item, failureIndex }], total, commands, others, quietExit0, cut, cutParts, parts, neverRan, cutRuns }`: `commands` the
+ *   runs that are commands, as the header counts them; `others` the calls of other tools a failure row answers for;
+ *   `parts` (D167) every run's result part, counted, in the words and order of `cutParts`, which the .md says in place
+ *   of the list), `claims` (`{ shown: [{ anchor,
  *   source, index, status, item, quote, path, confirmedBy, why }], total, more, closing: { rows: [{ k, parts }],
  *   total }, notChecked: { claims, written } }`: every row's own status and words, `item` the item that holds it or a
  *   code finding's that follows from it), `leftOut` (`[{ item, quote }]`: a decision not to act, by the agent's words that ground),
@@ -751,10 +792,14 @@ export function reportModel(session, report, options = {}) {
   const items = placeItems(ctx, candidates);
   ctx.items = items;
   ctx.itemOfRow = new Map(items.flatMap((item) => item.rows.map((ref) => [rowKey(ref.source, ref.index), item.n])));
+  // D153: what the after-point re-check took out of Must act, by mechanism (a report it ran on alone).
+  ctx.recheckLine = recheckLineOf(ctx, items);
   for (const item of items) { finishItem(ctx, item); for (const member of item.members) finishItem(ctx, member); }
   // D144: a prompt for the agent on each item that leads in Must act (Must act alone), from the item's own fields; a
   // member, and an item of another tier, has none.
   for (const item of items) {
+    // D163 (Sonah's review of the D161 session): a decision of the second part tagged Must act gets one, as any item in
+    // Must act of its kind (D161 gave it none, so Must act could need action with no prompt).
     const made = item.tier.final === MUST_ACT ? agentPromptOf(item) : { prompt: null, none: null };
     item.agentPrompt = made.prompt;
     item.agentPromptNone = made.none;
@@ -764,12 +809,21 @@ export function reportModel(session, report, options = {}) {
   ctx.did = did;
   const { quiet: headerQuiet, folded: didNotCheck, ...header } = headerOf(ctx, prompt);
   const shown = items.map(publicItem);
-  const tiers = Object.fromEntries(REPORT_TIERS.map((tier) => [tier, shown.filter((item) => item.tier.final === tier)]));
-  const { quiet: countQuiet, ...countLine } = countLineOf(ctx, tiers, prompt);
+  // D161: the first part (`tiers`) holds every item but the agent's decisions; the second (`decisions`) holds those.
+  const trailNumbers = new Set(items.filter((item) => item.trail).map((item) => item.n));
+  const tiers = Object.fromEntries(REPORT_TIERS.map((tier) => [tier, shown.filter((item) => !trailNumbers.has(item.n)
+    && item.tier.final === tier)]));
+  // D163: and lists, at its place, each decision item that the first part keeps (it holds a Must row of another kind).
+  const decisions = trailOf(ctx, items.filter((item) => item.trail), items.filter((item) => !item.trail
+    && DECIDE_KINDS.includes(item.kind)), shown, prompt);
+  // D163 (L1): the first part points to each decision of the second tagged Must act or Must know.
+  const pointers = pointersOf(decisions);
+  const { quiet: countQuiet, ...countLine } = countLineOf(ctx, tiers, prompt, decisions, pointers);
   // D133 (R2): the first screen's lines about what Sonah could not check, each word for word, first in that fold.
   const notChecked = { ...notCheckedOf(ctx, [...headerQuiet, ...countQuiet]), didNotCheck };
   const footer = footerOf(ctx, items);
-  const model = { version: REPORT_MODEL_VERSION, header, countLine, prompt, tiers, did, notChecked, footer };
+  const model = { version: REPORT_MODEL_VERSION, header, countLine, prompt, tiers, pointers, decisions, did, notChecked,
+    footer };
   model.placement = placementOf(ctx, candidates, model);
   return deepFreeze(model);
 }
@@ -778,7 +832,8 @@ export function reportModel(session, report, options = {}) {
  *  the item), `own` (its lead's own tier) and `members` (`publicMember`, in the order they joined). */
 const publicItem = (item) => ({ n: item.n, kind: item.kind, type: item.type, tier: { ...item.tier }, own: { ...item.own },
   what: item.what, quote: item.quote, quoteLabel: item.quoteLabel, quoteMissing: item.quoteMissing,
-  agentSaid: item.agentSaid, agentSaidLabel: item.agentSaidLabel, restsOutside: item.restsOutside, impact: item.impact,
+  agentSaid: item.agentSaid, agentSaidLabel: item.agentSaidLabel, reviewWhy: item.reviewWhy,
+  restsOutside: item.restsOutside, impact: item.impact,
   action: item.action, label: item.label, where: item.where,
   whereMore: item.whereMore,
   scope: item.scope, related: item.related, evidence: item.evidence, why: item.why, rowId: item.rowId,
@@ -790,6 +845,7 @@ const publicItem = (item) => ({ n: item.n, kind: item.kind, type: item.type, tie
 const publicMember = (member) => ({ kind: member.kind, type: member.type, tie: member.tie, tier: { ...member.tier },
   folded: member.foldedMember === true, what: member.what, quote: member.quote, quoteLabel: member.quoteLabel,
   quoteMissing: member.quoteMissing, agentSaid: member.agentSaid, agentSaidLabel: member.agentSaidLabel,
+  reviewWhy: member.reviewWhy,
   impact: member.impact, action: member.action, where: member.where, whereMore: member.whereMore,
   evidence: member.evidence, why: member.why, rowId: member.rowId, answer: member.answer,
   rows: member.rows.map((ref) => ({ ...ref })) });
@@ -990,9 +1046,9 @@ function codeTiedRows(report) {
   codePassQuestions(report).forEach((q, i) => add(q?.concerns, rowKey('codePass.questions', i)));
   return tied;
 }
-/** The sources of a code finding's row: published as confirmed, and (D110) not confirmed. A triage entry names either
- *  by the finding's id. */
-const CODE_FINDING_SOURCES = Object.freeze(['codePass.findings', 'codePass.unconfirmed']);
+/** The sources of a code finding's row: published as confirmed, (D110) not confirmed, and (D152) confirmed and tied to
+ *  no written promise. A triage entry names any of them by the finding's id. */
+const CODE_FINDING_SOURCES = Object.freeze(['codePass.findings', 'codePass.unconfirmed', 'codePass.open']);
 /** The tiers by rank, lowest first (triage.js's order): a tie lifts an item at most to the tier of the item that ties
  *  it. */
 const TIER_RANK = Object.freeze({ [GOOD_TO_KNOW]: 0, [MUST_KNOW]: 1, [MUST_ACT]: 2 });
@@ -1127,7 +1183,8 @@ function candidatesOf(ctx) {
     const ask = ctx.askOfRow.get(c.index);
     if (ask.rows[0] !== c.index) { c.kind = null; c.place = { ask: ask.n }; continue; }
     c.ask = ask;
-    c.kind = ask.state === 'notDone' ? 'ask_not_done' : ask.state === 'partly' ? 'ask_partly_done' : null;
+    c.kind = ask.state === 'notDone' ? 'ask_not_done' : ask.state === 'partly' ? 'ask_partly_done'
+      : ['notCheckedLater', 'laterWork'].includes(ask.state) ? 'ask_not_checked_after_later_work' : null;
     if (c.kind === null) c.place = { ask: ask.n };
   }
   // Decisions you settled are listed; every other decision is an item.
@@ -1162,7 +1219,8 @@ function candidatesOf(ctx) {
     if (c.kind === 'code_ask_not_met') {
       for (const ref of refs.filter((x) => x.source === 'requirements')) {
         const target = byKey.get(rowKey('requirements', ref.index));
-        if (target && ['ask_not_done', 'ask_partly_done'].includes(target.kind) && !target.foldInto)
+        if (target && ['ask_not_done', 'ask_partly_done', 'ask_not_checked_after_later_work'].includes(target.kind)
+          && !target.foldInto)
           { target.foldInto = c.key; target.kind = null; }
       }
     }
@@ -1201,8 +1259,8 @@ const sameReceipt = (a, b) => plain(a) && plain(b) && a.role === b.role && a.eve
 function placeItems(ctx, candidates) {
   const byKey = new Map(candidates.map((c) => [c.key, c]));
   const items = [];
-  const bounds = (c, entry, tied) => boundTier(c.kind, entry?.level ?? null, { refused: refusedCall(ctx.session, c.row),
-    unchecked: c.kind === 'code_question' && !plain(c.row.check), tied });
+  const bounds = (c, entry, tied, untied = false) => boundTier(c.kind, entry?.level ?? null, {
+    refused: refusedCall(ctx.session, c.row), unchecked: c.kind === 'code_question' && !plain(c.row.check), tied, untied });
   for (const c of candidates) {
     if (c.kind === null || c.foldInto) continue;
     const entry = ctx.triage.get(triageKeyOf(c, c.row)) ?? null;
@@ -1226,6 +1284,26 @@ function placeItems(ctx, candidates) {
   // D112: which item holds which row (the folds above, then the joins), before any tier rests on a tie: a question's tie
   // is checked against the place of the item that holds the row it names (D116's review).
   joinItems(items, ctx.session);
+  // D161 (the owner, 2026-10-27: "Good to know unless tied"): a question of the code review that has no checked tie is at
+  // most Good to know (triage.js UNTIED_TIER_RULE), by D116's rule, the one every pointer of the report reads
+  // (`questionTied`): its `concerns` names a row, and its place overlaps the place of the item that holds that row (the
+  // item it leads, or the one it is a member of), or, with no item, that row's own (never a code step's row). Before the
+  // tie below, so an untied question lifts nothing (it ties nothing either).
+  const holderOfRow = new Map();
+  for (const item of items) for (const ref of item.rows) holderOfRow.set(rowKey(ref.source, ref.index), item);
+  const checkedQuestion = (q) => {
+    const concerns = plain(q) && plain(q.concerns) && typeof q.concerns.source === 'string'
+      && Number.isSafeInteger(q.concerns.index) ? q.concerns : null;
+    if (!concerns) return false;
+    const held = holderOfRow.get(rowKey(concerns.source, concerns.index)) ?? null;
+    const lead = held ? held.memberOf ?? held : null;
+    const row = lead || concerns.source.startsWith('codePass.') ? null : list(ctx.report[concerns.source])[concerns.index];
+    return questionTiedTo(ctx.session, q, lead, row);
+  };
+  for (const item of items) {
+    if (!Object.hasOwn(UNTIED_TIER_RULE.ceilings, item.kind) || checkedQuestion(item.primary.row)) continue;
+    item.tier = bounds(item.primary, item.triage, false, true);
+  }
   // Tied (D96 amended, R6): a published finding of the code review follows from this row, or one of its questions
   // concerns it where code checked that tie (D116's review: `questionTiedTo`, the rule of every pointer the report
   // prints from a question's `concerns` key; a question that names no place ties nothing), and that item is in the
@@ -1235,7 +1313,7 @@ function placeItems(ctx, candidates) {
   const checkedTie = (item, by) => by.primary.source !== 'codePass.questions'
     || questionTiedTo(ctx.session, by.primary.row, item.memberOf ?? item, null);
   for (const item of items) {
-    const tiedTier = ITEM_KIND_TABLE[item.kind].tiedTier;
+    const tiedTier = kindBounds(item.kind).tiedTier;
     if (tiedTier === null) continue;
     const by = list(ctx.codeTied.get(item.primary.key)).map((key) => itemOf.get(key))
       .filter((x) => x && checkedTie(item, x)).sort((a, b) => TIER_RANK[b.tier.final] - TIER_RANK[a.tier.final]);
@@ -1256,10 +1334,59 @@ function placeItems(ctx, candidates) {
     || KIND_ORDER.get(a.kind) - KIND_ORDER.get(b.kind)
     || firstAsk(a) - firstAsk(b) || SOURCE_ORDER.get(a.primary.source) - SOURCE_ORDER.get(b.primary.source)
     || a.primary.index - b.primary.index);
-  const numbered = REPORT_TIERS.flatMap((tier) => ordered.filter((item) => item.tier.final === tier));
+  // D161: the agent's decisions leave the tiers for the report's second part (`trailItem`), in the order the session
+  // recorded them (`trailOrder`), numbered after the tiers: one number an item, in reading order.
+  for (const item of ordered) item.trail = trailItem(item);
+  const numbered = [...REPORT_TIERS.flatMap((tier) => ordered.filter((item) => !item.trail && item.tier.final === tier)),
+    ...trailOrder(ctx, ordered.filter((item) => item.trail))];
   numbered.forEach((item, i) => { item.n = i + 1; });
   return numbered;
 }
+
+const MUST_TIERS = Object.freeze([MUST_ACT, MUST_KNOW]);
+/**
+ * D161 (the owner, 2026-10-27; its review): whether an item belongs to the report's second part, the decisions the agent
+ * took: its lead's kind is a decision or a change of approach (`DECIDE_KINDS`), and no row it holds of another kind (a
+ * member, D112, or a row folded into it or into a member, D97) is Must act or Must know on its own: a member by its own
+ * final tier, a folded row by its kind's tier (`boundTier` with no proposal; a kind that accuses has a floor of Must
+ * know, so every accusing row keeps the item here). Such an item stays with what to act on, so the first part never loses
+ * a Must item that is not a decision. A code question, an open or unconfirmed finding and every other kind stay there
+ * too. Structure only. Pure.
+ */
+export function trailItem(item) {
+  if (!DECIDE_KINDS.includes(item.kind)) return false;
+  const mustOther = (kind, tier) => !DECIDE_KINDS.includes(kind) && MUST_TIERS.includes(tier);
+  const folded = [item, ...item.members].flatMap((x) => list(x.folded)).map((c) => itemKindOf(c.source, c.row))
+    .filter((kind) => kindBounds(kind) !== null);
+  return !item.members.some((m) => mustOther(m.kind, m.tier?.final))
+    && !folded.some((kind) => mustOther(kind, boundTier(kind, null).final ?? kindBounds(kind).floor));
+}
+/**
+ * D161: the event a decision or a change of approach was taken at, as its row records it, by its position in the session
+ * (`ctx.orderOf`), or null. A decision: its earliest action, else (a choice not to act with no action) its stated words,
+ * the same anchor the ledger grounds a decision at (evidence ledger.js `groundDecision`: `anchorEvents`), so the
+ * messages of yours before it are the ones its "did you ask" check read. A change of approach: its earliest receipt.
+ * Ids the session does not hold give no position. Pure.
+ */
+function momentOf(ctx, item) {
+  const { source, row } = item.primary;
+  const at = (id) => (typeof id === 'string' && ctx.orderOf.has(id) ? ctx.orderOf.get(id) : null);
+  const earliest = (ids) => ids.map(at).filter((n) => n !== null).reduce((a, b) => (a === null || b < a ? b : a), null);
+  if (!plain(row)) return null;
+  if (source === 'decisions') return earliest(list(row.actions)) ?? at(row.stated?.eventId);
+  if (source === 'pivots') return earliest(list(row.receipts).filter(plain).map((r) => r.eventId));
+  return null;
+}
+/** D161: the decisions in the order the session recorded them (`momentOf`); those with no position last; ties by source
+ *  and index. Sets each item's `moment`. Deterministic. */
+function trailOrder(ctx, items) {
+  for (const item of items) item.moment = momentOf(ctx, item);
+  return [...items].sort(byMoment);
+}
+/** D161: the second part's order of two items whose `moment` is set: by it, those with none last; ties by source and
+ *  index. D163: the same key places a decision that the first part keeps among the second part's (`trailOf`). */
+const byMoment = (a, b) => (a.moment === null) - (b.moment === null) || (a.moment ?? 0) - (b.moment ?? 0)
+  || SOURCE_ORDER.get(a.primary.source) - SOURCE_ORDER.get(b.primary.source) || a.primary.index - b.primary.index;
 
 const [CONCERNS_TIE] = REPORT_GROUP_TIES;
 const [FROM_LEAD, FROM_MEMBER] = REPORT_TIER_SOURCES;
@@ -1487,14 +1614,17 @@ function finishItem(ctx, item) {
     return q; };
   // Whose words a quote is, by its receipt's role: one rule for every item whose quote line shows a receipt's quote —
   // yours (or a project instruction file's), the agent's (or a helper's), a recorded result, the agent's action, or
-  // the change.
-  const roleLabel = (receipt) => (receipt.role === 'instruction' || receipt.role === PROJECT_INSTRUCTIONS_ROLE
-    ? yourLabel(session, receipt, REPORT_ITEM_WORDS.youSaid)
+  // the change. D163: an instruction is yours only when the recorder's lineage gives it your authority (evidence
+  // code-context.js `actorOf`: a root instruction recorded with human authority); a helper's brief, an agent's
+  // assignment or a peer's message is not, and keeps no label, since no closed label says whose it is.
+  const roleLabel = (receipt) => (receipt.role === 'instruction'
+    ? (actorOf(session, receipt.eventId) === PERSON_ACTOR ? REPORT_ITEM_WORDS.youSaid : null)
+    : receipt.role === PROJECT_INSTRUCTIONS_ROLE ? yourLabel(session, receipt, REPORT_ITEM_WORDS.youSaid)
     : receipt.role === 'commentary' ? speaker(receipt, REPORT_ITEM_WORDS.agentSaid)
       : receipt.role === 'observation' ? REPORT_ITEM_WORDS.recordedResult
         : receipt.role === 'action' ? REPORT_ITEM_WORDS.agentDid : REPORT_ITEM_WORDS.changeShows);
   let what = [], quoteLine = null, quoteLabel = null, quoteMissing = false, agentSaid = null, agentSaidLabel = null;
-  let where = [], rowId = null;
+  let where = [], rowId = null, reviewWhy = null;
   const label = { text: null, parts: null, numbered: false };
   const ask = item.primary.ask ?? null;
   const shortfallLabel = (r) => (r?.role === 'commentary' ? REPORT_ITEM_WORDS.agentSaid : r?.role === 'observation'
@@ -1592,10 +1722,37 @@ function finishItem(ctx, item) {
       label.numbered = true;
       break;
     }
+    case 'ask_not_checked_after_later_work': {
+      // D153: no accusing word; the earlier quote is folded in its evidence, under what the session review cited
+      // before the later work. A reaffirmed ask (the owner, 2026-10-26: shown no stronger than one no later window
+      // settled) is said to be followed by later work (a later window checked it: never "did not check"), with the later
+      // quote its re-check cited folded beside it, labelled by where it is from.
+      const checked = plain(ask.req.checked) ? ask.req.checked : null;
+      what = ONE(laterChecked('requirements', checked) ? REPORT_WHAT_WORDS.askLaterWork(ask.n)
+        : REPORT_WHAT_WORDS.ask_not_checked_after_later_work(ask.n));
+      quoteLine = ask.req.quoted && checked ? quoteOf(session, checked.instruction)
+        : ask.req.quoted ? quoted(ask.req.text) : null;
+      quoteMissing = !quoteLine;
+      where.push(anchorOf(`ask-${ask.n}`, REPORT_ITEM_WORDS.asked(ask.n)));
+      if (checked) {
+        const later = reaffirmedShortfall(checked);
+        const earlier = later ? checked.recheck.earlier.shortfall : checked.shortfall;
+        quote(REPORT_ITEM_WORDS.beforeLaterWork, earlier);
+        if (later) quote(REPORT_ITEM_WORDS.fromLaterWork, later);
+        where.push(...sessionFile(earlier), ...(later ? sessionFile(later) : []));
+        ev.push(...askNotes(checked));
+      }
+      rowId = checked ? requirementRowId(checked) : null;
+      label.text = REPORT_KIND_LABELS.ask(ask.n);
+      label.numbered = true;
+      break;
+    }
     case 'code_ask_not_met': case 'code_claim_false': case 'code_bug': case 'code_contract': case 'code_weak_test':
-    case 'code_finding_legacy': case 'code_finding_unconfirmed': {
+    case 'code_finding_legacy': case 'code_finding_unconfirmed': case 'code_finding_open': {
       const f = row;
       what = [typeof f.title === 'string' && f.title.trim() ? C(words(f.title)) : S(REPORT_WHAT_WORDS.noTitle)];
+      // D152: a confirmed finding tied to no written promise says so first, in fixed words.
+      if (item.kind === 'code_finding_open') evidence(null, ONE(CODE_REPORT_WORDS.openFinding));
       if (finding || plain(f.anchor)) { const w = codeWhere(f); if (w) where.push(w); }
       if (!where.length) for (const rc of list(f.receipts).filter(plain)) {
         if (typeof rc.path === 'string' && rc.path) { where.push(locationOf(ctx, { path: rc.path, side: rc.side ?? 'new',
@@ -1638,8 +1795,33 @@ function finishItem(ctx, item) {
       const against = list(f.receipts).find((x) => plain(x) && x.role === CONTRADICTION_ROLES[source] && x !== said);
       quote(contradictionWords(session, source, against), against);
       where.push(...sessionFile(against));
+      // D153: a later window's correction, its result.
+      if (item.kind === 'claim_corrected' && plain(f.correctedBy)) quote(REPORT_ITEM_WORDS.laterResult,
+        f.correctedBy.observation);
       rowId = typeof f.id === 'string' ? f.id : null;
       label.text = item.kind === 'claim_contradicted' ? REPORT_KIND_LABELS.claim : null;
+      break;
+    }
+    case 'claim_not_checked_after_later_work': {
+      // D153 (the owner, 2026-10-26): a contradicted claim that later work followed and no later window settled. No
+      // accusing word and no label: the claim's own words, and what contradicted it folded under what the session review
+      // cited before the later work. One a later window's RESULT showed not holding again (`recheck.later`, its fix
+      // round) is said to be followed by later work, that RESULT folded beside the earlier one.
+      const f = row;
+      const source = CONTRADICTION_SOURCES.includes(f.contradictionSource) ? f.contradictionSource : CONTRADICTION_SOURCES[0];
+      const later = laterChecked('findings', f) && plain(f.recheck.later) ? f.recheck.later.observation : null;
+      what = ONE(later ? REPORT_WHAT_WORDS.claimLaterWork : REPORT_WHAT_WORDS.claim_not_checked_after_later_work);
+      const said = list(f.receipts).find((x) => plain(x) && x.role === 'commentary');
+      quoteLine = quoteOf(session, said);
+      quoteMissing = !quoteLine;
+      if (quoteLine) quoteLabel = speaker(said, null);
+      const claimRow = item.folded.find((c) => c.source === 'promises');
+      if (claimRow) where.push(anchorOf(`claim-${claimRow.index + 1}`, REPORT_ITEM_WORDS.claimsList));
+      const against = list(f.receipts).find((x) => plain(x) && x.role === CONTRADICTION_ROLES[source] && x !== said);
+      quote(REPORT_ITEM_WORDS.beforeLaterWork, against);
+      if (later) quote(REPORT_ITEM_WORDS.fromLaterWork, later);
+      where.push(...sessionFile(against));
+      rowId = typeof f.id === 'string' ? f.id : null;
       break;
     }
     case 'edit_against_instruction': case 'edit_undone': {
@@ -1663,19 +1845,39 @@ function finishItem(ctx, item) {
       label.text = item.kind === 'edit_against_instruction' ? REPORT_KIND_LABELS.edit : null;
       break;
     }
-    case 'written_contradicted': case 'written_not_checked': {
+    case 'written_not_checked_after_later_work': {
+      // D153 (the owner, 2026-10-26): a contradicted statement that the agent wrote into a file, that later work followed
+      // and no later window settled. No accusing word and no label: the statement, and what contradicted it folded under
+      // what the session review cited before the later work.
+      const w = row;
+      const path = writtenPath(session, w);
+      const [head, tail] = REPORT_WHAT_WORDS.written_not_checked_after_later_work(PATH_SLOT).split(PATH_SLOT);
+      what = [S(head), path ? CODE(path) : S(REPORT_WHAT_WORDS.aFile), S(tail)];
+      quoteLine = quoteOf(session, w.stated);
+      quoteMissing = !quoteLine;
+      if (path) where.push(locationOf(ctx, { path }));
+      for (const rc of list(w.receipts).filter((x) => plain(x) && !sameReceipt(x, w.stated)))
+        quote(REPORT_ITEM_WORDS.beforeLaterWork, rc);
+      rowId = typeof w.id === 'string' ? w.id : null;
+      break;
+    }
+    case 'written_contradicted': case 'written_corrected': case 'written_not_checked': {
       const w = row;
       const path = writtenPath(session, w);
       const shownPath = path ?? REPORT_WHAT_WORDS.aFile;
-      what = item.kind === 'written_contradicted'
+      what = item.kind !== 'written_not_checked'
         ? [S(`${REPORT_CONTRADICTION_SOURCES[w.contradictionSource === OWN_WRITTEN_SOURCE ? OWN_WRITTEN_SOURCE : 'result']} `
           + 'contradicts a statement that the agent wrote into '), path ? CODE(path) : S(shownPath), S('.')]
         : [S('Sonah did not check a statement that the agent wrote into '), path ? CODE(path) : S(shownPath), S('.')];
+      // D153: a later write of the agent's that replaced it, which the re-check's own check upheld.
+      if (item.kind === 'written_corrected' && Object.hasOwn(REPORT_DISCLOSURE_WORDS.written, w.disclosureReason))
+        what.push(S(' '), S(REPORT_DISCLOSURE_WORDS.written[w.disclosureReason]));
       quoteLine = quoteOf(session, w.stated);
       quoteMissing = !quoteLine;
       if (path) where.push(locationOf(ctx, { path }));
       for (const rc of list(w.receipts).filter((x) => plain(x) && !sameReceipt(x, w.stated)))
         quote(rc.role === 'observation' ? REPORT_ITEM_WORDS.recordedResult : REPORT_ITEM_WORDS.codeWritten, rc);
+      if (item.kind === 'written_corrected' && plain(w.correctedBy)) quote(REPORT_ITEM_WORDS.laterWrite, w.correctedBy);
       rowId = typeof w.id === 'string' ? w.id : null;
       label.text = item.kind === 'written_contradicted' && path ? REPORT_KIND_LABELS.written(fileName(path)) : null;
       break;
@@ -1767,7 +1969,16 @@ function finishItem(ctx, item) {
       const first = receipts.find((x) => x.role === 'commentary' && grounds(session, x));
       agentSaid = first ? quoted(first.quote) : null;
       if (first && speaker(first, null)) agentSaidLabel = REPORT_ITEM_WORDS.helperSaid;
-      for (const rc of receipts.filter((x) => x !== first).slice(0, 2)) quote(null, rc);
+      // D163 (the owner, 2026-10-28, "Labels + Sonah's reading"): each other quote under the label its receipt's role
+      // gives it (`roleLabel`), and the session review's own reading of why, when it wrote one, on its own line under a
+      // label that says whose words they are: never the agent's. Its review: a result is a recorded result only when
+      // `actorOf` says so (the result of a call the slicer typed as a command, a read, a write, an edit or a delete); the
+      // result of another tool (an MCP tool, a fetch, a helper's output) may be another model's words, and keeps no
+      // label, as an instruction that is not yours does (the quotes before D163 had none).
+      const pivotLabel = (rc) => (rc.role === 'observation' && actorOf(session, rc.eventId) !== RECORDED_ACTOR ? null
+        : roleLabel(rc));
+      for (const rc of receipts.filter((x) => x !== first).slice(0, 2)) quote(pivotLabel(rc), rc);
+      if (typeof p.whyAbandoned === 'string' && oneLine(p.whyAbandoned)) reviewWhy = [R(words(p.whyAbandoned))];
       if (entry?.where && codeReceiptFound(ctx.report, entry.where)) where.push(locationOf(ctx, { path: entry.where.path,
         side: entry.where.side ?? 'new', startLine: entry.where.startLine, endLine: entry.where.endLine,
         excerpt: excerptOf(ctx.report, entry.where) }));
@@ -1857,6 +2068,9 @@ function finishItem(ctx, item) {
   const own = item.tier.from === FROM_MEMBER ? null : item.tier;
   const whyText = own === null ? REPORT_TIER_WHY.held(REPORT_KIND_WORDS[item.setter.kind], tierWords)
     : own.bound === 'refused_call_ceiling' ? REPORT_TIER_WHY.refused
+      // D161: a question with no checked tie, at most Good to know, whatever was proposed.
+      : own.bound === UNTIED_TIER_RULE.bound ? REPORT_TIER_WHY.untied(entry?.level ? REPORT_LEVEL_WORDS[entry.level]
+        : null, tierWords)
       : own.proposed === null && item.tied ? (item.tiedBy.memberOf === holding ? REPORT_TIER_WHY.tiedHere(tierWords)
         : REPORT_TIER_WHY.tied(item.tiedBy.n ?? item.tiedBy.memberOf?.n, tierWords))
         : own.proposed === null ? REPORT_TIER_WHY.byDefault(kindWords, tierWords)
@@ -1876,6 +2090,8 @@ function finishItem(ctx, item) {
     // missing quote says only that none was linked, never that the agent was silent.
     agentSaid,
     agentSaidLabel,
+    // D163: a change of approach's reading of why, in the session review's words (Parts), or null.
+    reviewWhy,
     // D110: an item to verify names each premise that Sonah could not check, on a visible line of its own.
     restsOutside: item.kind === 'code_finding_unconfirmed' && restsOutside.length ? restsOutside : null,
     impact: entry?.impact ? [C(entry.impact)] : null,
@@ -1968,7 +2184,8 @@ function promptOf(ctx) {
       const linked = notes.find((note) => plain(note.finding));
       lines.push(ONE(REPORT_PROMPT_WORDS.codeFinding(linked ? findingItem(linked.finding.id)?.n ?? null : null)));
     }
-    if ((ask.state === 'partly' || ask.state === 'notDone') && itemN !== null) lines.push(ONE(REPORT_ITEM_WORDS.seeItem(itemN)));
+    if (['partly', 'notDone', 'notCheckedLater', 'laterWork'].includes(ask.state) && itemN !== null)
+      lines.push(ONE(REPORT_ITEM_WORDS.seeItem(itemN)));
     if (ask.state === 'notChecked' || ask.state === 'notCheckedCode') {
       // D101: a row the quote gate lowered says which test refused its quote (its cause), with code's numbers.
       const why = checked ? checklistReasonWords(checked, 'requirement') : null;
@@ -2211,8 +2428,12 @@ function didOf(ctx) {
       // D104: the mark of its failure row, the one row a run shows.
       seen: run.failure ? seenOf(ctx, [{ source: 'failures', row: run.failure.row }]) : [] };
   };
-  const cutParts = RESULT_PART_ORDER.map((cls) => [cls, cut.filter((run) => partOf(run.outcome) === cls).length])
+  const partsOf = (some) => RESULT_PART_ORDER.map((cls) => [cls, some.filter((run) => partOf(run.outcome) === cls).length])
     .filter(([, n]) => n > 0).map(([cls, n]) => REPORT_RESULT_PARTS[cls](n));
+  const cutParts = partsOf(cut);
+  // D167 (the owner, 2026-10-28): every run's part, the same classes and words as the cut runs' (and the header's), for
+  // the .md, which counts the runs in place of listing them (session-story.js `didSection`); the page lists them.
+  const parts = partsOf(runs);
   // Files no command ran after.
   const neverRan = neverRanPaths(ctx);
   // Claims: every promise and written statement, in session order.
@@ -2231,8 +2452,12 @@ function didOf(ctx) {
     // The item that holds the row (its own item, or the one it is folded into), else a code finding's that names it.
     const held = ctx.itemOfRow.get(rowKey(source, index)) ?? null;
     const item = held === null ? null : ctx.items.find((x) => x.n === held) ?? null;
-    // One status rule for every row, whatever item holds or names it; the row's words are always shown.
+    // One status rule for every row, whatever item holds or names it; the row's words are always shown. D153: a
+    // contradicted claim or statement the after-point re-check reaffirmed or left unsettled, as its item says it (one a
+    // later window checked, as one that later work followed).
     const status = item?.kind === 'code_claim_false' ? 'contradictedByCode'
+      : item && ['claim_not_checked_after_later_work', 'written_not_checked_after_later_work'].includes(item.kind)
+        ? (laterChecked(item.primary.source, item.primary.row) ? 'laterWork' : 'notCheckedLater')
       : item && (['claim_contradicted', 'claim_corrected', 'written_contradicted'].includes(item.kind)
         || (source === 'promises' && item.primary.source === 'findings')) ? 'contradicted'
         : codeCheckLine(report, row) ? 'contradictedByCode'
@@ -2284,7 +2509,7 @@ function didOf(ctx) {
       outsideSession, none },
     runs: { shown: shown.map(runLine), total: runs.length, commands: runs.filter((run) => run.command).length,
       others: runs.filter((run) => !run.command).length, quietExit0: quietExit0.length, cut: cut.length, cutParts,
-      neverRan, cutRuns: cut.map((run) => run.k) },
+      parts, neverRan, cutRuns: cut.map((run) => run.k) },
     claims: { shown: shownClaims.map(({ statusKey, ...c }) => c), total: claims.length,
       more: claims.length - shownClaims.length, closing,
       notChecked: { claims: notCheckedOfSource('promises'), written: notCheckedOfSource('writtenClaims') } },
@@ -2382,8 +2607,10 @@ function notCheckedOf(ctx, quiet = []) {
     if (text) fact('session', ONE(sentence(text)), { cause: true });
   }
   // D104: the causes that never cap the coverage (the results Sonah first showed the session review only in part),
-  // whatever the coverage.
-  for (const [cause, counts] of uncappedCauses(honest)) fact('session', ONE(sentence(COVERAGE_SENTENCE[cause](counts))));
+  // whatever the coverage. D155: and the decisions left out because their second check did not run, said whole in a
+  // shortened fold as a capping cause is (`UNCAPPED_CAUSES_SAID_WHOLE`).
+  for (const [cause, counts] of uncappedCauses(honest)) fact('session', ONE(sentence(COVERAGE_SENTENCE[cause](counts))),
+    UNCAPPED_CAUSES_SAID_WHOLE.includes(cause) ? { cause: true } : {});
   const gaps = gapsByMessage(ctx);
   for (const [k, reasons] of gaps.byAsk) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.gapsOfMessage(k,
     reasons.map((reason) => REPORT_GAP_WORDS[reason]).join(', and '))));
@@ -2431,7 +2658,9 @@ function notCheckedOf(ctx, quiet = []) {
     for (const line of codeCoverageLines(codePass)) code.push(ONE(sentence(line)));
     // With no finding published as confirmed: whether the review proposed none, or where the ones it proposed are.
     // D113's review: none with no change to review (`codeNoChangeOf`): no code-review call ran to propose anything.
-    if (codePass.ran === true && codeNoChangeOf(codePass) === null && !codePassFindings(report).length)
+    // D152: an open finding is a published finding of the report too.
+    if (codePass.ran === true && codeNoChangeOf(codePass) === null && !codePassFindings(report).length
+      && !codePassOpen(report).length)
       code.push(ONE(sentence(codeNoFindingLine(codePass, codeStepWithheld(report), codePassQuestions(report),
         codePassUnconfirmed(report)))));
   }
@@ -2696,9 +2925,161 @@ function commitFact(ctx, counted) {
 
 // ---- the count line (D97) ------------------------------------------------------------------------------
 
-function countLineOf(ctx, tiers, prompt) {
-  const counts = Object.fromEntries(REPORT_TIERS.map((tier) => [tier, tiers[tier].length]));
-  const mustAct = tiers[MUST_ACT];
+/** D153: an accusing finding's status. */
+const [DECIDE_STATUS] = PUBLIC_STATUSES;
+/**
+ * D153: the report as it was before the after-point re-check — each row it moved or reaffirmed put back to its earlier
+ * status and receipts (`recheck.earlier`), a corrected claim back to DECIDE and a corrected statement without its reason
+ * and correction, and every row's `recheck` taken off — so the same placement as the page's (`candidatesOf`,
+ * `placeItems`) says where each row stood. Rows only; every other member is the report's own. Pure.
+ */
+function beforeRecheck(report) {
+  const restore = (source) => list(report[source]).map((row) => {
+    if (!plain(row) || !plain(row.recheck)) return row;
+    const { recheck, ...rest } = row;
+    if (![RECHECK_MOVED, RECHECK_REAFFIRMED].includes(recheck.outcome)) return rest;
+    if (source === 'requirements') {
+      const earlier = plain(recheck.earlier) ? recheck.earlier : {};
+      if (recheck.outcome === RECHECK_REAFFIRMED) return { ...rest, shortfall: earlier.shortfall };
+      const { deliverable: _later, shortfall: _laterShortfall, ...base } = rest;
+      return { ...base, status: earlier.status, ...(earlier.deliverable ? { deliverable: earlier.deliverable } : {}),
+        ...(earlier.shortfall ? { shortfall: earlier.shortfall } : {}) };
+    }
+    const { disclosureReason: _reason, correctedBy: _correction, ...base } = rest;
+    return source === 'findings' ? { ...base, status: DECIDE_STATUS } : base;
+  });
+  return { ...report, requirements: restore('requirements'), findings: restore('findings'),
+    writtenClaims: restore('writtenClaims') };
+}
+/** D153: the items the page would place for `report` (`candidatesOf`, `placeItems`), read as the model reads its own. */
+function placedItemsOf(ctx, report) {
+  const facts = storyFacts(ctx.session, report);
+  const asks = promptAsks(ctx.session, report, facts);
+  const other = { ...ctx, report, facts, asks, askOfRow: new Map(asks.flatMap((ask) => ask.rows.map((index) => [index,
+    ask]))), triage: triageOf(report), codeTied: codeTiedRows(report) };
+  return placeItems(other, candidatesOf(other));
+}
+/**
+ * D153: the count line's sentence on the after-point re-check (REPORT_COUNT_WORDS.recheck), or null. It places the report
+ * as it was before the re-check (`beforeRecheck`), as the page places it, and counts each item of Must act there whose
+ * own row the re-check moved, reaffirmed or left unsettled and that no item in Must act holds now, by mechanism
+ * (REPORT_RECHECK_PARTS): an ask a later window found done, a claim or a statement written into a file it found
+ * corrected, and (one part, so the sentence stays short: its fix round) a row it reaffirmed or left unsettled, now in
+ * Must know (`unsettledRow`). So the count is the items that left Must act on the page, by what made them leave. Only a
+ * report the re-check ran on (`report.recheck`) has one, and only when an item left. Pure.
+ */
+function recheckLineOf(ctx, items) {
+  if (!plain(ctx.report.recheck)) return null;
+  const counts = Object.fromEntries(Object.keys(REPORT_RECHECK_PARTS).map((part) => [part, 0]));
+  const tierOfItem = new Map(items.map((item) => [item.n, item.tier.final]));
+  for (const item of placedItemsOf(ctx, beforeRecheck(ctx.report))) {
+    if (item.tier.final !== MUST_ACT) continue;
+    const { source, index } = item.primary;
+    const row = list(ctx.report[source])[index];
+    const recheck = plain(row) && plain(row.recheck) ? row.recheck : null;
+    const part = !recheck ? null : unsettledRow(source, row) ? 'mustKnow'
+      : recheck.outcome !== RECHECK_MOVED ? null : source === 'requirements' ? (row.status === DONE ? 'done' : null)
+        : ['findings', 'writtenClaims'].includes(source) ? 'corrected' : null;
+    if (part === null) continue;
+    if ((tierOfItem.get(ctx.itemOfRow.get(rowKey(source, index))) ?? null) !== MUST_ACT) counts[part]++;
+  }
+  const n = Object.values(counts).reduce((sum, k) => sum + k, 0);
+  return n ? REPORT_COUNT_WORDS.recheck(n, Object.keys(counts).filter((part) => counts[part] > 0)
+    .map((part) => REPORT_RECHECK_PARTS[part](counts[part])).join(', ')) : null;
+}
+
+/**
+ * D161 (the owner, 2026-10-27): the report's second part, the decisions the agent took (`items`, those `trailItem` takes,
+ * in `trailOrder`), as the readers see them (`shown`): `{ total, tagged, groups }`. `tagged` counts them by the tier each
+ * keeps as its tag (`tier.final`). Each group is the decisions taken after one message of yours that holds an ask and
+ * before the next such message, by their recorded position (`momentOf`): `{ key, message, asks, words, askLines,
+ * asksMore, count, tagged, open, items }`, `asks` the message's ask numbers, `askLines` the first `groupAsks` of them
+ * (`{ n, state, status, words }`, the prompt's own), `count` the group's count words, `open` true when it holds an item
+ * tagged Must act or Must know. The decisions taken before your first such message are one group (`before`); with no
+ * such message, every placed decision is one group (`all`); those Sonah could not place in the session order one more,
+ * last (`unplaced`). Groups in time order, none empty.
+ * D163 (the owner, 2026-10-28; Sonah's review of the D161 session): the part lists every decision end to end. A decision
+ * item that the first part keeps (`listed`: its lead a decision kind, `trailItem` false: it holds a Must row of another
+ * kind) is one entry at its place by the same key (`byMoment`), whose line says that the first part shows it
+ * (`above`), counted in the part's total and its group's, and tagged as what it is. Each group's `entries` are its
+ * entries in order (`{ n, above: false, tier, item }`, or `{ n, above: true, tier, type, what, scope }`); `shown` the
+ * entries a reader shows in it, `more` those it folds under one counted line (`moreWords`): in a group open by default,
+ * the entries tagged Good to know, after the Must ones; in a closed group, none (it shows every entry when opened).
+ * Pure.
+ */
+function trailOf(ctx, items, listed, shown, prompt) {
+  const byN = new Map(shown.map((item) => [item.n, item]));
+  const promptAsk = new Map(prompt.asks.map((a) => [a.n, a]));
+  const tally = (list_) => Object.fromEntries(REPORT_TIERS.map((tier) => [tier, list_.filter((item) => item.tier
+    === tier).length]));
+  const messages = list(ctx.facts.asks).map((m) => ({ k: m.k, at: ctx.orderOf.get(m.event?.id) ?? null,
+    asks: ctx.asks.filter((a) => a.message === m.k).map((a) => a.n) }))
+    .filter((m) => m.at !== null && m.asks.length).sort((a, b) => a.at - b.at);
+  for (const item of listed) item.moment = momentOf(ctx, item);
+  const above = new Set(listed);
+  const entryOf = (item) => {
+    const one = byN.get(item.n);
+    return above.has(item) ? { n: one.n, above: true, tier: one.tier.final, type: one.type, what: one.what,
+      scope: one.scope } : { n: one.n, above: false, tier: one.tier.final, item: one };
+  };
+  const groups = new Map();
+  for (const item of [...items, ...listed].sort(byMoment)) {
+    const after = item.moment === null ? null : messages.filter((m) => m.at <= item.moment).at(-1) ?? null;
+    // Its review: with no message of yours that holds an ask (placed in the session), no decision is "before your first
+    // ask": they are one group in the session order (`all`).
+    const key = item.moment === null ? 'unplaced' : !messages.length ? 'all' : after === null ? 'before'
+      : `message:${after.k}`;
+    if (!groups.has(key)) {
+      const asks = after ? after.asks : [];
+      const cut = cutTo(asks, REPORT_LIMITS.groupAsks);
+      groups.set(key, { key, message: after ? after.k : null, asks: [...asks],
+        words: after ? REPORT_TRAIL_WORDS.afterAsks(asks[0], asks.at(-1)) : key === 'before'
+          ? REPORT_TRAIL_WORDS.beforeAsks : key === 'all' ? REPORT_TRAIL_WORDS.inOrder : REPORT_TRAIL_WORDS.unplaced,
+        askLines: cut.shown.map((n) => promptAsk.get(n)).filter(Boolean).map((a) => ({ n: a.n, state: a.state,
+          status: a.status, words: a.words })), asksMore: cut.more, items: [], entries: [] });
+    }
+    const entry = entryOf(item);
+    groups.get(key).entries.push(entry);
+    if (!entry.above) groups.get(key).items.push(entry.item);
+  }
+  const out = [...groups.values()].map((g) => {
+    const tagged = tally(g.entries);
+    const open = tagged[MUST_ACT] + tagged[MUST_KNOW] > 0;
+    // D163 (L5): in an open group, the entries tagged Good to know fold under one counted line after the Must ones.
+    const more = open ? g.entries.filter((e) => !MUST_TIERS.includes(e.tier)) : [];
+    return { ...g, count: REPORT_COUNT_WORDS.decisions(g.entries.length, tagged[MUST_ACT], tagged[MUST_KNOW]), tagged,
+      open, shown: open ? g.entries.filter((e) => MUST_TIERS.includes(e.tier)) : g.entries, more,
+      moreWords: more.length ? REPORT_TRAIL_WORDS.moreTagged(more.length, REPORT_TIER_WORDS[GOOD_TO_KNOW])
+        : null };
+  });
+  const entries = out.flatMap((g) => g.entries);
+  return { total: entries.length, tagged: tally(entries), groups: out };
+}
+
+/**
+ * D163 (the owner, 2026-10-28, "Move 'decided on its own' up"): the first part's pointers to the second part's
+ * decisions tagged Must act or Must know (`decisions`, from `trailOf`): by tier, in number order, each `{ n, type, what,
+ * scope }`, the decision's own line fields, with no number of its own. A pointer of Must act is counted in Must act
+ * (`countLineOf`); one of Must know is not counted in Must know (D161, judgment call 4). Pure.
+ */
+function pointersOf(decisions) {
+  const items = list(decisions.groups).flatMap((g) => g.items);
+  return Object.fromEntries(MUST_TIERS.map((tier) => [tier, items.filter((item) => item.tier.final === tier)
+    .sort((a, b) => a.n - b.n).map((item) => ({ n: item.n, type: item.type, what: item.what, scope: item.scope }))]));
+}
+
+function countLineOf(ctx, tiers, prompt, decisions, pointers) {
+  // D163 (Sonah's review of the D161 session): Must act counts the decisions of the second part tagged Must act (its
+  // pointers), so it never reads 0 while one is; Must know counts the first part's own (D161, judgment call 4).
+  const counts = Object.fromEntries(REPORT_TIERS.map((tier) => [tier, tiers[tier].length
+    + (tier === MUST_ACT ? pointers[MUST_ACT].length : 0)]));
+  // D161: no Must item anywhere, the agent's decisions' tags among them, before the count line says Sonah found none.
+  const noMust = counts[MUST_ACT] === 0 && counts[MUST_KNOW] === 0 && decisions.tagged[MUST_ACT] === 0
+    && decisions.tagged[MUST_KNOW] === 0;
+  // D163: and its labels name them, after the first part's, in number order.
+  const pointed = new Set(pointers[MUST_ACT].map((p) => p.n));
+  const mustAct = [...tiers[MUST_ACT], ...list(decisions.groups).flatMap((g) => g.items)
+    .filter((item) => pointed.has(item.n)).sort((a, b) => a.n - b.n)];
   // D113 amended: the items about code outside the evaluated session, counted, and each one's label tagged.
   const away = REPORT_TIERS.flatMap((tier) => tiers[tier]).filter((item) => item.scope?.outsideSession === true).length;
   const tagged = (item) => (item.scope?.outsideSession === true && Array.isArray(item.label)
@@ -2707,11 +3088,16 @@ function countLineOf(ctx, tiers, prompt) {
     tiers: REPORT_TIERS.map((tier) => ({ tier, words: REPORT_TIER_WORDS[tier], n: counts[tier], folded: tier === GOOD_TO_KNOW })),
     prompt: ctx.asks.length ? REPORT_COUNT_WORDS.prompt(prompt.parts.join(', ')) : REPORT_COUNT_WORDS.noAsk,
     outside: away ? REPORT_COUNT_WORDS.outside(away) : null,
+    // D153: present only on a report the after-point re-check took an item out of Must act on.
+    ...(ctx.recheckLine ? { recheck: ctx.recheckLine } : {}),
+    // D161: the agent's decisions, after the tiers, with how many carry the tag Must act or Must know; null with none.
+    decisions: decisions.total ? { n: decisions.total, tagged: { ...decisions.tagged },
+      words: REPORT_COUNT_WORDS.decisions(decisions.total, decisions.tagged[MUST_ACT], decisions.tagged[MUST_KNOW]) } : null,
     labels: cutTo(mustAct, REPORT_LIMITS.mustActLabels).shown.map((item) => ({ n: item.n, parts: tagged(item) })),
     more: cutTo(mustAct, REPORT_LIMITS.mustActLabels).more,
-    empty: counts[MUST_ACT] === 0 && counts[MUST_KNOW] === 0 ? REPORT_COUNT_WORDS.emptyTiers : null,
+    empty: noMust ? REPORT_COUNT_WORDS.emptyTiers : null,
     // D133 (R2): the sentence after it, said in the fold What Sonah could not check.
-    quiet: counts[MUST_ACT] === 0 && counts[MUST_KNOW] === 0 ? [REPORT_COUNT_WORDS.notCorrect] : [],
+    quiet: noMust ? [REPORT_COUNT_WORDS.notCorrect] : [],
     counts,
   };
 }
@@ -2803,6 +3189,7 @@ function placementOf(ctx, candidates, model) {
   const shownRuns = new Set(model.did.runs.shown.map((run) => run.failureIndex).filter((x) => x !== null));
   const shownClaims = new Set(model.did.claims.shown.map((c) => rowKey(c.source, c.index)));
   const memberOf = new Map(ctx.items.flatMap((item) => item.members.map((member) => [member.primary, item])));
+  const trail = new Set(ctx.items.filter((item) => item.trail).map((item) => item.n));
   for (const c of candidates) {
     let place;
     if (c.heldBy) place = c.heldBy.primary === c ? { item: c.heldBy.n } : { foldedInto: c.heldBy.n };
@@ -2818,6 +3205,9 @@ function placementOf(ctx, candidates, model) {
       else if (c.place?.notChecked === 'unreadAsks') { place = { notChecked: 'unreadAsks' }; unreadAsks.push(c); }
       else { place = { notChecked: 'unreadRows' }; unreadRows.push(c); }
     }
+    // D161: a row an item of the agent's decisions holds is placed in the report's second part.
+    const n = place.item ?? place.foldedInto ?? place.memberOf;
+    if (n !== undefined && trail.has(n)) place = { ...place, part: TRAIL_PART };
     rows[c.key] = place;
   }
   // A row's short id. An ask with none is counted with no number: an unread ask maps to no ask of your prompt (it is
@@ -2855,11 +3245,17 @@ function placementOf(ctx, candidates, model) {
 
 /** The placement map of a model: every row of every source set, where it is (D97). */
 export const reportPlacement = (model) => model.placement.rows;
+/** D161: the part of the report a row held by an item of the agent's decisions is placed in (its place's `part`). */
+export const TRAIL_PART = 'decisions';
+/** D161: every item of the report in reading order: the tiers' (the first part), then the agent's decisions (the
+ *  second). */
+export const reportItems = (model) => [...REPORT_TIERS.flatMap((tier) => model.tiers[tier]),
+  ...list(model.decisions?.groups).flatMap((g) => g.items)];
 
 /** Per item, its kind and its default, proposed and final tier, and the bound that moved it (D97); since D112, which
  *  row placed it (`from`: a member's record is then the item's tier). */
 export function tierMoves(model) {
-  return REPORT_TIERS.flatMap((tier) => model.tiers[tier]).map((item) => ({ n: item.n, kind: item.kind,
+  return reportItems(model).map((item) => ({ n: item.n, kind: item.kind,
     default: item.tier.default, proposed: item.tier.proposed, final: item.tier.final, bound: item.tier.bound,
     from: item.tier.from }));
 }
@@ -2876,6 +3272,7 @@ function bodyLines(item) {
   for (const parts of list(item.restsOutside)) lines.push(`${REPORT_ITEM_WORDS.restsOutside} ${partsText(parts)}`);
   if (item.impact) lines.push(`${REPORT_ITEM_WORDS.impact} ${partsText(item.impact)}`);
   if (item.agentSaid) lines.push(`${item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid} ${partsText([item.agentSaid])}`);
+  if (item.reviewWhy) lines.push(`${REPORT_ITEM_WORDS.reviewWhy} ${partsText(item.reviewWhy)}`);
   if (item.action) lines.push(`${REPORT_ITEM_WORDS.action} ${partsText(item.action)}`);
   return lines;
 }
@@ -2940,7 +3337,7 @@ export function headText(model) {
     ...(header.didNotCheck ? [`${header.didNotCheck.lead} ${header.didNotCheck.phrases.join(' · ')}`
       + `${header.didNotCheck.more ? ` ${header.didNotCheck.more}` : ''}`] : [])].join(' '));
   lines.push(`${countLine.tiers.map((t) => `${t.words} ${t.n}${t.folded ? ` ${REPORT_COUNT_WORDS.folded}` : ''}`).join(' · ')}`
-    + ` · ${countLine.prompt}`);
+    + `${countLine.decisions ? ` · ${countLine.decisions.words}` : ''} · ${countLine.prompt}`);
   if (countLine.empty) lines.push(countLine.empty);
   else if (countLine.labels.length) lines.push(`${REPORT_COUNT_WORDS.mustActLead} ${countLine.labels
     .map((l) => partsText(l.parts)).join(' · ')}${countLine.more ? ` ${REPORT_COUNT_WORDS.more(countLine.more)}` : ''}`);
@@ -2969,24 +3366,62 @@ function promptOpenText(model) {
   return lines.join('\n');
 }
 /** The visible words of the first screen (D97): the header, the count line, your prompt when it comes before the
- *  tiers (D131: `promptAfterTiers`), and the first item of Must act, else of Must know, by `wc -w` rules on the text. */
+ *  tiers (D131: `promptAfterTiers`), and the first item of Must act, else of Must know, by `wc -w` rules on the text.
+ *  D163's review: a tier with no item of its own that points to decisions shows their heading and first line first. */
 export function firstScreenWords(model) {
-  const first = model.tiers[MUST_ACT][0] ?? model.tiers[MUST_KNOW][0] ?? null;
+  const first = firstMustOf(model);
   const open = promptAfterTiers(model) ? headText(model) : openText(model);
-  return countWords(open) + (first ? countWords(itemVisibleText(first)) : 0);
+  return countWords(open) + (first ? countWords(first.item ? itemVisibleText(first.item) : first.text) : 0);
 }
-/** The code lines of the first screen's item excerpt (at most `excerptLines`). */
+/** The code lines of the first screen's item excerpt (at most `excerptLines`); a pointer has none. */
 export function firstScreenExcerptLines(model) {
-  const first = model.tiers[MUST_ACT][0] ?? model.tiers[MUST_KNOW][0] ?? null;
-  return first?.where?.[0]?.excerpt?.lines?.length ?? 0;
+  return firstMustOf(model)?.item?.where?.[0]?.excerpt?.lines?.length ?? 0;
 }
+/** D163's review: what the first screen shows first under Must act, else under Must know: the tier's first item
+ *  (`{ item }`), else, with none, its pointers' heading and first line (`{ text }`); null with neither. */
+function firstMustOf(model) {
+  for (const tier of [MUST_ACT, MUST_KNOW]) {
+    if (model.tiers[tier][0]) return { item: model.tiers[tier][0] };
+    const lines = pointerLinesText(model, tier);
+    if (lines.length) return { text: lines.slice(0, 2).join('\n') };
+  }
+  return null;
+}
+/** D161: the line of one item of the agent's decisions, as a reader sees it with its detail folded: its number, type
+ *  word, what it is, its marker, the ask its instruction ties it to, and its tag. */
+export const trailLineText = (item) => `${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(item.what.parts)}`
+  + `${scopeMarker(item.scope)}${item.scope.asks.length ? ` · ${REPORT_ITEM_WORDS.asked(item.scope.asks[0])}` : ''}`
+  + ` · ${REPORT_TIER_WORDS[item.tier.final]}`;
+/** D163: the line of a decision that the first part shows, at its place in the second: its type word, what it is, its
+ *  marker, where the first part shows it, and its tag (no number of its own). */
+export const trailAboveText = (entry) => `${REPORT_TYPE_WORDS[entry.type]}: ${partsText(entry.what.parts)}`
+  + `${scopeMarker(entry.scope)} · ${REPORT_TRAIL_WORDS.shownAbove(entry.n)} · ${REPORT_TIER_WORDS[entry.tier]}`;
+/** D163: one entry of a group of the second part, as a reader sees its line. */
+export const trailEntryText = (entry) => (entry.above ? trailAboveText(entry) : trailLineText(entry.item));
+/** D163 (L1): a pointer of the first part to a decision of the second: the decision's number, type word, what it is,
+ *  its marker and its ask, as the second part shows them. */
+export const pointerLineText = (p) => `${p.n} ${REPORT_TYPE_WORDS[p.type]}: ${partsText(p.what.parts)}`
+  + `${scopeMarker(p.scope)}${p.scope.asks.length ? ` · ${REPORT_ITEM_WORDS.asked(p.scope.asks[0])}` : ''}`;
+/** D163 (L1): the lines of a tier's pointers, its heading first; none with no pointer. */
+export const pointerLinesText = (model, tier) => (list(model.pointers?.[tier]).length
+  ? [REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS[tier], model.pointers[tier].length),
+    ...model.pointers[tier].map(pointerLineText)] : []);
+/** D161: a group's summary line: whose message it follows, then its count. */
+export const trailGroupText = (group) => `${group.words} · ${group.count}`;
 /** Every word a reader sees with every fold closed: sections 1 to 3, Must act and Must know whole, and the headings
- *  of the folded sections. */
+ *  of the folded sections; D161: the heading of the agent's decisions, each group's line, and the lines of the decisions
+ *  in a group open by default. D163: each tier's pointers to the decisions tagged with it, and in an open group its
+ *  Must entries and the line that counts the rest. */
 export function visibleWords(model) {
-  const items = [...model.tiers[MUST_ACT], ...model.tiers[MUST_KNOW]].map(itemVisibleText);
-  const headings = [REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_ACT], model.tiers[MUST_ACT].length),
-    REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_KNOW], model.tiers[MUST_KNOW].length),
-    REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[GOOD_TO_KNOW], model.tiers[GOOD_TO_KNOW].length),
+  const trail = list(model.decisions?.groups);
+  const items = [...model.tiers[MUST_ACT].map(itemVisibleText), ...pointerLinesText(model, MUST_ACT),
+    ...model.tiers[MUST_KNOW].map(itemVisibleText), ...pointerLinesText(model, MUST_KNOW)];
+  if (trail.length) items.push(REPORT_TRAIL_WORDS.heading(model.decisions.total), ...trail.flatMap((g) => [trailGroupText(g),
+    ...(g.open ? [...g.askLines.map((a) => [REPORT_PROMPT_WORDS.askLine(a.n), a.status, partsText(a.words)].join(' · ')),
+      ...g.shown.map(trailEntryText), ...(g.moreWords ? [g.moreWords] : [])] : [])]));
+  const headings = [REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_ACT], model.countLine.counts[MUST_ACT]),
+    REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_KNOW], model.countLine.counts[MUST_KNOW]),
+    REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[GOOD_TO_KNOW], model.countLine.counts[GOOD_TO_KNOW]),
     REPORT_SECTION_WORDS.did, REPORT_SECTION_WORDS.notCheckedCounted(model.notChecked.total)];
   const footer = [model.footer.provenance, model.footer.usage ?? '', ...model.footer.legend,
     ...(model.prompt.messages.length ? [REPORT_PROMPT_WORDS.coverage] : []), model.footer.triageLegend ?? '',

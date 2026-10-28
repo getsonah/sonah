@@ -20,12 +20,14 @@ const BACKENDS = Object.freeze({
 const count = (n) => Number.isSafeInteger(n) && n >= 0 ? String(n) : 'UNCHECKED';
 
 /** The reviewer `sonah review` runs without flags, selected as session-review-command.js selects it: the backend from
- *  SONAH_REVIEW_BACKEND, the model from SONAH_MODEL or the backend's default, checked by `reviewJudgeConfig`. */
+ *  SONAH_REVIEW_BACKEND, the model from SONAH_MODEL or the backend's default, checked by `reviewJudgeConfig` (D160: with
+ *  the effort SONAH_EFFORT names, so one that the review would refuse reads as an invalid configuration here too). */
 function selectedReviewer(env) {
   try {
     const backend = env.SONAH_REVIEW_BACKEND ?? 'claude-cli';
     const { model } = reviewJudgeConfig(env, { backend,
-      model: env.SONAH_MODEL ?? (backend === 'claude-cli' ? SESSION_REVIEW_CLAUDE_CLI_MODEL : undefined) });
+      model: env.SONAH_MODEL ?? (backend === 'claude-cli' ? SESSION_REVIEW_CLAUDE_CLI_MODEL : undefined),
+      effort: env.SONAH_EFFORT });
     if (backend === 'claude-cli' && !attestableModel(model)) throw new Error('invalid_model');
     return [
       `  provider: ${BACKENDS[backend].provider}`,

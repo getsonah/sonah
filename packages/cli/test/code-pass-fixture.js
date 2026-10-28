@@ -249,9 +249,11 @@ export const accountsHold = (prompt) => accountsHoldWith(changeReceipt(prompt) ?
 export const traceReceipts = (finding) => finding.trace.filter((t) => t.side !== 'session')
   .map(({ path, side, startLine, endLine, quote }) => ({ path, side, startLine, endLine, quote }));
 /** A "holds" verdict on a finding, quoting every code step of its trace (the anchor's lines among them), every claim
- *  holding, with `premises` (code-verify/3, D110) as its premise list. */
-export const holdsWith = (finding, premises) => ({ verdict: 'holds', reason: null,
-  claims: finding.claims.map(({ claim }) => ({ claim, verdict: 'holds' })), premises,
+ *  holding, with `premises` (code-verify/3, D110) as its premise list and `breaks` (code-verify/5, D152) as its receipts
+ *  of what the behaviour breaks: by default the first code step of its trace, a receipt that grounds wherever the trace
+ *  does, so the finding is tied by structure and published at its kind's tier, as before D152. */
+export const holdsWith = (finding, premises, breaks = traceReceipts(finding).slice(0, 1)) => ({ verdict: 'holds',
+  reason: null, claims: finding.claims.map(({ claim }) => ({ claim, verdict: 'holds' })), premises, breaks,
   receipts: traceReceipts(finding), explanation: 'Synthetic: traced and found to hold.' });
 /** The one premise of the fixture's "holds" (code-verify/3, D110): a line of the repository that the trace quotes. */
 export const repositoryPremise = (finding) => ({ premise: 'Synthetic: the traced lines show the problem.',
@@ -264,12 +266,12 @@ export const allSound = (items) => ({
   questions: items.filter((i) => i.key.startsWith('Q')).map(({ key }) => ({ key, verdict: 'sound', receipts: [],
     explanation: 'Synthetic.' })) });
 /**
- * How many items of the record the review agent's lists ended as, `[findings, questions]`: a finding published, sent
- * to you as a question, or withheld with its own record; a question published, or withheld with its own record. For an
+ * How many items of the record the review agent's lists ended as, `[findings, questions]`: a finding published (D152:
+ * open too), sent to you as a question (a record before D152), or withheld with its own record; a question published, or withheld with its own record. For an
  * answer whose items are distinct, these are its lists' lengths when no item merged into another or was lost. One item
  * lost and another shown twice leaves the counts the same, so the counts cannot see that.
  */
-export const itemsEnded = ({ codePass: p }) => [p.findings.length
+export const itemsEnded = ({ codePass: p }) => [p.findings.length + (p.open ?? []).length
   + p.questions.filter((q) => q.from === 'finding').length + p.withheld.filter((w) => w.what === 'finding').length,
 p.questions.filter((q) => q.from === 'review').length + p.withheld.filter((w) => w.what === 'question').length];
 

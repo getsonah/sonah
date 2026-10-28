@@ -35,18 +35,20 @@ async (t) => {
   assert.ok(!call.args.includes(PROMPT));
   assert.equal(call.stdin, PROMPT);
   assert.equal(call.cwd, await realpath(root));
-  // localEnvironment, plus the switch that loads no CLAUDE.md as the agent's own instructions; the login's USER, LOGNAME
-  // and SHELL kept; no API key and no inherited Claude option.
+  // claudeEnvironment (D151): the switch that loads no CLAUDE.md as the agent's own instructions and safe mode; the
+  // login's USER, LOGNAME and SHELL kept; no API key and no inherited Claude option.
   for (const [key, value] of Object.entries({ HOME: fake.home, USER: 'synthetic-user', LOGNAME: 'synthetic-user',
-    SHELL: '/bin/sh', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
-    CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' })) assert.equal(call.env[key], value, key);
+    SHELL: '/bin/sh', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', CLAUDE_CODE_SAFE_MODE: '1',
+    CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1', CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1',
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' })) assert.equal(call.env[key], value, key);
   assert.equal(call.env.ANTHROPIC_API_KEY, undefined);
   assert.equal(call.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS, undefined);
   // The key's arguments: the same argv with each --add-dir path and the system prompt left out.
   assert.deepEqual(reviewAgentKeyArgs(call.args), call.args.filter((arg) => arg !== top && arg !== SYSTEM));
 });
 
-test('agent transport: a session request\'s argv and environment are byte for byte as before', async (t) => {
+test('agent transport: a session request\'s argv is byte for byte as before, and D151 gives it the agent\'s switches',
+async (t) => {
   // The tool-free argv, pinned whole: every stored session answer is keyed by it (answer-cache.js).
   assert.deepEqual(reviewCliArgs({ system: 'S', model: 'sonnet' }), ['--print', '--model', 'sonnet', '--effort', 'high',
     '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--tools', '', '--disable-slash-commands',
@@ -62,7 +64,9 @@ test('agent transport: a session request\'s argv and environment are byte for by
   await judgeOf(fake)({ system: SYSTEM, prompt: PROMPT });
   const [call] = await fake.calls();
   assert.deepEqual(call.args, reviewCliArgs({ system: SYSTEM, model: MODEL }));
-  assert.equal(call.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS, undefined, 'only an agent request loads no CLAUDE.md');
+  // D151: no call loads a CLAUDE.md file, a session request included (the managed one too); every call is in safe mode.
+  assert.equal(call.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1', 'no request loads a CLAUDE.md file');
+  assert.equal(call.env.CLAUDE_CODE_SAFE_MODE, '1');
   assert.notEqual(call.cwd, await realpath(root), 'a session request runs in its own private folder');
 });
 

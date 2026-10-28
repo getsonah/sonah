@@ -18,7 +18,7 @@ import { mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readSession, claudeRowClass, claudeRecordRow, canHoldSessionContent, CLAUDE_TOKEN_MAX_LENGTH,
-  CLAUDE_ROW_CLASSES } from '../src/records.js';
+  CLAUDE_ROW_CLASSES, claudeLabeller } from '../src/records.js';
 import { sliceLineage, hasCaptureGaps } from '../index.js';
 import { RECORDER_CENSUS_REASONS } from '../src/labels.js';
 import { redact } from '../../redact/index.js';
@@ -62,13 +62,14 @@ const kindOf = (r) => (r.type === 'attachment' ? `attachment.${r.attachment?.typ
   : r.type === 'system' ? `system.${r.subtype}` : String(r.type));
 
 test('D128: every form of row the owner\'s recordings held, by recorder version, gets its class', async (t) => {
-  for (const { name, versions, row: one, expect } of RECORDER_ROWS) {
+  for (const { name, versions, row: one, expect, listed = false } of RECORDER_ROWS) {
     assert.ok(versions.length > 0, name);
     assert.equal(await readerClass(t, one), expect, name);
     // Each one read by its structure is named in the census by its kind and its row's version.
     const { meta } = await readSession(await recording(t, conversation(one)));
     const named = (meta.structuralRows ?? []).map((entry) => entry.kind);
-    if (expect === 'harness' || expect === 'observations') assert.deepEqual(named, [kindOf(one)], name);
+    // D150: a form now listed (`listed`) is read by its list, so the census names it no more.
+    if ((expect === 'harness' || expect === 'observations') && !listed) assert.deepEqual(named, [kindOf(one)], name);
     else assert.deepEqual(named, [], name);
   }
 });
@@ -82,12 +83,12 @@ test('D128: every form of row the owner\'s recordings held, by recorder version,
  * not censused (D128's review, finding 5).
  */
 const FIXTURE_KINDS = Object.freeze([
-  'api-request-blob:instructions', 'api-request-blob:unclassified', 'api-request-shape:unclassified',
-  'api-request:harness', 'attachment.auto_mode:harness', 'attachment.budget_usd:harness',
+  'api-request-blob:instructions', 'api-request-blob:unclassified', 'api-request-shape:harness',
+  'api-request-shape:unclassified', 'api-request:harness', 'attachment.auto_mode:harness', 'attachment.budget_usd:harness',
   'attachment.credential_org:harness', 'attachment.date:harness', 'attachment.deferred_tools_delta:harness',
   'attachment.dynamic_skill:unclassified', 'attachment.hook_cancelled:unclassified',
   'attachment.mcp_instructions_delta:harness', 'attachment.prompt_snapshot:harness',
-  'attachment.queued_command:unclassified', 'attachment.remote_session_change:harness',
+  'attachment.queued_command:harness', 'attachment.remote_session_change:harness',
   'attachment.session_context:harness', 'attachment.task_status:observations',
   'attachment.total_tokens_reminder:harness', 'bridge-session:harness', 'history-suppression:harness',
   'last-prompt:harness', 'last-prompt:unclassified', 'permission-mode:harness', 'system.informational:unclassified',
@@ -248,5 +249,14 @@ test('D128\'s review: the pure classifier counts what the reader counts — a ro
   const { meta } = await readSession(await recording(t, conversation(...rows)));
   const byClassifier = rows.map((one) => claudeRowClass(one)).filter((c) => typeof c?.structural === 'string');
   assert.equal(byClassifier.length, (meta.structuralRows ?? []).reduce((n, entry) => n + entry.count, 0));
-  assert.equal(byClassifier.filter((c) => c.cls === 'harness').length, meta.capture.harnessContextRows);
+  // D150: and a request blob the labeller settles as a request copy (its twin is in the recording) is harness context too.
+  const labeller = claudeLabeller();
+  const values = conversation(...rows).map((one) => [one, labeller.label(one)]);
+  labeller.finish();
+  const copies = values.filter(([one, value]) => one.type === 'api-request-blob' && value.basis === 'request_copy').length;
+  // D150: and a row the reader now lists as harness (a queued command flagged `isMeta` with no `commandMode`).
+  const listedHarness = rows.map((one) => claudeRowClass(one))
+    .filter((c) => c?.cls === 'harness' && typeof c.structural !== 'string').length;
+  assert.equal(byClassifier.filter((c) => c.cls === 'harness').length + copies + listedHarness,
+    meta.capture.harnessContextRows);
 });

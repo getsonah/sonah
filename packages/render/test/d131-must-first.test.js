@@ -76,12 +76,38 @@ function reviews() {
 
 const text = (html) => html.replace(/<[^>]*>/g, '').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<')
   .replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-/** The count line's numbers, from its text: each tier's count and the prompt's parts. */
+/** The count line's numbers, from its text: each tier's count, (D161) the agent's decisions and their Must tags, and the
+ *  prompt's parts. */
 function countLineOf(line) {
-  const m = /^Must act (\d+) · Must know (\d+) · Good to know (\d+) \(folded\) · Your prompt: (.*)$/.exec(line);
+  const m = /^Must act (\d+) · Must know (\d+) · Good to know (\d+) \(folded\)(?: · (\d+) decisions?(?: \(([^)]*)\))?)? · Your prompt: (.*)$/
+    .exec(line);
   assert.ok(m, line);
-  return { act: Number(m[1]), know: Number(m[2]), good: Number(m[3]), parts: m[4] };
+  const tag = (word) => Number(new RegExp(`(\\d+) ${word}`).exec(m[5] ?? '')?.[1] ?? 0);
+  return { act: Number(m[1]), know: Number(m[2]), good: Number(m[3]), decisions: Number(m[4] ?? 0),
+    tagged: [tag('Must act'), tag('Must know')], parts: m[6] };
 }
+/** D161: the second part's numbers in a slice of a page or a .md: its heading's count, its decisions and their tags. */
+function trailNumbers(part, items) {
+  const heading = /The agent(?:&#39;|')s decisions, in order \((\d+)\)/.exec(part);
+  // D163: a decision that the first part shows is a line of its own here, its tag last (`</p>` on the page).
+  const tags = [...part.matchAll(/(?:<span class="tag tier-tag">| · )(Must act|Must know|Good to know)(?:<\/span>)?(?:<\/summary>|<\/p>|$)/gm)]
+    .map((m) => m[1]);
+  return { heading: heading ? Number(heading[1]) : 0, items, tagged: [tags.filter((t) => t === 'Must act').length,
+    tags.filter((t) => t === 'Must know').length] };
+}
+/** D161: the same, read from a report .md: one anchor a decision shown, and (shortened, its review) the decisions tagged
+ *  Good to know that a group counts and does not show. */
+function trailMd(part) {
+  // D163: and one line a decision that the first part shows.
+  const anchors = (part.match(/<a name="item-\d+"><\/a>/g) ?? []).length
+    + (part.match(/ · \[shown in item \d+ above\]\(#item-\d+\) · /g) ?? []).length;
+  const hidden = [...part.matchAll(/^Sonah does not show (\d+) decisions? tagged Good to know here\.$/gm)]
+    .reduce((n, m) => n + Number(m[1]), 0);
+  return { ...trailNumbers(part, anchors + hidden) };
+}
+/** The index of the first of `marks` found in `text` after `from`, else `text.length`. */
+const nextOf = (text, from, marks) => Math.min(...marks.map((mark) => text.indexOf(mark, from)).filter((i) => i >= 0),
+  text.length);
 /** "3 done, 1 partly done" read by the prompt part words, as `{ state: n }`; "Sonah found no ask…" as none. */
 function partsOf(parts) {
   const out = {};
@@ -104,7 +130,11 @@ function pageNumbers(html) {
   const head = countLineOf(text(/<p class="count">([\s\S]*?)<\/p>/.exec(html)[1]));
   const section = (id, next) => html.slice(html.indexOf(`id="${id}"`), html.indexOf(next, html.indexOf(`id="${id}"`)));
   const act = section('must-act', '</section>'), know = section('must-know', '</section>');
-  const good = html.slice(html.indexOf('id="good-to-know"'), html.indexOf('id="did"'));
+  // D161: Good to know ends where the agent's decisions begin, or your prompt, or What the agent did.
+  const goodAt = html.indexOf('id="good-to-know"');
+  const good = html.slice(goodAt, nextOf(html, goodAt, ['id="decisions"', 'id="prompt"', 'id="did"']));
+  const trailAt = html.indexOf('id="decisions"');
+  const trailPart = trailAt < 0 ? '' : html.slice(trailAt, html.indexOf('</section>', trailAt));
   const heading = (part) => Number(/<h2>[^<(]*\((\d+)\)<\/h2>/.exec(part)[1]);
   const promptHeading = text(/id="prompt">(?:<div|<summary) class="card-bar">(<h2>[\s\S]*?<\/h2>)/.exec(html)[1]);
   const asks = {};
@@ -115,10 +145,14 @@ function pageNumbers(html) {
   const labels = /<p class="count-labels">([\s\S]*?)<\/p>/.exec(html);
   const targets = labels ? [...labels[1].matchAll(/href="#item-(\d+)"/g)].map((m) => Number(m[1])) : [];
   const more = labels ? Number(/and (\d+) more/.exec(text(labels[1]))?.[1] ?? 0) : 0;
-  const actItems = [...act.matchAll(/<article class="item[^"]*" id="item-(\d+)"/g)].map((m) => Number(m[1]));
+  // D163: Must act holds its items and its pointers to the decisions tagged Must act.
+  const actItems = [...[...act.matchAll(/<article class="item[^"]*" id="item-(\d+)"/g)].map((m) => Number(m[1])),
+    ...[...act.matchAll(/<li><a href="#item-(\d+)">/g)].map((m) => Number(m[1]))];
   return { head, body: { act: heading(act), know: heading(know), good: heading(good), actItems: actItems.length,
     knowItems: (know.match(/<article class="item/g) ?? []).length,
-    goodItems: (good.match(/<details class="item gtk/g) ?? []).length, promptHeading, asks, targets, more, actIds: actItems } };
+    goodItems: (good.match(/<details class="item gtk/g) ?? []).length, promptHeading, asks, targets, more, actIds: actItems,
+    trail: trailNumbers(trailPart, (trailPart.match(/<details class="item gtk trail-item|<p class="trail-above">/g)
+      ?? []).length) } };
 }
 
 /** Good to know's items in the .md: one anchor each, or (shortened to counts by kind) the sum of its kinds' counts. */
@@ -135,23 +169,31 @@ function mdNumbers(md) {
   const promptH = at(/^(?:### |<details><summary>)(Your prompt \([^\n]*\))(?:<\/summary>)?$/m);
   const goodH = at(/^<details><summary>Good to know \((\d+)\)<\/summary>$/m);
   const didH = md.indexOf('<details><summary>What the agent did');
+  // D161: the agent's decisions, after Good to know and before your prompt, when the report holds one.
+  const trailH = /^### The agent's decisions, in order \((\d+)\)$/m.exec(md);
   const anchors = (from, to) => [...md.slice(from, to).matchAll(/<a name="item-(\d+)"><\/a>/g)].map((m) => Number(m[1]));
-  // Must act, then Must know, then your prompt (D131); the sections end where the next begins.
-  const actEnd = knowH.index, knowEnd = promptH.index;
+  // Must act, then Must know, then Good to know, then the agent's decisions, then your prompt (D131, D161); the sections
+  // end where the next begins.
+  const actEnd = knowH.index, knowEnd = goodH.index;
+  const goodEnd = trailH ? trailH.index : promptH.index;
+  const trailPart = trailH ? md.slice(trailH.index, promptH.index) : '';
   const rows = md.split('\n').filter((l) => /^\| (Done|Partly done|Not done|Not checked) \|/.test(l));
   const words = Object.fromEntries(Object.entries(REPORT_PROMPT_WORDS.status).map(([k, w]) => [w, k]));
   const asks = {};
   for (const row of rows) { const w = words[row.split(' | ')[0].slice(2)]; asks[w] = (asks[w] ?? 0) + 1; }
   const notShown = new RegExp(`^${REPORT_NOT_CHECKED_WORDS.rowsNotShown(999).replace('999', '(\\d+)').replace(/\./g, '\\.')}$`, 'm');
-  const promptPart = md.slice(promptH.index, goodH.index);
+  const promptPart = md.slice(promptH.index, didH);
   const hidden = Number(notShown.exec(promptPart)?.[1] ?? 0);
   const labels = md.split('\n').find((l) => l.startsWith('Must act: ['));
   const targets = labels ? [...labels.matchAll(/\]\(#item-(\d+)\)/g)].map((m) => Number(m[1])) : [];
   const more = labels ? Number(/and (\d+) more/.exec(labels)?.[1] ?? 0) : 0;
   return { head, body: { act: Number(actH[1]), know: Number(knowH[1]), good: Number(goodH[1]),
-    actIds: anchors(actH.index, actEnd), knowItems: anchors(knowH.index, knowEnd).length,
-    goodItems: goodItems(md.slice(goodH.index, didH)), promptHeading: promptH[1], asks, hidden, targets, more,
-    order: [actH.index, knowH.index, promptH.index, goodH.index, didH] } };
+    // D163: Must act holds its items and its pointers to the decisions tagged Must act (a link each, kept shortened).
+    actIds: [...anchors(actH.index, actEnd), ...[...md.slice(actH.index, actEnd).matchAll(/\[\d+[^\]]*\]\(#item-(\d+)\)/g)]
+      .map((m) => Number(m[1]))], knowItems: anchors(knowH.index, knowEnd).length,
+    goodItems: goodItems(md.slice(goodH.index, goodEnd)), promptHeading: promptH[1], asks, hidden, targets, more,
+    trail: trailMd(trailPart),
+    order: [actH.index, knowH.index, goodH.index, ...(trailH ? [trailH.index] : []), promptH.index, didH] } };
 }
 
 /** The invariant: no first-screen number differs from the body's. */
@@ -172,6 +214,9 @@ function sameNumbers(name, { head, body }, kind) {
   assert.deepEqual(shown, kind === 'md' ? byWord(parts) : parts, `${where}: the asks by status`);
   if (kind === 'md' && body.hidden) assert.equal(body.hidden, parts.done, `${where}: the rows not shown are the done asks`);
   assert.equal(body.targets.length + body.more, head.act, `${where}: Must act's labels and "and N more"`);
+  // D161: the agent's decisions, counted on the count line as in their part, with their Must tags.
+  assert.deepEqual([head.decisions, head.decisions], [body.trail.heading, body.trail.items], `${where}: decisions`);
+  assert.deepEqual(head.tagged, body.trail.tagged, `${where}: the decisions' Must tags`);
   for (const n of body.targets) assert.ok(body.actIds.includes(n), `${where}: label item ${n} is in Must act`);
 }
 
@@ -181,7 +226,8 @@ test('D131: no first-screen number differs from the body\'s, on every page and r
     sameNumbers(x.name, pageNumbers(x.page), 'page');
     const md = mdNumbers(x.md);
     sameNumbers(x.name, md, 'md');
-    // Must act, Must know, your prompt, Good to know, What the agent did: in that order (D131).
+    // Must act, Must know, Good to know, the agent's decisions, your prompt, What the agent did: in that order (D131,
+    // D161).
     assert.deepEqual(md.body.order, [...md.body.order].sort((a, b) => a - b), x.name);
   }
   // The snapshots hold to it as written.
@@ -193,6 +239,8 @@ test('D131: no first-screen number differs from the body\'s, on every page and r
   assert.ok(all.some((x) => x.model.prompt.folded === true));
   assert.ok(all.some((x) => mdNumbers(x.md).body.hidden > 0));
   assert.ok(all.some((x) => x.model.countLine.more > 0));
+  // D161: and a report whose decisions carry a Must tag.
+  assert.ok(all.some((x) => x.model.decisions.tagged.must_know > 0 && x.model.decisions.tagged.must_act > 0));
 });
 
 test('D131: Must act and Must know come before your prompt; a session of more than 30 asks folds it after them', () => {
@@ -209,7 +257,8 @@ test('D131: Must act and Must know come before your prompt; a session of more th
     // Page: the first Must act item comes before your prompt, and the prompt is a closed fold only on a long session.
     assert.ok(page.indexOf('id="must-act"') < page.indexOf('id="must-know"'));
     assert.ok(page.indexOf('id="must-know"') < page.indexOf('id="prompt"'));
-    assert.ok(page.indexOf('id="prompt"') < page.indexOf('id="good-to-know"'));
+    // D161: Good to know, folded, and the agent's decisions come before your prompt too.
+    assert.ok(page.indexOf('id="good-to-know"') < page.indexOf('id="prompt"'));
     assert.equal(page.includes('<details class="card-ui part fold-part" id="prompt">'), folded, `${n} asks: page fold`);
     assert.equal(page.includes('<section class="card-ui part" id="prompt">'), !folded, `${n} asks: page section`);
     // Its count stays in sight: the fold's summary is the prompt's heading, with every count.
@@ -280,10 +329,18 @@ test('D131: a shortened .md keeps Must act and Must know evidence before the lis
   const model = reportModel(session, report, repoFacts());
   const md = renderReportMarkdown(session, report, repoFacts());
   assert.ok(Buffer.byteLength(md, 'utf8') <= REPORT_MD_LIMITS.maxBytes);
-  // Must act keeps every evidence fold, with its lines; Must know, cut later, shows none; none is printed empty.
-  const filled = (tier) => (md.match(new RegExp(`<details><summary>Evidence · Why ${tier}</summary>\\n\\n- `, 'g')) ?? []).length;
-  assert.equal(filled('Must act'), model.tiers.must_act.length);
+  // Must act keeps every evidence fold, with its lines; Must know, cut later, shows none; none is printed empty. D161 (its
+  // review): the fixture's 90 decisions made without asking you are tagged Must know in the report's second part and are
+  // shortened as Must know is, never their lines: so they still push Must know's evidence out, in both parts.
+  const filled = (tier) => (md.match(new RegExp(`<details><summary>Evidence · Why ${tier}</summary>\\n\\n- `, 'g'))
+    ?? []).length;
+  assert.equal(filled('Must act'), model.tiers.must_act.length + model.decisions.tagged.must_act);
   assert.equal(filled('Must know'), 0);
+  assert.ok(model.decisions.total >= 90);
+  // D161's review: lowest tier first across both parts: the decisions tagged Good to know are counted in their group;
+  // those tagged Must know keep their line and anchor, as Must know of the first part does.
+  for (const item of model.decisions.groups.flatMap((g) => g.items))
+    assert.equal(md.includes(`<a name="item-${item.n}"></a>`), item.tier.final !== 'good_to_know', `decision ${item.n}`);
   assert.doesNotMatch(md, /<summary>[^\n]*<\/summary>\n\n<\/details>/, 'no fold is printed with nothing in it');
   // Your prompt keeps its counts and the rows of the asks that are not done; your messages are counted.
   const notDone = model.prompt.asks.filter((ask) => ask.state !== 'done');

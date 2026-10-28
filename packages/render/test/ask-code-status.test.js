@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage } from '../session-page.js';
-import { reportModel } from '../report-model.js';
+import { reportModel, reportItems } from '../report-model.js';
 import { REPORT_PROMPT_WORDS } from '../report-words.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { ATTENTION_ROWS, ATTENTION_WORDS, ASK_CODE_WORDS, askRowKind, askCodeNotes, attentionSummary, checklistRowCounts,
@@ -83,7 +83,7 @@ const modelOf = (r) => reportModel(session(), r, {});
 /** The page's line for ask `n` under your prompt, as text. */
 const askLineOf = (page, n) => { const m = new RegExp(`<li(?: id="ask-${n}")?>ask ${n} · [\\s\\S]*?</li>`).exec(page);
   return m ? m[0].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"') : ''; };
-const itemNumberOf = (model, title) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know]
+const itemNumberOf = (model, title) => reportItems(model)
   .find((item) => item.what.parts.some((p) => p.text === title))?.n ?? null;
 const plainComment = (text) => text.replace(/\\(.)/g, '$1').replace(/&#64;/g, '@');
 

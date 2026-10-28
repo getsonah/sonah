@@ -5,7 +5,9 @@
 // names no model, records which model it asked and where from, and stops when the CLI reports another window.
 //
 // Every stream and session here is invented; every child process is a fake. No model, no network. The stream shapes
-// are the claude CLI's own: the init names the id with the selector, the assistant the id without it, and the result's `modelUsage` is keyed by the id as configured with its `contextWindow`.
+// are Claude Code 2.1.278's: the init names the id with the selector, the assistant the id without it, and the result's
+// `modelUsage` is keyed by the id as configured with its `contextWindow`. D162: Claude Code 2.1.311's shape (the init
+// and its usage key without the selector) is tested in d162-selector-shapes.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -121,8 +123,9 @@ test('D70 (a) a plain id is attested as before and records the CLI\'s default wi
 
 test('D70 (a) identity: the init must name the id as configured, the assistant the id without the selector', async () => {
   const cases = [
-    // The CLI dropped the selector: its init names the plain id.
-    shaped({ configured: PLAIN, served: PLAIN, window: 200_000 }),
+    // The init names another model. (D162: an init naming the plain id is Claude Code 2.1.311's shape, attested on its
+    // window: d162-selector-shapes.test.js.)
+    shaped({ configured: 'claude-other-9-9', served: PLAIN, window: 1_000_000 }),
     // The assistant names the configured value, which no API serves.
     shaped({ configured: LONG, served: LONG, window: 1_000_000 }),
     // Another model served it.
@@ -139,9 +142,11 @@ test('D70 (a) identity: the init must name the id as configured, the assistant t
   assert.equal(crossed.error?.providerClass, 'identity_mismatch');
 });
 
-test('D70 (a) the window is read from the configured value\'s usage entry only, as a positive integer', async () => {
+test('D70 (a) the window is read from the configured value\'s usage entry, else the served id\'s, as a positive integer', async () => {
   for (const [events, expected] of [
-    [shaped({ configured: LONG, served: PLAIN, window: 1_000_000, key: PLAIN }), null],
+    // D162: Claude Code 2.1.311 keys the entry by the served id.
+    [shaped({ configured: LONG, served: PLAIN, window: 1_000_000, key: PLAIN }), 1_000_000],
+    [shaped({ configured: LONG, served: PLAIN, window: 1_000_000, key: 'claude-other-9-9' }), null],
     [shaped({ configured: LONG, served: PLAIN, window: '1000000' }), null],
     [shaped({ configured: LONG, served: PLAIN, window: 0 }), null],
     [(text) => [init(LONG), assistant(PLAIN, text), result(text, undefined)], null],
@@ -327,8 +332,11 @@ test('D70 review (S0) the probe (sonah doctor): ready on the shape this transpor
   assert.deepEqual(ready, { state: 'ready', providerClass: null,
     line: `Model: ${DEFAULT} answered one tiny synthetic request under the 1M context window.` });
   for (const [name, events, state, providerClass] of [
-    // The init names the id without the selector the run asked (probeOutcome: selector_shape_changed).
-    ['selector in the init', shaped({ configured: SERVED, served: SERVED, window: 200_000 }), 'not_answered', 'identity_mismatch'],
+    // D162: the init names the id without the selector the run asked (Claude Code 2.1.311's shape), and its usage gives
+    // another window: accepted, unattested, a window mismatch.
+    ['no selector in the init, another window', shaped({ configured: SERVED, served: SERVED, window: 200_000 }),
+      'context_window_mismatch', null],
+    // (The selector in the init of a plain request cannot reach doctor, which asks the default: probeOutcome's tests.)
     // The served model carries the selector (probeOutcome: selector_shape_changed).
     ['selector on the served id', shaped({ configured: DEFAULT, served: DEFAULT, window: 1_000_000 }), 'not_answered',
       'identity_mismatch'],
@@ -365,8 +373,9 @@ test('D70 review (S0) probeOutcome\'s own test: the closed outcome of one attemp
   const DEFAULT = SESSION_REVIEW_CLAUDE_CLI_MODEL, SERVED = servedModelId(DEFAULT);
   assert.equal(await run(shaped({ configured: DEFAULT, served: SERVED, window: 1_000_000 })), 'ready');
   for (const [events, outcome, options] of [
-    // The init names the id without the selector the run asked: the CLI's shape changed.
-    [shaped({ configured: SERVED, served: SERVED, window: 200_000 }), 'selector_shape_changed'],
+    // D162: the init names the id without the selector the run asked (Claude Code 2.1.311's shape), with another window.
+    [shaped({ configured: SERVED, served: SERVED, window: 200_000 }), 'context_window_mismatch'],
+    [shaped({ configured: SERVED, served: SERVED, window: 1_000_000 }), 'ready'],
     // The served model carries the selector.
     [shaped({ configured: DEFAULT, served: DEFAULT, window: 1_000_000 }), 'selector_shape_changed'],
     // The selector where the run asked none.

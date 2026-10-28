@@ -464,6 +464,10 @@ export const READ_CENSUS = Object.freeze({
     'ASK_CODE_WORDS.status.not-done': ['sonah', '66e3308fddba4469'],
     'ASK_CODE_WORDS.status.open': ['sonah', '66e3308fddba4469'],
     'ASK_CODE_WORDS.status.not-checked': ['sonah', '446bb81543748b1c'],
+    // D153: an ask no later window settled, beside a code-review note: what the session review did not check (sonah).
+    'ASK_CODE_WORDS.notCheckedLater': ['sonah', '62939525cf5662cf'],
+    // D153's fix round: an ask a later window reaffirmed, beside a code-review note: that later work followed (other).
+    'ASK_CODE_WORDS.laterWork': ['other', '7ea2e047a389daf1'],
     'ASK_CODE_WORDS.notMet': ['sonah', '3371bee831a51d31'],
     'ASK_CODE_WORDS.bearsOn': ['other', '5413be92fc743168'],
     'ASK_CODE_WORDS.withheld': ['sonah', '7be8646021a55963'],
@@ -486,6 +490,9 @@ export const READ_CENSUS = Object.freeze({
     // D113 amended (its second review): the PR comment's count of the findings of the code review about code outside the
     // evaluated session, apart from the session's own: it states that the code is outside the evaluated session.
     'ATTENTION_WORDS.codeFindingsOutside': ['absence', '242f83b68f100436'],
+    // D153's fix round: the PR comment's count of the items that later work followed, and where the page shows them
+    // (other).
+    'ATTENTION_WORDS.laterWork': ['other', '313d8857730c0cdd'],
     'ATTENTION_WORDS.notCovered': ['sonah', '705a225cd12631d6'],
     'ATTENTION_WORDS.folded': ['sonah', '0fefd06ce4c9d7ba'],
     'ATTENTION_WORDS.none': ['sonah', 'f5701cbcf089750a'],
@@ -588,6 +595,10 @@ export const READ_CENSUS = Object.freeze({
     'COVERAGE_SENTENCE.statements_capped': ['sonah', '168973cba840cd37'],
     'COVERAGE_SENTENCE.bodies_capped': ['sonah', '536a8442593c092c'],
     'COVERAGE_SENTENCE.unsupported_message': ['sonah', 'a6890f3301ddfeaa'],
+    // D150: the rows Sonah left unread, said by kind as what Sonah could not match or did not read.
+    'COVERAGE_SENTENCE.request_copies_unread': ['sonah', 'a350a82639c29aca'],
+    'COVERAGE_SENTENCE.hook_outputs_unread': ['sonah', '33bc6fe9607fca69'],
+    'COVERAGE_SENTENCE.edited_files_unread': ['sonah', 'd91bf25a6fcc75d5'],
     'COVERAGE_SENTENCE.unrecorded_body': ['sonah', '1c9c79fa33fb48e1'],
     'COVERAGE_SENTENCE.write_outcome_unknown': ['sonah', '52b14c68cff10e0a'],
     'COVERAGE_SENTENCE.command_outcome_unknown': ['sonah', 'f9e689a6e264728c'],
@@ -599,6 +610,8 @@ export const READ_CENSUS = Object.freeze({
     'COVERAGE_SENTENCE.pr_files_incomplete': ['sonah', '3262b68716ebc003'],
     // D104 (read 2026-10-17, when D100 and D104 were joined): what Sonah first showed the session review only in part.
     'COVERAGE_SENTENCE.results_seen_in_part': ['sonah', '5050c30eef512440'],
+    // D155 (read 2026-10-26): the decisions Sonah left out because their second check did not run, and the remedy.
+    'COVERAGE_SENTENCE.rechecks_unexecuted': ['sonah', 'db58771b33e20e27'],
     'FAILURE_SECTION_WORDS.intro': ['absence', '525a2abc4ac9cbce'],
     'FAILURE_SECTION_WORDS.none': ['sonah', '7ba1d069a5b69196'],
     'FOLDED_SECTION_WORDS.heading': ['sonah', 'ea64a56891363533'],
@@ -620,6 +633,7 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.footer': ['sonah', '40b600c01851e75f'],
     'CODE_REPORT_WORDS.outcomes.contradicted-by-code': ['other', '3950107e8006fcf5'],
     'CODE_REPORT_WORDS.how': ['other', '11be6e9461f9fd24'],
+    'CODE_REPORT_WORDS.howTied': ['other', '118e0c346ab1ecf8'],
     'CODE_REPORT_WORDS.howConfirm': ['other', 'afe17412670004cc'],
     'CODE_REPORT_WORDS.questionsChecked': ['sonah', '14da0321a9fd1d1e'],
     'CODE_REPORT_WORDS.rulesLinesUnknown': ['sonah', '20f43c8a74ea3f99'],
@@ -629,6 +643,9 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.seenGroups.whole': ['other', '5d5766cf2d787016'],
     'CODE_REPORT_WORDS.seenGroups.whole_not_before': ['sonah', 'c47ff8d4a0183668'],
     'CODE_REPORT_WORDS.shownFiles': ['sonah', '908033e2c212b0cb'],
+    // D149: what the code review of several units was shown, and the files past the calls one review makes.
+    'CODE_REPORT_WORDS.unitCap': ['sonah', '2f6a65968ebbeedd'],
+    'CODE_REPORT_WORDS.units': ['sonah', 'ea081d01972faa42'],
     'CODE_REPORT_WORDS.states.left_out': ['sonah', '1495c40bb567f439'],
     'CODE_REPORT_WORDS.states.other_repository': ['other', 'e9c1b726fbf2118b'],
     'CODE_REPORT_WORDS.states.outside_writer_root': ['other', '14ac9d2867a4895a'],
@@ -719,6 +736,7 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.premiseSources.repository': ['other', 'c9ba1ebdf3580141'],
     'CODE_REPORT_WORDS.premiseSources.language': ['other', '8c46b3e8c2231146'],
     'CODE_REPORT_WORDS.premiseSources.outside': ['sonah', '6d0a57bc0bffb85f'],
+    'CODE_REPORT_WORDS.openFinding': ['sonah', '9343863e2acabe9c'],
     'CODE_REPORT_WORDS.fromFinding': ['other', 'aa2222121c0bd088'],
     'CODE_REPORT_WORDS.fromFindingWords': ['sonah', 'b73d2376d23263f0'],
     'CODE_REPORT_WORDS.withheldLabel': ['sonah', '7f5ad98195ddf9d5'],
@@ -793,6 +811,9 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.causes.support_off_anchor': ['sonah', 'bb08adbf23c8b957'],
     'CODE_REPORT_WORDS.causes.support_off_trace': ['sonah', '85ad61c5d9675733'],
     'CODE_REPORT_WORDS.causes.refutation_uncited': ['sonah', '9265d4c60fd568c0'],
+    // D147 (read 2026-10-24): what Sonah could not tell of a check's quote whose relative path more than one place of
+    // the change holds.
+    'CODE_REPORT_WORDS.causes.receipt_path_ambiguous': ['sonah', 'e7fcf7e4252dc1f8'],
     'CODE_REPORT_WORDS.kinds.bug': ['other', '4cd693d9f484f47b'],
     'CODE_REPORT_WORDS.kinds.missed_case': ['other', '68747d36b552ca8f'],
     'CODE_REPORT_WORDS.kinds.weak_test': ['other', '03d8cec17f6062ec'],
@@ -961,6 +982,15 @@ export const READ_CENSUS = Object.freeze({
     // D113 amended: the items about code outside the evaluated session, and the tag after a label.
     'REPORT_COUNT_WORDS.outside': ['absence', '93f1e899d8f79762'],
     'REPORT_COUNT_WORDS.outsideLabel': ['absence', '7e6c2bbb92dde9b4'],
+    // D153: what the after-point re-check took out of Must act, by mechanism: counts and places (other).
+    // D153's fix round: the parts merged (asks done, rows corrected, rows now in Must know), so the sentence stays
+    // within 20 words; the count line read again with its longest fixture (other).
+    'REPORT_COUNT_WORDS.recheck': ['other', '8e57e23138812e06'],
+    // D161 (read 2026-10-27): the count of the agent's decisions, with how many carry the tag Must act or Must know.
+    'REPORT_COUNT_WORDS.decisions': ['other', '38df96df10a1b673'],
+    'REPORT_RECHECK_PARTS.done': ['other', 'e147f6343822c2ce'],
+    'REPORT_RECHECK_PARTS.corrected': ['other', '350d13943d98d1c7'],
+    'REPORT_RECHECK_PARTS.mustKnow': ['other', 'aefe13f4c24414ba'],
     'REPORT_DID_WORDS.fileTypes.added': ['other', '11507a0e2f5e69d5'],
     'REPORT_DID_WORDS.fileTypes.deleted': ['other', '1185f37d33b0f89e'],
     'REPORT_DID_WORDS.fileTypes.modified': ['other', 'd67e2e944994496c'],
@@ -977,6 +1007,13 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_DID_WORDS.unconfirmed': ['absence', '9fc4a18fe738d4d6'],
     'REPORT_DID_WORDS.moreRuns': ['other', '0128aa317c5e8c1c'],
     'REPORT_DID_WORDS.runsCut': ['sonah', 'c366a0dc88b040d3'],
+    // D167 (read 2026-10-28): the .md's count of the runs, in the header's result parts (each part read under
+    // REPORT_RESULT_PARTS); the label over the lines of the runs that another part of the .md names; and where the list
+    // of runs is. Each states a count, a label or a place; none states an absence. Its review (read again 2026-10-28):
+    // the place names the command as the CLI's usage does (`--output FILE`, FILE its placeholder); still a place.
+    'REPORT_DID_WORDS.runsCounted': ['other', '16a935b9d1df38fa'],
+    'REPORT_DID_WORDS.runsNamed': ['other', 'daf1386e77db8a19'],
+    'REPORT_DID_WORDS.runsOnPage': ['other', 'b1e105d919c71216'],
     'REPORT_DID_WORDS.neverRan': ['sonah', '1e682f44d8d1c319'],
     'REPORT_DID_WORDS.noRuns': ['sonah', 'a174cb3323a8a49d'],
     'REPORT_DID_WORDS.uncoveredExit': ['other', '3509f6a5551dbb39'],
@@ -989,6 +1026,10 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_DID_WORDS.claimStatus.contradictedByCode': ['other', '06b692c04a958c4e'],
     'REPORT_DID_WORDS.claimStatus.notChecked': ['sonah', '62849b956e0e29ae'],
     'REPORT_DID_WORDS.claimStatus.incomplete': ['sonah', 'a276f504f9179c21'],
+    // D153 (the owner, 2026-10-26): a claim or statement no later window settled: what Sonah did not check (sonah).
+    'REPORT_DID_WORDS.claimStatus.notCheckedLater': ['sonah', '39ab64348770764e'],
+    // D153's fix round: a claim a later window's RESULT showed failing again: that later work followed (other).
+    'REPORT_DID_WORDS.claimStatus.laterWork': ['other', 'b6ebf293554bbdb1'],
     'REPORT_DID_WORDS.moreClaims': ['sonah', 'b266f2ee475373f0'],
     'REPORT_DID_WORDS.noClaims': ['sonah', '62dc0ae003ddb12a'],
     'REPORT_DID_WORDS.written': ['other', 'b0e3e280447a1f5b'],
@@ -1005,6 +1046,9 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_DISCLOSURE_WORDS.edit.self_corrected': ['other', '7f50539322785d10'],
     'REPORT_DISCLOSURE_WORDS.edit.disclosed': ['other', '1243a64614a0a7b5'],
     'REPORT_DISCLOSURE_WORDS.edit.helper_internal': ['absence', 'da7abb45bbbc654f'],
+    // D153: a later window's correction, upheld by its own check: a positive fact (other).
+    'REPORT_DISCLOSURE_WORDS.claim.corrected_later': ['other', '0582a5aba595c676'],
+    'REPORT_DISCLOSURE_WORDS.written.corrected_later': ['other', 'e5c7439b33723f18'],
     'REPORT_FOOTER_WORDS.provenance': ['other', '3fc93dbb89545c4c'],
     'REPORT_FOOTER_WORDS.legend': ['other', '26f583f9d25dae5f'],
     'REPORT_FOOTER_WORDS.legendCodeReview': ['other', '6e582de3443fc0a0'],
@@ -1076,6 +1120,9 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_ITEM_WORDS.check': ['other', '2b564dc214699b51'],
     'REPORT_ITEM_WORDS.restsOn': ['other', 'c83d391afe09f06a'],
     'REPORT_ITEM_WORDS.restsOutside': ['sonah', '15de1dac95bbd1ea'],
+    // D163 (read 2026-10-28): the label of a change of approach's reason in the session review's words; it says whose
+    // words follow, never the agent's.
+    'REPORT_ITEM_WORDS.reviewWhy': ['other', '48326bb51a97113e'],
     'REPORT_ITEM_WORDS.rowId': ['other', '9b8d43a6e2e69cb7'],
     'REPORT_ITEM_WORDS.yourAnswer': ['other', 'adceb15c665f2cad'],
     'REPORT_ITEM_WORDS.codeWritten': ['other', '1330a5c1d9fc87c5'],
@@ -1083,6 +1130,12 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_ITEM_WORDS.changeShows': ['other', 'a073bc30206dcbed'],
     'REPORT_ITEM_WORDS.whatDoes': ['other', '0622b41fb0bd459c'],
     'REPORT_ITEM_WORDS.whatMissing': ['absence', '01f8d06d355a2116'],
+    // D153: labels of what the session review cited before the later work, and of a later correction (other).
+    'REPORT_ITEM_WORDS.beforeLaterWork': ['other', '85e24e1b24b64cd6'],
+    'REPORT_ITEM_WORDS.laterResult': ['other', '51ffa980bd6e7b69'],
+    'REPORT_ITEM_WORDS.laterWrite': ['other', '05cac07ee3723647'],
+    // D153 (the owner, 2026-10-26): the label of a reaffirmed ask's later quote, by where it is from (other).
+    'REPORT_ITEM_WORDS.fromLaterWork': ['other', '497c35b7a783b2fb'],
     'REPORT_ITEM_WORDS.otherSites': ['other', '9a5dff17a743d64b'],
     'REPORT_ITEM_WORDS.checkedAgainst': ['absence', '6b43af867e425189'],
     'REPORT_ITEM_WORDS.referredFrom': ['other', '8f69644e3209a6cd'],
@@ -1127,6 +1180,7 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_KIND_WORDS.edit_against_instruction': ['other', 'de5b554564948994'],
     'REPORT_KIND_WORDS.code_bug': ['other', '660a147894ab4999'],
     'REPORT_KIND_WORDS.code_finding_unconfirmed': ['sonah', '95cd70e5b8e8ee18'],
+    'REPORT_KIND_WORDS.code_finding_open': ['sonah', '9e24372712773546'],
     'REPORT_KIND_WORDS.code_contract': ['other', 'd7dde149d1134117'],
     'REPORT_KIND_WORDS.written_contradicted': ['other', '455c7b626f709920'],
     'REPORT_KIND_WORDS.code_weak_test': ['other', '83cb72f2259f48c1'],
@@ -1139,6 +1193,13 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_KIND_WORDS.decision_whether_asked': ['sonah', '24b8800569034d06'],
     'REPORT_KIND_WORDS.code_question_finding': ['other', 'a6be012901de1ccb'],
     'REPORT_KIND_WORDS.claim_corrected': ['other', '73808da718a2d886'],
+    // D153: an ask no later window settled, said as what Sonah did not check (sonah); a corrected statement
+    // (other).
+    'REPORT_KIND_WORDS.ask_not_checked_after_later_work': ['other', '49c1d10731916a59'],
+    // D153 (the owner, 2026-10-26): a claim and a statement no later window settled: what Sonah did not check (sonah).
+    'REPORT_KIND_WORDS.claim_not_checked_after_later_work': ['other', 'b6b966c51527b610'],
+    'REPORT_KIND_WORDS.written_not_checked_after_later_work': ['other', '435e66b7c335a79f'],
+    'REPORT_KIND_WORDS.written_corrected': ['other', '511acf65bcb32a0e'],
     'REPORT_KIND_WORDS.edit_undone': ['other', 'a874577f839ea2bf'],
     'REPORT_KIND_WORDS.claim_not_checked': ['sonah', '8cf814bdb1c02b64'],
     'REPORT_KIND_WORDS.claim_incomplete': ['sonah', 'a89797f013a9014e'],
@@ -1184,6 +1245,7 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_NOT_CHECKED_WORDS.rowKinds.codePass.questions': ['other', 'a274657ede70b8ef'],
     'REPORT_NOT_CHECKED_WORDS.rowKinds.codePass.withheld': ['other', 'ac11118711f72a8c'],
     'REPORT_NOT_CHECKED_WORDS.rowKinds.codePass.unconfirmed': ['other', '036ecb319e872680'],
+    'REPORT_NOT_CHECKED_WORDS.rowKinds.codePass.open': ['other', 'bee4f232722a9e9d'],
     'REPORT_NOT_CHECKED_WORDS.encryptedBriefs': ['sonah', '9d0357d7a57e8683'],
     'REPORT_NOT_CHECKED_WORDS.encryptedMessages': ['sonah', '43f663d41c7a83e1'],
     'REPORT_NOT_CHECKED_WORDS.gapsUntied': ['sonah', 'b2aba0434a676560'],
@@ -1219,10 +1281,15 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_PROMPT_PARTS.notDone': ['absence', '5bc3d14527bb3ca7'],
     'REPORT_PROMPT_PARTS.notChecked': ['sonah', '33ac74e35abf201a'],
     'REPORT_PROMPT_PARTS.notCheckedCode': ['sonah', '8d09f2e3deae7286'],
+    'REPORT_PROMPT_PARTS.notCheckedLater': ['sonah', '1ba3a2628401e1c3'],
+    // D153's fix round: asks a later window reaffirmed: that later work followed them (other).
+    'REPORT_PROMPT_PARTS.laterWork': ['other', '080d962a87dbe30e'],
     'REPORT_PROMPT_WORDS.status.done': ['other', '11a6767d5674c7e4'],
     'REPORT_PROMPT_WORDS.status.partly': ['absence', '1afdeec8fabc72c3'],
     'REPORT_PROMPT_WORDS.status.notDone': ['absence', '0df2acbef651ceda'],
     'REPORT_PROMPT_WORDS.status.notChecked': ['sonah', 'd16948e73a680090'],
+    'REPORT_PROMPT_WORDS.status.notCheckedLater': ['sonah', '36db7b9521fa7a2e'],
+    'REPORT_PROMPT_WORDS.status.laterWork': ['other', '92660a30f74058bf'],
     'REPORT_PROMPT_WORDS.coverage': ['sonah', '2151906bf476a859'],
     // D115: read again, what the session review cited as doing the ask (sonah, registered on its row). Its earlier words
     // ("Sonah found no recorded result or change for it") named a search that Sonah never ran.
@@ -1292,16 +1359,35 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_SECTION_WORDS.closingLines': ['sonah', '9f0bda6ff43d9777'],
     'REPORT_SECTION_WORDS.noAskMessages': ['sonah', '0699cfabd49b552a'],
     'REPORT_SECTION_WORDS.wholeMessage': ['other', 'c6274ed63020e79e'],
-    'REPORT_TIER_WHY.byDefault': ['other', '92a409daf713537b'],
+    'REPORT_TIER_WHY.byDefault': ['other', '4a9294e4a61021db'],
     'REPORT_TIER_WHY.tied': ['other', 'f47ef59452b3098c'],
     'REPORT_TIER_WHY.kept': ['other', 'fc74fcc828660708'],
-    'REPORT_TIER_WHY.bounded': ['sonah', '5971ab01ead777cf'],
+    'REPORT_TIER_WHY.bounded': ['sonah', '402575da6ccb94dc'],
     'REPORT_TIER_WHY.refused': ['sonah', '11baac912b6b64e3'],
-    'REPORT_TIER_WHY.held': ['other', '5cce894c3f60f376'],
+    'REPORT_TIER_WHY.held': ['other', '1d200bc5e965ffbb'],
     'REPORT_TIER_WHY.tiedHere': ['other', '2607a29ec3e8fb53'],
+    // D161 (read 2026-10-27): a question Sonah could not tie to an item or an ask is at most Good to know.
+    'REPORT_TIER_WHY.untied': ['sonah', '8355ff51103e7da3'],
     'REPORT_TIER_WORDS.must_act': ['other', 'b78ac834ac3e2267'],
     'REPORT_TIER_WORDS.must_know': ['other', '5b58b83abb12e4a9'],
     'REPORT_TIER_WORDS.good_to_know': ['other', 'aab7685123cf4b02'],
+    // D161 (read 2026-10-27): the report's second part, the agent's decisions in the session order, by group.
+    'REPORT_TRAIL_WORDS.heading': ['other', '3a58ad3f745c2d09'],
+    'REPORT_TRAIL_WORDS.afterAsks': ['other', 'a324ec3eba772ebf'],
+    'REPORT_TRAIL_WORDS.beforeAsks': ['other', '14625efa5649c879'],
+    'REPORT_TRAIL_WORDS.unplaced': ['sonah', 'bd93677c29065d77'],
+    'REPORT_TRAIL_WORDS.moreAsks': ['other', '2e94b74c26750802'],
+    // D161's review (read 2026-10-27): the decisions tagged Good to know a shortened .md leaves out of a group (what Sonah
+    // does not show), and the one group of a session with no message that holds an ask.
+    'REPORT_TRAIL_WORDS.goodToKnowNotShown': ['sonah', '44f9cef47ed4e056'],
+    'REPORT_TRAIL_WORDS.inOrder': ['other', '1c0339afd4bd2ab1'],
+    // D163 (read 2026-10-28): the first part's heading over its pointers to the decisions tagged with its tier, the
+    // line of a decision that the first part shows at its place in the second, and an open group's count of the
+    // decisions tagged Good to know it folds after the Must ones. None states an absence. Its review (read again
+    // 2026-10-28): the heading says the decisions are further down, so its count is theirs alone.
+    'REPORT_TRAIL_WORDS.taggedHere': ['other', 'ce400d9862757069'],
+    'REPORT_TRAIL_WORDS.shownAbove': ['other', '9a98d1d58dc38b14'],
+    'REPORT_TRAIL_WORDS.moreTagged': ['other', '9766b630a0272f86'],
     'REPORT_TRIM_WORDS.trimmed': ['sonah', 'dfdd7273198d719d'],
     'REPORT_TRIM_WORDS.listsTrimmed': ['sonah', '5c227958727814d5'],
     'REPORT_TRIM_WORDS.messagesTrimmed': ['sonah', '8d265dd69fcbab02'],
@@ -1314,6 +1400,16 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_TYPE_WORDS.verify': ['other', 'eea2745e2867a677'],
     'REPORT_WHAT_WORDS.ask_not_done': ['absence', '398e197243cfe3ef'],
     'REPORT_WHAT_WORDS.ask_partly_done': ['absence', '3a658f5ad7e92340'],
+    // D153: an ask no later window settled, with no accusing word: what Sonah did not check (sonah).
+    'REPORT_WHAT_WORDS.ask_not_checked_after_later_work': ['sonah', 'a7835e736d9de636'],
+    // D153 (the owner, 2026-10-26): a claim and a statement no later window settled, with no accusing word: what Sonah
+    // did not check (sonah).
+    'REPORT_WHAT_WORDS.claim_not_checked_after_later_work': ['sonah', '47932cbcdaa1df13'],
+    'REPORT_WHAT_WORDS.written_not_checked_after_later_work': ['sonah', '9d05b63d0a8e2762'],
+    // D153's fix round: an ask a later window reaffirmed, and a claim a later window's RESULT showed failing again: that
+    // later work followed it, no verdict said (other).
+    'REPORT_WHAT_WORDS.askLaterWork': ['other', '958a8db2e9f53b58'],
+    'REPORT_WHAT_WORDS.claimLaterWork': ['other', '8c4ff617f5ac90bc'],
     'REPORT_WHAT_WORDS.contradicts': ['other', 'f61e44ee5c74f77f'],
     'REPORT_WHAT_WORDS.contradictsWritten': ['other', 'bce93db14f228dab'],
     'REPORT_WHAT_WORDS.editAgainst': ['other', 'fd63d328272dd80a'],
@@ -1481,6 +1577,18 @@ export const READ_CENSUS = Object.freeze({
     'SKILL_WORDS.doctor.foreign': ['sonah', '6a9925c372f7fdbb'],
     'SKILL_WORDS.doctor.noPath': ['sonah', '635d137858611d08'],
   }),
+  // D151: doctor's lines on Sonah's own Claude Code calls. Whose login they use, a relative CLAUDE_CONFIG_DIR said by
+  // what Sonah found and gives the calls, and a safe mode accepted: other. A safe mode refused (Sonah cannot tell that
+  // its calls run in it) or not checked (Sonah could not read the sign-in state): sonah. None states an absence.
+  'packages/cli/src/doctor.js': Object.freeze({
+    'DOCTOR_CLAUDE_WORDS.login.named': ['other', 'cf0b67fa44339d3a'],
+    'DOCTOR_CLAUDE_WORDS.login.default': ['other', 'd15d3e130b7db24a'],
+    'DOCTOR_CLAUDE_WORDS.login.token': ['other', 'a85d5dce39d1dda2'],
+    'DOCTOR_CLAUDE_WORDS.login.relative': ['other', '6f37789009508d3c'],
+    'DOCTOR_CLAUDE_WORDS.safeMode.accepted': ['other', '4e296cad89179e5b'],
+    'DOCTOR_CLAUDE_WORDS.safeMode.refused': ['sonah', '99cde1adfb0c9db0'],
+    'DOCTOR_CLAUDE_WORDS.safeMode.notChecked': ['sonah', 'ebf05357a5e7bef8'],
+  }),
   'packages/cli/src/session-review-command.js': Object.freeze({
     'ANSWER_REUSE_WORDS.session': ['other', '85e45abc60f5de21'],
     'ANSWER_REUSE_WORDS.code': ['other', '79cb4d6d285c6efe'],
@@ -1541,6 +1649,8 @@ export const READ_CENSUS = Object.freeze({
     'REVIEW_FIX_WORDS.output_folder_unwritable': ['other', 'efdee78c7de3b206'],
     'REVIEW_FIX_WORDS.unsupported_backend': ['other', '6ce01f5f455c9233'],
     'REVIEW_FIX_WORDS.invalid_model': ['other', '7fce32e6f9387005'],
+    'REVIEW_FIX_WORDS.invalid_effort': ['sonah', 'b918c918268c159e'],
+    'REVIEW_FIX_WORDS.effort_claude_cli_only': ['sonah', 'e003bbd292ed00e6'],
     'REVIEW_FIX_WORDS.explicit_api_model_required': ['other', 'ad4500105f6969fc'],
     'REVIEW_FIX_WORDS.anthropic_key_missing': ['other', 'aeccbabeca44e84f'],
     'REVIEW_FIX_WORDS.review_in_progress': ['other', 'd64824cdc08e6d4f'],
@@ -1617,7 +1727,9 @@ export const READ_CENSUS = Object.freeze({
     'SAVED_COMMENT_WORDS.lead': ['sonah', '40e27d1e02b0ba78'],
     'WORKING_FOLDER_WORDS.refused': ['sonah', '203fe4812ee00326'],
     'WORKING_FOLDER_WORDS.fix': ['other', '7a49f66e9d8a61f7'],
-    'sessionReviewUsage': ['other', 'b3d033c6851d850a'],
+    'sessionReviewUsage': ['other', 'fa2c83253fa72038'],
+    // D155 (read 2026-10-26): the window line's count of the decisions left out because their second check did not run.
+    'WINDOW_LINE_WORDS.rechecksUnexecuted': ['sonah', 'b5bd26647c019d59'],
   }),
   'packages/github/publication.js': Object.freeze({
     'CHECK_TITLES.complete': ['other', 'a11477790b308f7c'],

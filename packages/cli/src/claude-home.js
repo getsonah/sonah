@@ -12,13 +12,28 @@
 // Pure: reads only the env and home it is given; no filesystem access. An empty value is unset.
 // A caller that already takes an injected `home` or projects dir keeps that precedence itself.
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 const given = (value) => (typeof value === 'string' && value !== '' ? resolve(value) : null);
 
 /** $CLAUDE_CONFIG_DIR (absolute) when set and non-empty, else <home>/.claude. */
 export function claudeConfigDir({ env = process.env, home = homedir() } = {}) {
   return given(env.CLAUDE_CONFIG_DIR) ?? join(home, '.claude');
+}
+
+/**
+ * D151: $CLAUDE_CONFIG_DIR as every claude process Sonah starts is given it (review-judge.js `claudeEnvironment`), or
+ * null when it is unset or empty. An absolute value goes exactly as written: Claude Code names a login after the
+ * variable's own string, not the folder it names (2.1.310: on macOS the keychain entry is named after a hash of the
+ * value, unresolved), so another spelling of the same folder (a trailing slash, `//`, a `.` segment) is another login.
+ * A relative value is resolved against Sonah's own working folder, the folder `claudeConfigDir` reads from: as written
+ * it would name another folder from each call's own working folder (a fresh temporary folder, the repository), and on
+ * macOS its keychain login does not follow it (doctor says so).
+ */
+export function claudeConfigDirForCalls(env = process.env) {
+  const value = env.CLAUDE_CONFIG_DIR;
+  if (typeof value !== 'string' || value === '') return null;
+  return isAbsolute(value) ? value : resolve(value);
 }
 
 /** $SONAH_CLAUDE_PROJECTS (absolute) when set and non-empty, else <config dir>/projects. */
@@ -34,8 +49,9 @@ export function claudeLiveProjectsDir({ env = process.env, home = homedir() } = 
 
 /**
  * Where the coding agents keep their own files on this machine, which any session of theirs writes while it runs — the
- * person's own, and the code step's review agents (Claude Code, run with this HOME and no CLAUDE_CONFIG_DIR of the
- * person's: review-judge.js `localEnvironment`): Claude Code's folder (`claudeConfigDir`, and `<home>/.claude`) and its
+ * person's own, and the code step's review agents (Claude Code, run with this HOME and, D151, the person's
+ * CLAUDE_CONFIG_DIR when set: review-judge.js `claudeEnvironment`): Claude Code's folder (`claudeConfigDir`, and
+ * `<home>/.claude`) and its
  * state file beside it (`<home>/.claude.json`; with CLAUDE_CONFIG_DIR, the one inside that folder), and Codex's home
  * ($CODEX_HOME, else `<home>/.codex`). Absolute, each once. Not a rule about what is read or shown: the code step's
  * repository state leaves these out (code-snapshot.js `repositoryState`), so a write by a harness during the review is

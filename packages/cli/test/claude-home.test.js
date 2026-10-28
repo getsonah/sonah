@@ -17,7 +17,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, isAbsolute } from 'node:path';
-import { claudeConfigDir, claudeProjectsDir, harnessHomePlaces } from '../src/claude-home.js';
+import { claudeConfigDir, claudeConfigDirForCalls, claudeProjectsDir, harnessHomePlaces } from '../src/claude-home.js';
 import { detectAdapters } from '../src/doctor.js';
 
 const exec = promisify(execFile);
@@ -37,8 +37,8 @@ const MATRIX = [
     { config: '/synthetic/c', projects: '/synthetic/p' }],
   ['empty strings behave as unset', { CLAUDE_CONFIG_DIR: '', SONAH_CLAUDE_PROJECTS: '' },
     { config: '/synthetic/machine/.claude', projects: '/synthetic/machine/.claude/projects' }],
-  ['a trailing slash is normalised', { CLAUDE_CONFIG_DIR: '/synthetic/c/', SONAH_CLAUDE_PROJECTS: '/synthetic/p/' },
-    { config: '/synthetic/c', projects: '/synthetic/p' }],
+  ['a trailing slash is normalised for Sonah\'s own reads', { CLAUDE_CONFIG_DIR: '/synthetic/c/',
+    SONAH_CLAUDE_PROJECTS: '/synthetic/p/' }, { config: '/synthetic/c', projects: '/synthetic/p' }],
 ];
 
 for (const [name, env, expected] of MATRIX) {
@@ -56,6 +56,17 @@ test('claude home: relative values are resolved to absolute paths', () => {
     join(resolve('rel/config'), 'projects'));
 });
 
+test('claude home: D151, a claude process gets an absolute CLAUDE_CONFIG_DIR as written (Claude Code names the login '
+  + 'after that string), a relative one resolved, an empty one not at all', () => {
+  for (const written of ['/synthetic/c', '/synthetic/c/', '/synthetic//c', '/synthetic/./c', '/synthetic/x/../c']) {
+    assert.equal(claudeConfigDirForCalls({ CLAUDE_CONFIG_DIR: written }), written, written);
+    assert.equal(claudeConfigDir({ env: { CLAUDE_CONFIG_DIR: written }, home: HOME }), '/synthetic/c', 'Sonah reads one folder');
+  }
+  assert.equal(claudeConfigDirForCalls({ CLAUDE_CONFIG_DIR: 'rel/config/' }), resolve('rel/config'));
+  for (const unset of [{}, { CLAUDE_CONFIG_DIR: '' }, { CLAUDE_CONFIG_DIR: undefined }])
+    assert.equal(claudeConfigDirForCalls(unset), null);
+});
+
 test('claude home: the rule reads only the env it is given, and the home only when the env is silent', () => {
   // A non-string (a caller's typo, an injected object) is not a path: it is unset, not "undefined".
   assert.deepEqual(where({ CLAUDE_CONFIG_DIR: undefined, SONAH_CLAUDE_PROJECTS: null }), MATRIX[0][2]);
@@ -65,7 +76,8 @@ test('claude home: the rule reads only the env it is given, and the home only wh
 
 test('the coding agents\' homes: Claude Code\'s folder and state file, as the review\'s own agents and the person\'s set them, and Codex\'s', () => {
   assert.deepEqual(harnessHomePlaces({ env: {}, home: '/h' }), ['/h/.claude', '/h/.claude.json', '/h/.codex']);
-  // CLAUDE_CONFIG_DIR keeps the person's sessions (and its own .claude.json) elsewhere; the review's agents run with HOME.
+  // CLAUDE_CONFIG_DIR keeps the person's sessions (and its own .claude.json) elsewhere; the review's agents run with HOME
+  // and, D151, that same folder. Both places stay in the set.
   assert.deepEqual(harnessHomePlaces({ env: { CLAUDE_CONFIG_DIR: '/c', CODEX_HOME: 'x' }, home: '/h' }),
     ['/c', '/h/.claude', '/h/.claude.json', resolve('x')]);
   assert.ok(harnessHomePlaces({ env: { CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' }, home: '/h' }).every(isAbsolute));

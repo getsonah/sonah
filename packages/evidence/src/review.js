@@ -19,11 +19,12 @@ import { DECISION_ORDER, honestStatuses, unrecordedCover,
   from './ledger.js';
 import { INSTRUCTION_GAP_NOTES, DELEGATION_BRIEF_GAP_NOTES, INTER_AGENT_GAP_NOTES, HELPER_REPORT_CLIPPED_NOTE, LABEL_GAP_NOTES,
   CLOSING_STATEMENT_CLIPPED_NOTE, BODY_CAPPED_NOTE, HUMAN_INTERACTION_UNKNOWN_NOTE, END_UNREAD_NOTE, END_UNCHECKED_NOTE,
-  WORKFLOW_GAP_NOTES, WORKFLOW_RUN_GAP_NOTES, CHILD_CAPTURE_INCOMPLETE_NOTE, CALL_INPUT_GAP_NOTES, NATIVE_SHORTFALL_GAPS }
-  from '../adapters/sonah-ledger.js';
-import { promisesBesideFindings } from './run-review.js';
+  WORKFLOW_GAP_NOTES, WORKFLOW_RUN_GAP_NOTES, CHILD_CAPTURE_INCOMPLETE_NOTE, CALL_INPUT_GAP_NOTES, NATIVE_SHORTFALL_GAPS,
+  UNSUPPORTED_ROW_NOTES } from '../adapters/sonah-ledger.js';
+import { promisesBesideFindings, rechecksUnexecuted } from './run-review.js';
 import { codeContradictedRows, codePassFindings, codePassUnconfirmed, codeLinkStands, askCodeHolds } from './code-pass.js';
 import { withheldWhy } from './code-report.js';
+import { unsettledAsk, unsettledRow, laterChecked } from './triage.js';
 
 /** M33 X second recheck's closed note (the retired carry's, `sonah.carry`): a window whose request cap kept earlier
  *  evidence out of its carry. M35 (windowing) deleted the carry, so no review declares it; kept, word for word, only to
@@ -66,7 +67,9 @@ const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  *     whether you asked; its changes of approach), then the settled problems (asks shown not done or partly done;
  *     claims the recording contradicts; rows the code at review time contradicts; failures the agent passed over; edits
  *     against what you said or the project's instruction file; statements written into a file and contradicted; the
- *     code review's findings, then, apart, its findings about code outside the evaluated session: D113 amended).
+ *     code review's findings, then, apart, its findings about code outside the evaluated session: D113 amended); then
+ *     (D153, LATER_WORK_ROW) the asks, claims and statements that later work followed and the after-point re-check
+ *     reaffirmed or left unsettled, with no accusing word.
  *   - FOLDED_ROWS, the rows Sonah could not check (asks not checked; claims not checked against a recorded result;
  *     claims resting on a check that never completed; failures whose handling could not be checked; statements written
  *     into files and not checked): every one is kept in one collapsed section, "What Sonah could not check (N)", last,
@@ -85,6 +88,12 @@ const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const ATTENTION_ROWS = Object.freeze(['notActing', 'unasked', 'chose', 'whetherAsked', 'pivots', 'asksNotDone',
   'asksCodeFinding', 'contradicted', 'codeContradicted', 'passedOver', 'forbidden', 'writtenContradicted', 'codeFindings',
   'codeFindingsOutside']);
+/** D153's fix round: the attention row of the items that later work followed (the rows the after-point re-check
+ *  reaffirmed or left unsettled, triage.js `unsettledRow`), counted after ATTENTION_ROWS and only on a report the re-check
+ *  ran on (`report.recheck`), so a review run without it keeps every count it had, byte for byte. */
+export const LATER_WORK_ROW = 'laterWork';
+/** The counted kinds of `report`: ATTENTION_ROWS, then LATER_WORK_ROW on a report the re-check ran on. */
+const attentionRowsOf = (report) => (rowObject(report?.recheck) ? [...ATTENTION_ROWS, LATER_WORK_ROW] : ATTENTION_ROWS);
 export const FOLDED_ROWS = Object.freeze(['asksNotChecked', 'claimsOpen', 'claimsIncomplete', 'failuresNotChecked',
   'writtenOpen']);
 /** D88: an ask by its status token (ledger.js REQUIREMENT_STATUSES; a legacy report's LEGACY_REQUIREMENT_STATUSES, the
@@ -119,9 +128,19 @@ const askLinksOf = (r, report = null) => (Array.isArray(r.codeLinks) ? r.codeLin
 export const askRowKind = (r, report = null) => {
   if (!rowObject(r)) return null;
   const links = askLinksOf(r, report);
-  if (ASK_CODE_FINDING_STATUSES.includes(r.status) && links.some((link) => ASK_CODE_ATTENTION_LINKS.includes(link)))
+  // D153: an ask an earlier window found not met that later work followed and no later window settled, or that one
+  // reaffirmed (triage.js `unsettledAsk`), is never counted among the asks the session review marks not done: it is read
+  // as not checked when a code link counts it (`asksCodeFinding`), or when it is a helper's ask (its instruction a
+  // helper's brief, `childId`: the page lists it with the asks Sonah could not read as yours); else (the fix round) it is
+  // one of the items that later work followed (`laterWork`), which the page shows in Must know (or in Must act, inside
+  // an item a code finding or question holds).
+  const unsettled = unsettledAsk(r);
+  const status = unsettled ? ASK_NOT_CHECKED : r.status;
+  if (ASK_CODE_FINDING_STATUSES.includes(status) && links.some((link) => ASK_CODE_ATTENTION_LINKS.includes(link)))
     return 'asksCodeFinding';
-  return Object.hasOwn(ASK_ROW_KINDS, r.status) ? ASK_ROW_KINDS[r.status] : null;
+  if (unsettled && !(rowObject(r.instruction) && typeof r.instruction.childId === 'string' && r.instruction.childId))
+    return 'laterWork';
+  return Object.hasOwn(ASK_ROW_KINDS, status) ? ASK_ROW_KINDS[status] : null;
 };
 /**
  * D125 (the owner, 2026-10-20: "Let's fix 1st"; amended the same day, "go for option 3"): the code review's verdict that
@@ -145,9 +164,12 @@ export { claimRowKind, derivedColumn, DERIVED_COLUMN_STATE };
 export const failureRowKind = (row) => (!rowObject(row) ? null : row.handling === FAILURE_PASSED_OVER ? 'passedOver'
   : row.handling === FAILURE_ACTED_ON || row.handling === FAILURE_TOLD_HUMAN ? null : 'failuresNotChecked');
 /** D88: the kind of one statement written into a file by its label (ledger.js WRITTEN_LABELS): contradicted counts, the
- *  other label is folded; a label outside the vocabulary is no row. */
+ *  other label is folded; a label outside the vocabulary is no row. D153: a contradicted statement the after-point
+ *  re-check reaffirmed or left unsettled (triage.js `unsettledRow`) is one of the items that later work followed
+ *  (`laterWork`): no reader counts it among the statements contradicted. */
 export const writtenRowKind = (w) => (!rowObject(w) || !WRITTEN_LABELS.includes(w.label) ? null
-  : w.label === WRITTEN_CONTRADICTED_LABEL ? 'writtenContradicted' : 'writtenOpen');
+  : unsettledRow('writtenClaims', w) ? 'laterWork'
+    : w.label === WRITTEN_CONTRADICTED_LABEL ? 'writtenContradicted' : 'writtenOpen');
 /** D88: the decision kinds by the ledger's derived column (DECISION_COLUMNS): made without asking you, and where you
  *  asked and the agent chose how; a column you settled is no attention row; a column the ledger could not derive (null)
  *  is where the review could not tell whether you asked. */
@@ -202,6 +224,10 @@ export const ATTENTION_WORDS = Object.freeze({
   // the Markdown report's and the terminal's count line count them.
   codeFindingsOutside: (n) => `${counted(n, 'finding')} of the code review about code outside the evaluated session: see `
     + 'What the code review found.',
+  // D153's fix round: the asks, claims and statements written into files that the after-point re-check reaffirmed or
+  // left unsettled (triage.js `unsettledRow`; a helper's ask apart, with the asks Sonah could not read as yours). The page
+  // shows each in Must know, or in Must act inside an item that a code finding or question holds.
+  laterWork: (n) => `${counted(n, 'item')} that later work followed: see Must know and Must act.`,
   // What the review could not cover (the coverage causes), apart from the rows it could not check (`folded`, the folded
   // section of that name): one thing, one term.
   notCovered: 'What Sonah could not cover: see the Not covered line at the top.',
@@ -347,6 +373,10 @@ export const ASK_CODE_WORDS = Object.freeze({
     'partly-addressed': 'The session review marked it partly done',
     'not-done': 'The session review marked it not done', open: 'The session review marked it not done',
     'not-checked': 'The session review did not check it' }),
+  // D153: the status of an ask no later window settled (triage.js `unsettledAsk`), in place of its earlier one; and (its
+  // fix round) of one a later window reaffirmed (`laterChecked`): true, and no stronger.
+  notCheckedLater: 'The session review did not check it after later work',
+  laterWork: "Later work followed the session review's check",
   notMet: 'the code review found that the agent did not meet it',
   bearsOn: 'a finding of the code review concerns it',
   withheld: 'Sonah withheld a finding of the code review about this ask',
@@ -380,7 +410,11 @@ export function askCodeNotes(report, row) {
     ? pass[key][k] : null);
   const findings = codePassFindings(report);
   const unconfirmed = codePassUnconfirmed(report);
-  const status = Object.hasOwn(ASK_CODE_WORDS.status, row.status) ? ASK_CODE_WORDS.status[row.status] : null;
+  // D153: an ask no later window settled is worded as not checked after later work, one a later window reaffirmed as one
+  // that later work followed, never by its earlier status.
+  const status = laterChecked('requirements', row) ? ASK_CODE_WORDS.laterWork
+    : unsettledAsk(row) ? ASK_CODE_WORDS.notCheckedLater
+    : Object.hasOwn(ASK_CODE_WORDS.status, row.status) ? ASK_CODE_WORDS.status[row.status] : null;
   const notes = [];
   const seen = new Set();
   const once = (key) => (seen.has(key) ? false : (seen.add(key), true));
@@ -496,12 +530,13 @@ export const COVERAGE_CAUSES = Object.freeze(['no_windows', 'no_actions', 'windo
   'workflow_calls_unlaunched', 'helper_captures_incomplete', 'call_inputs_unread', 'native_calls_unaccounted',
   'incomplete_inventory',
   'observations_incomplete', 'source_clipped', 'reports_capped', 'statements_capped', 'bodies_capped',
-  'unsupported_message', 'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit', 'carry_capped',
+  'unsupported_message', 'request_copies_unread', 'hook_outputs_unread', 'edited_files_unread',
+  'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit', 'carry_capped',
   'other_gap', 'code_unreviewable',
   'pr_hunks_withheld',
   'pr_files_incomplete',
-  // D104 (F5 part 4): the one cause that never caps coverage (`UNCAPPED_CAUSES`), named last.
-  'results_seen_in_part']);
+  // D104 (F5 part 4), D155: the causes that never cap coverage (`UNCAPPED_CAUSES`), named last.
+  'results_seen_in_part', 'rechecks_unexecuted']);
 
 /**
  * How a cause's count is said. `n` is the count; `atLeast` marks it as a lower bound — M33 (C-06): "a
@@ -668,6 +703,14 @@ export const COVERAGE_SENTENCE = Object.freeze({
     + 'its review, so it cannot quote what it left out',
   unsupported_message: (counts) => `${amount(counts)} ${nounOf(counts, 'record has', 'records have')} a form that Sonah `
     + 'cannot read',
+  // D150: the recording rows Sonah left unread, said by kind, each row once (the slicer's `unreadRows`): a
+  // copy of a message sent to the agent that no structural twin settles, a hook's row, a file changed outside the agent's
+  // edits. Every other unread row, and every other such declaration, stays `unsupported_message`.
+  request_copies_unread: (counts) => `Sonah could not match ${amount(counts)} ${nounOf(counts, 'copy', 'copies')} of `
+    + 'messages sent to the agent with the records of the session',
+  hook_outputs_unread: (counts) => `Sonah did not read ${amount(counts)} hook ${nounOf(counts, 'output', 'outputs')}`,
+  edited_files_unread: (counts) => `Sonah did not read ${amount(counts)} ${nounOf(counts, 'notice', 'notices')} of a `
+    + "file changed outside the agent's edits",
   unrecorded_body: (counts) => `Sonah found no text for ${amount(counts)} ${nounOf(counts, 'write', 'writes')} in the `
     + `recording, so it cannot quote the code that ${nounOf(counts, 'it', 'they')} wrote`,
   write_outcome_unknown: (counts) => `Sonah could not read whether ${amount(counts)} `
@@ -699,19 +742,30 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // coverage fact `resultsSeenInPart`, the sum over the windows). It says the count alone: a row's own mark says the rest.
   results_seen_in_part: (counts = {}) => `Sonah first showed the session review only part of ${amount(counts)} recorded `
     + `${nounOf(counts, 'result', 'results')}`,
+  // D155: the decisions the window's check refuted whose second check, the one that could have kept them, did not run
+  // (run-review.js `rechecksUnexecuted`). They stay out (their first check refuted them); the count and the remedy only.
+  rechecks_unexecuted: (counts = {}) => `Sonah left out ${amount(counts)} ${nounOf(counts, 'decision', 'decisions')} `
+    + `that the session review's check rejected, because the second check of ${nounOf(counts, 'it', 'them')} did not `
+    + `run. Run the same review again to check ${nounOf(counts, 'it', 'them')}`,
 });
 
 /**
  * D104 (F5 part 4): the causes a report names whatever its coverage — facts beside it that never cap it, so no status
- * reads them (`coverageFrom` and `coverageCauses` do not) — in COVERAGE_CAUSES order. One so far: the results the
- * session review saw only in part.
+ * reads them (`coverageFrom` and `coverageCauses` do not) — in COVERAGE_CAUSES order: the results the session review
+ * saw only in part, and (D155) the decisions left out because their second check did not run.
  */
-export const UNCAPPED_CAUSES = Object.freeze(['results_seen_in_part']);
+export const UNCAPPED_CAUSES = Object.freeze(['results_seen_in_part', 'rechecks_unexecuted']);
+/** D155: the uncapped causes that a fold shortened to counts still says whole, as it says the causes that cap
+ *  coverage (D133): the remedy is the person's to take. */
+export const UNCAPPED_CAUSES_SAID_WHOLE = Object.freeze(['rechecks_unexecuted']);
 /** D104: the uncapped causes the report's own facts establish, each with its count (`[cause, { n }]`), in
- *  UNCAPPED_CAUSES order. Read from `coverageFacts` only, never from a model field. */
+ *  UNCAPPED_CAUSES order. Read from `coverageFacts` and (D155) the review's count of its second checks that did not run
+ *  (run-review.js `rechecksUnexecuted`), never from a model field. */
 export function uncappedCauses(report) {
   const n = report?.coverageFacts?.resultsSeenInPart;
-  return isCount(n) && n > 0 ? [['results_seen_in_part', { n }]] : [];
+  const rechecks = rechecksUnexecuted(report);
+  return [...(isCount(n) && n > 0 ? [['results_seen_in_part', { n }]] : []),
+    ...(rechecks > 0 ? [['rechecks_unexecuted', { n: rechecks }]] : [])];
 }
 
 // F170. Which header cause names a declared gap, by its code: its own, or — where a fact above
@@ -971,10 +1025,17 @@ export function coverageCauses(report) {
   // D119: the events each event-counted cause names, and the kinds the kind-counted cause holds.
   const eventsOf = new Map(INVENTORY_EVENT_CAUSES.map((cause) => [cause, new Set()]));
   const kinds = new Set();
+  // D150: the recording rows Sonah left unread are counted once each, by kind, from the facts, in place of
+  // the row declarations' counts, which count a row once on each channel it carries; any other `unsupported_message`
+  // declaration keeps its count.
+  const unread = facts?.unreadRows !== null && typeof facts?.unreadRows === 'object' ? facts.unreadRows : null;
+  const rowNotes = Object.values(UNSUPPORTED_ROW_NOTES);
+  let rowsDeclared = false;
   for (const gap of declaredGapList(report)) {
     const capping = cappingCount(gap, context);
     if (capping === undefined) continue;
     const cause = headerCauseOf(gap);
+    if (unread && cause === 'unsupported_message' && rowNotes.includes(gap.note)) { rowsDeclared = true; continue; }
     const sum = declared.get(cause) ?? { n: 0, exact: true };
     const ids = (Array.isArray(gap.eventIds) ? gap.eventIds : []).filter((id) => typeof id === 'string' && id);
     if (eventsOf.has(cause) && ids.length) {
@@ -987,6 +1048,15 @@ export function coverageCauses(report) {
       declared.set(cause, { n: sum.n + (kinds.has(kind) ? 0 : 1), exact: true });
       kinds.add(kind);
     } else declared.set(cause, { n: sum.n + capping.n, exact: sum.exact && capping.exact });
+  }
+  if (unread && rowsDeclared) {
+    const count = (kind) => (isCount(unread[kind]) ? unread[kind] : 0);
+    for (const [kind, cause] of [['request_copy', 'request_copies_unread'], ['hook_output', 'hook_outputs_unread'],
+      ['edited_file', 'edited_files_unread']]) if (count(kind) > 0) declared.set(cause, { n: count(kind), exact: true });
+    const rest = declared.get('unsupported_message') ?? { n: 0, exact: true };
+    if (count('other') > 0 || rest.n > 0)
+      declared.set('unsupported_message', { n: rest.n + count('other'), exact: rest.exact });
+    else declared.delete('unsupported_message');
   }
   const countsOf = ({ n, exact }) => (exact ? { n } : { n, atLeast: true });
   const unlinkedByFact = named.get('delegations_unlinked');
@@ -1026,8 +1096,12 @@ export const FAILURE_SECTION_WORDS = Object.freeze({
 const failureRows = (report) => (Array.isArray(report.failures)
   ? report.failures.filter((row) => row !== null && typeof row === 'object' && typeof row.eventId === 'string') : null);
 /** The report's findings by where the checklist places them: a contradicted claim under what the agent told you, an edit
- *  against what you said under the edits, any other (the code review's) under what the code review found. */
-const findingParts = (findings) => ({ contradicted: findings.filter((f) => f.kind === CLAIM_FINDING_KIND),
+ *  against what you said under the edits, any other (the code review's) under what the code review found. D153: a
+ *  contradicted claim the after-point re-check reaffirmed or left unsettled (triage.js `unsettledRow`) is apart
+ *  (`notCheckedLater`): it is counted with the items that later work followed. */
+const findingParts = (findings) => ({
+  contradicted: findings.filter((f) => f.kind === CLAIM_FINDING_KIND && !unsettledRow('findings', f)),
+  notCheckedLater: findings.filter((f) => f.kind === CLAIM_FINDING_KIND && unsettledRow('findings', f)),
   edits: findings.filter((f) => f.kind === FORBIDDEN_FINDING_KIND),
   codeFindings: findings.filter((f) => f.kind !== CLAIM_FINDING_KIND && f.kind !== FORBIDDEN_FINDING_KIND) });
 
@@ -1056,9 +1130,12 @@ export const attentionLines = (report) => attentionSummary(report).lines;
  * from its closed tokens (`askRowKind`, `claimRowKind`, `failureRowKind`, `writtenRowKind`, `decisionRowKinds`) — over
  * the rows the review lists: the claims beside the findings (`promisesBesideFindings`), the failure rows with a RESULT,
  * the written statements with words. `contradicted`, `edits`, `codeFindings`: the findings by where the checklist places
- * them (`findingParts`); the code pass's rows and findings are counted from the report (D87: it lowers no count).
+ * them (`findingParts`); `notCheckedLater` (D153): the contradicted claims the after-point re-check reaffirmed or left
+ * unsettled, counted with the items that later work followed (`laterWork`); the code pass's rows and findings are counted
+ * from the report (D87: it lowers no count).
  */
-export function checklistRowCounts(report, { contradicted = [], edits = [], codeFindings = [] } = {}) {
+export function checklistRowCounts(report, { contradicted = [], edits = [], codeFindings = [], notCheckedLater = [] }
+  = {}) {
   const rows = (value) => (Array.isArray(value) ? value.filter((row) => row !== null && typeof row === 'object') : []);
   // D113 amended (its second review): a published finding of the code step about code outside the evaluated session
   // (`outsideSession`) is counted apart from the session's own.
@@ -1068,7 +1145,7 @@ export function checklistRowCounts(report, { contradicted = [], edits = [], code
     codeContradicted: codeContradictedRows(report).length, failures: failureRows(report) ?? [], forbidden: edits.length,
     written: rows(report.writtenClaims).filter((w) => typeof w.text === 'string'),
     codeFindings: codeFindings.length + codePassFindings(report).length - away, codeFindingsOutside: away,
-    promises: listedPromises(report) });
+    promises: listedPromises(report), claimsNotCheckedLater: notCheckedLater.length });
 }
 /**
  * The judgment-first review (low, one counting): the one function every reader counts its rows with, by kind — every
@@ -1080,8 +1157,8 @@ export function checklistRowCounts(report, { contradicted = [], edits = [], code
  */
 export function rowKindCounts({ report = null, decisions = [], pivots = 0, requirements = [], contradicted = 0,
   codeContradicted = 0, failures = [], forbidden = 0, written = [], codeFindings = 0, codeFindingsOutside = 0,
-  promises = [] } = {}) {
-  const counts = Object.fromEntries([...ATTENTION_ROWS, ...FOLDED_ROWS].map((kind) => [kind, 0]));
+  promises = [], claimsNotCheckedLater = 0 } = {}) {
+  const counts = Object.fromEntries([...attentionRowsOf(report), ...FOLDED_ROWS].map((kind) => [kind, 0]));
   const add = (kind) => { if (kind !== null && Object.hasOwn(counts, kind)) counts[kind] += 1; };
   for (const d of decisions) decisionRowKinds(d).forEach(add);
   counts.pivots = pivots;
@@ -1094,6 +1171,9 @@ export function rowKindCounts({ report = null, decisions = [], pivots = 0, requi
   counts.codeFindings = codeFindings;
   counts.codeFindingsOutside = codeFindingsOutside;
   for (const p of promises) add(claimRowKind(p));
+  // D153: the contradicted claims the after-point re-check reaffirmed or left unsettled, with the items that later work
+  // followed.
+  if (Object.hasOwn(counts, LATER_WORK_ROW)) counts[LATER_WORK_ROW] += claimsNotCheckedLater;
   return counts;
 }
 /** The claims the review lists: those beside the findings (C-06 M33 G3: one a contradicted-claim finding cites is that
@@ -1107,7 +1187,7 @@ export const listedPromises = (report) => promisesBesideFindings(Array.isArray(r
  *  for what the review could not cover, and (D88) the plain line for the folded rows, or null. */
 function attentionList(report, parts, notCovered) {
   const counts = checklistRowCounts(report, parts);
-  const lines = ATTENTION_ROWS.filter((kind) => counts[kind] > 0).map((kind) => ATTENTION_WORDS[kind](counts[kind]));
+  const lines = attentionRowsOf(report).filter((kind) => counts[kind] > 0).map((kind) => ATTENTION_WORDS[kind](counts[kind]));
   if (notCovered) lines.push(ATTENTION_WORDS.notCovered);
   const folded = FOLDED_ROWS.reduce((n, kind) => n + counts[kind], 0);
   return { lines, folded: folded > 0 ? ATTENTION_WORDS.folded(folded) : null, counts };

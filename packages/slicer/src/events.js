@@ -663,6 +663,8 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   // 2026-10-15): none is withheld for where it lies (D69 b withheld one under the harness home folders or at a
   // credential-shaped path, as their reads were). Not asks and not events.
   const projectInstructions = [];
+  // D150: each file the harness noticed changed outside the agent's edit calls (records.js EDITED_FILE_RECORD), at its row.
+  const editedFiles = [];
   // OWNER DECISION B: each Claude AskUserQuestion call's recorded questions (each one's text and whether it lets the
   // human choose several options, `multiSelect`), by call key, and the answers read from its result (the entries above,
   // and the sidecar they were read from), so a retraction withdraws them.
@@ -706,8 +708,10 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   // narrative. beforeEvent locates a statement relative to captured actions, not its cause.
   const commentary = [];
   const commentaryCapture = { version: 1, blocks: 0, bytes: 0, unsupported: 0, privateExcluded: 0, nonTextExcluded:0 };
-  const instructionCapture = { nonTextExcluded: 0, unclassifiedRows: 0, feedbackUnplaced: 0, refusalUntyped: 0,
-    refusalSessionUnknown: 0, notificationUnmatched: 0 };
+  // D150: `unreadRows` counts the user rows of `unclassifiedRows` the reader did not already count as unread rows (a
+  // drifted Claude turn it counts itself, records.js `claudeDriftedTurn`), so each row is counted once by kind.
+  const instructionCapture = { nonTextExcluded: 0, unclassifiedRows: 0, unreadRows: 0, feedbackUnplaced: 0,
+    refusalUntyped: 0, refusalSessionUnknown: 0, notificationUnmatched: 0 };
   // M33 W: each Claude Workflow call's own recorded launch sidecar (runId, transcriptDir, workflowName), by event
   // index. Kept apart from the events, so no ledger byte changes; slicer/index.js hands it only to a caller that asks
   // (cli/src/session-evidence.js), which reads it, links the run by exact recorded identity, and drops it.
@@ -966,10 +970,11 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     // attached (an @-mention). Each is read where its row is labelled `human` (records.js `claudeLabeller`), as the
     // human's instruction at its row, kept whole with the cuts due on it declared, exactly as an ask is (redaction makes
     // them; an attachment is bounded like an observation, `ATTACHED_CAP`). An attachment that records no text (a PDF) is
-    // not read, and keeps its declared loss.
+    // not read, and keeps its declared loss. D150: whether one is read is the one predicate the reader counts it by
+    // (records.js `interjectionWordsOf`).
     if (rec.kind === QUEUED_PROMPT_RECORD || rec.kind === ATTACHED_RECORD) {
-      const words = humanPart(rec) ? humanWordsOf(rec) : '';
-      if (words.trim()) {
+      const words = interjectionWordsOf(rec);
+      if (words) {
         const attachedFile = rec.kind === ATTACHED_RECORD;
         const { text: kept, elided } = compressAsk(words, attachedFile ? ATTACHED_CAP : null);
         const { turn: at, ...row } = rowAt(rec, recordIndex);
@@ -995,6 +1000,17 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       continue;
     }
 
+    // D150: a file changed outside the agent's edit calls (an `edited_text_file` attachment labelled an observation, never
+    // the agent's): its file, spelled as every path of the slice is, and the snippet the harness recorded, at its row. One
+    // that records no file name or no snippet as a string is not read.
+    if (rec.kind === EDITED_FILE_RECORD) {
+      const item = plain(d) ? d.attachment : null;
+      if (plain(item) && string(item.filename) && item.filename && string(item.snippet))
+        editedFiles.push({ ...rowAt(rec, recordIndex), path: relative(item.filename, cwd), text: item.snippet,
+          identity: rowIdentity(rec, recordIndex, 0) });
+      continue;
+    }
+
     // C-02 M33 D: a queued task-notification attachment carries only a launch's typed status.
     if (rec.kind === 'notification') {
       if (rec.adapter === 'claude' || rec.adapter == null) joinNotification(d, rowAt(rec, recordIndex), rec, copy);
@@ -1003,18 +1019,22 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
 
     if (rec.kind === 'user') {
       const userBlocks = d?.message?.content;
+      let unreadBlock = false;
       if (Array.isArray(userBlocks)) {
         instructionCapture.nonTextExcluded += userBlocks.filter((block) =>
           NONTEXT_BLOCK_TYPES.includes(block?.type)).length;
-        if (userBlocks.some((block) => !(
+        unreadBlock = userBlocks.some((block) => !(
           block?.type === 'tool_result'
           || block?.type === 'text' && typeof block.text === 'string'
-          || NONTEXT_BLOCK_TYPES.includes(block?.type))))
-          instructionCapture.unclassifiedRows++;
+          || NONTEXT_BLOCK_TYPES.includes(block?.type)));
       } else if (userBlocks != null && typeof userBlocks !== 'string') {
         // An object or scalar content schema may hold a request or result. No channel can be
         // proven from it; never let a mixed, otherwise readable session certify completeness.
+        unreadBlock = true;
+      }
+      if (unreadBlock) {
         instructionCapture.unclassifiedRows++;
+        if (!((rec.adapter === 'claude' || rec.adapter == null) && claudeDriftedTurn(d))) instructionCapture.unreadRows++;
       }
       // Results first: a user record is usually the carrier for the previous turn's tool results.
       const results = toolResults(d);
@@ -1519,6 +1539,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     ask,
     interjections,
     projectInstructions,
+    editedFiles,
     workflowLaunches: workflowLaunchesOf(workflowCalls, events),
     // D99 (F1 guard): the background runs whose end the slicer has not read, for the verbatim search (index.js).
     backgroundRuns: backgroundRunsOf({ events, resultRows, notified, notificationLaunches, workflowCalls, agentLaunches }),
@@ -3057,6 +3078,7 @@ import { recordedHunks, carriedHunks, commandClassOf, codexCommandTool, bashEdit
 import { ATTACHED_CAP } from '../../redact/index.js';
 import { textOf as text, toolUsesOf as toolUses,
   toolResultsOf as toolResults, visibleToolContent, QUEUED_PROMPT_RECORD, ATTACHED_RECORD, PROJECT_INSTRUCTIONS_RECORD,
+  EDITED_FILE_RECORD, interjectionWordsOf, claudeDriftedTurn,
   humanWordsOf, humanNonTextOf, NONTEXT_BLOCK_TYPES, ensureClaudeLabels,
   recordedVersionOrder, claudeSessionType, SESSION_TYPES } from './records.js';
 import { LABELS, LABEL_BASIS, MARKERS, POSITIONED_GAPS, RECORDER_CENSUS_REASONS, opensTurn, humanPart, partsOf }

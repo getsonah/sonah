@@ -31,13 +31,21 @@ test('D97 (8): the terminal\'s count line has the D93 split and no "(folded)"; t
   const session = reportSession();
   const model = reportModel(session, triagedReport(session), repoFacts());
   const [count, labels] = countLines(model);
-  assert.equal(count, `Must act ${model.tiers.must_act.length} · Must know ${model.tiers.must_know.length} · Good to know `
-    + `${model.tiers.good_to_know.length} · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, `
-    + '1 not checked');
+  // D161: the agent's decisions after the tiers, with how many carry the tag Must act or Must know (the page's and the
+  // .md's words, from the report model's one count line).
+  // D163: Must act counts the decisions of the second part tagged Must act (the first part's pointers to them).
+  const d = model.decisions;
+  assert.equal(count, `Must act ${model.tiers.must_act.length + model.pointers.must_act.length} · Must know `
+    + `${model.tiers.must_know.length} · Good to know ${model.tiers.good_to_know.length} · ${d.total} decisions `
+    + `(${d.tagged.must_act} Must act, ${d.tagged.must_know} Must know) · Your prompt: 1 done, 1 done with a code finding, `
+    + '1 partly done, 2 not done, 1 not checked');
+  assert.equal(count, 'Must act 9 · Must know 8 · Good to know 7 · 7 decisions (1 Must act, 3 Must know) · Your prompt: '
+    + '1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked');
   assert.equal(count.includes('(folded)'), false);
   // D112: the Must act items the code review rated high come first, so their labels lead; D138: then the contradicted
-  // claim before the asks, in the order the page and the .md link (the report model's one count line).
-  assert.match(labels, /^Must act: fix the refill order · check the forced push · a false claim \(item 3\) and \d+ more$/);
+  // claim before the asks, in the order the page and the .md link (the report model's one count line). D161: the
+  // decision rated high is in the second part; D163: Must act's labels name it after the first part's items.
+  assert.match(labels, /^Must act: fix the refill order · a false claim \(item 2\) · an edit against your words \(item 3\) and 6 more$/);
   assert.deepEqual(model.countLine.labels.map((l) => l.n), [1, 2, 3]);
   // Two findings with no label of the code review's on one line: each label names its item, so they differ.
   const base = untriagedReport(session);

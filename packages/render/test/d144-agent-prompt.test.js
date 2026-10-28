@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { reportModel, agentPromptOf, agentPromptText, agentPromptLabelOf, AGENT_PROMPT_KINDS, AGENT_PROMPT_LABELS,
-  placeTextOf, REPORT_LIMITS } from '../report-model.js';
+  placeTextOf, REPORT_LIMITS, reportItems } from '../report-model.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { renderSessionPage, sessionPage, escapeHtml, PAGE_CSS, PAGE_LIMITS } from '../session-page.js';
 import { REPORT_AGENT_PROMPT_WORDS as W, REPORT_ITEM_WORDS, REPORT_TRIM_WORDS } from '../report-words.js';
@@ -16,14 +16,13 @@ import { AGENT_PROMPT_NONE_REASONS, REPORT_ITEM_KINDS, REPORT_TIERS } from '../.
 import { ITEM_KIND_TABLE } from '../../evidence/src/triage.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
-import { textBeforeAgentPrompt } from '../../evidence/test/m33-integration-fixture.js';
 
 const [MUST_ACT] = REPORT_TIERS;
 const sha = (text) => createHash('sha256').update(text).digest('hex');
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const r = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
 const windowOf = (session) => [{ windowIndex: 0, eventIds: session.events.map((e) => e.id), failure: null }];
-const items = (model) => REPORT_TIERS.flatMap((tier) => model.tiers[tier]);
+const items = (model) => reportItems(model);
 /** The triaged report with the code review proposing high for the contradicted statement in a file (a Must know kind by
  *  default), so it leads in Must act too: every covered kind has an item. */
 function everyKind(session) {
@@ -100,7 +99,10 @@ test('D144: a prompt per covered kind, in your voice, from the item\'s own check
     'Where: `src/server.js:2`', fix].join('\n'));
   // Every covered kind has a fixture here; a kind with no prompt in this cut says so by its closed reason.
   assert.deepEqual(Object.keys(AGENT_PROMPT_KINDS).filter((kind) => !byKind[kind]?.agentPrompt), []);
-  const decision = model.tiers.must_act.find((item) => item.kind === 'decision_unasked');
+  // D161: the decision the code review rated high keeps its tag Must act in the report's second part. D163: it gets its
+  // prompt as any item in Must act of its kind does: a decision's kind has none in this cut, so its closed reason.
+  const decision = items(model).find((item) => item.kind === 'decision_unasked' && item.tier.final === 'must_act');
+  assert.equal(model.tiers.must_act.includes(decision), false);
   assert.deepEqual([decision.agentPrompt, decision.agentPromptNone], [null, 'kind_not_covered']);
   // The kinds that have a prompt are kinds that can lead in Must act, each with the closing line of its type.
   for (const [kind, how] of Object.entries(AGENT_PROMPT_KINDS)) {
@@ -122,7 +124,11 @@ test('D144: the invariants hold on every report shape', () => {
       const at = `${name} item ${item.n} ${item.kind}`;
       // A member never has a prompt (items that lead only).
       for (const member of item.members) assert.equal(Object.hasOwn(member, 'agentPrompt'), false, at);
-      if (item.tier.final !== MUST_ACT) { assert.deepEqual([item.agentPrompt, item.agentPromptNone], [null, null], at); continue; }
+      // D163: an item of the agent's decisions tagged Must act is read as any item in Must act (D161 gave it none).
+      if (item.tier.final !== MUST_ACT) {
+        assert.deepEqual([item.agentPrompt, item.agentPromptNone], [null, null], at);
+        continue;
+      }
       // A prompt exists if and only if its kind is covered and the quotes it needs ground; else a closed reason.
       assert.equal((item.agentPrompt === null) === (item.agentPromptNone !== null), true, at);
       assert.deepEqual(agentPromptOf(item), { prompt: item.agentPrompt, none: item.agentPromptNone }, at);
@@ -348,10 +354,18 @@ test('D144: the .md folds each prompt as a fence after the item\'s visible lines
   assert.equal(terminal, md.replace(/\n\n<details><summary>Prompt for the agent<\/summary>\n\n[\s\S]*?\n\n<\/details>/g, ''));
 });
 
-test('D144: rendered back, the snapshots are 0.3.0-beta.6\'s byte for byte: they move only by the new folds', () => {
-  // The sha256 of each snapshot at 0.3.0-beta.6 (d5d2fd0f); rendered back (`textBeforeAgentPrompt`: each prompt's fold,
-  // its style rules and the readers' versions), today's are those bytes.
-  const back = (name) => sha(textBeforeAgentPrompt(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8')));
-  assert.equal(back('report.md'), 'dedbe49f1369a7c0f77ac017697034cd251505fdb2b11e451f830b4dcb4231f8');
-  assert.equal(back('session-page-report.html'), '5240575b893e5980702699c004b319f5d521a5d9004f1b320a67dd06d2a45c63');
+test('D144, D161: the snapshots are pinned by their sha256, so any move of them is deliberate', () => {
+  // Up to D161 the snapshots rendered back (`textBeforeAgentPrompt` after D152's `textBeforeTruthOnly`) to 0.3.0-beta.6's
+  // bytes (d5d2fd0f: report.md dedbe49f…, the page 5240575b…). D161 (the report's two parts) moved sections and renumbered
+  // items, which no text rule renders back: the snapshots before it (0bee522b: report.md 23880f3b…, the page 370bf5be…)
+  // are recorded here, and the snapshots since are pinned by their own sha256. D163 (the first part's pointers, Must act
+  // counting the decision tagged Must act, an open group's fold, three style rules) moved them once more (be44d35b:
+  // report.md 37549a58…, the page 6c1a1647…); its review reworded the pointers' heading alone (D163's first build:
+  // report.md dbf9597e…, the page 6bc6f150…). D167 (the .md counts the runs and keeps the lines of the runs another
+  // part names) moved report.md alone (D163: report.md 77fc995f…); the page is D163's, byte for byte. Its review (an
+  // item's Where keeps its run's line too, and the command as the CLI's usage says it) moved report.md once more
+  // (D167's first build: report.md 5016914a…).
+  const now = (name) => sha(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8'));
+  assert.equal(now('report.md'), '242275cbaee935f54ae0cf980b8d1fae4a104847399c393a6949c584116bc076');
+  assert.equal(now('session-page-report.html'), 'f4d99d56cb1ab9cf0db760cd8bab1aaa91b00645663f929ad9c8678284005642');
 });

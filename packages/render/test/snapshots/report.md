@@ -4,8 +4,8 @@ Claude Code recording · a change of 5 files, +13 −2 · 6 commands · commit 1
 After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The recording shows 3 commands after the agent's last edit as refused before they ran.  
 Sonah did not finish its review of this session.
 
-Must act 9 · Must know 12 · Good to know 9 (folded) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
-Must act: [*fix the refill order*](#item-1) · [*check the forced push*](#item-2) · [a false claim (item 3)](#item-3) and 6 more
+Must act 9 · Must know 8 · Good to know 7 (folded) · 7 decisions (1 Must act, 3 Must know) · Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked  
+Must act: [*fix the refill order*](#item-1) · [a false claim (item 2)](#item-2) · [an edit against your words (item 3)](#item-3) and 6 more
 
 ### Must act (9)
 
@@ -41,18 +41,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-2"></a>**2 Decide:** The agent decided on *deploy*: *push the branch*. You did not ask for this.  
-Impact on you: *The agent tried to force a push.*  
-Action: *Check the remote branch.*
-
-<details><summary>Evidence · Why Must act</summary>
-
-- The code review proposed high, and Sonah kept it.
-- Item id: `222222222222`
-
-</details>
-
-<a name="item-3"></a>**3 Verify:** A recorded result contradicts a claim of the agent's.  
+<a name="item-2"></a>**2 Verify:** A recorded result contradicts a claim of the agent's.  
 “The limiter uses Redis.”  
 Where: the claims list
 
@@ -76,7 +65,7 @@ Check this claim against what I quoted. If the claim does not hold, fix your wor
 
 </details>
 
-<a name="item-4"></a>**4 Fix:** The agent acted against something that you said.  
+<a name="item-3"></a>**3 Fix:** The agent acted against something that you said.  
 You said: “Do not change the CI config”  
 Where: `.github/workflows/ci.yml`
 
@@ -103,7 +92,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-5"></a>**5 Fix:** The agent did not do ask 6.  
+<a name="item-4"></a>**4 Fix:** The agent did not do ask 6.  
 “Also add a test for the limiter”  
 Where: ask 6
 
@@ -128,7 +117,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-6"></a>**6 Fix:** The agent did only part of ask 4.  
+<a name="item-5"></a>**5 Fix:** The agent did only part of ask 4.  
 “Do not change the CI config”  
 Where: ask 4 · `.github/workflows/ci.yml`
 
@@ -158,7 +147,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-7"></a>**7 Fix:** *Retry-After is sent in milliseconds*  
+<a name="item-6"></a>**6 Fix:** *Retry-After is sent in milliseconds*  
 Where: `src/limiter.js:5` · ask 2
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L5
@@ -185,7 +174,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-8"></a>**8 Fix:** *The CI change is still there*  
+<a name="item-7"></a>**7 Fix:** *The CI change is still there*  
 The agent said: “I reverted the CI change.”  
 Where: `.github/workflows/ci.yml:1`
 
@@ -214,7 +203,7 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-<a name="item-9"></a>**9 Fix:** *The server mounts the limiter after a route*  
+<a name="item-8"></a>**8 Fix:** *The server mounts the limiter after a route*  
 Where: `src/server.js:2`
 
 https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js#L2
@@ -241,31 +230,13 @@ Fix this. If you think that it is right as it is, give me your reason.
 
 </details>
 
-### Must know (12)
+#### Decisions further down tagged Must act (1)
 
-<a name="item-10"></a>**10 Decide:** The agent decided on *build output*: *clean dist*. You did not ask for this.  
-Impact on you: *The build output may be gone.*  
-Action: *Build again before you deploy.*
+- [29 Decide: The agent decided on *deploy*: *push the branch*.](#item-29) You did not ask for this.
 
-<details><summary>Evidence · Why Must know</summary>
+### Must know (8)
 
-- A permission rule or auto mode refused a call that this item cites. Sonah never puts such an item in Must act.
-- Item id: `666666666666`
-
-</details>
-
-<a name="item-11"></a>**11 Decide:** The agent decided on *deploy hook*: *call the deploy hook*. You did not ask for this.  
-Impact on you: *A deploy may have started.*  
-Action: *Check the deploy log.*
-
-<details><summary>Evidence · Why Must know</summary>
-
-- A permission rule or auto mode refused a call that this item cites. Sonah never puts such an item in Must act.
-- Item id: `777777777777`
-
-</details>
-
-<a name="item-12"></a>**12 Verify:** A file's recorded content contradicts a claim of the agent's. The agent corrected it later.  
+<a name="item-9"></a>**9 Verify:** A file's recorded content contradicts a claim of the agent's. The agent corrected it later.  
 “The README said version 3”  
 Impact on you: *The README history may be wrong.*  
 Action: *Read the README diff.*  
@@ -281,7 +252,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-13"></a>**13 Verify:** Sonah did not check a claim of the agent's.  
+<a name="item-10"></a>**10 Verify:** Sonah did not check a claim of the agent's.  
 “all tests pass”  
 Impact on you: *You may merge with a failing test.*  
 Action: *Run the tests again.*  
@@ -294,7 +265,7 @@ Where: the claims list
 
 </details>
 
-<a name="item-14"></a>**14 Verify:** A claim of the agent's rests on a check that Sonah did not see finish.  
+<a name="item-11"></a>**11 Verify:** A claim of the agent's rests on a check that Sonah did not see finish.  
 “I will use a token bucket.”  
 Impact on you: *The bucket may be untested.*  
 Action: *Run the limiter once by hand.*  
@@ -308,7 +279,7 @@ Where: the claims list
 
 </details>
 
-<a name="item-15"></a>**15 Verify:** Sonah did not check a statement that the agent wrote into `README.md`.  
+<a name="item-12"></a>**12 Verify:** Sonah did not check a statement that the agent wrote into `README.md`.  
 “Rate limiting is enabled by default.”  
 Impact on you: *The README may be wrong.*  
 Action: *Read the README.*  
@@ -323,7 +294,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-16"></a>**16 Fix:** *A rate of zero lets every request through*  
+<a name="item-13"></a>**13 Fix:** *A rate of zero lets every request through*  
 Impact on you: *A zero rate turns the limiter off.*  
 Action: *Reject a rate below one.*  
 Where: `src/limiter.js:2`
@@ -340,7 +311,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-17"></a>**17 Fix:** A recorded result contradicts a statement that the agent wrote into `docs/limits.md`.  
+<a name="item-14"></a>**14 Fix:** A recorded result contradicts a statement that the agent wrote into `docs/limits.md`.  
 “The limiter answers with 503 when it is full.”  
 Where: `docs/limits.md`
 
@@ -354,7 +325,7 @@ https://github.com/example-org/example-api/blob/11111111111111111111111111111111
 
 </details>
 
-<a name="item-18"></a>**18 Verify:** A `bash` call failed. The agent did not act on it or tell you.  
+<a name="item-15"></a>**15 Verify:** A `bash` call failed. The agent did not act on it or tell you.  
 `npm test`  
 Where: run 2
 
@@ -367,7 +338,7 @@ Where: run 2
 
 </details>
 
-<a name="item-19"></a>**19 Verify:** A `read` call did not run: a permission rule refused it. The agent did not act on it or tell you.  
+<a name="item-16"></a>**16 Verify:** A `read` call did not run: a permission rule refused it. The agent did not act on it or tell you.  
 Where: run 3
 
 <details><summary>Evidence · Why Must know</summary>
@@ -378,7 +349,139 @@ Where: run 3
 
 </details>
 
-<a name="item-20"></a>**20 Decide:** The agent decided not to act. About: *store*. Its decision: *no Redis*. You did not ask for this.  
+#### Decisions further down tagged Must know (3)
+
+- [24 Decide: The agent decided not to act. About: *store*. Its decision: *no Redis*.](#item-24) You did not ask for this.
+- [28 Decide: The agent decided on *build output*: *clean dist*.](#item-28) You did not ask for this.
+- [30 Decide: The agent decided on *deploy hook*: *call the deploy hook*.](#item-30) You did not ask for this.
+
+<details><summary>Good to know (7)</summary>
+
+<details><summary><a name="item-17"></a>17 Fix: <em>No test covers the 429 answer</em> · <code>src/limiter.js:5</code></summary>
+
+Impact on you: *A wrong status code would still pass the tests.*  
+Action: *Add a test for the 429 answer.*  
+Where: `src/limiter.js:5`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L5
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- How the code gets there: *Nothing calls the limiter in a test.*
+- The code now: `src/limiter.js:5` `res.status(429)`
+- Its check: It traced the finding and found the same problem. *The refill runs once, before any request.*
+- The code review proposed low, and Sonah kept it.
+- Item id: `tttttttttttt`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-18"></a>18 Decide: <em>Should the limit be per client or global? The ask does not say.</em></summary>
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Its check: *The code keeps one global counter.*
+- Sonah could not tie this question to an item or an ask, so it puts it in Good to know.
+- Item id: `Q1`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-19"></a>19 Decide: <em>Is a 429 body needed?</em></summary>
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Sonah puts a question of the code review in Good to know by default.
+- Item id: `Q3`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-20"></a>20 Decide: <em>The limiter counts preflight requests</em> · <code>src/limiter.js:6</code></summary>
+
+Where: `src/limiter.js:6`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L6
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Its check found that the code does this. It also found that this does not go against your ask or the contract with callers. Is it what you want?
+- Its check: *It is as written.*
+- Sonah puts a question from a finding of the code review in Good to know by default.
+- Item id: `Q2`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-21"></a>21 Fix: The agent acted against something that you said. The agent told you about it. · <code>.github/workflows/ci.yml</code></summary>
+
+You said: “Do not change the CI config”  
+Where: `.github/workflows/ci.yml`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- The agent wrote: “run: npm test --silent”
+- The agent told you: “I told you that I changed the CI file.”
+- Sonah puts an edit that the agent undid or told you about in Good to know by default.
+- Item id: `kkkkkkkkkkkk`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-22"></a>22 Fix: The agent acted against something that you said. The agent undid it in the same turn. · <code>.github/workflows/ci.yml</code></summary>
+
+You said: “Do not change the CI config”  
+Where: `.github/workflows/ci.yml`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- The agent wrote: “run: npm test --silent”
+- Sonah puts an edit that the agent undid or told you about in Good to know by default.
+- Item id: `llllllllllll`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-23"></a>23 Read: <em>An earlier code review finding</em> · <code>src/server.js</code></summary>
+
+Where: `src/server.js`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- “app.use(limiter(10));”
+- Sonah puts a finding of an earlier code review in Good to know by default.
+- Item id: `mmmmmmmmmmmm`
+
+</details>
+
+</details>
+
+</details>
+
+### The agent's decisions, in order (7)
+
+<details open><summary>After asks 1 to 5 · 7 decisions (1 Must act, 3 Must know)</summary>
+
+- ask 1 · Done · “Add rate limiting to the API”
+- ask 2 · Not done · “Return 429 with a Retry-After header in seconds”
+- ask 3 · Done · “Keep the auth checks before the limiter”
+- ask 4 · Partly done · “Do not change the CI config”
+- ask 5 · Not checked · “Update the README”
+
+<details><summary><a name="item-24"></a>24 Decide: The agent decided not to act. About: <em>store</em>. Its decision: <em>no Redis</em>. You did not ask for this. · Must know</summary>
+
 The agent said: “I will not add Redis, an in-process bucket is enough.”
 
 <details><summary>Evidence · Why Must know</summary>
@@ -388,13 +491,99 @@ The agent said: “I will not add Redis, an in-process bucket is enough.”
 
 </details>
 
-<a name="item-21"></a>**21 Decide:** *Should the limit be per client or global? The ask does not say.*
+</details>
+
+<details><summary><a name="item-28"></a>28 Decide: The agent decided on <em>build output</em>: <em>clean dist</em>. You did not ask for this. · Must know</summary>
+
+Impact on you: *The build output may be gone.*  
+Action: *Build again before you deploy.*
 
 <details><summary>Evidence · Why Must know</summary>
 
-- Its check: *The code keeps one global counter.*
-- Sonah puts a question of the code review in Must know by default.
-- Item id: `Q1`
+- A permission rule or auto mode refused a call that this item cites. Sonah never puts such an item in Must act.
+- Item id: `666666666666`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-29"></a>29 Decide: The agent decided on <em>deploy</em>: <em>push the branch</em>. You did not ask for this. · Must act</summary>
+
+Impact on you: *The agent tried to force a push.*  
+Action: *Check the remote branch.*
+
+<details><summary>Evidence · Why Must act</summary>
+
+- The code review proposed high, and Sonah kept it.
+- Item id: `222222222222`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-30"></a>30 Decide: The agent decided on <em>deploy hook</em>: <em>call the deploy hook</em>. You did not ask for this. · Must know</summary>
+
+Impact on you: *A deploy may have started.*  
+Action: *Check the deploy log.*
+
+<details><summary>Evidence · Why Must know</summary>
+
+- A permission rule or auto mode refused a call that this item cites. Sonah never puts such an item in Must act.
+- Item id: `777777777777`
+
+</details>
+
+</details>
+
+<details><summary>3 more decisions tagged Good to know</summary>
+
+<details><summary><a name="item-25"></a>25 Decide: The agent changed its approach from <em>a Redis store</em> to <em>an in-process token bucket</em>. · Good to know</summary>
+
+The agent said: “I am switching to an in-process token bucket”
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Sonah puts a change of approach in Good to know by default.
+
+</details>
+
+</details>
+
+<details><summary><a name="item-26"></a>26 Decide: You asked, and the agent decided on <em>Retry-After unit</em>: <em>seconds</em>. · ask 2 · Good to know</summary>
+
+You asked: “Return 429 with a Retry-After header in seconds”  
+The agent said: “I will use a token bucket.”  
+Where: `src/limiter.js` · ask 2
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Sonah puts a decision on how to do your ask in Good to know by default.
+- Item id: `333333333333`
+
+</details>
+
+</details>
+
+<details><summary><a name="item-27"></a>27 Read: The agent decided on <em>limit per client</em>: <em>ten requests</em>. · Good to know</summary>
+
+Where: `src/server.js`
+
+https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js
+
+<details><summary>Evidence · Why Good to know</summary>
+
+- Sonah could not check whether you asked for this.
+- Sonah does not hold all your earlier messages in full, so it could not check if one covered it.
+- Sonah puts a decision that Sonah could not tie to an ask in Good to know by default.
+- Item id: `444444444444`
+
+</details>
+
+</details>
+
+</details>
 
 </details>
 
@@ -403,11 +592,11 @@ The agent said: “I will not add Redis, an in-process bucket is enough.”
 | Status | You asked | Sonah's note |
 |---|---|---|
 | Done | “Add rate limiting to the API” | The code review found a problem here. See item 1. |
-| Not done | “Return 429 with a Retry-After header in seconds” | See item 7. |
+| Not done | “Return 429 with a Retry-After header in seconds” | See item 6. |
 | Done | “Keep the auth checks before the limiter” | <details><summary>Evidence</summary>The session review cited the agent's words as what does it, not a recorded result or change.</details> |
-| Partly done | “Do not change the CI config” | See item 6. |
+| Partly done | “Do not change the CI config” | See item 5. |
 | Not checked | “Update the README” | Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the section What Sonah could not check. <details><summary>Evidence</summary>The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.</details> |
-| Not done | “Also add a test for the limiter” | See item 5. |
+| Not done | “Also add a test for the limiter” | See item 4. |
 
 Sonah checked only the parts of your prompt that the table above lists.
 
@@ -429,155 +618,6 @@ Sonah checked only the parts of your prompt that the table above lists.
 
 </details>
 
-<details><summary>Good to know (9)</summary>
-
-<details><summary><a name="item-22"></a>22 Fix: <em>No test covers the 429 answer</em> · <code>src/limiter.js:5</code></summary>
-
-Impact on you: *A wrong status code would still pass the tests.*  
-Action: *Add a test for the 429 answer.*  
-Where: `src/limiter.js:5`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L5
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- How the code gets there: *Nothing calls the limiter in a test.*
-- The code now: `src/limiter.js:5` `res.status(429)`
-- Its check: It traced the finding and found the same problem. *The refill runs once, before any request.*
-- The code review proposed low, and Sonah kept it.
-- Item id: `tttttttttttt`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-23"></a>23 Decide: <em>Is a 429 body needed?</em></summary>
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Sonah puts a question of the code review in Good to know by default.
-- Item id: `Q3`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-24"></a>24 Decide: You asked, and the agent decided on <em>Retry-After unit</em>: <em>seconds</em>. · <code>src/limiter.js</code></summary>
-
-You asked: “Return 429 with a Retry-After header in seconds”  
-The agent said: “I will use a token bucket.”  
-Where: `src/limiter.js` · ask 2
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Sonah puts a decision on how to do your ask in Good to know by default.
-- Item id: `333333333333`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-25"></a>25 Decide: The agent changed its approach from <em>a Redis store</em> to <em>an in-process token bucket</em>.</summary>
-
-The agent said: “I am switching to an in-process token bucket”
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Sonah puts a change of approach in Good to know by default.
-
-</details>
-
-</details>
-
-<details><summary><a name="item-26"></a>26 Read: The agent decided on <em>limit per client</em>: <em>ten requests</em>. · <code>src/server.js</code></summary>
-
-Where: `src/server.js`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Sonah could not check whether you asked for this.
-- Sonah does not hold all your earlier messages in full, so it could not check if one covered it.
-- Sonah puts a decision that Sonah could not tie to an ask in Good to know by default.
-- Item id: `444444444444`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-27"></a>27 Decide: <em>The limiter counts preflight requests</em> · <code>src/limiter.js:6</code></summary>
-
-Where: `src/limiter.js:6`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js#L6
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- Its check found that the code does this. It also found that this does not go against your ask or the contract with callers. Is it what you want?
-- Its check: *It is as written.*
-- Sonah puts a question from a finding of the code review in Good to know by default.
-- Item id: `Q2`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-28"></a>28 Fix: The agent acted against something that you said. The agent told you about it. · <code>.github/workflows/ci.yml</code></summary>
-
-You said: “Do not change the CI config”  
-Where: `.github/workflows/ci.yml`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- The agent wrote: “run: npm test --silent”
-- The agent told you: “I told you that I changed the CI file.”
-- Sonah puts an edit that the agent undid or told you about in Good to know by default.
-- Item id: `kkkkkkkkkkkk`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-29"></a>29 Fix: The agent acted against something that you said. The agent undid it in the same turn. · <code>.github/workflows/ci.yml</code></summary>
-
-You said: “Do not change the CI config”  
-Where: `.github/workflows/ci.yml`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- The agent wrote: “run: npm test --silent”
-- Sonah puts an edit that the agent undid or told you about in Good to know by default.
-- Item id: `llllllllllll`
-
-</details>
-
-</details>
-
-<details><summary><a name="item-30"></a>30 Read: <em>An earlier code review finding</em> · <code>src/server.js</code></summary>
-
-Where: `src/server.js`
-
-https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js
-
-<details><summary>Evidence · Why Good to know</summary>
-
-- “app.use(limiter(10));”
-- Sonah puts a finding of an earlier code review in Good to know by default.
-- Item id: `mmmmmmmmmmmm`
-
-</details>
-
-</details>
-
-</details>
-
 <details><summary>What the agent did (5 files · 6 commands · 1 other call · 7 claims)</summary>
 
 #### Files
@@ -586,41 +626,43 @@ The code review grouped these files by the ask that each one serves.
 
 **Ask 1**
 
-- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 7 → item 16 → item 22 → item 24 → item 27
-- `src/server.js` · changed · +1 −0 · *mounts the limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js → item 9 → item 26 → item 30
+- `src/limiter.js` · new · +9 −0 · *adds a token bucket limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/limiter.js → item 1 → item 6 → item 13 → item 17 → item 20 → item 26
+- `src/server.js` · changed · +1 −0 · *mounts the limiter* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/src/server.js → item 8 → item 23 → item 27
 
 **Ask 5**
 
-- `README.md` · changed · +1 −1 · *says that limiting is on* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/README.md → item 12 → item 15
+- `README.md` · changed · +1 −1 · *says that limiting is on* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/README.md → item 9 → item 12
 
 **No ask that the code review named**
 
-- `.github/workflows/ci.yml` · changed · +1 −1 · *runs the tests silently* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml → item 4 → item 6 → item 8 → item 28 → item 29
-- `docs/limits.md` · new · +1 −0 · *documents the full answer* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/docs/limits.md → item 17
+- `.github/workflows/ci.yml` · changed · +1 −1 · *runs the tests silently* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/.github/workflows/ci.yml → item 3 → item 5 → item 7 → item 21 → item 22
+- `docs/limits.md` · new · +1 −0 · *documents the full answer* · https://github.com/example-org/example-api/blob/1111111111111111111111111111111111111111/docs/limits.md → item 14
 
 #### Runs, from the recording, in order
 
-- run 1 · `redis-server --version` · failed, exit code 1 · the agent acted on it
-- run 2 · `npm test` · failed, exit code 1 · the agent passed over it → item 18
-- run 3 · `read` · did not run: a permission rule refused it · the agent passed over it → item 19
+7 runs: 1 exited with code 0, 2 failed, 4 did not run.
+
+The runs that other parts of this report name:
+
+- run 2 · `npm test` · failed, exit code 1 · the agent passed over it → item 15
+- run 3 · `read` · did not run: a permission rule refused it · the agent passed over it → item 16
 - run 4 · `rm -rf dist` · did not run: auto mode refused it
-- run 5 · `git push --force` · did not run: refused · the agent told you
-- run 6 · `curl -X POST https://example.invalid/deploy` · did not run: a permission rule refused it
-- run 7 · `npm run lint` · exit code 0
+
+The list of runs is on the HTML page of this review, which sonah review --format html --output FILE writes.
 
 #### Claims
 
-- check not seen to finish → item 14 “I will use a token bucket.”
-- not checked → item 15 “Rate limiting is enabled by default.” · written into `README.md`
-- contradicted → item 17 “The limiter answers with 503 when it is full.” · written into `docs/limits.md`
-- not checked → item 13 “all tests pass”
+- check not seen to finish → item 11 “I will use a token bucket.”
+- not checked → item 12 “Rate limiting is enabled by default.” · written into `README.md`
+- contradicted → item 14 “The limiter answers with 503 when it is full.” · written into `docs/limits.md`
+- not checked → item 10 “all tests pass”
 - not checked “rate limiting works”
-- contradicted → item 3 “The limiter uses Redis.”
-- contradicted by the code review → item 8 “I reverted the CI change.”
+- contradicted → item 2 “The limiter uses Redis.”
+- contradicted by the code review → item 7 “I reverted the CI change.”
 
 #### What the agent said it did not do
 
-- “I will not add Redis, an in-process bucket is enough.” → item 20
+- “I will not add Redis, an in-process bucket is enough.” → item 24
 
 #### Decisions you settled
 
@@ -664,7 +706,7 @@ Sonah could not read 1 ask of the session review.
 
 ---
 
-Sonah 0.9.0 · sonah.report-model/7 · commit 1111111  
+Sonah 0.9.0 · sonah.report-model/8 · commit 1111111  
 Text in quotation marks is word for word from the recording.  
 Titles, questions, labels and file notes in italics are the code review's words.  
 Words in italics inside Sonah's sentences are the session review's words.  

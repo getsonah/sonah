@@ -34,11 +34,19 @@ export function d145Recording() {
  * The fake transport. A narrative answers with 17 requirements of the one ask; a checking call votes on every item it
  * is asked, `uncertain` in a second pass and `not-refuted` otherwise, and names its request's label in each vote, so a
  * stored answer says which request it answered. `latency(label)`: how long a call takes, in ms. `calls` gets each live
- * request's label, digest and key, in the order the transport received them.
+ * request's label, digest and key, in the order the transport received them, and `after`: the labels of the calls that
+ * had returned when it was received.
  */
-export const d145Transport = ({ calls, latency = () => 0 }) => ({ onResult, config }) => async (request) => {
-  calls.push({ label: request.label, digest: sha16(`${request.system}\u0000${request.prompt}`),
-    key: answerKey(request, { backend: config.backend, model: config.model }) });
+export const d145Transport = ({ calls, latency = () => 0 }) => {
+  const returned = [];
+  return ({ onResult, config }) => async (request) => {
+    calls.push({ label: request.label, digest: sha16(`${request.system}\u0000${request.prompt}`),
+      key: answerKey(request, { backend: config.backend, model: config.model }), after: [...returned] });
+    try { return await answer(request, { onResult, config, latency }); } finally { returned.push(request.label); }
+  };
+};
+
+async function answer(request, { onResult, config, latency }) {
   const wait = latency(request.label);
   if (wait > 0) await sleep(wait);
   onResult({ ok: true, backend: config.backend, attestation: 'attested', contextWindow: 1_000_000 });
@@ -51,7 +59,7 @@ export const d145Transport = ({ calls, latency = () => 0 }) => ({ onResult, conf
     requirements: Array.from({ length: D145_REQUIREMENTS }, (_, k) => ({ text: `SYNTHETIC_D145_NOTE_${k + 1}`,
       instruction: { eventId: instruction.id, role: 'instruction', quote: D145_ASK },
       status: 'done', deliverable: { eventId: action.id, role: 'action', quote: 'notes.md' } })) };
-};
+}
 
 async function filesUnder(folder) {
   const out = [];
@@ -112,7 +120,13 @@ export async function d145Stored(home) {
   return { occurrenceOf, records, store: store.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)) };
 }
 
-/** The capture the pinned values were made from: one live run, then the same command again over the same state. */
+/**
+ * The capture the pinned values were made from: one live run, then the same command again over the same state. Also
+ * `returnedBefore`: per label, the labels whose calls had returned when the transport received it. The order in which
+ * the transport receives requests in flight together is not fixed: each first looks up its stored answer
+ * (answer-cache.js `memoizeJudge`), and those lookups end in any order. The order they reach the memo is, and the
+ * window record lists them in it.
+ */
 export async function capturePasses({ latency } = {}) {
   const home = await d145Home();
   try {
@@ -125,6 +139,7 @@ export async function capturePasses({ latency } = {}) {
     const replay = await d145Run(home, { latency });
     const again = await d145Stored(home);
     return { code: live.code, requests, records, store, sent: live.calls.map(({ label }) => label),
+      returnedBefore: Object.fromEntries(live.calls.map(({ label, after }) => [label, after])),
       replay: { code: replay.code, calls: replay.calls.length, records: again.records } };
   } finally { await rm(home, { recursive: true, force: true }); }
 }

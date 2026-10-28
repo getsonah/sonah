@@ -487,6 +487,46 @@ export function premiseReport(session = triageSession()) {
   return joined(rows, codePass, claimFalseCheck(findings), session);
 }
 
+/** D152's ids of (h): the finding tied by a receipt of what it breaks alone, and the open finding. */
+export const BREAKS_TIED_ID = FINDING_IDS.test;
+export const OPEN_ID = idOf('w');
+/** The doc line (h)'s weak test breaks, as its check quotes it. */
+export const BREAKS_DOC = 'The client retries three times.';
+/**
+ * (h) D152, the check judges truth only: the review of (g) under the tie rule (`sonah.code-verify/5`, `sonah.tiers/4`,
+ * the run profile's `tie` member). Every check keeps its receipts of what the behaviour breaks; the weak test, which
+ * follows from no row, is tied by the doc line it breaks alone; the finding (g) routed to a question is a finding its
+ * check found to hold that follows from no row and breaks nothing its check found, so it is open, and the code review
+ * proposed it high (bounded to Must know). No question comes from a finding.
+ */
+export function truthOnlyReport(session = triageSession()) {
+  const base = premiseReport(session);
+  const pass = base.codePass;
+  const rows = sessionRows({ legacy: true });
+  const withBreaks = (f, breaks = []) => ({ ...f, check: { ...f.check, breaks } });
+  const findings = pass.findings.map((f) => withBreaks(f, f.id === BREAKS_TIED_ID
+    ? [codeReceipt('docs/retry.md', 4, BREAKS_DOC)] : []));
+  const fixed = codeReceipt('src/retry.js', 7, 'const waitMs = 2000;');
+  const anchor = { path: 'src/retry.js', side: 'new', startLine: 7, endLine: 7 };
+  const open = [{ origin: 'code-review', status: 'DECIDE', scope: 'current-code', kind: 'missed_case', lens: 'behaviour',
+    foundByLenses: ['behaviour'], title: 'The wait is fixed, not read from the server', claims: [],
+    input: 'SYNTHETIC a server that asks for a longer wait',
+    trace: [{ step: 'The wait is a fixed number.', source: 'file', ...fixed }], anchor, ...anchorFields(anchor, [7]),
+    leadsFrom: [], receipts: [fixed], id: OPEN_ID,
+    check: { verdict: 'holds', explanation: 'SYNTHETIC the wait is a constant.', receipts: [fixed],
+      premises: [{ premise: 'SYNTHETIC line 7 sets the wait to a constant.', source: 'repository', receipts: [fixed] }],
+      breaks: [] } }];
+  const codePass = { ...pass,
+    version: { ...pass.version, verify: 'sonah.code-verify/5', triage: { table: 'sonah.tiers/4' },
+      tie: { rule: 'leads-from-or-grounded-breaks' } },
+    findings, unconfirmed: pass.unconfirmed.map((f) => withBreaks(f)), open,
+    questions: pass.questions.filter((q) => q.from !== 'finding'),
+    triage: [...pass.triage, { ref: { finding: OPEN_ID }, level: 'high', impact: 'SYNTHETIC a server that asks for '
+      + 'more time is retried too soon.', action: 'Decide whether the wait should follow the server.',
+    label: 'the fixed wait', where: null }] };
+  return joined(rows, codePass, claimFalseCheck(findings), session);
+}
+
 /** (b) The same review with the code step of code-pass/9: no triage, no file notes or counts, no anchor span. */
 export function codePass9Report(session = triageSession()) {
   const rows = sessionRows();
@@ -593,4 +633,4 @@ export function codePass1Report(session = triageSession()) {
 
 /** Every report of this fixture by its letter, each built anew. */
 export const TRIAGE_REPORTS = Object.freeze({ a: triageReport, b: codePass9Report, c: sessionOnlyReport,
-  d: codePass3Report, e: codePass8Report, f: codePass1Report, g: premiseReport });
+  d: codePass3Report, e: codePass8Report, f: codePass1Report, g: premiseReport, h: truthOnlyReport });

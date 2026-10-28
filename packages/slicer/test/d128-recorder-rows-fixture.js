@@ -33,14 +33,14 @@ export const RECORDER_ROWS = Object.freeze([
       ownerOrganizationUuid: 'aaaaaaaa-0000-4000-8000-000000000003', sessionId: SESSION } },
   { name: 'permission-mode', versions: ['(no version; recordings of 2.1.251 and 2.1.296)'], expect: 'harness',
     row: { type: 'permission-mode', permissionMode: 'acceptEdits', sessionId: SESSION } },
+  // D150 (its review, F3): the request rows as the recorder writes them, with no envelope (`cwd`, `uuid`, `isSidechain`,
+  // …): its own keys, `sessionId`, `timestamp` and `version`. The `api-request-shape` row this fixture held carried such an
+  // envelope; its recorded form is in d150-recorder-rows-fixture.js.
   { name: 'api-request', versions: ['2.1.303'], expect: 'harness',
-    row: envelope('2.1.303', { type: 'api-request', cacheControl: [{ path: ['system'], value: { ttl: '1h',
-      type: 'ephemeral' } }], id: 'aaaaaaaa-0000-4000-8000-000000000004', keep: 1, params: { betas: ['beta-1'],
-      max_tokens: 1000, model: 'synthetic-model' }, querySource: 'sdk', requestDigest: 'f'.repeat(64),
-      shapeHash: 'e'.repeat(64), tail: ['d'.repeat(64)] }) },
-  { name: 'api-request-shape', versions: ['2.1.303'], expect: 'unclassified',
-    row: envelope('2.1.303', { type: 'api-request-shape', shape: { system: [{ type: 'text',
-      text: 'Synthetic system words.' }], tools: [] }, shapeHash: 'e'.repeat(64) }) },
+    row: { type: 'api-request', cacheControl: [{ path: ['system'], value: { ttl: '1h', type: 'ephemeral' } }],
+      id: 'aaaaaaaa-0000-4000-8000-000000000004', keep: 1, params: { betas: ['beta-1'], max_tokens: 1000,
+        model: 'synthetic-model' }, querySource: 'sdk', requestDigest: 'f'.repeat(64), sessionId: SESSION,
+      shapeHash: 'e'.repeat(64), tail: ['d'.repeat(64)], timestamp: '2026-10-21T10:00:00.000Z', version: '2.1.303' } },
   { name: 'api-request-blob of a system message', versions: ['2.1.303'], expect: 'unclassified',
     row: { type: 'api-request-blob', hash: 'c'.repeat(64), message: { role: 'system', content: [{ type: 'text',
       text: 'Synthetic words.' }] }, sessionId: SESSION } },
@@ -122,7 +122,10 @@ export const RECORDER_ROWS = Object.freeze([
     row: attachment('2.1.296', { type: 'prompt_snapshot', contextRendering: 'inline', echoWireToolInputs: false,
       reminderFold: true, systemPrompt: ['Synthetic words.'] }, { session_id: SESSION }) },
   // ---- what stays strict ----
-  { name: 'attachment.queued_command with no commandMode', versions: ['2.1.286', '2.1.295'], expect: 'unclassified',
+  // D150: a queued command with no `commandMode` that the recorder flagged `isMeta: true` is listed as the harness's
+  // (`listed`: harness context, not read by its structure, so the census does not name it).
+  { name: 'attachment.queued_command with no commandMode', versions: ['2.1.286', '2.1.295'], expect: 'harness',
+    listed: true,
     row: attachment('2.1.295', { type: 'queued_command', isMeta: true, origin: { kind: 'coordinator' },
       prompt: 'Synthetic words of a queued message.', reminderId: 'synthetic01', source_uuid: uid() }, RENDERED) },
 ]);

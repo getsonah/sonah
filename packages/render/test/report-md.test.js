@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { renderReportMarkdown, neutraliseMentions, REPORT_MD_LIMITS, REPORT_MD_WORDS, STORY_VERSION }
   from '../session-story.js';
 import { renderSessionPage, sessionPage, escapeHtml } from '../session-page.js';
-import { reportModel, REPORT_LIMITS, foldNotes, agentPromptText } from '../report-model.js';
+import { reportModel, REPORT_LIMITS, foldNotes, agentPromptText, reportItems } from '../report-model.js';
 import { REPORT_SECTION_WORDS, REPORT_TIER_WORDS, REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_TYPE_WORDS,
   REPORT_COUNT_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS,
-  REPORT_AGENT_PROMPT_WORDS } from '../report-words.js';
+  REPORT_AGENT_PROMPT_WORDS, REPORT_TRAIL_WORDS } from '../report-words.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts, HEAD, START } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
@@ -30,7 +30,7 @@ const modelOf = (shape = triagedReport, options = repoFacts()) => {
 };
 const bytes = (text) => Buffer.byteLength(text, 'utf8');
 /** A fold's summary line: HTML, which GitHub does not read as Markdown (a backtick there makes no code span). */
-const SUMMARY_LINE = /^<details><summary>(.*)<\/summary>$/gm;
+const SUMMARY_LINE = /^<details(?: open)?><summary>(.*)<\/summary>$/gm;
 /** The Markdown GitHub reads as text: outside the folds' summary lines, fences and code spans. */
 const prose = (text) => text.replace(SUMMARY_LINE, ' ').replace(/^(`{3,})[^\n]*\n[\s\S]*?^\1$/gm, ' ')
   .replace(/(`+)[^`]*?\1/g, ' ');
@@ -81,13 +81,16 @@ test('D97 (1): the .md has the report model\'s sections in order, with the page\
     const page = renderSessionPage(session, report, repoFacts());
     const model = reportModel(session, report, repoFacts());
     const at = (marker) => { const i = text.indexOf(marker); assert.ok(i >= 0, `${letter}: ${marker}`); return i; };
-    // D131 (R1, B12): Must act and Must know before your prompt.
+    // D131 (R1, B12): Must act and Must know before your prompt. D161: then Good to know and the agent's decisions.
+    const trail = model.decisions.total ? [`### ${REPORT_TRAIL_WORDS.heading(model.decisions.total)}`] : [];
     const headings = [
       '## Sonah review',
-      `### ${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.must_act, model.tiers.must_act.length)}`,
+      // D163: Must act counts its pointers to the decisions tagged Must act, as the count line does.
+      `### ${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.must_act, model.countLine.counts.must_act)}`,
       `### ${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.must_know, model.tiers.must_know.length)}`,
-      `### ${REPORT_SECTION_WORDS.promptCounted(model.prompt.asks.length, model.prompt.parts.join(', '))}`,
       `<details><summary>${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know, model.tiers.good_to_know.length)}</summary>`,
+      ...trail,
+      `### ${REPORT_SECTION_WORDS.promptCounted(model.prompt.asks.length, model.prompt.parts.join(', '))}`,
       `<details><summary>${REPORT_SECTION_WORDS.didCounted(model.did.files.total, model.did.runs.commands, model.did.runs.others,
         model.did.claims.total)}</summary>`,
       `<details><summary>${REPORT_SECTION_WORDS.notCheckedCounted(model.notChecked.total)}</summary>`,
@@ -95,17 +98,18 @@ test('D97 (1): the .md has the report model\'s sections in order, with the page\
     const order = headings.map(at);
     assert.deepEqual(order, [...order].sort((a, b) => a - b), letter);
     // The page holds the same section counts (its headings and fold summaries).
-    for (const heading of headings.slice(1, 7)) {
+    for (const heading of headings.slice(1, 7 + trail.length)) {
       const words = heading.replace(/^#+ |<details><summary>|<\/summary>/g, '');
       assert.ok(page.includes(words.replace(/'/g, '&#39;')), `${letter}: the page says ${words}`);
     }
     // The count line, with "(folded)", and each item numbered once, its type word first.
     const tiers = model.countLine.tiers.map((t) => `${REPORT_COUNT_WORDS.tier(t.words, t.n)}${t.folded ? ' (folded)' : ''}`);
-    assert.ok(text.includes(`${tiers.join(' · ')} · ${model.countLine.prompt}`), letter);
+    const decisions = model.countLine.decisions ? ` · ${model.countLine.decisions.words}` : '';
+    assert.ok(text.includes(`${tiers.join(' · ')}${decisions} · ${model.countLine.prompt}`), letter);
     for (const item of [...model.tiers.must_act, ...model.tiers.must_know])
       assert.equal(text.split(`<a name="item-${item.n}"></a>**${item.n} ${REPORT_TYPE_WORDS[item.type]}:**`).length - 1, 1,
         `${letter}: item ${item.n}`);
-    for (const item of model.tiers.good_to_know)
+    for (const item of [...model.tiers.good_to_know, ...model.decisions.groups.flatMap((g) => g.items)])
       assert.equal(text.split(`<summary><a name="item-${item.n}"></a>${item.n} ${REPORT_TYPE_WORDS[item.type]}: `).length - 1, 1,
         `${letter}: item ${item.n}`);
     // No answer command: teammates cannot run it. The footer says who "you" is, and to read the report first.
@@ -175,12 +179,16 @@ test('D97 (2): a path or a command that holds backticks is one code span, its fe
   b.run('R1', 'echo `date` && echo ``twice``', 'failed', 'boom');
   b.say('F1', 'Done.', 'final');
   const session = b.session();
+  // D167: the .md lists no run; a failure that the agent passed over is an item, which shows its command. Its review:
+  // the item's Where names run 1, so run 1 keeps its line, its command the same code span.
   const text = renderReportMarkdown(session, { windowResults: windowOf(session), sessionReview: 'complete',
     coverage: 'complete', requirements: [{ text: 'stamp', instruction: r('instruction', 'I1', 'Stamp the build.'),
-      status: 'done', deliverable: r('code', 'W1', 'x') }] }, {});
+      status: 'done', deliverable: r('code', 'W1', 'x') }], failures: [{ eventId: 'R1-r', action: 'R1',
+      outcome: 'ran-failed', form: 'exit', tool: 'bash', handling: 'passed-over' }] }, {});
   assert.ok(text.includes('- ``src/odd`name.js`` · '), text);
   // A span whose text ends with a backtick is padded with a space on each side, which GitHub takes off.
-  assert.ok(text.includes(' · ``` echo `date` && echo ``twice`` ``` · '), text);
+  assert.ok(text.includes('\n``` echo `date` && echo ``twice`` ```  \nWhere: run 1\n'), text);
+  assert.ok(text.includes('\n- run 1 · ``` echo `date` && echo ``twice`` ``` · failed, exit code 1 · '), text);
 });
 
 test('D97 (1): the table cuts an ask after 12 words, the cut outside the quotation marks; a quoted line keeps its indent',
@@ -218,21 +226,26 @@ test('D97 (2): hostile text cannot open a block, end a fold, or break the table 
     promises: [{ id: 'sha256:'.padEnd(71, 'a'), stated: r('commentary', 'F1', hostile), text: hostile, status: 'open',
       receipts: [r('commentary', 'F1', hostile)] }] };
   const model = reportModel(session, report, {});
-  assert.deepEqual(model.tiers.good_to_know.map((item) => item.kind), ['pivot', 'decision_whether_asked']);
+  // D161: the agent's decisions are in the report's second part, in the order the session recorded them; each line is a
+  // fold's summary, which is HTML, not Markdown.
+  assert.deepEqual(model.tiers.good_to_know.map((item) => item.kind), []);
+  const decided = model.decisions.groups.flatMap((g) => g.items);
+  assert.deepEqual(decided.map((item) => item.kind).sort(), ['decision_unasked', 'decision_whether_asked', 'pivot']);
   const text = renderReportMarkdown(session, report, {});
   const lines = text.split('\n');
-  // Every fold this report opens, it closes, and only its own lines open or close one.
-  const opens = lines.filter((l) => l.startsWith('<details>')).length;
+  // Every fold this report opens, it closes, and only its own lines open or close one (D161: a group of the agent's
+  // decisions opens as `<details open>`).
+  const opens = lines.filter((l) => l.startsWith('<details>') || l.startsWith('<details open>')).length;
   assert.ok(opens >= 4);
   assert.equal(lines.filter((l) => l === '</details>').length, opens);
   // D144: a prompt for the agent holds its quotes in a fence (longer than any run of backticks in them), where GitHub
   // reads no markup: outside the fences, no quote opens or closes a fold.
   assert.ok(text.includes(PROMPT_SUMMARY), 'the item that leads in Must act has its prompt');
   assert.equal(outsideFences(text).split('</details>').length - 1, opens, 'no quote closes a fold');
-  assert.equal(outsideFences(text).split('<details>').length - 1, opens, 'no quote opens a fold');
+  assert.equal(outsideFences(text).split(/<details(?: open)?>/).length - 1, opens, 'no quote opens a fold');
   // A fold's summary holds the review's words as text: no tag but the report's own, the markup escaped.
   for (const tag of summaryTags(text)) assert.match(tag, OWN_SUMMARY_TAG);
-  for (const item of model.tiers.good_to_know) {
+  for (const item of decided) {
     const summary = lines.find((l) => l.startsWith(`<details><summary><a name="item-${item.n}"></a>`));
     // A balanced single-backtick span is a <code> element; the rest is text.
     assert.ok(summary.includes('&lt;/details&gt; # Heading | cell ``` fence <code>tick</code> &lt;b&gt;bold&lt;/b&gt;'),
@@ -289,11 +302,12 @@ test('D97 (2): a balanced single-backtick span is code in the .md and on the pag
   assert.ok(text.includes('> In ufo, `withTrailingSlash` must leave `mailto:` alone. Ping `@octocat` about `#12`, not '
     + '`</details><b>x</b>`. Keep `a|b` and \\`\\` \\`\\` and \\`x\n'), text);
   assert.ok(text.includes('| “`withTrailingSlash` must leave `mailto:` alone” |'), text);
-  assert.ok(text.includes('*a `TrailingSlashOptions` type*'), text);
+  // D161: the decision is in the report's second part, its line a fold's summary (HTML): the span is <code> there.
+  assert.ok(text.includes('<em>a <code>TrailingSlashOptions</code> type</em>'), text);
   // Nothing pings outside a code span, and only the report's own lines open or close a fold.
   assert.doesNotMatch(linkable(text), /@octocat|#12|<b>|<\/details><b>/);
   assert.equal(text.split('\n').filter((l) => l === '</details>').length,
-    text.split('\n').filter((l) => l.startsWith('<details>')).length);
+    text.split('\n').filter((l) => l.startsWith('<details>') || l.startsWith('<details open>')).length);
   // In the table a span keeps its cell: its pipe is escaped, as GitHub reads a table.
   const b2 = sessionBuilder();
   b2.ask('I1', 'Keep `a|b` as is.');
@@ -333,7 +347,7 @@ test('D97 (2): a finding kind and anchor line numbers are read by structure, nev
   const model = reportModel(session, report, {});
   // The code review's finding of an unknown kind is an earlier code review's finding; the other is a row Sonah could not
   // read, placed and named, never dropped.
-  assert.deepEqual(Object.values(model.tiers).flat().map((item) => item.kind), ['code_finding_legacy']);
+  assert.deepEqual(reportItems(model).map((item) => item.kind), ['code_finding_legacy']);
   assert.deepEqual(model.placement.rows['findings:0'], { notChecked: 'unreadRows' });
   for (const text of [renderReportMarkdown(session, report, {}), renderSessionPage(session, report, {})]) {
     assert.match(text, /SYNTHETIC code-review title/);
@@ -360,10 +374,14 @@ test('D97: no pings — mentions, issues and bare commit hashes in recorded and 
   report.codePass.findings[4] = { ...report.codePass.findings[4], title: marked };
   report.codePass.questions[2] = { ...report.codePass.questions[2], question: marked };
   report.pivots = [{ ...report.pivots[0], abandoned: marked, adopted: words }];
-  const gtk = reportModel(session, report, repoFacts()).tiers.good_to_know;
-  assert.deepEqual(gtk.filter((item) => ['code_weak_test', 'code_question', 'pivot'].includes(item.kind)).length, 3);
+  // D161: the change of approach is one of the agent's decisions, in the report's second part; its line is a fold's
+  // summary too. D161: the question with a check, Q1, is now Good to know too (no checked tie): the one marked is Q3.
+  const marks = (item) => ['code_weak_test', 'pivot'].includes(item.kind) || (item.kind === 'code_question'
+    && item.rows[0].index === 2);
+  const gtk = reportItems(reportModel(session, report, repoFacts())).filter(marks);
+  assert.deepEqual(gtk.map((item) => item.tier.final), ['good_to_know', 'good_to_know', 'good_to_know']);
   const all = renderReportMarkdown(session, report, repoFacts());
-  for (const item of gtk.filter((x) => ['code_weak_test', 'code_question', 'pivot'].includes(x.kind))) {
+  for (const item of gtk) {
     const summary = all.split('\n').find((l) => l.startsWith(`<details><summary><a name="item-${item.n}"></a>`));
     for (const token of ['<code>@octocat</code>', '<code>#12</code>', '<code>getsonah/sonah#12</code>',
       `<code>${sha}</code>`, '&lt;/details&gt; &lt;b&gt;x&lt;/b&gt;']) assert.ok(summary.includes(token), `${token}: ${summary}`);
@@ -375,8 +393,9 @@ test('D97: no pings — mentions, issues and bare commit hashes in recorded and 
     0);
   assert.ok(all.split('\n').filter((l) => l.startsWith('| ')).every((l) => l.split('<details>').length
     === l.split('</details>').length), 'a row fold closes on its own line');
-  assert.equal(all.split('</details>').length - 1, all.split('\n').filter((l) => l.startsWith('<details>')).length
-    + rowFolds);
+  // D161: a group of the agent's decisions opens as `<details open>`.
+  assert.equal(all.split('</details>').length - 1, all.split('\n').filter((l) => l.startsWith('<details>')
+    || l.startsWith('<details open>')).length + rowFolds);
   const b = sessionBuilder();
   b.ask('I1', `Please ${words}.`);
   b.say('F1', 'Done.', 'final');
@@ -390,7 +409,7 @@ test('D97: no pings — mentions, issues and bare commit hashes in recorded and 
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/7', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/8', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });
@@ -505,7 +524,10 @@ test('D97 (3): permalinks are bare URLs on their own lines, at most 8 lines; old
 /** A review whose evidence and lists are the bulk: the same report with many decisions made without asking (Must
  *  know items, each with the session review's long words in its evidence fold), decisions you settled (a list of what
  *  the agent did) and long pasted messages. */
-function oversized(session, { settled = 1500, unasked = 60 } = {}) {
+/** The triaged report made larger: `settled` decisions you settled (What the agent did), `unasked` decisions made
+ *  without asking you (D161: the report's second part) and (D161) `failures` copies of its failure passed over (Must
+ *  know of the first part). */
+function oversized(session, { settled = 1500, unasked = 60, failures = 0 } = {}) {
   const report = triagedReport(session);
   const long = (k) => `${'word '.repeat(60)}${k}`;
   report.decisions = [...report.decisions,
@@ -513,6 +535,7 @@ function oversized(session, { settled = 1500, unasked = 60 } = {}) {
       chosen: long(k), column: 'asked-settled', columnState: 'grounded', actions: [], stated: null })),
     ...Array.from({ length: unasked }, (_, k) => ({ id: `sha256:${String(k + 5000).padStart(64, '0')}`,
       dimension: long(k), chosen: `pick ${k}`, column: 'unasked', columnState: 'grounded', actions: ['W1'], stated: null }))];
+  report.failures = [...report.failures, ...Array.from({ length: failures }, () => ({ ...report.failures[0] }))];
   return report;
 }
 
@@ -522,11 +545,31 @@ test('D97 (4), D131: past 60,000 bytes the report is shortened in order; header,
   const model = reportModel(session, report, repoFacts());
   const full = renderReportMarkdown(session, report, repoFacts());
   assert.ok(bytes(full) <= REPORT_MD_LIMITS.maxBytes, `${bytes(full)} bytes`);
-  // D131 (R1): said once, at the top of the first section it shortened, in reading order: your prompt, after Must act and
-  // Must know, whose table keeps the asks that are not done and whose messages are counted.
+  // D131 (R1): said once, at the top of the first section it shortened, in reading order. D161: the agent's decisions,
+  // after Good to know and before your prompt, are shortened first (their evidence, then their groups' counts); your
+  // prompt's table keeps the asks that are not done, and its messages are counted.
   assert.equal(full.split(REPORT_TRIM_WORDS.mdShortened).length - 1, 1);
-  const promptHeading = `### ${REPORT_SECTION_WORDS.promptCounted(model.prompt.asks.length, model.prompt.parts.join(', '))}`;
-  assert.ok(full.includes(`${promptHeading}\n\n${REPORT_TRIM_WORDS.mdShortened}\n\n`));
+  // D163: the 60 decisions made without asking you, tagged Must know, each have a pointer in Must know's section; this
+  // report fits only when the pointers keep their numbers alone (after Good to know's counts), so the first section it
+  // shortened, in reading order, is Must act (its one pointer, to the decision rated high).
+  const actHeading = `### ${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.must_act, model.countLine.counts.must_act)}`;
+  assert.ok(full.includes(`${actHeading}\n\n${REPORT_TRIM_WORDS.mdShortened}\n\n`));
+  assert.ok(full.includes(`#### ${REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS.must_know, 63)}\n\n[`));
+  for (const p of [...model.pointers.must_act, ...model.pointers.must_know]) assert.ok(full.includes(`[${p.n}](#item-${p.n})`));
+  const gtkSummary = `<details><summary>${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know,
+    model.tiers.good_to_know.length)}</summary>`;
+  assert.ok(full.includes(gtkSummary));
+  // D161: each decision keeps its line, its evidence left out (before Good to know's, the same step order). D163: past
+  // the groups' counts, those tagged Good to know are counted in their group; every Must one keeps its line.
+  const trailPart = full.slice(full.indexOf(`### ${REPORT_TRAIL_WORDS.heading(model.decisions.total)}`));
+  const decisionItems = model.decisions.groups.flatMap((g) => g.items);
+  for (const item of decisionItems)
+    assert.equal(trailPart.includes(`<a name="item-${item.n}"></a>`), item.tier.final !== 'good_to_know', `decision ${item.n}`);
+  assert.ok(trailPart.includes(REPORT_TRAIL_WORDS.goodToKnowNotShown(decisionItems.filter((item) => item.tier.final
+    === 'good_to_know').length)));
+  // D161's review: those tagged Must know keep theirs, as Must know of the first part does here.
+  assert.equal(/Evidence · Why Good to know/.test(trailPart.split(`### ${REPORT_SECTION_WORDS.prompt}`)[0]), false);
+  assert.ok(/Evidence · Why Must know/.test(trailPart.split(`### ${REPORT_SECTION_WORDS.prompt}`)[0]));
   // Never shortened: the header, the count line, the prompt's counts and its rows of asks not done, and every visible
   // line of Must act and Must know.
   for (const line of [model.header.size.join(' · '), model.header.runs.join(' '), model.countLine.prompt])
@@ -548,11 +591,14 @@ test('D97 (4), D131: past 60,000 bytes the report is shortened in order; header,
   assert.equal(full.includes('*auth order*: *auth first*'), false, 'the settled list keeps its count only');
   assert.ok(full.includes(REPORT_SECTION_WORDS.didCounted(model.did.files.total, model.did.runs.commands,
     model.did.runs.others, model.did.claims.total)));
-  const kept = (text, tier) => (text.match(new RegExp(`Why ${tier}</summary>\\n\\n-`, 'g')) ?? []).length;
+  // The first part's evidence folds (D161: the second part's decisions carry the same tier words).
+  const kept = (text, tier) => (text.split(/\n### The agent's decisions/)[0].match(new RegExp(`Why ${tier}</summary>\\n\\n-`,
+    'g')) ?? []).length;
   assert.equal(kept(full, 'Must act'), model.tiers.must_act.length);
   assert.equal(kept(full, 'Must know'), model.tiers.must_know.length);
-  // A larger overflow cuts Must know's evidence, then Must act's: never an evidence fold with nothing in it.
-  const midReport = oversized(session, { settled: 0, unasked: 90 });
+  // A larger overflow of the first part cuts Must know's evidence, then Must act's: never an evidence fold with nothing in
+  // it. D161: the decisions of the second part no longer reach the first part, so the first part grows by failures.
+  const midReport = oversized(session, { settled: 0, unasked: 0, failures: 150 });
   const mid = renderReportMarkdown(session, midReport, repoFacts());
   const midModel = reportModel(session, midReport, repoFacts());
   assert.ok(bytes(mid) <= REPORT_MD_LIMITS.maxBytes, `${bytes(mid)} bytes`);
@@ -563,7 +609,7 @@ test('D97 (4), D131: past 60,000 bytes the report is shortened in order; header,
   assert.equal(small.includes(REPORT_TRIM_WORDS.mdShortened), false, 'within the bound, nothing is said');
   // The parts never shortened, longer than the bound on their own, are kept whole: every shortening is applied, said
   // once, and the report is over the bound (the CLI then prints no gh line: report-output.js).
-  const hugeReport = oversized(session, { settled: 0, unasked: 175 });
+  const hugeReport = oversized(session, { settled: 0, unasked: 0, failures: 500 });
   const huge = renderReportMarkdown(session, hugeReport, repoFacts());
   assert.ok(bytes(huge) > REPORT_MD_LIMITS.maxBytes, `${bytes(huge)} bytes`);
   // Then the sentence says that the report is still too long for one comment: "to fit" would be false.
@@ -580,9 +626,10 @@ test('D97 (4), D131: past 60,000 bytes the report is shortened in order; header,
 /** The triaged report made larger in one part at a time, for the shortening order: `gtk` Good to know questions
  *  from findings whose evidence holds the long words of their checks, `withheld` withheld proposals of the code review (What Sonah
  *  could not check), `fences` Must act findings each with an 8-line excerpt and no permalink, `pivots` Good to know
- *  changes of approach with long words in their one-line summaries, and (D144) `contradicted` Must act items, each a
- *  copy of the fixture's contradicted claim, so each has a prompt for the agent. */
-function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 25, contradicted = 0 } = {}) {
+ *  changes of approach with long words in their one-line summaries, (D144) `contradicted` Must act items, each a
+ *  copy of the fixture's contradicted claim, so each has a prompt for the agent, and (D163's review) `decided`
+ *  decisions made without asking you, tagged Must know, with long words, so the first part's pointers to them are long. */
+function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 25, contradicted = 0, decided = 0 } = {}) {
   const session = reportSession();
   const report = triagedReport(session);
   const hex = (k) => `sha256:${String(k).padStart(64, '0')}`;
@@ -597,6 +644,9 @@ function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 
     check: { verdict: 'refuted', reason: 'incorrect', explanation: long(k, withheldWords) } }))];
   const claim = report.findings.find((f) => f.kind === 'claim_contradicted' && f.status === 'DECIDE');
   report.findings = [...report.findings, ...Array.from({ length: contradicted }, (_, k) => ({ ...claim, id: hex(k + 7000) }))];
+  report.decisions = [...report.decisions, ...Array.from({ length: decided }, (_, k) => ({ ...report.decisions[0],
+    id: hex(k + 8000), dimension: long(k, 20), chosen: long(k, 20), column: 'unasked', stated: null,
+    constrainedBy: null }))];
   if (fences) {
     const lines = Array.from({ length: fences * 8 }, (_, i) => `const line${i} = "${'x'.repeat(130)}";`);
     const text = `${lines.join('\n')}\n`;
@@ -623,27 +673,54 @@ function grown({ gtk = 0, withheld = 0, fences = 0, pivots = 0, withheldWords = 
 /** D133 (R2): the lines of an item's evidence fold that a shortened fold keeps (`foldNotes`), taken out first. */
 const FOLD_NOTE_LINES = new RegExp(`^- (?:${[{ quoteMissing: true, quote: null }, { quote: null, scope: { askedUnknown: true } }]
   .flatMap(foldNotes).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\n`, 'gm');
-const shortened = (whole) => { const all = whole.replace(FOLD_NOTE_LINES, ''); const text = withoutAgentPrompts(all); return {
-  gtkEvidence: !/Why Good to know<\/summary>\n\n-/.test(text),
-  askRows: /Sonah does not show your \d+ messages? here\./.test(text),
-  knowEvidence: !/Why Must know<\/summary>\n\n-/.test(text),
-  actEvidence: !/Why Must act<\/summary>\n\n-/.test(text),
-  didCounts: /#### Files\n\nSonah does not show \d+ more of this list here\./.test(text),
-  notCheckedCounts: /#### The session review\n\n[^\n]+\n\nSonah does not show \d+ more of this list here\./.test(text)
-    && /<summary>Proposals of the code review that Sonah withheld \(\d+\)<\/summary>\n\nSonah does not show/.test(text),
-  excerpts: !/\n```\n/.test(text),
-  gtkCounts: /\n- A change of approach: \d+\n/.test(text),
-  // D144: no prompt for the agent is printed.
-  actPrompts: !all.includes(PROMPT_SUMMARY),
-}; };
+const shortened = (whole) => {
+  const all = whole.replace(FOLD_NOTE_LINES, '');
+  // D161: the first part (Must act, Must know, Good to know) and the rest are read apart, since the second part's
+  // decisions carry the same tier words; the second part runs from its heading to your prompt's.
+  const cut = all.indexOf("\n### The agent's decisions");
+  const promptAt = all.search(/\n(?:### |<details><summary>)Your prompt \(/);
+  const trail = cut < 0 ? '' : all.slice(cut, promptAt > cut ? promptAt : undefined);
+  const text = withoutAgentPrompts(cut < 0 ? all : all.slice(0, cut) + all.slice(promptAt > cut ? promptAt : all.length));
+  const gtk = text.slice(text.indexOf('<details><summary>Good to know ('));
+  return {
+    // D161's review: lowest tier first: the second part's evidence of decisions tagged Good to know (those tagged Must
+    // act or Must know go with the first part's).
+    trailEvidence: !/Why Good to know<\/summary>\n\n-/.test(trail),
+    gtkEvidence: !/Why Good to know<\/summary>\n\n-/.test(text),
+    askRows: /Sonah does not show your \d+ messages? here\./.test(text),
+    knowEvidence: !/Why Must know<\/summary>\n\n-/.test(text),
+    actEvidence: !/Why Must act<\/summary>\n\n-/.test(text),
+    didCounts: /#### Files\n\nSonah does not show \d+ more of this list here\./.test(text),
+    notCheckedCounts: /#### The session review\n\n[^\n]+\n\nSonah does not show \d+ more of this list here\./.test(text)
+      && /<summary>Proposals of the code review that Sonah withheld \(\d+\)<\/summary>\n\nSonah does not show/.test(text),
+    excerpts: !/\n```\n/.test(text),
+    // D161: the second part as its groups' lines with their counts, no decision shown one by one.
+    trailCounts: /^Sonah does not show \d+ decisions? tagged Good to know here\.$/m.test(trail),
+    gtkCounts: /^- [A-Z][^\n]*: \d+$/m.test(gtk.slice(0, gtk.indexOf('</details>'))),
+    // D144: no prompt for the agent is printed.
+    actPrompts: !all.includes(PROMPT_SUMMARY),
+    // D163: the first part's pointers to the decisions tagged Must act or Must know keep their numbers and links alone.
+    pointerLines: POINTER_NUMBERS.test(text),
+  };
+};
 // D131 (R1): your prompt's asks that are done and your messages, then the lists, then the excerpts and Good to know's
-// items, and the evidence of Must know and Must act last of all.
-const STEPS = ['gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts', 'excerpts', 'gtkCounts', 'actPrompts',
-  'knowEvidence', 'actEvidence'];
+// items, and the evidence of Must know and Must act last of all. D161: the second part's evidence before Good to know's,
+// and its groups' counts before Good to know's.
+// D163: the first part's pointers keep their numbers alone after Good to know's counts, before the prompts.
+const POINTER_NUMBERS = new RegExp(`^#### (?:${['must_act', 'must_know'].map((tier) => REPORT_TRAIL_WORDS
+  .taggedHere(REPORT_TIER_WORDS[tier], 0).replace(/ \(0\)$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}) `
+  + '\\(\\d+\\)\\n\\n\\[\\d+\\]\\(#item-\\d+\\)', 'm');
+const STEPS = ['trailEvidence', 'gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts', 'excerpts', 'trailCounts',
+  'gtkCounts', 'pointerLines', 'actPrompts', 'knowEvidence', 'actEvidence'];
 /** The steps up to and including `last`, applied; the rest, not. */
 const upTo = (last) => Object.fromEntries(STEPS.map((step, i) => [step, i <= STEPS.indexOf(last)]));
 
 test('D97 (4): each shortening step is applied in its order, and only until the report fits', () => {
+  // D161: the evidence of the agent's decisions (the report's second part) goes first, alone when that is enough; every
+  // decision keeps its line.
+  const t = grown({ pivots: 70 });
+  assert.ok(bytes(t) <= REPORT_MD_LIMITS.maxBytes);
+  assert.deepEqual(shortened(t), upTo('trailEvidence'));
   // Good to know's evidence is enough: Must know and Must act keep theirs.
   const a = grown({ gtk: 120 });
   assert.ok(bytes(a) <= REPORT_MD_LIMITS.maxBytes);
@@ -654,8 +731,9 @@ test('D97 (4): each shortening step is applied in its order, and only until the 
     false);
   // D131 (R1): then your prompt's done asks and your messages, then the lists of what the agent did keep their counts;
   // Must know and Must act keep their evidence. (What Sonah could not check keeps its count next: case c applies it.)
-  // D144: retuned to the prompts' bytes (was gtk 130, withheld 100), so this case still stops at its step.
-  const b = grown({ gtk: 125, withheld: 95 });
+  // D144: retuned to the prompts' bytes (was gtk 130, withheld 100), so this case still stops at its step. D163: and to
+  // the first part's pointers (was withheld 95).
+  const b = grown({ gtk: 125, withheld: 90 });
   assert.ok(bytes(b) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(b), upTo('didCounts'));
   // Then the lists of what Sonah could not check keep their counts; the excerpts, Good to know and every evidence fold
@@ -668,19 +746,34 @@ test('D97 (4): each shortening step is applied in its order, and only until the 
   assert.ok(bytes(c) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(c), upTo('excerpts'));
   assert.match(c, /Where: `src\/big\.js:1-8`/);
+  // D161: then the agent's decisions become their groups' lines, with their counts; Good to know stays.
+  const d0 = grown({ pivots: 200 });
+  assert.ok(bytes(d0) <= REPORT_MD_LIMITS.maxBytes);
+  assert.deepEqual(shortened(d0), upTo('trailCounts'));
+  assert.ok(d0.includes(REPORT_TRAIL_WORDS.goodToKnowNotShown(200)));
   // Last, Good to know becomes counts by kind.
-  const d = grown({ pivots: 200 });
+  const d = grown({ gtk: 900 });
   assert.ok(bytes(d) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(d), upTo('gtkCounts'));
-  assert.match(d, /\n- A change of approach: 201\n/);
+  assert.match(d, /\n- A question from a finding of the code review: 901\n/);
+  // D163's review: then the first part's pointers keep their numbers and links alone (60 long decisions made without
+  // asking you, tagged Must know: this report fits from 50 to 68 of them), while every prompt for the agent and every
+  // evidence fold of Must know and Must act stays.
+  const p = grown({ decided: 60 });
+  assert.ok(bytes(p) <= REPORT_MD_LIMITS.maxBytes);
+  assert.deepEqual(shortened(p), upTo('pointerLines'));
+  assert.ok(p.includes(PROMPT_SUMMARY));
+  assert.ok(!/^- \[\d+ Decide: /m.test(p.slice(0, p.indexOf('<details><summary>Good to know ('))), 'no pointer keeps its line');
   // D144: then the prompts for the agent are left out, each whole (never a fold with nothing in it), before any
   // evidence of Must know or Must act: each prompt is made from its item's evidence, which stays.
   const e = grown({ contradicted: 100 });
   assert.ok(bytes(e) <= REPORT_MD_LIMITS.maxBytes);
   assert.deepEqual(shortened(e), upTo('actPrompts'));
   assert.ok(grown({ contradicted: 60 }).includes(PROMPT_SUMMARY), 'a smaller report keeps them');
+  // D161: 100 copies and the fixture's 8, and the fixture's decision rated high in the report's second part, tagged Must
+  // act: it keeps its evidence as Must act does.
   assert.equal((e.match(/Why Must act<\/summary>\n\n-/g) ?? []).length, 109, 'every Must act item keeps its evidence');
-  for (const text of [a, b, c, d, e]) assert.equal(text.split(REPORT_TRIM_WORDS.mdShortened).length - 1, 1);
+  for (const text of [t, a, b, c, d0, d, p, e]) assert.equal(text.split(REPORT_TRIM_WORDS.mdShortened).length - 1, 1);
 });
 
 test('D97 (4): the shortening order — messages, then Good to know\'s evidence, before any Must evidence', () => {
@@ -735,7 +828,7 @@ test('D97: a decision with no words of the agent linked shows no line about its 
   // The deploy decision: the session review linked no statement of the agent's (`stated` null).
   assert.equal(report.decisions[1].stated, null);
   const model = reportModel(session, report, repoFacts());
-  const item = [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know]
+  const item = reportItems(model)
     .find((x) => x.rows[0].source === 'decisions' && x.rows[0].index === 1);
   assert.equal(item.agentSaid, null);
   const text = renderReportMarkdown(session, report, repoFacts());
@@ -755,7 +848,7 @@ test('D97: what the agent said it did not do lists only the agent\'s own words t
     + heading.length)).trim();
   const model = reportModel(session, report, repoFacts());
   assert.ok(model.prompt.asks.some((ask) => ask.state === 'notDone'), 'the fixture holds an ask not done');
-  const notActing = (m) => [...m.tiers.must_act, ...m.tiers.must_know, ...m.tiers.good_to_know]
+  const notActing = (m) => reportItems(m)
     .find((x) => x.kind === 'decision_not_acting');
   assert.deepEqual(model.did.leftOut.map((x) => [x.item, x.quote.text]),
     [[notActing(model).n, 'I will not add Redis, an in-process bucket is enough.']]);
@@ -781,7 +874,7 @@ test('D97: an evidence fold names no count of quotes, on the page and in the .md
   const model = reportModel(session, report, repoFacts());
   const text = renderReportMarkdown(session, report, repoFacts());
   const html = renderSessionPage(session, report, repoFacts());
-  const items = [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+  const items = reportItems(model);
   assert.ok(items.some((item) => item.quote || item.agentSaid), 'an item shows a quote open');
   for (const item of items) {
     const summary = `<summary>Evidence · Why ${REPORT_TIER_WORDS[item.tier.final]}</summary>`;
@@ -814,5 +907,6 @@ test('D97: no verdict word in the report\'s own words', () => {
   const VERDICT = /\b(?:approve|approval|LGTM|safe|clean|ready to merge|looks good|score|confidence)\b/i;
   const own = Object.values(REPORT_MD_WORDS).map((w) => (typeof w === 'function' ? w(2, 2) : w)).join(' ');
   assert.doesNotMatch(own, VERDICT);
-  assert.doesNotMatch(md(REPORT_SHAPES.c, {}).replace(/“[^”]*”|`[^`]*`|\*[^*]*\*/g, ''), VERDICT);
+  // The reviews' words are set apart: in italics, and (D161: a decision's line is a fold's summary, HTML) in <em>.
+  assert.doesNotMatch(md(REPORT_SHAPES.c, {}).replace(/“[^”]*”|`[^`]*`|\*[^*]*\*|<em>[^<]*<\/em>/g, ''), VERDICT);
 });

@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { sourcePackageFiles, assertPackageListing, SOURCE_ROOT } from '../../../scripts/package-source.mjs';
 import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
 import { PROBE_REQUEST } from '../src/review-probe.js';
-import { AGENT_OPTIONS_CHECK } from '../src/doctor.js';
+import { AGENT_OPTIONS_CHECK, SAFE_MODE_CHECK } from '../src/doctor.js';
 import { session, toJsonl } from '../../golden/src/build.js';
 
 const exec = promisify(execFile);
@@ -190,6 +190,10 @@ if (args.join(' ') === 'auth status') { console.log(JSON.stringify({loggedIn:tru
 if (args.join(' ') === ${JSON.stringify(AGENT_OPTIONS_CHECK.join(' '))}) {
   console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'})); process.exit(0);
 }
+// D151: doctor's check that this CLI knows safe mode (the flag before auth status).
+if (args.join(' ') === ${JSON.stringify(SAFE_MODE_CHECK.join(' '))}) {
+  console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'})); process.exit(0);
+}
 // The agent transport's argv: read-only tools, confined, a turn budget and a JSON schema, no partial messages.
 const valueOf = (flag) => args[args.indexOf(flag) + 1];
 const agent = valueOf('--tools') === 'Read,Grep,Glob';
@@ -255,6 +259,7 @@ process.stdin.on('end', () => {
   const doctor = await run(bin, ['doctor', '--backend', 'claude-cli', '--model', SESSION_REVIEW_CLAUDE_CLI_MODEL]);
   assert.match(doctor.stdout, /answered one tiny synthetic request under the 1M context window/);
   assert.match(doctor.stdout, /^Claude code-step options: accepted \(--restricted, --max-turns, --json-schema\)\.$/m);
+  assert.match(doctor.stdout, /^Claude Code safe mode: accepted\. /m);
   // The installed agent transport, through the same fake executable: one agent request, answered in its schema's shape.
   const { createReviewJudge } = await import(pathToFileURL(join(installed, 'packages/cli/src/review-judge.js')).href);
   const agentAnswer = await createReviewJudge({ config: { backend: 'claude-cli', model: SESSION_REVIEW_CLAUDE_CLI_MODEL },

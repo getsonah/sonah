@@ -188,35 +188,36 @@ test('D110 (2, 5): one premise outside the repository and the language makes a f
   }
 });
 
-test('D110 (3): each grounded finding ends once — checked, to verify, an open question or withheld; no id is in both lists', async () => {
+test('D110 (3): each grounded finding ends once — checked, to verify, open (D152) or withheld; no id is in two lists', async () => {
   const titled = (title, line = 2) => reviewFinding({ title, ...(line === 2 ? {} : {
     trace: [{ step: 'SYNTHETIC.', path: 'src/parse.js', side: 'new', startLine: line, endLine: line,
       quote: CODE_FILES['src/parse.js'].split('\n')[line - 1].trim() }],
     anchor: { path: 'src/parse.js', side: 'new', startLine: line, endLine: line } }) });
   const findings = [titled('SYNTHETIC checked', 1), titled('SYNTHETIC to verify', 2), titled('SYNTHETIC refuted', 3),
-    titled('SYNTHETIC unsettled', 2), titled('SYNTHETIC not against the goal', 3), titled('SYNTHETIC void', 1)];
+    titled('SYNTHETIC unsettled', 2), titled('SYNTHETIC open', 3), titled('SYNTHETIC void', 1)];
   const verdicts = {
     'SYNTHETIC checked': (f) => holds(f),
     'SYNTHETIC to verify': (f) => holdsWith(f, [OUTSIDE]),
     'SYNTHETIC refuted': (f) => ({ ...holdsWith(f, [LANGUAGE]), verdict: 'refuted', reason: 'step_unsupported' }),
     'SYNTHETIC unsettled': (f) => ({ ...holdsWith(f, [LANGUAGE]), verdict: 'cannot_tell' }),
-    'SYNTHETIC not against the goal': (f) => ({ ...holdsWith(f, [LANGUAGE]), verdict: 'refuted',
-      reason: 'not_against_goal' }),
+    // D152: a check that holds, with no receipt of what the behaviour breaks, of a finding that follows from no row.
+    'SYNTHETIC open': (f) => holdsWith(f, [LANGUAGE], []),
     'SYNTHETIC void': (f) => holdsWith(f, []),
   };
   const result = await run({ findings, verify: (f) => verdicts[f.title](f) });
   const p = result.codePass;
   assert.deepEqual(p.findings.map((f) => f.title), ['SYNTHETIC checked']);
   assert.deepEqual(p.unconfirmed.map((f) => f.title), ['SYNTHETIC to verify']);
-  assert.deepEqual(p.questions.map((q) => [q.question, q.from]), [['SYNTHETIC not against the goal', 'finding']]);
+  assert.deepEqual(p.open.map((f) => f.title), ['SYNTHETIC open']);
+  assert.deepEqual(p.questions, []);
   assert.deepEqual(p.withheld.map((w) => [w.text, w.reason]), [['SYNTHETIC refuted', 'verify_refuted'],
     ['SYNTHETIC unsettled', 'verify_cannot_tell'], ['SYNTHETIC void', 'verify_unexecuted']]);
-  assert.equal(p.findings.length + p.unconfirmed.length + p.questions.filter((q) => q.from === 'finding').length
+  assert.equal(p.findings.length + p.unconfirmed.length + p.open.length
     + p.withheld.filter((w) => w.what === 'finding').length, findings.length);
-  assert.ok(p.findings.every((f) => findingConfirmed(f.check)));
+  assert.ok([...p.findings, ...p.open].every((f) => findingConfirmed(f.check)));
   assert.ok(p.unconfirmed.every((f) => f.check.verdict === 'holds' && !findingConfirmed(f.check)));
-  const ids = [...p.findings, ...p.unconfirmed].map((f) => f.id);
-  assert.equal(new Set(ids).size, ids.length, 'no id in both lists');
+  const ids = [...p.findings, ...p.unconfirmed, ...p.open].map((f) => f.id);
+  assert.equal(new Set(ids).size, ids.length, 'no id in two lists');
 });
 
 test('D110 (3): one identity is published once, in the list of the first finding of that identity', async () => {

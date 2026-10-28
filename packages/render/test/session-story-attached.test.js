@@ -112,7 +112,7 @@ test('D79: a message with an attached file is one request and one step; the file
   assert.deepEqual(model.prompt.messages.map((m) => [m.k, m.attached, m.attachedAsks]), [[1, 1, [2]], [2, 0, []]]);
   // D131: your prompt follows Must act and Must know, and comes before Good to know. D133 (R2): no coverage sentence
   // under the message (said once, in the legend).
-  const prompt = textOf(html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"')));
+  const prompt = textOf(html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"')));
   assert.ok(prompt.includes(`${REPORT_PROMPT_WORDS.attached(1)} `
     + `${REPORT_PROMPT_WORDS.fromAttached} ask 2 · Not checked · `
     + '“An invalid limit is a 400.”'), prompt);

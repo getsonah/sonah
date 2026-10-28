@@ -1863,7 +1863,8 @@ export const PREMISE_READER_VERSIONS = Object.freeze({
  *  a request captured now and rendered back is byte for byte what bucket B sent. */
 export function verifyBriefBeforePremises(system) {
   if (typeof system !== 'string') return system;
-  const lines = system.split('\n');
+  // D152: the brief as D149 sent it first.
+  const lines = verifyBriefBeforeTruthOnly(system).split('\n');
   const at = (text) => lines.findIndex((line) => line.startsWith(text));
   const head = at('Judge, and answer through the structured output tool, as one object {verdict, reason, claims, premises,');
   if (head < 0) return system;
@@ -1991,6 +1992,32 @@ export function textBeforeAgentPrompt(text) {
   for (const { before, after } of Object.values(AGENT_PROMPT_READER_VERSIONS)) out = out.replaceAll(after, before);
   return out;
 }
+/** D152 (0.3.0-beta.9): the reader it moved, once from 0.3.0-beta.7 (`AGENT_PROMPT_READER_VERSIONS`): the report model
+ *  reads a confirmed code finding tied to no written promise as an item of its own kind (`code_finding_open`). The
+ *  page's and the story's own versions did not move; their content moves through the report model: the paragraph on how
+ *  the code review works (`howTied`) and the open item with its line. A report made before the tie rule reads as before,
+ *  but for the version the footer names. 0.3.0-beta.9 moves each reader once: another change of beta.9 that moves a reader rides this same move. */
+export const TRUTH_ONLY_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/7', after: 'sonah.report-model/8' }),
+});
+/** D152: the paragraph on how the code review works under the tie rule, and before it (code-report.js `howTied`,
+ *  `how`). As literals: this file imports no module under test. */
+const TRUTH_ONLY_HOW = Object.freeze({
+  now: 'The code review read what Sonah sent, could open, search and list any file of the repository, and ran nothing. '
+    + 'Sonah publishes a finding only when the same model, with the same access, checked it and found the problem real. '
+    + 'A checked finding goes where its kind and the level the code review proposed put it, when something ties it. A '
+    + 'tie is a session review item it follows from, or a quote of what it breaks that Sonah found.',
+  before: 'The code review read what Sonah sent it and ran nothing. It could open, search and list any file of the '
+    + 'repository. Sonah publishes a finding only when the same model, with the same access, checked it and found the '
+    + 'same problem. If the problem is real but not against your ask, the finding becomes an open question for you.' });
+/** D152: a report .md or page as 0.3.0-beta.7's readers wrote it: the paragraph on how the code review works put back
+ *  (a code step under the tie rule says that the check judges truth only), and the versions it names set back
+ *  (`TRUTH_ONLY_READER_VERSIONS`). Text only: an open finding is no part of what it renders back. */
+export function textBeforeTruthOnly(text) {
+  let out = String(text).replaceAll(TRUTH_ONLY_HOW.now, TRUTH_ONLY_HOW.before);
+  for (const { before, after } of Object.values(TRUTH_ONLY_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
 /** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
  *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
  *  applies it first. D113 (0.3.0-beta.5): it applies `profileBeforeSessionChange` first. */
@@ -2050,10 +2077,111 @@ export function profileBeforeSessionChange(profile) {
  * D122 (b)'s.
  */
 export const RELATIVE_PLACE_ITEM_ERROR = 'path_ambiguous';
-/** A run profile with D122 (d)'s closed cause taken out of the code-pass member's item errors; anything else untouched.
- *  `profileBeforeTierRevert` applies it first. */
-export function profileBeforeRelativePlace(profile) {
+/**
+ * D147 (0.3.0-beta.9): a receipt of a check whose relative path names an existing file in more than one place of the
+ * change voids the check with a closed cause of its own (`receipt_path_ambiguous`, the last member of CODE_VOID_CAUSES),
+ * re-asked in the words of the repair's `path_ambiguous`; and when more than one place holds a file of the change, every
+ * brief says that a path is the file's absolute path. The session run profile's code-pass member moved by that closed
+ * list alone: no version moved, and no request byte of a change with one place. Rendered back
+ * (`profileBeforeReceiptPlace`: the list without it), D122's.
+ */
+export const RECEIPT_PLACE_VOID_CAUSE = 'receipt_path_ambiguous';
+/**
+ * D149 (0.3.0-beta.9): the review units. The session run profile's code-pass member moved by its left-out reasons
+ * (`unit_cap`, the last member of CODE_LEFT_OUT_REASONS), its triage errors (`file_not_in_unit`, the last member of
+ * TRIAGE_ERRORS) and its units member (the units' limits and grouping edges): no version moved, and no request byte of a
+ * change that fits one unit. Rendered back (`profileBeforeUnits`: all three taken out), D147's.
+ */
+export const UNITS_LEFT_OUT_REASON = 'unit_cap';
+export const UNITS_TRIAGE_ERROR = 'file_not_in_unit';
+/**
+ * D152 (0.3.0-beta.9): the check judges truth only. A finding's checking request moved (`sonah.code-verify/5`: its brief
+ * and contract lose `not_against_goal`, the last member of CODE_REFUTATION_REASONS, and gain `breaks`), the tier table
+ * moved (`sonah.tiers/4`: the kind `code_finding_open`), and the session run profile's code-pass member moved by both,
+ * by the trace limits' `breaks` and by its `tie` member. No request of the review agent moved. Rendered back
+ * (`profileBeforeTruthOnly`), D149's.
+ */
+export const TRUTH_ONLY_VERSIONS = Object.freeze({
+  verify: Object.freeze({ before: 'sonah.code-verify/4', after: 'sonah.code-verify/5' }),
+  tiers: Object.freeze({ before: 'sonah.tiers/3', after: 'sonah.tiers/4' }),
+});
+export const TRUTH_ONLY_REFUTATION = 'not_against_goal';
+export const TRUTH_ONLY_KIND = 'code_finding_open';
+/** A run profile with D152's versions, tokens and members rendered back to D149's; anything else untouched.
+ *  `profileBeforeUnits` applies it first. */
+export function profileBeforeTruthOnly(profile) {
   const copy = structuredClone(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.verify === TRUTH_ONLY_VERSIONS.verify.after) {
+    member.verify = TRUTH_ONLY_VERSIONS.verify.before;
+    if (Array.isArray(member.refutations) && !member.refutations.includes(TRUTH_ONLY_REFUTATION))
+      member.refutations = [...member.refutations, TRUTH_ONLY_REFUTATION];
+    if (member.trace && typeof member.trace === 'object') delete member.trace.breaks;
+    delete member.tie;
+    const triage = member.triage;
+    if (triage && typeof triage === 'object' && triage.table === TRUTH_ONLY_VERSIONS.tiers.after) {
+      triage.table = TRUTH_ONLY_VERSIONS.tiers.before;
+      if (triage.kinds && typeof triage.kinds === 'object') delete triage.kinds[TRUTH_ONLY_KIND];
+    }
+  }
+  return copy;
+}
+/** D152: each text a finding's checking agent's brief moved, `[now, before]`, in the order `verifyBriefBeforeTruthOnly`
+ *  puts them back. As literals: this file imports no module under test. */
+const TRUTH_ONLY_VERIFY_TEXTS = Object.freeze([
+  ['Judge whether the finding is true, never whether it matters, and answer through the structured output tool, as one\n'
+    + 'object {verdict, reason, claims, premises, breaks, receipts, explanation}:\n',
+  'Judge, and answer through the structured output tool, as one object {verdict, reason, claims, premises, receipts,\n'
+    + 'explanation}:\n'],
+  ['  "step_unsupported" (a step does not follow from its quote) or "out_of_scope" (its root cause is not in the change).\n',
+    '  "step_unsupported" (a step does not follow from its quote), "out_of_scope" (its root cause is not in the change),\n'
+    + '  "not_against_goal" (the behaviour is as stated, but it does not defeat any of the person\'s listed asks or what a '
+    + 'caller\n  is promised).\n'],
+  ['- breaks: what the behaviour the title states contradicts, 0 to 4: each a line that states or\n'
+    + '  relies on other behaviour, such as a doc, a comment, a README or changelog line, a caller\'s use or a test\'s\n'
+    + '  assertion, quoted as a receipt below; or the person\'s words, as {path: null, side: "session", startLine: null,\n'
+    + '  endLine: null, quote}, its quote copied from the person\'s messages or the session text the finding quotes. An '
+    + 'empty\n  list when you found none.\n', ''],
+]);
+/** A finding's checking agent's brief rendered back to D149's (`TRUTH_ONLY_VERIFY_TEXTS`); any other text untouched.
+ *  `requestBeforeListedAsks` and `verifyBriefBeforePremises` apply it first. */
+export function verifyBriefBeforeTruthOnly(system) {
+  if (typeof system !== 'string') return system;
+  let out = system;
+  for (const [now, before] of TRUTH_ONLY_VERIFY_TEXTS) out = out.split(now).join(before);
+  return out;
+}
+/** A request of the code step with its brief rendered back to D149's (`verifyBriefBeforeTruthOnly`): only a finding's
+ *  checking request moved. */
+export const requestBeforeTruthOnly = (request) => (request && typeof request === 'object'
+  ? { ...request, system: verifyBriefBeforeTruthOnly(request.system) } : request);
+/** A run profile with D149's member and closed tokens taken out of the code-pass member; anything else untouched.
+ *  `profileBeforeReceiptPlace` applies it first. D152: it applies `profileBeforeTruthOnly` first. */
+export function profileBeforeUnits(profile) {
+  const copy = profileBeforeTruthOnly(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object') {
+    delete member.units;
+    if (Array.isArray(member.leftOutReasons))
+      member.leftOutReasons = member.leftOutReasons.filter((reason) => reason !== UNITS_LEFT_OUT_REASON);
+    if (Array.isArray(member.triage?.errors))
+      member.triage.errors = member.triage.errors.filter((error) => error !== UNITS_TRIAGE_ERROR);
+  }
+  return copy;
+}
+/** A run profile with D147's closed cause taken out of the code-pass member's void causes; anything else untouched.
+ *  `profileBeforeRelativePlace` applies it first. D149: it applies `profileBeforeUnits` first. */
+export function profileBeforeReceiptPlace(profile) {
+  const copy = profileBeforeUnits(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && Array.isArray(member.voidCauses))
+    member.voidCauses = member.voidCauses.filter((cause) => cause !== RECEIPT_PLACE_VOID_CAUSE);
+  return copy;
+}
+/** A run profile with D122 (d)'s closed cause taken out of the code-pass member's item errors; anything else untouched.
+ *  `profileBeforeTierRevert` applies it first. D147: it applies `profileBeforeReceiptPlace` first. */
+export function profileBeforeRelativePlace(profile) {
+  const copy = profileBeforeReceiptPlace(profile);
   const member = copy?.codePass;
   if (member && typeof member === 'object' && Array.isArray(member.itemErrors))
     member.itemErrors = member.itemErrors.filter((error) => error !== RELATIVE_PLACE_ITEM_ERROR);
@@ -2178,7 +2306,8 @@ const LISTED_ASKS_PERSON = Object.freeze({
  *  recorded writes (D113), which no earlier request held. Anything else untouched. */
 export function requestBeforeListedAsks(request) {
   const replaceAll = (text, from, to) => (typeof text === 'string' ? text.split(from).join(to) : text);
-  let system = request?.system;
+  // D152: the brief as D149 sent it first.
+  let system = verifyBriefBeforeTruthOnly(request?.system);
   for (const [now, before] of LISTED_ASKS_SYSTEM_TEXTS) system = replaceAll(system, now, before);
   let prompt = request?.prompt;
   if (typeof prompt === 'string') {

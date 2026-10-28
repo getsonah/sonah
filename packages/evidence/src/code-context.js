@@ -20,7 +20,7 @@ import { CODE_DIFF_STATES, CODE_CHANGE_TYPES, CODE_DOSSIER_KINDS, CODE_DOSSIER_M
   REQUIREMENT_STATUSES, FAILURE_HANDLINGS, DECISION_COLUMNS, WRITTEN_LABELS, FORBIDDEN_EDIT_BREACHES, personsProjectFile,
   CODE_ACCOUNT_ASK_SOURCES } from './ledger.js';
 import { isRead, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS } from './session.js';
-import { itemKindOf } from './triage.js';
+import { itemKindOf, unsettledAsk, unsettledRow } from './triage.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
   && [Object.prototype, null].includes(Object.getPrototypeOf(v));
@@ -499,7 +499,32 @@ export const CHANGE_ROW_WORDS = Object.freeze({
   // code-pass/12 (D105): its hunks fit this block, but not beside the rest of the request.
   request_bound: 'not shown here: its hunks did not fit in this request; read the file yourself',
   drifted: 'changed after the session\'s last recorded edit, so its lines now may not all be the agent\'s',
+  // D149: its review unit is past the most units one review plans: no request shows its hunks.
+  unit_cap: 'not shown in any call: past the calls one review makes; read it yourself',
 });
+/** D149: what a table-of-contents row of a review of several units names: the unit that shows the file's hunks, or the
+ *  first and the last of the units that show a file split into runs of its hunks. Fixed words. */
+export const UNIT_ROW_WORDS = (labels) => (labels.length === 1 ? labels[0] : `${labels[0]} to ${labels.at(-1)}`);
+
+/**
+ * D149: the change block of one unit of a review of several (Pullfrog's format, adapted): `## Files (N)`, one row per
+ * differing path, the same bytes in every unit — `- path · type · U<k>` (UNIT_ROW_WORDS: the unit, or the units, that
+ * show its hunks), or the path with why no unit shows them (`why`, a CHANGE_ROW_WORDS key) — each row's `notes` after
+ * it; the counted rows as `renderChange`'s; then `---` and the sections of this unit's files (`sectionLines`), in the
+ * table of contents' order. `entries`: `{ path, type, labels, why, notes, hunks, shown }`. Pure.
+ */
+export function renderUnitChange(entries, { outside = 0, elsewhere = 0 } = {}) {
+  const rows = list(entries);
+  const counted = [...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : []),
+    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere)] : [])];
+  const toc = [`## Files (${rows.length})`, ...rows.map((entry) => {
+    const notes = list(entry.notes).filter((n) => typeof n === 'string' && n).map((n) => ` · ${n}`).join('');
+    return list(entry.labels).length ? `- ${entry.path} · ${entry.type} · ${UNIT_ROW_WORDS(entry.labels)}${notes}`
+      : `- ${entry.path} · ${entry.type} · ${CHANGE_ROW_WORDS[entry.why] ?? CHANGE_ROW_WORDS[WITHHELD]}${notes}`;
+  }), ...counted, '', '---', ''];
+  const out = rows.filter((entry) => entry.shown).flatMap((entry) => sectionLines(entry));
+  return `${toc.join('\n')}${out.join('\n')}`;
+}
 /** What the table of contents says, by count only, of the paths git shows differing from the start commit outside the
  *  working directory (git's lists stop at it). Fixed words. */
 export const OUTSIDE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
@@ -575,8 +600,8 @@ export function renderChange(entries, { outside = 0, elsewhere = 0 } = {}) {
 const [CLAIM_UNCONFIRMED, CLAIM_CONFIRMED, DESIGN_POINT, NOT_ACTING, FAILURE_PASSED_OVER, NEVER_RAN, ASK_SHORT,
   EDIT_AGAINST, ASK_DONE] = CODE_DOSSIER_MOVES;
 const [ASK, CLAIM, DECISION, PIVOT, FAILURE, EDIT_AGAINST_KIND] = CODE_DOSSIER_KINDS;
-const [, VERIFIED] = PROMISE_STATUSES;
-const [DONE, PARTLY_DONE, NOT_DONE] = REQUIREMENT_STATUSES;
+const [OPEN_CLAIM, VERIFIED] = PROMISE_STATUSES;
+const [DONE, PARTLY_DONE, NOT_DONE, NOT_CHECKED_ASK] = REQUIREMENT_STATUSES;
 const PASSED_OVER = FAILURE_HANDLINGS[2];
 const [SETTLED, ASKED_CHOSE, UNASKED] = DECISION_COLUMNS;
 const [WRITTEN_UNVERIFIED] = WRITTEN_LABELS;
@@ -710,7 +735,9 @@ export function askSourceOf(session, receipt) {
  * Each item's `sources` are its quoted texts, each with its event, role and actor (`actorOf`). D96 (code-pass/10): each
  * item's `itemKind` is the report item its row is (triage.js `itemKindOf`, REPORT_ITEM_KINDS), or null when the row can
  * be no item (a done ask, a confirmed claim, a decision you settled): what makes its key one the code review may triage.
- * Structure only, from the row; never a tier. Pure.
+ * D153: a row the after-point re-check reaffirmed or left unsettled (triage.js `unsettledRow`) is sent as not checked —
+ * an ask with no move and no shortfall, a claim open with no contradiction, a statement unverified — never as one found
+ * short or contradicted. Structure only, from the row; never a tier. Pure.
  */
 export function codeDossier({ report, session, root = null }) {
   const items = [];
@@ -732,12 +759,18 @@ export function codeDossier({ report, session, root = null }) {
     if (!plain(r)) return;
     const asked = quoteOf(r.instruction) ?? (typeof r.text === 'string' ? r.text : null);
     if (!asked) return;
-    add(ASK, PERSON, [PARTLY_DONE, NOT_DONE].includes(r.status) ? ASK_SHORT : r.status === DONE ? ASK_DONE : null,
-      'requirements', i, null,
-      { status: r.status ?? null, asked: quoteOf(r.instruction) ? as(PERSON, r.instruction) : asked,
-        ...(quoteOf(r.deliverable) ? { delivered: as(PERSON, r.deliverable) } : {}),
-        ...(quoteOf(r.shortfall) ? { missing: as(PERSON, r.shortfall) } : {}) }, ids([r.deliverable, r.shortfall]),
-      src([r.instruction, r.deliverable, r.shortfall]));
+    // D153: an ask no later window settled, or one a later window reaffirmed (triage.js `unsettledAsk`), is sent as not
+    // checked, with no move and no shortfall — never as an ask found short, so the code review is not primed by it.
+    const unsettled = unsettledAsk(r);
+    add(ASK, PERSON, unsettled ? null : [PARTLY_DONE, NOT_DONE].includes(r.status) ? ASK_SHORT
+      : r.status === DONE ? ASK_DONE : null,
+    'requirements', i, null,
+    { status: unsettled ? NOT_CHECKED_ASK : r.status ?? null,
+      asked: quoteOf(r.instruction) ? as(PERSON, r.instruction) : asked,
+      ...(quoteOf(r.deliverable) ? { delivered: as(PERSON, r.deliverable) } : {}),
+      ...(!unsettled && quoteOf(r.shortfall) ? { missing: as(PERSON, r.shortfall) } : {}) },
+    ids([r.deliverable, ...(unsettled ? [] : [r.shortfall])]),
+    src([r.instruction, r.deliverable, ...(unsettled ? [] : [r.shortfall])]));
   });
   list(report?.promises).forEach((p, i) => {
     if (!plain(p) || !quoteOf(p.stated)) return;
@@ -746,8 +779,10 @@ export function codeDossier({ report, session, root = null }) {
   });
   list(report?.writtenClaims).forEach((w, i) => {
     if (!plain(w) || !quoteOf(w.stated)) return;
+    // D153: a contradicted statement the re-check reaffirmed or left unsettled is sent as one not checked.
     add(CLAIM, AGENT, CLAIM_UNCONFIRMED, 'writtenClaims', i, w.id,
-      { status: w.label === WRITTEN_UNVERIFIED ? 'written, unverified' : 'written, contradicted',
+      { status: w.label === WRITTEN_UNVERIFIED || unsettledRow('writtenClaims', w) ? 'written, unverified'
+        : 'written, contradicted',
         said: as(AGENT, w.stated) }, ids([w.stated]), src([w.stated]));
   });
   list(report?.findings).forEach((f, i) => {
@@ -756,6 +791,13 @@ export function codeDossier({ report, session, root = null }) {
       const said = list(f.receipts).find((r) => r?.role === 'commentary');
       const against = list(f.receipts).find((r) => r?.role !== 'commentary');
       if (!quoteOf(said)) return;
+      // D153: a contradicted claim the re-check reaffirmed or left unsettled is sent as a claim not checked (open), with
+      // no contradiction.
+      if (unsettledRow('findings', f)) {
+        add(CLAIM, AGENT, CLAIM_UNCONFIRMED, 'findings', i, f.id, { status: OPEN_CLAIM, said: as(AGENT, said) }, ids([said]),
+          src([said]));
+        return;
+      }
       add(CLAIM, AGENT, CLAIM_UNCONFIRMED, 'findings', i, f.id, { status: 'contradicted', said: as(AGENT, said),
         ...(quoteOf(against) ? { contradictedBy: as(AGENT, against) } : {}) }, ids(f.receipts), src([said, against]));
     }
@@ -835,9 +877,32 @@ const [NO_EFFECT] = ACTION_EFFECTS;
  * after an earlier change are not hidden behind it. A command whose effect is `none` (refused before it ran) ran nothing,
  * so it is not listed (the owner's answer of 2026-10-17, "all as suggested", code-pass/11): a file that only such
  * commands follow is `never_ran`, as the page's Runs list says it (report-model.js `neverRanPaths`). The run list still
- * shows the refused command. Pure.
+ * shows the refused command. D149: with `named` (names of files, as the code step names them), the list also holds
+ * every command recorded before that whose recorded text names one of those files (`namesPath`: the name literally, as
+ * a whole path, never its wording), in the same recorded order, each once, marked `named: true`; with none named, the
+ * list is as before. Pure.
  */
-export function commandsAfterLastEdit(session, paths, root = null) {
+/** D149: the characters a path's name is made of: a name in a command's text is a whole path only where none of these
+ *  is beside it. */
+const PATH_CHARACTER = /[A-Za-z0-9_.\-/~@+]/;
+/**
+ * D149: whether `text` names the file `name` as a whole path: the name literally, with no path character (`PATH_CHARACTER`)
+ * just before it, or just after it — but a `./` just before it (itself after none). So `src/a.js` is named in
+ * `node ./src/a.js` and `cat "src/a.js"`, never in `src/a.json`, `lib/src/a.js` or `xsrc/a.js`. Literal string work only.
+ * Pure.
+ */
+export function namesPath(text, name) {
+  if (typeof text !== 'string' || typeof name !== 'string' || !name) return false;
+  const free = (c) => c === undefined || !PATH_CHARACTER.test(c);
+  for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) {
+    const after = text[at + name.length];
+    const before = text[at - 1];
+    const dotted = text.slice(at - 2, at) === './' && free(text[at - 3]);
+    if (free(after) && (free(before) || dotted)) return true;
+  }
+  return false;
+}
+export function commandsAfterLastEdit(session, paths, root = null, { named = [] } = {}) {
   const events = list(session?.events);
   const lastEdit = new Map();
   const effect = effectReader(session);
@@ -845,22 +910,24 @@ export function commandsAfterLastEdit(session, paths, root = null) {
     if (event?.kind !== 'invocation' || !EDITS.includes(event.operation)) return;
     if (!CHANGING_EFFECTS.includes(effect(event))) return;
     for (const change of list(event.changes)) {
-      const named = displayPath(change?.path, root);
-      if (typeof named === 'string') lastEdit.set(named, at);
+      const name = displayPath(change?.path, root);
+      if (typeof name === 'string') lastEdit.set(name, at);
     }
   });
   const listed = list(paths).filter((path) => lastEdit.has(path));
-  if (!listed.length) return { commands: [], files: [] };
-  const from = Math.min(...listed.map((path) => lastEdit.get(path))) + 1;
+  const names = [...new Set(list(named).filter((name) => typeof name === 'string' && name !== ''))];
+  if (!listed.length && !names.length) return { commands: [], files: [] };
+  const from = listed.length ? Math.min(...listed.map((path) => lastEdit.get(path))) + 1 : Infinity;
   const mayHaveRun = (event) => isCommand(event) && effect(event) !== NO_EFFECT;
+  const namesOne = (event) => { const text = textOf(session, event, 'command'); return names.some((n) => namesPath(text, n)); };
   const commands = [];
   events.forEach((event, at) => {
-    if (at < from || !mayHaveRun(event)) return;
+    if (!mayHaveRun(event) || (at < from && !(names.length && namesOne(event)))) return;
     const result = session.observationFor?.(event.id) ?? null;
     const exit = Number.isSafeInteger(result?.exitCode) ? result.exitCode : null;
     commands.push({ n: commands.length + 1, at, text: textOf(session, event, 'command'), ...(exit !== null ? { exit }
       : { outcome: typeof result?.result === 'string' ? result.result : 'no result recorded' }),
-    ...(event.childId ? { helper: true } : {}) });
+    ...(event.childId ? { helper: true } : {}), ...(at < from ? { named: true } : {}) });
   });
   return { commands, files: listed.map((path) => ({ path,
     first: commands.find((c) => c.at > lastEdit.get(path))?.n ?? null })) };
@@ -868,16 +935,19 @@ export function commandsAfterLastEdit(session, paths, root = null) {
 
 /** The dossier's items as a request shows them: one JSON line per item. Every path is named (D90). An item the code
  *  review may triage names its report item kind (`item`, code-pass/10), never its tier: a tier shown would anchor the
- *  proposal. Pure. */
-export function renderDossier(items) {
+ *  proposal. D147: each path by the name `shownAs` gives it (code-pass.js `shownAsOf`; as it is by default). Pure. */
+export function renderDossier(items, { shownAs = (path) => path } = {}) {
   const line = (item) => JSON.stringify({ key: item.key, kind: item.kind, actor: item.actor,
     ...(item.move ? { move: item.move } : {}), ...(item.itemKind ? { item: item.itemKind } : {}), ...item.shown,
-    ...(item.paths.length ? { paths: item.paths } : {}) });
+    ...(item.paths.length ? { paths: item.paths.map(shownAs) } : {}) });
   return (items.length ? items.map(line) : ['(the review recorded no ask, claim, decision or failure)']).join('\n');
 }
 
 /** The commands block's headings and fixed words (code-pass/12). */
 export const COMMANDS_HEADING = '## The commands recorded after a changed file\'s last recorded edit, each once, in order';
+/** D149: the heading of a unit's commands block that holds earlier commands naming a file of the unit (`named`). */
+export const NAMED_COMMANDS_HEADING = '## The commands recorded after a changed file\'s last recorded edit, and those '
+  + 'marked "named": recorded before it, whose text names a file of this unit; each once, in order';
 export const FIRST_COMMANDS_HEADING = '## Each changed file\'s first command after its last recorded edit';
 /** One command as the commands block shows it: its number, its text (whole, or its first and last whole lines, each
  *  part named: `shownLines`), its exit code or recorded outcome, and whether a helper agent ran it. Pure. */
@@ -893,17 +963,18 @@ export const commandsLeftOutLine = (from, through) => `(${from === through ? `C$
  * The commands block (code-pass/12, D105): each command once, numbered — those before C`from` left out for room, named
  * by number in fixed words (`commandsLeftOutLine`); the latest are kept, as each file's commands run to the last — then
  * each changed file with a recorded edit and the first command after its last edit (`never_ran` when none). `lines`, a
- * Map the caller keeps to render each command's line once over several calls. Pure.
+ * Map the caller keeps to render each command's line once over several calls. D147: each file by the name `shownAs`
+ * gives it (code-pass.js `shownAsOf`; as it is by default). Pure.
  */
-export function renderCommands({ commands, files } = {}, { from = 1, lines = new Map() } = {}) {
-  const rows = list(files).map((f) => JSON.stringify({ path: f.path, ...(f.first !== null
+export function renderCommands({ commands, files } = {}, { from = 1, lines = new Map(), shownAs = (path) => path } = {}) {
+  const rows = list(files).map((f) => JSON.stringify({ path: shownAs(f.path), ...(f.first !== null
     ? { firstCommandAfterLastEdit: `C${f.first}` } : { commandsAfterLastEdit: 'none', move: NEVER_RAN }) }));
   const cmds = list(commands);
   const lineOf = (c) => {
     if (!lines.has(c.n)) lines.set(c.n, commandLine(c));
     return lines.get(c.n);
   };
-  return [COMMANDS_HEADING, '',
+  return [cmds.some((c) => c.named === true) ? NAMED_COMMANDS_HEADING : COMMANDS_HEADING, '',
     ...(cmds.length ? [...(from > 1 ? [commandsLeftOutLine(1, Math.min(from - 1, cmds.length))] : []),
       ...cmds.filter((c) => c.n >= from).map(lineOf)] : ['(no command was recorded after a changed file\'s last edit)']),
     '', FIRST_COMMANDS_HEADING, '', ...(rows.length ? rows : ['(no file was changed by a recorded edit)'])].join('\n');

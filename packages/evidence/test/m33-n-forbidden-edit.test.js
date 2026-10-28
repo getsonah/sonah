@@ -172,10 +172,14 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   for (const list of [ledger.FORBIDDEN_EDIT_REJECTIONS, ledger.DISCLOSURE_REJECTIONS, ledger.FORBIDDEN_EDIT_BREACHES])
     assert.ok(Object.isFrozen(list));
   assert.equal(ledger.FORBIDDEN_EDIT_ITEM_TYPE, TYPE);
-  // The existing kind and disclosure vocabulary: nothing added.
+  // The existing kind and disclosure vocabulary: nothing added by M33 N.
   assert.deepEqual(ledger.SUPPORTED_FINDING_KINDS, ['edit_under_negative_requirement', 'claim_contradicted', 'code_issue']);
-  // M33 brittleness M4 added `disclosed` after them: an upheld disclosure of an edit, never a role.
-  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
+  // M33 brittleness M4 added `disclosed` after them: an upheld disclosure of an edit, never a role. D153 added
+  // `corrected_later` after it: a later window's upheld correction of a contradicted claim or written statement, which
+  // only the after-point re-check (an option that is off by default) gives. No request, answer key or run profile
+  // carries the list, so no prompt or challenge version moved with it (the re-check states RECHECK_VERSION); an edit is
+  // never given it.
+  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed', 'corrected_later']);
   // The status fact, H3 and M33 brittleness M3 each moved both from M33 N's (status-fact-fixture.js,
   // h3-hedged-claims-fixture.js, m33-n-forbidden-edit-fixture.js): M33 N's are the `before` of all three.
   assert.equal(STATUS_FACT_VERSIONS.prompt.before, FORBIDDEN_EDIT_VERSIONS.prompt.after);

@@ -164,9 +164,10 @@ test('D117: the session\'s change in a sibling repository is reviewed after the 
     judge: codeJudge({ review: siblingFinding(B), run: readsChange(A, B, C) }) });
   const { codePass } = run.report;
   // The change: the working repository's file first, then the sibling repository's two. The folder's file is no file of
-  // the change (D117 amended: "files outside any repository are listed, not reviewed").
+  // the change (D117 amended: "files outside any repository are listed, not reviewed"). D147: two places hold the
+  // change, so the request names the working repository's file by its absolute path too.
   const review = run.calls.find((r) => r.label === 'code-review:agent');
-  assert.deepEqual(tocPaths(review.prompt), ['src/parse.js', join(B, 'lib', 'b.js'), join(B, 'lib', 'new.js')]);
+  assert.deepEqual(tocPaths(review.prompt), [join(A, 'src', 'parse.js'), join(B, 'lib', 'b.js'), join(B, 'lib', 'new.js')]);
   // The sibling's change is git's diff from its base (its HEAD when the session began).
   assert.match(review.prompt, /^\| {4}1 \| {6}\| - \| export const b = 1;$/m);
   assert.match(review.prompt, /^\| {6}\| {4}1 \| \+ \| export const b = 2;$/m);

@@ -74,12 +74,16 @@ lines and a password typed into a command are sent as the recording holds them, 
 The default reviewer is the `claude` CLI with the model `claude-sonnet-5-5[1m]`, signed in with your own login. For the
 session review it runs in an empty private folder with its tools, settings, plugins and slash commands switched off, and
 it is given only the basic environment it needs (home folder, temporary folder, path, user and shell name, language and
-the certificate settings), not your API keys or proxy settings. The code step's agents run in your working directory
-instead, with the same basic environment and three read-only tools (Read, Grep and Glob), and nothing else: no settings,
-MCP servers or slash commands, and your project's `CLAUDE.md` files are not loaded as their instructions (they may open
-them as files). Claude Code's restricted mode confines them to the working directory, the repository it lies in, and
-each other git repository that holds a file of the change (its top folder). A folder that no git repository holds is
-never one of them, whatever the session wrote there.
+the certificate settings) and your login: your Claude Code config folder (the one `CLAUDE_CONFIG_DIR` names, when you
+set it), and `CLAUDE_CODE_OAUTH_TOKEN` when you set it. Not your API keys or proxy settings. It runs in Claude Code's
+safe mode and loads no `CLAUDE.md` file. On each call Claude Code itself updates its state file (`~/.claude.json` in
+your home folder, or `.claude.json` inside the folder `CLAUDE_CONFIG_DIR` names) and its plugin cache in your config
+folder, as in any session of yours. With `CLAUDE_CONFIG_DIR` set, these writes now go to your folder. The code step's
+agents run in your working directory instead, with the same basic environment and three read-only tools (Read, Grep and
+Glob), and nothing else: no settings, MCP servers or slash commands, and your project's `CLAUDE.md` files are not loaded
+as their instructions (they may open them as files). Claude Code's restricted mode confines them to the working
+directory, the repository it lies in, and each other git repository that holds a file of the change (its top folder). A
+folder that no git repository holds is never one of them, whatever the session wrote there.
 `--backend codex-cli --model gpt-6.1-sol` uses your `codex` login instead, read-only, with its tools and web search off.
 `--backend anthropic-api` posts the same requests to Anthropic's API with your `ANTHROPIC_API_KEY`.
 
@@ -156,6 +160,7 @@ recorded, like the recording itself.
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
 | The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |
 | The page, Markdown report and log of `sonah review --session ID --background` | `background/` in the review's folder above | Only if you ran one. The page and the report hold your session as recorded; the log holds what the review printed. `active.json` there holds the process id of the review it started, nothing else. |
+| Where a review by `sonah review --session ID` cut your recordings | `review/frozen-read.json` in the review's folder above | Only for a review by session id. The time the review took its cut; the reviewed recording's full path and its size then; and the path and size then of each recording file in the folder the review reads (Claude Code: the session's project folder; Codex: every rollout under `~/.codex/sessions`). Paths and sizes only, no session text. |
 | A `sonah feedback` bundle | `~/sonah-feedback-YYYY-MM-DD.md` in your home folder | Setup facts and counts only. A second bundle on the same day replaces the first. |
 | The commit link's hook (`sonah hook add`) | `.git/hooks/prepare-commit-msg` (`prepare-commit-msg.old` or `.legacy` when lefthook or pre-commit moved it) and `.git/sonah/` in that repository: the script `agent-session.sh`, and `hooks-folder-made` when Sonah made the hooks folder | Only where you ran it. It holds no session text; `sonah hook remove` deletes these files. The `Agent-Session` lines it added stay in your commits. |
 

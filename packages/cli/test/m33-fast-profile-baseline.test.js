@@ -67,7 +67,8 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   WHERE_IT_LIES_STATES, profileBeforeWhereItLies, PREMISE_VERSIONS, profileBeforePremises, ACCOUNT_VERSIONS,
   profileBeforeAccount, ONE_ITEM_VERSIONS, profileBeforeOneItem, SESSION_CHANGE_VERSIONS, profileBeforeSessionChange,
   LISTED_ASKS_VERSIONS, profileBeforeListedAsks, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
-  RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace }
+  RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace,
+  UNITS_LEFT_OUT_REASON, UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, profileBeforeTruthOnly }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1458,8 +1459,47 @@ const BEFORE_D145 = Object.freeze({ ...CHANGED_SINCE_SHOWN_CURRENT,
   MOVED_BY_REPAIR_MERGE.cases), MOVED_BY_ONE_BOUND.cases), MOVED_BY_WHOLE_FILES.cases), MOVED_BY_WHOLE_FILES_ON.cases),
   MOVED_BY_WHERE_IT_LIES.cases), MOVED_BY_PREMISES.cases), MOVED_BY_ACCOUNT.cases), MOVED_BY_ONE_ITEM.cases).cases,
   runProfile: MOVED_BY_RELATIVE_PLACE.runProfile, sessionProfileDigest: MOVED_BY_RELATIVE_PLACE.sessionProfileDigest });
-/** What the code sends now: D122 (d)'s, in D145's order. */
-const CURRENT = Object.freeze(withMoves(BEFORE_D145, MOVED_BY_D145.cases));
+/**
+ * D147 (0.3.0-beta.9; m33-integration-fixture.js `RECEIPT_PLACE_VOID_CAUSE`, `profileBeforeReceiptPlace`): the values that
+ * moved from D145's — the session-only run profile alone, by its code-pass member's closed list of void causes
+ * (`receipt_path_ambiguous`). No case's request moved (no case runs the code step, and a change with one place gets every
+ * brief as before), and the combined profile did not move. Rendered back, D145's.
+ */
+const MOVED_BY_D147 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '22b9ae25a5379a379b0b7c753f5e325d3084c10b382498122dfe71d34d423173',
+    combined: MOVED_BY_D145.runProfile.combined },
+  sessionProfileDigest: '22b9ae25a5379a379b0b7c753f5e325d3084c10b382498122dfe71d34d423173',
+});
+/**
+ * D149 (0.3.0-beta.9; m33-integration-fixture.js `UNITS_LEFT_OUT_REASON`, `UNITS_TRIAGE_ERROR`, `profileBeforeUnits`):
+ * the values that moved from D147's — the session-only run profile alone, by its code-pass member's left-out reasons
+ * (`unit_cap`), its triage errors (`file_not_in_unit`) and its units member (limits, edges, the generated, vendored
+ * and lock-file class's sources and lock files' names). No case's request moved (no case runs the code step), and the
+ * combined profile did not move.
+ * Rendered back, D147's.
+ */
+const MOVED_BY_D149 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '0e83c3f294b05d297cd6fa149d1a070de345653471ecbbc3c84aabccdeac83eb',
+    combined: MOVED_BY_D145.runProfile.combined },
+  sessionProfileDigest: '0e83c3f294b05d297cd6fa149d1a070de345653471ecbbc3c84aabccdeac83eb',
+});
+/**
+ * D152 (0.3.0-beta.9; m33-integration-fixture.js `TRUTH_ONLY_VERSIONS`, `profileBeforeTruthOnly`): the values that moved
+ * from D149's — the session-only run profile alone, by its code-pass member's checking version (/5), refutation reasons
+ * (`not_against_goal` gone), trace limits (`breaks`), tier table (/4) and `tie` member. No case's request moved (no case
+ * runs the code step), and the combined profile did not move. Rendered back, D149's.
+ */
+const MOVED_BY_D152 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '8e4a8ee899ad97cb55ae3f7ea524b2e9833002a765a474248a1f3eba7d30d653',
+    combined: MOVED_BY_D145.runProfile.combined },
+  sessionProfileDigest: '8e4a8ee899ad97cb55ae3f7ea524b2e9833002a765a474248a1f3eba7d30d653',
+});
+/** What the code sends now: D122 (d)'s, in D145's order, under D152's run profiles. */
+const CURRENT = Object.freeze({ ...withMoves(BEFORE_D145, MOVED_BY_D145.cases), runProfile: MOVED_BY_D152.runProfile,
+  sessionProfileDigest: MOVED_BY_D152.sessionProfileDigest });
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
  *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
  *  `modulesBeforeSkim`). */
@@ -1556,7 +1596,34 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   // capture is D122 (d)'s byte for byte.
   assert.deepEqual(MOVED_BY_D145.cases.map((c) => Object.keys(c).sort().join(',')), ['labels,sentInOrder', '', '']);
   assert.notEqual(MOVED_BY_D145.cases[0].sentInOrder, BEFORE_D145.cases[0].sentInOrder);
-  assert.deepEqual(await captureStandard(modulesBeforeD145(modules), digests), BEFORE_D145);
+  // D152 moved no case and the session-only profile alone, by its code-pass member's checking version, refutation
+  // reasons, trace limits, tier table and tie member; rendered back (`profileBeforeTruthOnly`), D149's.
+  assert.deepEqual(MOVED_BY_D152.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.verify, TRUTH_ONLY_VERSIONS.verify.after);
+  const truthBack = (...args) => profileBeforeTruthOnly(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: truthBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(truthBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_D149.runProfile, sessionProfileDigest: MOVED_BY_D149.sessionProfileDigest });
+  // D149 moved no case and the session-only profile alone, by its code-pass member's left-out reasons (`unit_cap`),
+  // triage errors (`file_not_in_unit`) and units member; rendered back (`profileBeforeUnits`, which renders D152's back
+  // first), D147's.
+  assert.deepEqual(MOVED_BY_D149.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.leftOutReasons.at(-1), UNITS_LEFT_OUT_REASON);
+  assert.equal(reviewRun.runProfile('session-only').codePass.triage.errors.at(-1), UNITS_TRIAGE_ERROR);
+  const unitsBack = (...args) => profileBeforeUnits(reviewRun.runProfile(...args));
+  assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: unitsBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(unitsBack('session-only', ...args))) }),
+  { ...CURRENT, runProfile: MOVED_BY_D147.runProfile, sessionProfileDigest: MOVED_BY_D147.sessionProfileDigest });
+  // D147 moved no case and the session-only profile alone, by its code-pass member's void causes
+  // (`receipt_path_ambiguous`); rendered back (`profileBeforeReceiptPlace`), D145's, and before D145's order, D122 (d)'s.
+  assert.deepEqual(MOVED_BY_D147.cases, [{}, {}, {}]);
+  assert.equal(reviewRun.runProfile('session-only').codePass.voidCauses.at(-1), RECEIPT_PLACE_VOID_CAUSE);
+  const receiptBack = (...args) => profileBeforeReceiptPlace(reviewRun.runProfile(...args));
+  const receiptDigests = { canonicalJson, runProfile: receiptBack,
+    sessionProfileDigest: (...args) => sha256(canonicalJson(receiptBack('session-only', ...args))) };
+  assert.deepEqual(await captureStandard(modules, receiptDigests), { ...CURRENT, runProfile: MOVED_BY_D145.runProfile,
+    sessionProfileDigest: MOVED_BY_D145.sessionProfileDigest });
+  assert.deepEqual(await captureStandard(modulesBeforeD145(modules), receiptDigests), BEFORE_D145);
   // D103: the skim moved the large case's narrative and challenge requests alone (a Claude Code recording's 70 KB
   // results, shown 12,000 bytes at each end); rendered back (`profileBeforeSkim`), every run profile is the evidence
   // merge's, and windowed as before it (`modulesBeforeSkim`: no session names a harness), every case is. Every capture
@@ -1578,7 +1645,8 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   // tier table (`sonah.tiers/3`); rendered back (`profileBeforeTierRevert`, which applies D122 (d)'s first), the run
   // profiles are D114's.
   assert.deepEqual(MOVED_BY_TIER_REVERT.cases, [{}, {}, {}]);
-  assert.equal(reviewRun.runProfile('session-only').codePass.triage.table, TIER_REVERT_VERSIONS.table.after);
+  assert.equal(profileBeforeTruthOnly(reviewRun.runProfile('session-only')).codePass.triage.table,
+    TIER_REVERT_VERSIONS.table.after);
   const tierBack = (...args) => profileBeforeTierRevert(reviewRun.runProfile(...args));
   assert.deepEqual(await captureStandard(modules, { canonicalJson, runProfile: tierBack,
     sessionProfileDigest: (...args) => sha256(canonicalJson(tierBack('session-only', ...args))) }),
@@ -1589,8 +1657,8 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
   // profile alone, by its snapshot version; rendered back (`profileBeforeSessionChange`, which applies D114's first),
   // D112's.
   assert.deepEqual([MOVED_BY_LISTED_ASKS.cases, MOVED_BY_SESSION_CHANGE.cases], [[{}, {}, {}], [{}, {}, {}]]);
-  assert.deepEqual([reviewRun.runProfile('session-only').codePass.pass, reviewRun.runProfile('session-only').codePass.verify,
-    reviewRun.runProfile('session-only').codePass.account.version, reviewRun.runProfile('session-only').codePass.snapshot],
+  const beforeTruth = profileBeforeTruthOnly(reviewRun.runProfile('session-only')).codePass;
+  assert.deepEqual([beforeTruth.pass, beforeTruth.verify, beforeTruth.account.version, beforeTruth.snapshot],
   [LISTED_ASKS_VERSIONS.pass.after, LISTED_ASKS_VERSIONS.verify.after, LISTED_ASKS_VERSIONS.account.after,
     SESSION_CHANGE_VERSIONS.snapshot.after]);
   const listedBack = (...args) => profileBeforeListedAsks(reviewRun.runProfile(...args));
@@ -2005,8 +2073,18 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // more each, by the snapshot version and the request versions; rendered back (`profileBeforeListedAsks`,
     // `profileBeforeSessionChange`), D113's and D112's. D122 (b) (the integration) moved it once more by its tier table
     // (`sonah.tiers/3`); rendered back (`profileBeforeTierRevert`), D114's. D122 (d) moved it once more by its item
-    // errors (`path_ambiguous`); rendered back (`profileBeforeRelativePlace`), D122 (b)'s.
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_RELATIVE_PLACE.runProfile[scope], scope);
+    // errors (`path_ambiguous`); rendered back (`profileBeforeRelativePlace`), D122 (b)'s. D147 moved it once more by its
+    // void causes (`receipt_path_ambiguous`); rendered back (`profileBeforeReceiptPlace`), D122 (d)'s.
+    // D149 moved it once more by its left-out reasons (`unit_cap`), triage errors (`file_not_in_unit`) and units
+    // member; rendered back (`profileBeforeUnits`), D147's. D152 moved it once more by the check judging truth only
+    // (code-verify/5, the tier table /4, the tie member); rendered back (`profileBeforeTruthOnly`), D149's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_D152.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeTruthOnly(reviewRun.runProfile(scope)))),
+      MOVED_BY_D149.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeUnits(reviewRun.runProfile(scope)))), MOVED_BY_D147.runProfile[scope],
+      scope);
+    assert.equal(sha256(canonicalJson(profileBeforeReceiptPlace(reviewRun.runProfile(scope)))),
+      MOVED_BY_RELATIVE_PLACE.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeRelativePlace(reviewRun.runProfile(scope)))),
       MOVED_BY_TIER_REVERT.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeTierRevert(reviewRun.runProfile(scope)))),

@@ -134,6 +134,23 @@ export const REPORT_COUNT_WORDS = Object.freeze({
   // of each such item that Must act names.
   outside: (n) => `${n} ${n === 1 ? 'item is' : 'items are'} about code outside the evaluated session.`,
   outsideLabel: '(outside the evaluated session)',
+  // D153: a review run with the after-point re-check says how many items left Must act after Sonah read the
+  // later work, by mechanism (REPORT_RECHECK_PARTS): each counted from the rows themselves (report-model.js
+  // `recheckLineOf`).
+  recheck: (n, parts) => `After later work, ${plural(n, 'item')} left Must act: ${parts}.`,
+  // D161: the agent's decisions (the report's second part), counted after the tiers, with how many of them carry the tag
+  // Must act or Must know; the same words count each group of that part.
+  decisions: (n, act = 0, know = 0) => `${plural(n, 'decision')}${act || know ? ` (${[...(act ? [`${act} Must act`] : []),
+    ...(know ? [`${know} Must know`] : [])].join(', ')})` : ''}`,
+});
+/** D153: the parts of the count line's sentence on the after-point re-check, in its order: the asks it found
+ *  done, the claims and the statements that the agent wrote into files it found corrected, and (its fix round: one part,
+ *  so the sentence stays short) every row it reaffirmed or left unsettled, which Sonah shows in Must know. No part names
+ *  an earlier status. */
+export const REPORT_RECHECK_PARTS = Object.freeze({
+  done: (n) => `${plural(n, 'ask')} done`,
+  corrected: (n) => `${n} corrected`,
+  mustKnow: (n) => `${n} now in Must know`,
 });
 /** The prompt parts of the count line, in its order (D93: an ask with a code finding is counted apart). */
 export const REPORT_PROMPT_PARTS = Object.freeze({
@@ -143,6 +160,10 @@ export const REPORT_PROMPT_PARTS = Object.freeze({
   notDone: (n) => `${n} not done`,
   notChecked: (n) => `${n} not checked`,
   notCheckedCode: (n) => `${n} not checked with a code finding`,
+  // D153: an ask an earlier window found not met that later work followed and no later window settled; and (its fix
+  // round) one a later window reaffirmed.
+  notCheckedLater: (n) => `${n} not checked after later work`,
+  laterWork: (n) => `${n} followed by later work`,
 });
 
 /** The section headings and fold summaries. */
@@ -184,11 +205,19 @@ export const REPORT_ITEM_WORDS = Object.freeze({
   restsOn: 'It rests on:', restsOutside: 'It rests on what Sonah could not check:',
   recordedResult: 'A recorded result shows:', changeShows: 'The change shows:', whatDoes: 'What does it:',
   whatMissing: 'What is missing:', otherSites: 'Other places:',
+  // D153: the earlier quote of a row no later window settled, and a claim's or a statement's later correction. The
+  // owner, 2026-10-26: the later quote of an ask a later window reaffirmed, said only by where it is from.
+  beforeLaterWork: 'Before the later work, the session review cited:',
+  laterResult: 'A later recorded result shows:', laterWrite: 'The agent later wrote:',
+  fromLaterWork: 'From the later work:',
   checkedAgainst: (n, files = []) => `The session review checked it against ${[...(n ? [plural(n, 'earlier message')] : []),
     ...(files.length ? [`the project instruction ${files.length === 1 ? 'file' : 'files'} ${files.join(', ')}`] : [])]
     .join(' and ')}. ${n + files.length === 1 ? 'It did not cover it.' : 'None of them covered it.'}`,
   referredFrom: (path) => `The project instruction file ${path} says:`,
   helperSaid: 'A helper said:',
+  // D163 (the owner, 2026-10-28: "Labels + Sonah's reading"): a change of approach's reason as the session review wrote
+  // it, never the agent's words.
+  reviewWhy: "Why it changed, in the session review's words:",
   turnEnded: 'Its turn ended with:',
   claimsList: 'the claims list',
   run: (k) => `run ${k}`,
@@ -216,6 +245,18 @@ export const REPORT_ITEM_WORDS = Object.freeze({
 export const REPORT_WHAT_WORDS = Object.freeze({
   ask_not_done: (n) => `The agent did not do ask ${n}.`,
   ask_partly_done: (n) => `The agent did only part of ask ${n}.`,
+  // D153: an ask an earlier window found not met, followed by later work that no later window settled. No accusing
+  // word: its earlier quote is in its evidence fold.
+  ask_not_checked_after_later_work: (n) => `Sonah did not check ask ${n} after later work.`,
+  // D153 (the owner, 2026-10-26): a contradicted claim, and a contradicted statement that the agent wrote into a file,
+  // followed by later work that no later window settled. No accusing word: what contradicted it is in its evidence fold.
+  claim_not_checked_after_later_work: "Sonah did not check a claim of the agent's after later work.",
+  written_not_checked_after_later_work: (path) => `Sonah did not check a statement that the agent wrote into ${path} `
+    + 'after later work.',
+  // D153's fix round: an ask a later window reaffirmed, and a claim a later window's RESULT showed not holding again.
+  // True and no stronger: the later quote is in its evidence fold, and no verdict is said.
+  askLaterWork: (n) => `Later work followed ask ${n}.`,
+  claimLaterWork: "Later work followed a claim of the agent's.",
   contradicts: (source) => `${source} contradicts a claim of the agent's.`,
   contradictsWritten: (source, path) => `${source} contradicts a statement that the agent wrote into ${path}.`,
   editAgainst: 'The agent acted against something that you said.',
@@ -266,7 +307,11 @@ export const REPORT_CONTRADICTION_SOURCES = Object.freeze({ result: 'A recorded 
  *  and an edit's (kind 20). */
 export const REPORT_DISCLOSURE_WORDS = Object.freeze({
   claim: Object.freeze({ self_corrected: 'The agent corrected it later.',
-    helper_internal: 'A helper said it, and you did not see it.', disclosed: 'The agent told you about it.' }),
+    helper_internal: 'A helper said it, and you did not see it.', disclosed: 'The agent told you about it.',
+    // D153: a later window's correction, which its own check upheld (`correctedBy`).
+    corrected_later: 'A later recorded result shows that the claim holds.' }),
+  // D153: a statement that the agent wrote into a file, replaced by a later write of its own.
+  written: Object.freeze({ corrected_later: 'The agent replaced it in a later write.' }),
   edit: Object.freeze({ self_corrected: 'The agent undid it in the same turn.', disclosed: 'The agent told you about it.',
     helper_internal: 'A helper did it, and you did not see it.' }),
 });
@@ -298,10 +343,16 @@ export const REPORT_TIER_WHY = Object.freeze({
   // same item.
   held: (kind, tier) => `It holds ${kind} in ${tier}. So Sonah puts the item in ${tier}.`,
   tiedHere: (tier) => `A question of the code review in this item concerns it, so Sonah puts it in ${tier}.`,
+  // D161: a question of the code review that Sonah could not tie to an item or an ask is at most Good to know.
+  untied: (level, tier) => `${level ? `The code review proposed ${level}. ` : ''}Sonah could not tie this question to an `
+    + `item or an ask, so it puts it in ${tier}.`,
 });
 /** Each item kind in words, for the tier sentences. */
 export const REPORT_KIND_WORDS = Object.freeze({
   ask_not_done: 'an ask that the agent did not do', ask_partly_done: 'an ask that the agent did only in part',
+  ask_not_checked_after_later_work: 'an ask that later work followed',
+  claim_not_checked_after_later_work: 'a claim that later work followed',
+  written_not_checked_after_later_work: 'a statement that the agent wrote before later work',
   code_ask_not_met: 'an ask that the code does not meet', claim_contradicted: 'a contradicted claim',
   code_claim_false: 'a claim that the code contradicts', edit_against_instruction: 'an edit against your words',
   code_bug: 'a bug that Sonah checked', code_contract: 'a broken contract or rule',
@@ -310,8 +361,10 @@ export const REPORT_KIND_WORDS = Object.freeze({
   decision_unasked: 'a decision that you did not ask for', code_question: 'a question of the code review',
   decision_chose: 'a decision on how to do your ask', pivot: 'a change of approach',
   decision_whether_asked: 'a decision that Sonah could not tie to an ask',
+  code_finding_open: 'a finding that Sonah tied to nothing it breaks',
   code_question_finding: 'a question from a finding of the code review',
   code_finding_unconfirmed: 'a finding with a premise that Sonah could not check', claim_corrected: 'a corrected claim',
+  written_corrected: 'a statement that the agent wrote and replaced later',
   edit_undone: 'an edit that the agent undid or told you about', claim_not_checked: 'a claim that Sonah did not check',
   claim_incomplete: 'a claim that rests on a check that Sonah did not see finish',
   written_not_checked: 'a statement that the agent wrote into a file and Sonah did not check',
@@ -322,7 +375,8 @@ export const REPORT_LEVEL_WORDS = Object.freeze({ high: 'high', medium: 'medium'
 
 /** Your prompt, marked up (D97). */
 export const REPORT_PROMPT_WORDS = Object.freeze({
-  status: Object.freeze({ done: 'Done', partly: 'Partly done', notDone: 'Not done', notChecked: 'Not checked' }),
+  status: Object.freeze({ done: 'Done', partly: 'Partly done', notDone: 'Not done', notChecked: 'Not checked',
+    notCheckedLater: 'Not checked after later work', laterWork: 'Later work followed' }),
   coverage: 'Sonah checked only the marked parts of your message.',
   // D100: what the session review cited, never that only the agent says so. D115: "Sonah found no recorded result or
   // change for it" named a search that Sonah never ran (the recording held the results); the words now say only what
@@ -394,6 +448,14 @@ export const REPORT_DID_WORDS = Object.freeze({
     + 'before it finished, or its command failed or stopped.',
   moreRuns: (n) => `And ${plural(n, 'more command')} that exited with code 0.`,
   runsCut: (shown, m, parts) => `Sonah shows ${plural(shown, 'run')}. It does not show ${m} more: ${parts}.`,
+  // D167 (the owner, 2026-10-28): the .md (the PR comment) counts the runs and their results, in the header's result
+  // parts (REPORT_RESULT_PARTS), and says where their list is; the page keeps the list. `runsNamed` heads the lines of
+  // the runs that another part of the same .md names by number (an item's Where, a claim's run, a mark's), so no such
+  // name is left without its run. Never a file path (the .md is posted to GitHub), never a link: the page is a file on
+  // your computer. Its review: the command as the CLI's usage says it, `FILE` its own placeholder, never a path.
+  runsCounted: (n, parts) => `${plural(n, 'run')}${parts ? `: ${parts}` : ''}.`,
+  runsNamed: 'The runs that other parts of this report name:',
+  runsOnPage: 'The list of runs is on the HTML page of this review, which sonah review --format html --output FILE writes.',
   // D100: what Sonah found, never that no command ran or that the recording holds none.
   neverRan: (paths) => `Sonah found no command that ran after the last edit of: ${paths}.`,
   noRuns: 'Sonah found no command in the recording.',
@@ -402,7 +464,10 @@ export const REPORT_DID_WORDS = Object.freeze({
     'passed-over': 'the agent passed over it', 'not-checked': 'not checked' }),
   claimStatus: Object.freeze({ checked: 'checked', contradicted: 'contradicted',
     contradictedByCode: 'contradicted by the code review', notChecked: 'not checked',
-    incomplete: 'check not seen to finish' }),
+    incomplete: 'check not seen to finish',
+    // D153 (the owner, 2026-10-26): a contradicted claim or statement that no later window settled; and (its fix round)
+    // a claim a later window's RESULT showed not holding again.
+    notCheckedLater: 'not checked after later work', laterWork: 'later work followed' }),
   moreClaims: (n) => `Sonah does not show ${plural(n, 'more claim')}.`,
   noClaims: 'The session review recorded no claim.',
   written: (path) => `written into ${path}`,
@@ -499,7 +564,8 @@ export const REPORT_NOT_CHECKED_WORDS = Object.freeze({
   rowKinds: Object.freeze({ requirements: 'ask', decisions: 'decision', pivots: 'change of approach',
     writtenClaims: 'written claim', findings: 'finding', failures: 'failure', promises: 'claim',
     'codePass.findings': 'code review finding', 'codePass.questions': 'code review question',
-    'codePass.withheld': 'withheld proposal', 'codePass.unconfirmed': 'code review finding to verify' }),
+    'codePass.withheld': 'withheld proposal', 'codePass.unconfirmed': 'code review finding to verify',
+    'codePass.open': 'open code review finding' }),
   encryptedBriefs: (n) => `The recorder encrypted ${plural(n, 'helper brief')}, so Sonah cannot show `
     + `${verb(n, 'it', 'them')}.`,
   encryptedMessages: (n, atLeast) => `The recorder encrypted ${atLeast ? 'at least ' : ''}${plural(n, 'message')} `
@@ -548,6 +614,28 @@ export const REPORT_SEEN_WORDS = Object.freeze({
       : ` In the file, these are ${linesOf(fileLines.from, fileLines.through)}.`;
     return `${left}${shown}${file}`;
   },
+});
+
+/** D161 (the owner, 2026-10-27): the report's second part, the decisions the agent took, in the order the session
+ *  recorded them, grouped by the message of yours that they follow. */
+export const REPORT_TRAIL_WORDS = Object.freeze({
+  heading: (n) => `The agent's decisions, in order (${n})`,
+  afterAsks: (from, through) => (from === through ? `After ask ${from}`
+    : `After asks ${from} ${through === from + 1 ? 'and' : 'to'} ${through}`),
+  beforeAsks: 'Before your first ask',
+  unplaced: 'Sonah could not place these in the session order',
+  moreAsks: (n) => `and ${plural(n, 'more ask')}`,
+  // Its review: the .md, shortened, counts the decisions tagged Good to know it leaves out of a group.
+  goodToKnowNotShown: (n) => `Sonah does not show ${plural(n, 'decision')} tagged Good to know here.`,
+  // Its review: the one group of a session with no message that holds an ask.
+  inOrder: 'Every decision, in the session order',
+  // D163 (the owner, 2026-10-28): the first part's heading over its pointers to the decisions of this part tagged with
+  // its tier (further down: a decision that the first part keeps is in the tier itself, so is not counted here); the
+  // line of a decision that the first part shows, at its place here; and, in an open group, the one line that counts
+  // the decisions tagged Good to know, after the Must ones.
+  taggedHere: (tier, n) => `Decisions further down tagged ${tier} (${n})`,
+  shownAbove: (n) => `shown in item ${n} above`,
+  moreTagged: (n, tier) => `${plural(n, 'more decision')} tagged ${tier}`,
 });
 
 /** The page's and the Markdown's size notices (D97). */
@@ -722,6 +810,7 @@ export const STYLE_KINDS = Object.freeze({
   'REPORT_HEADER_WORDS.notCheckedLead': 'label',
   REPORT_RESULT_PARTS: 'fragment', REPORT_NOT_CHECKED_PARTS: 'fragment',
   REPORT_COUNT_WORDS: 'fragment', 'REPORT_COUNT_WORDS.emptyTiers': 'notice', 'REPORT_COUNT_WORDS.outside': 'notice',
+  'REPORT_COUNT_WORDS.recheck': 'notice', REPORT_RECHECK_PARTS: 'fragment',
   'REPORT_COUNT_WORDS.notCorrect': 'notice',
   REPORT_PROMPT_PARTS: 'fragment',
   REPORT_SECTION_WORDS: 'heading', 'REPORT_SECTION_WORDS.noAskMessages': 'notice',
@@ -756,6 +845,8 @@ export const STYLE_KINDS = Object.freeze({
   REPORT_SEEN_WORDS: 'notice', 'REPORT_SEEN_WORDS.label': 'label', 'REPORT_SEEN_WORDS.lead': 'fragment',
   'REPORT_SEEN_WORDS.ofRun': 'fragment', 'REPORT_SEEN_WORDS.atEvent': 'fragment', 'REPORT_SEEN_WORDS.aResult': 'fragment',
   REPORT_TRIM_WORDS: 'notice',
+  REPORT_TRAIL_WORDS: 'heading', 'REPORT_TRAIL_WORDS.moreAsks': 'fragment',
+  'REPORT_TRAIL_WORDS.goodToKnowNotShown': 'notice', 'REPORT_TRAIL_WORDS.shownAbove': 'fragment',
   REPORT_FOOTER_WORDS: 'notice', 'REPORT_FOOTER_WORDS.provenance': 'fragment', REPORT_LIMIT_WORDS: 'fragment',
   'REPORT_FOOTER_WORDS.answerCommand': 'fragment',
   REPORT_ANSWER_WORDS: 'notice', REPORT_CAUSE_WORDS: 'fragment', REPORT_GAP_WORDS: 'fragment',
@@ -787,6 +878,15 @@ export const STYLE_FIXTURES = Object.freeze({
   ...each('REPORT_PROMPT_PARTS', REPORT_PROMPT_PARTS, [[1], [3]]),
   'REPORT_COUNT_WORDS.tier': [['Must act', 2]], 'REPORT_COUNT_WORDS.prompt': [['3 done, 1 not checked']],
   'REPORT_COUNT_WORDS.more': [[2]], 'REPORT_COUNT_WORDS.outside': [[1], [3]],
+  'REPORT_COUNT_WORDS.decisions': [[1], [14, 0, 3], [14, 1, 3], [2, 2, 0]],
+  'REPORT_TRAIL_WORDS.heading': [[1], [14]], 'REPORT_TRAIL_WORDS.afterAsks': [[3, 3], [3, 4], [3, 7]],
+  'REPORT_TRAIL_WORDS.moreAsks': [[1], [4]], 'REPORT_TRAIL_WORDS.goodToKnowNotShown': [[1], [400]],
+  'REPORT_TRAIL_WORDS.taggedHere': [['Must act', 1], ['Must know', 12]], 'REPORT_TRAIL_WORDS.shownAbove': [[4]],
+  'REPORT_TRAIL_WORDS.moreTagged': [[1, 'Good to know'], [23, 'Good to know']],
+  // D153: every part at once, the longest the sentence gets.
+  'REPORT_COUNT_WORDS.recheck': [[1, '1 ask done'], [4, '1 ask done, 1 corrected, 2 now in Must know'],
+    [12, '3 asks done, 3 corrected, 6 now in Must know'], [6, '6 now in Must know']],
+  ...each('REPORT_RECHECK_PARTS', REPORT_RECHECK_PARTS, [[1], [3]]),
   'REPORT_SECTION_WORDS.promptCounted': [[1, '1 done'], [6, '3 done, 2 partly done, 1 not checked']],
   'REPORT_SECTION_WORDS.tier': [['Must act', 2]], 'REPORT_SECTION_WORDS.didCounted': [[1, 1, 0, 1], [4, 12, 2, 21], [null, 3, 0, 4]],
   'REPORT_SECTION_WORDS.notCheckedCounted': [[1], [9]], 'REPORT_SECTION_WORDS.withheld': [[2]],
@@ -796,19 +896,27 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_ITEM_WORDS.asked': [[3]], 'REPORT_ITEM_WORDS.run': [[2]], 'REPORT_ITEM_WORDS.item': [[4]], 'REPORT_ITEM_WORDS.seeItem': [[4]], 'REPORT_ITEM_WORDS.unchangedLines': [[1], [4]],
   'REPORT_ITEM_WORDS.morePlaces': [[2], [5]], 'REPORT_ITEM_WORDS.members': [[1], [3]],
   'REPORT_WHAT_WORDS.ask_not_done': [[2]], 'REPORT_WHAT_WORDS.ask_partly_done': [[2]],
+  'REPORT_WHAT_WORDS.ask_not_checked_after_later_work': [[2]],
+  'REPORT_WHAT_WORDS.written_not_checked_after_later_work': [['README.md']],
+  'REPORT_WHAT_WORDS.askLaterWork': [[2]],
   'REPORT_WHAT_WORDS.contradicts': [['A recorded result']],
   'REPORT_WHAT_WORDS.contradictsWritten': [['A recorded result', 'README.md']],
   'REPORT_WHAT_WORDS.writtenNotChecked': [['README.md']],
   'REPORT_KIND_LABELS.ask': [[2]], 'REPORT_KIND_LABELS.place': [['src/a.js', 12]],
   'REPORT_KIND_LABELS.written': [['README.md']],
   'REPORT_KIND_LABELS.item': [[5]], 'REPORT_KIND_LABELS.ofItem': [[5]],
-  'REPORT_TIER_WHY.byDefault': [['a weak test', 'Must know']],
+  // D153: and the re-check's kinds, whose words are the longest of the kinds only it gives.
+  'REPORT_TIER_WHY.byDefault': [['a weak test', 'Must know'],
+    ...['ask_not_checked_after_later_work', 'claim_not_checked_after_later_work', 'written_not_checked_after_later_work',
+      'written_corrected'].map((kind) => [REPORT_KIND_WORDS[kind], 'Good to know'])],
   'REPORT_TIER_WHY.tied': [[4, 'Must know']], 'REPORT_TIER_WHY.kept': [['high']],
   'REPORT_TIER_WHY.bounded': [['low', 'a bug that Sonah checked', 'Good to know'],
-    ['high', 'a finding with a premise that Sonah could not check', 'Must act']],
+    ['high', 'a finding with a premise that Sonah could not check', 'Must act'],
+    ['high', 'a statement that the agent wrote and replaced later', 'Must act']],
   'REPORT_TIER_WHY.held': [['a question of the code review', 'Must know'], ['a decision that Sonah could not tie to an ask',
-    'Must act']],
+    'Must act'], ['a statement that the agent wrote before later work', 'Must know']],
   'REPORT_TIER_WHY.tiedHere': [['Must know']],
+  'REPORT_TIER_WHY.untied': [['high', 'Good to know'], [null, 'Good to know']],
   'REPORT_PROMPT_WORDS.codeFinding': [[null], [4]], 'REPORT_PROMPT_WORDS.withheldFinding': [['its check refuted it']],
   'REPORT_PROMPT_WORDS.codeQuestion': [[null], [6]], 'REPORT_PROMPT_WORDS.overlaps': [[1]],
   'REPORT_PROMPT_WORDS.unconfirmedFinding': [[null], [5]],
@@ -824,6 +932,8 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_DID_WORDS.unresolved': [[1, ''], [2, '$P/a.sh, $P/b.sh'], [11, '$P/a.sh, $P/b.sh, $(pwd)/c.md', 8]],
   'REPORT_DID_WORDS.moreRuns': [[1], [9]], 'REPORT_DID_WORDS.runsCut': [[40, 3, '2 exited with code 0, 1 failed'],
     [1, 1, '1 failed']],
+  'REPORT_DID_WORDS.runsCounted': [[1, '1 failed'], [454, '102 exited with code 0, 12 failed, for 340 Sonah read no exit code'],
+    [3, '']],
   'REPORT_DID_WORDS.neverRan': [['src/a.js, src/b.js']], 'REPORT_DID_WORDS.moreClaims': [[1], [7]],
   'REPORT_DID_WORDS.written': [['README.md']],
   ...each('REPORT_OUTCOME_WORDS', REPORT_OUTCOME_WORDS, [[2, 'permission-rule']]),

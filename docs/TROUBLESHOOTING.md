@@ -23,8 +23,9 @@ fixed code and a fix.
 **`Model: not_answered ...`**
 : The one test request did not get an answer. Run `sonah doctor` again; if it still fails, check your network and your
   plan's remaining usage. A word in brackets names the cause when it is known (`rate_limit`, `billing`, `overloaded`,
-  ...); with `auth`, doctor prints the sign-in fix instead. The reviewer does not inherit proxy settings,
-  `CLAUDE_CONFIG_DIR` or API keys from your shell, so `claude` can work in your terminal and still fail here.
+  ...); with `auth`, doctor prints the sign-in fix instead. The reviewer does not inherit proxy settings or API keys
+  from your shell, so `claude` can work in your terminal and still fail here. It does sign in from your
+  `CLAUDE_CONFIG_DIR` and with your `CLAUDE_CODE_OAUTH_TOKEN`: the `Claude Code login:` line says which.
 
 **`Model: Sonah could not confirm the answer came from claude-sonnet-5-5 under its 1M-token window. Fix: Update Claude Code ...`**
 : The answer did not come from `claude-sonnet-5-5` under its 1M-token window, or Sonah could not tell that it did. Run
@@ -36,6 +37,27 @@ fixed code and a fix.
   checks them once, with no model call. Run `claude update`, then `sonah doctor` again; or turn the code step off with
   `sonah config code-pass off` (or `--no-code-pass` for one review). `Claude code-step options: not checked` means
   `claude auth status` could not be read: fix the sign-in first.
+
+**`Claude Code login: Sonah's Claude Code calls sign in from ...`** (from `sonah doctor`)
+: The config folder whose login Sonah's calls and doctor's checks use: the one `CLAUDE_CONFIG_DIR` names, else
+  `~/.claude`. If it is not the account you expect, run Sonah in a terminal with the same `CLAUDE_CONFIG_DIR` as your
+  `claude` (an alias such as `CLAUDE_CONFIG_DIR=~/.claude-work claude` sets it for `claude` alone). With
+  `CLAUDE_CODE_OAUTH_TOKEN` set (a login from `claude setup-token`, as on a remote machine), the line says the calls
+  sign in with that token: Claude Code uses it in place of the folder's login. Doctor never prints the token. Answers
+  that Sonah stored before, on another login or before its calls ran in safe mode, replay as they were. To ask again,
+  review with a fresh `--state-dir`.
+
+**`Sonah found a relative CLAUDE_CONFIG_DIR and gives its Claude Code calls the absolute folder that it names here ...`**
+: Claude Code names its macOS keychain login after the exact text of `CLAUDE_CONFIG_DIR`. Sonah gives its calls a
+  relative value as the absolute folder it names from where you run Sonah, so that login does not reach them, and
+  doctor's sign-in check can say `signed_out`. Set `CLAUDE_CONFIG_DIR` as an absolute path, sign in once with that
+  value (`claude auth login`), then run `sonah doctor` again. An absolute value reaches the calls as you wrote it.
+
+**`Claude Code safe mode: this Claude Code refused --safe-mode when Sonah checked it ...`**
+: Sonah's calls ask for Claude Code's safe mode, which keeps the plugins, skills and connectors that you installed out
+  of them. This Claude Code refused the `--safe-mode` flag when doctor checked it, so Sonah cannot tell that the calls
+  run in safe mode. The review still runs. Run `claude update`, then `sonah doctor` again. `Claude Code safe mode: not
+  checked` means `claude auth status` could not be read: fix the sign-in first.
 
 **`Node: ... Fix: Install Node.js 20 or newer`** or **`Install requires Node.js 20 or newer`**
 : Install a current Node.js (with npm) and run the command again.
@@ -211,6 +233,7 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | --- | --- |
   | calls that did not answer (the code review, the repair of the code review, a finding's check, the check of its questions, or its item-by-item check) | An agent ran out of its turns (the review agent has 150, a finding's check 60, the other checks 80) or its time (45 minutes for the review agent, 30 for a check), its answer never matched its contract, or the call failed (sign-in, usage limit, network). Run the same command again: while the repository is unchanged, the answers that came back are reused and only these are asked again. |
   | calls that Sonah did not make, because their inputs were too large to send (its item-by-item check) | A batch of the item-by-item check did not fit the code review's size bound. Its items are counted in the lines below. Running again will not change it. |
+  | a finding withheld because "its check did not finish (the check named a path that more than one repository of the change holds, so Sonah could not tell which file it means)", or open questions published unchecked, in a session that worked in several worktrees of one project | Each worktree holds the same files, so a path relative to one of them names a file in each, and Sonah does not guess which one the check meant. It asks the check once more to name the file by its absolute path. Since 0.3.0-beta.9, when more than one repository or folder holds the change, the code review is shown every file by its absolute path, and every agent of it is asked for absolute paths from the start. |
   | of your asks, asks that an agent wrote into a helper's brief, asks that Sonah could not trace to your own words, statements that the agent wrote into a file, or decisions not to act, which the code review's item-by-item check did not examine in a way that Sonah could use | After the code review, Sonah asks it to check each of these items against the code, in calls of 30 items, at most 4. Each line counts the items that the check left out, answered as not examined, or answered in a way that Sonah could not use (a quote it did not find word for word, an answer out of its shape, or an item past the 4 calls). Sonah calls an ask yours only when the recording shows it in your own words. The count says nothing about the code review's findings: a published finding can still concern a counted item. A call that did not answer leaves its items counted: run the same command again. A session with more than 120 items always shows a count, because of the limit of 4 calls. |
   | The code review did not answer, so Sonah counts none of them as seen | The review agent's call failed before Sonah recorded a turn or a tool call of it (sign-in, usage limit, network), so Sonah holds no sign that it read the change. Run the same command again. |
   | paths that the session wrote to, which Sonah counts but did not review | Not a gap in the change: these writes lie in a coding agent's home folder (its memory or settings), in Sonah's own folders, under a name from your home folder, or outside the folders that the code review could read: a folder that no git repository holds (the page lists those folders, see "folders that no git repository holds" below), or a git repository outside your working directory where none of the files the session wrote is there now with a change. Sonah counts them and does not review them. (A file that the session wrote with no change in a repository inside your working directory is not counted here: it is no file of the change, as in your own repository.) Since 0.3.0-beta.5, a file the session wrote in another git repository that is there now with a change is part of the change instead (see the next entry but one). |
@@ -222,7 +245,8 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | The session wrote N files in folders that no git repository holds. Sonah lists them and did not review them | Not a gap in the change: these files lie outside every git repository (a notes folder, an agent's scratch folder, your home folder). Sonah does not review them, its agents do not read those folders, and they do not change the coverage. It names each folder (the first 10, then how many more) with how many files the session wrote there; the footer counts them with the other paths it did not review. |
   | writes of the session name paths with an unexpanded shell variable or command substitution | A shell command of the session wrote to a path such as `$DIR/notes.md` or `$(pwd)/x.md`. The recording holds the command as typed, not what the shell expanded it to, so Sonah cannot tell which file it wrote. It counts these writes apart and does not review them. A path that a file tool (Write, Edit) wrote is taken as it is spelled, even with a `$` in its name, and so is a path that, spelled as recorded, names a file or folder that is there (a relative path in the session's working folder, an absolute path where it points), or a file that git lists as changed since the start commit, such as one the session deleted (the recording keeps no quotes: a route file `app/routes/users.$id.tsx` that a shell command wrote is a file of the change). |
   | Sonah does not yet see every edit made by helper agents or by scripts after a cd | The session ran a shell command. A script can write files after a `cd` into another folder, where Sonah cannot place its writes, and Sonah does not yet read every helper agent's own edits. So the change the code review had can miss some of them: review such edits yourself. Shown in the code review's part of What Sonah could not check, on the page and in the .md (since 0.3.0-beta.6 no longer on the terminal's code review line). |
-  | files whose change Sonah left out of the code review's input for room | The change is larger than one request holds (about 400 KB of lines): Sonah left the largest changes out, and the agent was told to read those files itself. |
+  | Sonah showed the code review every changed line of N files in K calls | Not a gap: since 0.3.0-beta.9, a change larger than one request holds (about 400 KB of lines) is split by file into parts, each sent in its own call with the whole change's list of files. "It could not show M files" names the files that no call showed, and why. |
+  | files whose change Sonah left out of the code review's input for room | A call's input had no room left for these files beside the rest of it (the change's list of files, your words, the rule files, the commands). The agent was told to read those files itself. Before 0.3.0-beta.9, a change larger than one request holds (about 400 KB of lines) also left its largest files out; now each part of it has its own call. |
   | files changed after the session's last recorded edit | Not a gap: a file the session wrote changed again afterwards (a formatter, a script, your own edit). Its change from where the session started was shown and reviewed, but some of its lines now may not be the agent's. |
   | Sonah did not review files that changed outside this session's recorded writes | These files differ from the commit where the session started, but no write that the recording shows touched them, and the file system's modification time does not place their last change while the session ran: a later commit, your own edit, or a file already changed before the session began. They are outside the evaluated session, and the line says so. Sonah names them (the first 10, then how many more). This line shows when no code review ran or answered: with a change of the session's own to review, Sonah gives them to the code review apart from it if there is room in its input, and the next row's line shows instead. A file that a command of the session deleted or moved (a moved file keeps its old time, and a deleted file has none), or changed and that changed again later, is among them too: review those yourself. |
   | files that changed outside this session's recorded writes are outside the evaluated session | The same files, given to the code review after the session's own change and apart from it; the next line says what the code review saw of them (left out first when the request is too large). A finding about one, and a question from such a finding, reads "It is about code outside the evaluated session." and names none of your asks or the agent's claims; the count line counts them. A broken contract, a broken rule or a contradicted claim that a line the session changed causes is the session's finding even when it shows in such a file, so it has no such marker. They are not the session's change: the coverage line, the footer and the header count only the session's own files, and a check of a finding about them that fails or is too large to send does not make the coverage short. |
@@ -296,6 +320,14 @@ It then prints `Review window N/M finished` as each part completes. There are no
   other entries of workflow run folders, workflow calls with no launch recorded, helper recordings that Sonah read only
   in part, calls whose input Sonah holds only in part, and calls of the agent's code cells that no recorded item
   accounts for. "Sonah holds N kinds of evidence only in part" counts the other kinds.
+
+**`Sonah left out N decisions that the session review's check rejected, because the second check of them did not run.`** (What Sonah could not check; the terminal's `Windows complete` line says the same count)
+: A decision that the session review's check rejected gets a second check, which can keep it. Here that check did not
+  run: one of its calls failed (also after its retry, or with an error that is not retried, such as a rate limit), the
+  run reached its budget, or the reply left the decision out or could not be read. Sonah leaves such a decision out, as
+  it leaves out every decision that its checks reject. Run the same review again: at the end of a review, Sonah forgets
+  the stored answers of each such check, so the next run asks it again and reuses every other stored answer. The exit
+  code does not change, because every review window finished.
 
 **`Sonah's review: ... code review had no change to review, because ...`**
 : The code step found no file of the session's change to review, so it made no code-review call. The words after

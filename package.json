@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.7",
+  "version": "0.3.0-beta.9",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
@@ -49,6 +49,7 @@
     "packages/cli/src/agent-session-hook.js",
     "packages/cli/src/answer-cache.js",
     "packages/cli/src/claude-home.js",
+    "packages/cli/src/code-map.js",
     "packages/cli/src/code-snapshot.js",
     "packages/cli/src/commit-sessions.js",
     "packages/cli/src/codex-model.js",
@@ -89,6 +90,7 @@
     "packages/evidence/src/checklist.js",
     "packages/evidence/src/claims.js",
     "packages/evidence/src/code-context.js",
+    "packages/evidence/src/code-map.js",
     "packages/evidence/src/code-pass.js",
     "packages/evidence/src/code-report.js",
     "packages/evidence/src/evidence-requests.js",
@@ -98,6 +100,7 @@
     "packages/evidence/src/materiality.js",
     "packages/evidence/src/prompt.js",
     "packages/evidence/src/receipt-repair.js",
+    "packages/evidence/src/recheck.js",
     "packages/evidence/src/review-agent.js",
     "packages/evidence/src/review-profiles.js",
     "packages/evidence/src/review.js",
@@ -106,6 +109,7 @@
     "packages/evidence/src/session.js",
     "packages/evidence/src/status-fact.js",
     "packages/evidence/src/ste-count.js",
+    "packages/evidence/src/struggle.js",
     "packages/evidence/src/triage.js",
     "packages/evidence/src/windows.js",
     "packages/evidence/src/written.js",
@@ -144,6 +148,7 @@
     "packages/slicer/src/recorder-census.js",
     "packages/slicer/src/recording-identity.js",
     "packages/slicer/src/recording-stream.js",
+    "packages/slicer/src/request-copies.js",
     "packages/slicer/src/records.js",
     "packages/slicer/src/strict-json.js",
     "packages/slicer/src/workflow-runs.js"

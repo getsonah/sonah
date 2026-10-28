@@ -481,6 +481,14 @@ function redactCore(ledger) {
     if (entry === null || typeof entry !== 'object') continue;
     if (typeof entry.text !== 'string') { entry.text = ''; entry.redacted = true; continue; }
   }
+  // D150: each file the harness noticed changed outside the agent's edit calls (the slicer's `editedFiles`), its
+  // recorded snippet kept whole, as a project instruction file is. Fails closed: a snippet or a path that is not a string
+  // keeps none. Not in slice_hash until a reader of a review reads it (`sliceHash`).
+  for (const entry of Array.isArray(out.editedFiles) ? out.editedFiles : []) {
+    if (entry === null || typeof entry !== 'object') continue;
+    if (typeof entry.path !== 'string') { entry.path = ''; entry.redacted = true; }
+    if (typeof entry.text !== 'string') { entry.text = ''; entry.redacted = true; }
+  }
 
   // Source identities: a field a ledger already declared unchecked (`identityUncheckedFields`, a closed list of its
   // own field names) stays unchecked, and an invalid declaration leaves the whole row unchecked. A surviving field is

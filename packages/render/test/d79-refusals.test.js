@@ -82,14 +82,14 @@ test('D79 facts and report .md: a refused command did not run and is not a faile
   assert.deepEqual([c.get('R1').failed, c.get('R1').didNotRun], [false, true]);
   assert.deepEqual([c.get('R2').failed, c.get('R2').didNotRun, c.get('R2').exitCode], [true, false, 1]);
   assert.deepEqual([c.get('R3').failed, c.get('R3').didNotRun], [false, false]);
-  // D97: the report .md counts the two apart, and lists the refusal as did not run, never among the failed.
+  // D97: the report .md counts the two apart, and lists the refusal as did not run, never among the failed. D167: the
+  // .md counts the runs by their results in place of listing them (the page lists them: the next test).
   const story = renderReportMarkdown(session, reportOf(session));
   assert.ok(story.includes('After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The '
     + 'recording shows 1 command after the agent\'s last edit as refused before it ran.'), story);
-  assert.ok(story.includes('`rm -rf build` · did not run: refused'), story);
+  assert.ok(story.includes('\n3 runs: 1 exited with code 0, 1 failed, 1 did not run.\n'), story);
   assert.equal(story.includes('user-rejected'), false, 'no raw denial kind');
-  assert.ok(story.includes('`npm test` · failed, exit code 1'));
-  assert.equal(story.includes('`rm -rf build` · failed'), false, 'never among the failed');
+  assert.equal(story.includes('`rm -rf build`'), false, 'the .md lists no run');
   // Every refused kind reads so; D80: the two stopped kinds read stopped, never failed, whatever the record's result.
   for (const kind of RECORDED_FACTS.denial) {
     const b = sessionBuilder();
@@ -111,9 +111,12 @@ test('D79 facts and report .md: a refused command did not run and is not a faile
   assert.ok(two.includes('Sonah found no command that the agent ran after its last edit. The recording shows 2 commands after the '
     + 'agent\'s last edit as refused before they ran.'), two);
   // R15: who refused it, only as far as the recording types it: a permission rule is named; `user-rejected` (a person's
-  // "no", or a prompt no person could be shown) names no one.
-  assert.ok(two.includes('`rm -rf build` · did not run: refused\n'), two);
-  assert.ok(two.includes('did not run: a permission rule refused it'), two);
+  // "no", or a prompt no person could be shown) names no one. D167: on the page, which lists the runs; the .md counts
+  // them.
+  assert.ok(two.includes('\n2 runs: 2 did not run.\n'), two);
+  const page = renderSessionPage(s, reportOf(s));
+  assert.match(page, /<code>rm -rf build<\/code> · did not run: refused<\/li>/);
+  assert.ok(page.includes('did not run: a permission rule refused it'));
 });
 
 test('D79 page: a refused command is listed as did not run, counted apart from the failed ones', () => {

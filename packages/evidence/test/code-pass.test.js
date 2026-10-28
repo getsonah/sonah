@@ -55,8 +55,9 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   SESSION_CHANGE_VERSIONS, SESSION_CHANGE_READER_VERSIONS, LISTED_ASKS_VERSIONS, profileBeforeSessionChange,
   profileBeforeListedAsks, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
   COMPACTION_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS,
-  RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace }
-  from './m33-integration-fixture.js';
+  RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace, UNITS_LEFT_OUT_REASON,
+  UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, TRUTH_ONLY_REFUTATION, TRUTH_ONLY_KIND,
+  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS } from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
   verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
   from '../../cli/test/code-pass-fixture.js';
@@ -191,8 +192,11 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(ledger.CODE_PREMISE_SOURCES, ['repository', 'language', 'outside']);
   assert.deepEqual(CODE_PASS_PROFILE.premises, { sources: ledger.CODE_PREMISE_SOURCES,
     confirm: 'holds-and-every-premise-repository-or-language' });
+  // D152 (code-verify/5): the check judges truth only, so `not_against_goal` is no refutation reason any more; and the
+  // rule a confirmed finding is tied to a written promise by is in the session run profile.
   assert.deepEqual(CODE_REFUTATION_REASONS, ['incorrect', 'mitigation_shown', 'input_unreachable', 'step_unsupported',
-    'out_of_scope', 'not_against_goal']);
+    'out_of_scope']);
+  assert.deepEqual(CODE_PASS_PROFILE.tie, { rule: 'leads-from-or-grounded-breaks' });
   // D105 (code-pass/12): a checking request too large to send is not a call that failed.
   assert.deepEqual(CODE_WITHHELD_REASONS, ['malformed', 'evidence_grounding_failed', 'out_of_scope', 'verify_refuted',
     'verify_cannot_tell', 'verify_unexecuted', 'false_premise', 'request_failed', 'request_too_large']);
@@ -219,8 +223,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(CODE_ITEM_ERRORS, ['key_missing', 'key_outside_contract', 'value_outside_list', 'text_over_limit',
     'dossier_key_unknown', 'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote',
     'file_not_readable', 'out_of_scope', 'path_ambiguous']);
+  // D147: and a receipt whose relative path names an existing file in more than one place of the change.
   assert.deepEqual(CODE_VOID_CAUSES, ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace',
-    'refutation_uncited']);
+    'refutation_uncited', 'receipt_path_ambiguous']);
   assert.deepEqual(CODE_REVIEW_TERMINALS, ['answered', 'unusable', 'failed', 'not_sent']);
   // F3b (D111): an accounting agent is a part of the step, and the footer counts the items it left unaccounted.
   assert.deepEqual(CODE_STEP_PARTS, ['review', 'repair', 'verify', 'batch', 'account']);
@@ -228,7 +233,7 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
     'commands_left_out', 'unaccounted']);
   // D105: the request manifest's states and reasons, and what the code review saw.
   assert.deepEqual(ledger.CODE_SHOWN_STATES, ['whole', 'in_part', 'hunks_only', 'left_out', 'not_shown']);
-  assert.deepEqual(ledger.CODE_LEFT_OUT_REASONS, ['block_cap', 'request_bound', 'item_cap']);
+  assert.deepEqual(ledger.CODE_LEFT_OUT_REASONS, ['block_cap', 'request_bound', 'item_cap', 'unit_cap']);
   assert.deepEqual(ledger.CODE_SEEN_STATES, ['whole', 'in_part', 'hunks_only', 'not_seen', 'lines_unknown']);
   assert.deepEqual([CODE_PASS_PROFILE.shownStates, CODE_PASS_PROFILE.leftOutReasons, CODE_PASS_PROFILE.seenStates],
     [ledger.CODE_SHOWN_STATES, ledger.CODE_LEFT_OUT_REASONS, ledger.CODE_SEEN_STATES]);
@@ -260,14 +265,16 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // checking agents /3 (D110: the premise contract; /2 the cleanup: nothing held); step 1 retired; the session's
   // untouched. D109: the snapshot /12 (a recorded write outside the working directory classed by where it lies).
   // D113 and D114 (0.3.0-beta.5): the snapshot /13 (the session's own change), the pass /13 and the checking agents /4
-  // (the listed asks), each one link after 0.3.0-beta.4's.
+  // (the listed asks), each one link after 0.3.0-beta.4's. D152 (0.3.0-beta.9): the checking agents /5 (the check
+  // judges truth only), one link after 0.3.0-beta.5's /4.
   assert.equal(CODE_SNAPSHOT_VERSION, 'sonah.code-snapshot/13');
   assert.equal(CODE_PASS_VERSION, 'sonah.code-pass/13');
-  assert.equal(CODE_VERIFY_VERSION, 'sonah.code-verify/4');
+  assert.equal(CODE_VERIFY_VERSION, 'sonah.code-verify/5');
+  assert.deepEqual(TRUTH_ONLY_VERSIONS.verify, { before: LISTED_ASKS_VERSIONS.verify.after, after: CODE_VERIFY_VERSION });
   assert.deepEqual(SESSION_CHANGE_VERSIONS.snapshot, { before: WHERE_IT_LIES_VERSIONS.snapshot.after,
     after: CODE_SNAPSHOT_VERSION });
   assert.deepEqual([LISTED_ASKS_VERSIONS.pass, LISTED_ASKS_VERSIONS.verify], [{ before: ONE_BOUND_VERSIONS.pass.after,
-    after: CODE_PASS_VERSION }, { before: PREMISE_VERSIONS.verify.after, after: CODE_VERIFY_VERSION }]);
+    after: CODE_PASS_VERSION }, { before: PREMISE_VERSIONS.verify.after, after: 'sonah.code-verify/4' }]);
   assert.deepEqual(PREMISE_VERSIONS.verify, { before: CLEANUP_VERSIONS.verify.after, after: 'sonah.code-verify/3' });
   assert.equal(CODE_VERIFY_PASSES, 1);
   assert.deepEqual(ONE_BOUND_VERSIONS.pass, { before: REFUSED_AFTER_EDIT_VERSIONS.pass.after, after: 'sonah.code-pass/12' });
@@ -344,8 +351,11 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual([AGENT_PROMPT_READER_VERSIONS.page.before, AGENT_PROMPT_READER_VERSIONS.story.before,
     AGENT_PROMPT_READER_VERSIONS.model.before], [COST_READER_VERSIONS.page.after, COST_READER_VERSIONS.story.after,
     COST_READER_VERSIONS.model.after]);
+  // D152 (0.3.0-beta.9): the report model once more (TRUTH_ONLY_READER_VERSIONS), one link after 0.3.0-beta.7's; the
+  // page and the story did not move.
+  assert.deepEqual(TRUTH_ONLY_READER_VERSIONS.model.before, AGENT_PROMPT_READER_VERSIONS.model.after);
   assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [AGENT_PROMPT_READER_VERSIONS.page.after,
-    AGENT_PROMPT_READER_VERSIONS.story.after, AGENT_PROMPT_READER_VERSIONS.model.after]);
+    AGENT_PROMPT_READER_VERSIONS.story.after, TRUTH_ONLY_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.
@@ -369,9 +379,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D105: the rule files' block takes the change block's own literal; a session text a side, the dossier's 2,000.
   assert.deepEqual([codePassModule.CODE_RULE_BLOCK_MAX_BYTES, CODE_PASS_PROFILE.shownSideBytes,
     CODE_PASS_PROFILE.yieldOrder], [400_000, 2_000, ['commands', 'hunks', 'rules']]);
-  // D110: a check's premises, at most 6, each at most 300 characters.
+  // D110: a check's premises, at most 6, each at most 300 characters. D152: at most 4 receipts of what a finding breaks.
   assert.deepEqual(TRACE_LIMITS, { titleChars: 160, claims: 6, claimChars: 300, stepChars: 300, steps: 12, inputChars: 300,
-    questionChars: 1000, explanationChars: 2000, premises: 6, premiseChars: 300 });
+    questionChars: 1000, explanationChars: 2000, premises: 6, premiseChars: 300, breaks: 4 });
   assert.deepEqual(CODE_REVIEW_ITEMS_MAX, { findings: 20, questions: 20 });
   assert.ok(Object.isFrozen(CODE_REVIEW_ITEMS_MAX));
   assert.equal(CODE_PASS_PROFILE.answerItems, CODE_REVIEW_ITEMS_MAX);
@@ -426,14 +436,51 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(profileBeforeTriage(current), triageBack);
   assert.deepEqual(current.codePass.triage, JSON.parse(JSON.stringify({ levels: ['high', 'medium', 'low'],
     limits: { entries: 120, impactChars: 200, actionChars: 160, labelChars: 48, labelWords: 6, files: 200, fileChars: 100 },
-    errors: ledger.TRIAGE_ERRORS, table: TIER_REVERT_VERSIONS.table.after, kinds: ITEM_KIND_TABLE })));
+    errors: ledger.TRIAGE_ERRORS, table: TRUTH_ONLY_VERSIONS.tiers.after, kinds: ITEM_KIND_TABLE })));
+  assert.equal(TRUTH_ONLY_VERSIONS.tiers.before, TIER_REVERT_VERSIONS.table.after);
   // D122 (d) (0.3.0-beta.5, the dogfood rerun's relative names) moved the item errors alone (`path_ambiguous`, last):
   // rendered back (`profileBeforeRelativePlace`, which every older render-back applies first), D122 (b)'s.
+  // D147 (0.3.0-beta.9) moved the void causes alone (`receipt_path_ambiguous`, last): rendered back
+  // (`profileBeforeReceiptPlace`, which `profileBeforeRelativePlace` applies first), D122 (d)'s.
+  // D149 (0.3.0-beta.9) moved the left-out reasons (`unit_cap`, last) and the triage errors (`file_not_in_unit`, last)
+  // and added the units member: rendered back (`profileBeforeUnits`, which `profileBeforeReceiptPlace` applies first),
+  // D147's.
+  // D152 (0.3.0-beta.9) moved the checking agents' version (/5), the refutation reasons (`not_against_goal` gone, the
+  // last), the trace limits (`breaks`), the tier table (/4: the kind `code_finding_open`) and added the tie member:
+  // rendered back (`profileBeforeTruthOnly`, which `profileBeforeUnits` applies first), D149's.
+  const truthBack = profileBeforeTruthOnly(current);
+  assert.deepEqual([current.codePass.verify, current.codePass.refutations.includes(TRUTH_ONLY_REFUTATION),
+    current.codePass.trace.breaks, current.codePass.tie, Object.hasOwn(current.codePass.triage.kinds, TRUTH_ONLY_KIND)],
+  [TRUTH_ONLY_VERSIONS.verify.after, false, 4, { rule: 'leads-from-or-grounded-breaks' }, true]);
+  const { tie: _tie, trace: { breaks: _breaks, ...traceBefore }, ...withoutTie } = current.codePass;
+  const { [TRUTH_ONLY_KIND]: _open, ...kindsBefore } = current.codePass.triage.kinds;
+  assert.deepEqual(truthBack, { ...current, codePass: { ...withoutTie, verify: TRUTH_ONLY_VERSIONS.verify.before,
+    refutations: [...current.codePass.refutations, TRUTH_ONLY_REFUTATION], trace: traceBefore,
+    triage: { ...current.codePass.triage, table: TRUTH_ONLY_VERSIONS.tiers.before, kinds: kindsBefore } } });
+  const unitsBack = profileBeforeUnits(current);
+  assert.deepEqual([current.codePass.leftOutReasons.at(-1), unitsBack.codePass.leftOutReasons, current.codePass.units],
+    [UNITS_LEFT_OUT_REASON, current.codePass.leftOutReasons.slice(0, -1), { limits: { units: 50, inFlight: 6 },
+      edges: ['dossier', 'directory', 'parent', 'coupled', 'toc'],
+      generated: ['linguist-generated', 'linguist-vendored', 'diff-unset', 'lock-file'],
+      lockFiles: ['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
+        'poetry.lock', 'uv.lock', 'Pipfile.lock', 'Cargo.lock', 'go.sum', 'Gemfile.lock', 'composer.lock', 'gradle.lockfile',
+        'packages.lock.json'] }]);
+  assert.deepEqual([current.codePass.triage.errors.at(-1), unitsBack.codePass.triage.errors],
+    [UNITS_TRIAGE_ERROR, current.codePass.triage.errors.slice(0, -1)]);
+  const { units: _units, ...withoutUnits } = truthBack.codePass;
+  assert.deepEqual(unitsBack, { ...truthBack, codePass: { ...withoutUnits,
+    leftOutReasons: truthBack.codePass.leftOutReasons.slice(0, -1),
+    triage: { ...truthBack.codePass.triage, errors: truthBack.codePass.triage.errors.slice(0, -1) } } });
+  const receiptBack = profileBeforeReceiptPlace(current);
+  assert.deepEqual([current.codePass.voidCauses.at(-1), receiptBack.codePass.voidCauses],
+    [RECEIPT_PLACE_VOID_CAUSE, current.codePass.voidCauses.slice(0, -1)]);
+  assert.deepEqual({ ...receiptBack, codePass: { ...receiptBack.codePass, voidCauses: undefined } },
+    { ...unitsBack, codePass: { ...unitsBack.codePass, voidCauses: undefined } });
   const placeBack = profileBeforeRelativePlace(current);
   assert.deepEqual([current.codePass.itemErrors.at(-1), placeBack.codePass.itemErrors],
     [RELATIVE_PLACE_ITEM_ERROR, current.codePass.itemErrors.slice(0, -1)]);
   assert.deepEqual({ ...placeBack, codePass: { ...placeBack.codePass, itemErrors: undefined } },
-    { ...current, codePass: { ...current.codePass, itemErrors: undefined } });
+    { ...receiptBack, codePass: { ...receiptBack.codePass, itemErrors: undefined } });
   // D122 (b) (0.3.0-beta.5, the integration) moved the tier table alone (`sonah.tiers/3`: every kind without
   // `refusedReadTier`): rendered back (`profileBeforeTierRevert`, which every older render-back applies first), D114's:
   // the table at /2, `failure_passed_over` Good to know for a refused read and every other kind null, nothing else moved.
@@ -500,9 +547,13 @@ test('agentic code step: the review agent\'s brief is Pullfrog\'s Review mode me
     'Give no rating, score, rank or confidence, and no approval or verdict on the change as a whole. The level in '
     + '"triage" is the only importance you give.'])
     for (const brief of briefs) assert.ok(flat(brief).includes(words), words);
-  for (const words of ['REFUTE the finding by tracing', 'not_against_goal', 'cannot_tell', 'You are not given the agent\'s',
-    'quote the anchor\'s lines and at least one line the trace quotes', 'You have at most 60 turns'])
+  // D152 (code-verify/5): the check judges truth only, and lists what the behaviour breaks.
+  for (const words of ['REFUTE the finding by tracing', 'cannot_tell', 'You are not given the agent\'s',
+    'quote the anchor\'s lines and at least one line the trace quotes', 'You have at most 60 turns',
+    'Judge whether the finding is true, never whether it matters', '- breaks: what the behaviour the title states '
+    + 'contradicts, 0 to 4', 'or the person\'s words, as {path: null, side: "session"'])
     assert.ok(flat(CODE_VERIFY_SYSTEM).includes(words), words);
+  assert.ok(!CODE_VERIFY_SYSTEM.includes('not_against_goal'), 'no refutation by importance');
   for (const words of ['false_premise', 'one entry for EVERY key', 'You are not given the agent\'s'])
     assert.ok(flat(CODE_BATCH_VERIFY_SYSTEM).includes(words), words);
   // The contract the transport's structured output enforces, closed at every level: findings and questions, and nothing
@@ -684,7 +735,11 @@ test('agentic code step: the change block is bounded; a path whose hunks do not 
   assert.ok(Buffer.byteLength(change) <= 3_000);
   // Under the real bound both fit; the record says which was clipped when one does not (part A, the setting off).
   assert.deepEqual([...changeBlock(files).shown].sort(), ['big.js', 'src/parse.js']);
-  const over = files.map((f) => (f.path === 'big.js' ? { ...f, hunks: Array.from({ length: 30 }, () => f.hunks[0]) } : f));
+  // D149: hunks that fit the change block apart are planned in units of their own and shown
+  // (d149-unit-requests.test.js); here big.js's one hunk is over the change block's cap alone.
+  const huge = Array.from({ length: 9_000 }, (_, i) => `export const value${i} = ${i};`);
+  const over = files.map((f) => (f.path === 'big.js' ? { ...f, text: `${huge.join('\n')}\n`, hunks: [{ ...f.hunks[0],
+    newCount: huge.length, rows: huge.map((text, i) => ({ type: '+', text, old: null, new: i + 1 })) }] } : f));
   const result = await run(agents(), { snapshot: over, wholeFiles: false });
   // D109: hunks left out for room are `left_out`, never `oversize` (a file too large on its own). Its review: these 30
   // hunks alone are over the change block's cap, so no request can show them: too large on its own, `oversize`, named
@@ -1758,9 +1813,10 @@ test('agentic code step: "holds" needs the anchor and any line the trace quotes 
     anchor: { path: 'scan.js', side: 'new', startLine: 2, endLine: 6 } });
   const receiptsAt = (ns) => ns.map((n) => step(n)).map(({ path, side, startLine, endLine, quote }) => ({ path, side,
     startLine, endLine, quote }));
+  // D152: what the finding breaks, a line that grounds, so that it is tied and published as before.
   const cite = (...ns) => () => ({ verdict: 'holds', reason: null, claims: [{ claim: 1, verdict: 'holds' }],
     premises: [{ premise: 'The scan reads these lines.', source: 'repository', receipts: receiptsAt(ns) }],
-    receipts: receiptsAt(ns), explanation: 'Traced.' });
+    breaks: receiptsAt(ns), receipts: receiptsAt(ns), explanation: 'Traced.' });
   const go = (verify, seen = []) => run(agents({ seen, review: answer({ findings: [finding] }), verify }), { snapshot, repo });
   // The anchor and the first step, not the last: published (the old rule withheld it).
   assert.equal((await go(cite(3))).codePass.findings.length, 1);
@@ -1783,7 +1839,7 @@ test('agentic code step: "holds" needs the anchor and any line the trace quotes 
 
 test('agentic code step: a refutation that says the finding misreads the code must quote it — else void and re-asked naming the cause', async () => {
   const uncited = () => ({ verdict: 'refuted', reason: 'incorrect', claims: [{ claim: 1, verdict: 'false' }],
-    premises: [LANGUAGE_PREMISE], receipts: [], explanation: 'It does not.' });
+    premises: [LANGUAGE_PREMISE], breaks: [], receipts: [], explanation: 'It does not.' });
   const cited = () => ({ ...uncited(), receipts: [{ path: 'src/parse.js', side: 'new', startLine: 3, endLine: 3,
     quote: 'return parts.map((part) => part.trim());' }] });
   const seen = [];
@@ -1795,7 +1851,8 @@ test('agentic code step: a refutation that says the finding misreads the code mu
     verify: () => (++asked === 1 ? uncited() : cited()) }));
   assert.deepEqual(refuted.codePass.withheld.map(({ what, reason, text, check }) => ({ what, reason, text, check })), [{
     what: 'finding', reason: 'verify_refuted', text: reviewFinding().title,
-    check: { verdict: 'refuted', reason: 'incorrect', explanation: 'It does not.', premises: [LANGUAGE_PREMISE] } }]);
+    check: { verdict: 'refuted', reason: 'incorrect', explanation: 'It does not.', premises: [LANGUAGE_PREMISE],
+      breaks: [] } }]);
   // A refutation of another kind needs no quote; a receipt that does not ground voids any verdict.
   const unsupported = await run(agents({ review: answer({ findings: [reviewFinding()] }), verify: () => ({ ...uncited(),
     reason: 'step_unsupported' }) }));
@@ -1805,18 +1862,18 @@ test('agentic code step: a refutation that says the finding misreads the code mu
   assert.deepEqual(ungrounded.codePass.withheld.map((w) => w.cause), ['receipt_ungrounded']);
 });
 
-test('agentic code step: "not against the goal" becomes a question for the person; "cannot tell" is withheld; a false supporting claim is cut and kept', async () => {
+test('agentic code step (D152): the check judges truth only — "not against the goal" is no reason, a verdict that gives it is void and asked once more; "cannot tell" is withheld; a false supporting claim is cut and kept', async () => {
   const finding = reviewFinding({ kind: 'missed_case', leadsFrom: [CLAIM, DECISION, ASK], claims: ['True.', 'False one.'] });
   const verdict = (over) => (f) => ({ ...holds(f), premises: [LANGUAGE_PREMISE], ...over });
   const goal = 'Behaviour as stated; whether it matters is the person\'s call.';
-  const routed = await run(agents({ review: answer({ findings: [finding] }), verify: verdict({ verdict: 'refuted',
+  const seen = [];
+  const routed = await run(agents({ seen, review: answer({ findings: [finding] }), verify: verdict({ verdict: 'refuted',
     reason: 'not_against_goal', receipts: [], explanation: goal }) }));
+  assert.deepEqual(labels(seen), ['code-review:agent', 'code-verify:F1', 'code-verify:F1:reask']);
+  assert.match(seen.at(-1).prompt, /^- shape \(.*\) at reason$/m);
   assert.deepEqual(routed.codePass.findings, []);
-  assert.deepEqual(routed.codePass.withheld, []);
-  assert.deepEqual(routed.codePass.questions, [{ question: finding.title, concerns: { key: DECISION, kind: 'decision',
-    source: 'decisions', index: 0, id: `sha256:${'2'.repeat(64)}` }, quote: null, from: 'finding',
-  finding: { title: finding.title, kind: 'missed_case', anchor: finding.anchor },
-  check: { verdict: 'refuted', reason: 'not_against_goal', explanation: goal, premises: [LANGUAGE_PREMISE] }, id: 'Q1' }]);
+  assert.deepEqual([routed.codePass.questions, routed.codePass.open], [[], []], 'no question from a finding, none open');
+  assert.deepEqual(routed.codePass.withheld.map(({ reason, cause }) => [reason, cause]), [['verify_unexecuted', 'shape']]);
   const unsettled = await run(agents({ review: answer({ findings: [finding] }), verify: verdict({ verdict: 'cannot_tell',
     receipts: [], explanation: 'It rests on the compiler.' }) }));
   assert.deepEqual(unsettled.codePass.withheld.map(({ reason, check }) => [reason, check.verdict]),
@@ -1937,9 +1994,10 @@ test('agentic code step: the record — the report shape, the agent\'s instrumen
   const pass = result.codePass;
   // D105 (code-pass/12): the review request's manifest, each agent request's reading record and where the published
   // receipts sit join the record. D110: the findings code's label does not confirm, apart (`unconfirmed`).
-  // F3b (D111): the accounting of the items in scope, last.
+  // F3b (D111): the accounting of the items in scope, last. D152: the confirmed findings tied to no written promise,
+  // apart (`open`).
   assert.deepEqual(Object.keys(pass), ['version', 'ran', 'base', 'gaps', 'coverage', 'files', 'agent', 'calls', 'findings',
-    'unconfirmed', 'questions', 'withheld', 'footer', 'triage', 'triageDropped', 'filesDropped', 'manifest', 'agents', 'receiptPlaces',
+    'unconfirmed', 'open', 'questions', 'withheld', 'footer', 'triage', 'triageDropped', 'filesDropped', 'manifest', 'agents', 'receiptPlaces',
     'fates', 'account']);
   // D107 (F3a): each item of the answer, its one fate; with no repair, it stands.
   assert.deepEqual(pass.fates, [{ from: 'answer', list: 'findings', index: 0, fate: 'kept' }]);

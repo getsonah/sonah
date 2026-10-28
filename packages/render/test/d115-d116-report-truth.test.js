@@ -15,7 +15,7 @@
 // Synthetic sessions only: no recording, no model, no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, reportPlacement } from '../report-model.js';
+import { reportModel, reportPlacement, reportItems } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_PARTS, REPORT_NOT_CHECKED_WORDS, REPORT_ITEM_WORDS, REPORT_TIER_WHY,
@@ -27,7 +27,7 @@ import { ABSENCE_PROOFS, ABSENCE_REGISTRY, ABSENCE_SCOPES, REVIEW_ROW_KEYS, READ
   from './absence-audit.js';
 
 const TIERS = ['must_act', 'must_know', 'good_to_know'];
-const itemsOf = (model) => TIERS.flatMap((tier) => model.tiers[tier]);
+const itemsOf = (model) => reportItems(model);
 const every = (model) => itemsOf(model).flatMap((item) => [item, ...item.members]);
 const textOf = (parts) => parts.map((p) => p.text).join('');
 const R = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
@@ -297,7 +297,8 @@ test('D116\'s review: a question lifts the tier of the item it names only where 
   unplaced.codePass.questions[0] = { ...unplaced.codePass.questions[0], concerns: decisionRef(unplaced, 2) };
   const model = reportModel(session, unplaced, repoFacts());
   const q1 = ofQuestion(model, 0);
-  assert.equal(q1.tier.final, 'must_know');
+  // D161: with no checked tie it is at most Good to know (its check ran: Must know by default).
+  assert.deepEqual([q1.tier.default, q1.tier.final, q1.tier.bound], ['must_know', 'good_to_know', 'untied_ceiling']);
   assert.equal(chose(model).tier.final, 'good_to_know');
   assert.equal(chose(model).why, REPORT_TIER_WHY.byDefault(REPORT_KIND_WORDS.decision_chose, 'Good to know'));
   assert.deepEqual([pointers(q1), q1.related.items], [[], []]);

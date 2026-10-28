@@ -175,9 +175,9 @@ test('D138 (review): a contradicted claim that a code finding holds (D97\'s fold
   report.findings[at] = { ...report.findings[at], codeCheck: { outcome: 'contradicted-by-code', receipts: [],
     by: 'finding', finding: claimFalse.id } };
   const model = reportModel(session, report, repoFacts());
-  // The two the code review rated high, then the code finding that holds the contradicted claim, and the edit against
-  // your words; then the rest in the kinds' order.
-  assert.deepEqual(kinds(model, 'must_act'), ['code_bug', 'decision_unasked', 'code_claim_false', 'edit_against_instruction',
+  // The one the code review rated high (D161: the other, a decision, is in the report's second part), then the code
+  // finding that holds the contradicted claim, and the edit against your words; then the rest in the kinds' order.
+  assert.deepEqual(kinds(model, 'must_act'), ['code_bug', 'code_claim_false', 'edit_against_instruction',
     'ask_not_done', 'ask_partly_done', 'code_ask_not_met', 'code_contract']);
   assert.equal(kinds(model, 'must_act').includes('claim_contradicted'), false, 'folded, not an item of its own');
 });

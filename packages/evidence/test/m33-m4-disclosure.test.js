@@ -56,7 +56,7 @@ const edits = (report) => report.findings.filter((f) => f.kind === 'edit_under_n
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
 
 test('M4: the closed vocabularies, the proposition and the versions', () => {
-  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
+  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed', 'corrected_later']);
   assert.deepEqual(ledger.DISCLOSURE_REJECTIONS, ['malformed', 'unsupplied', 'ungrounded', 'not_later', 'cross_actor',
     'refuted', 'unsettled', 'unexecuted']);
   assert.ok(Object.isFrozen(ledger.DISCLOSURE_REJECTIONS));

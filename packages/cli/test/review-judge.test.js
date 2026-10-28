@@ -51,9 +51,11 @@ test('local subscription preserves system, sends private prompt only on stdin, i
         assert.equal(args[args.indexOf(flag) + 1], value);
       assert.ok(args.includes('--strict-mcp-config')); assert.ok(args.includes('--no-session-persistence'));
       assert.equal(options.env.ANTHROPIC_API_KEY, undefined); assert.equal(options.env.ANTHROPIC_BASE_URL, undefined);
-      // M33 (l): refusal fallback and automatic memory are off; the 2.1.278 binary reads both names.
+      // M33 (l): refusal fallback and automatic memory are off; the 2.1.278 binary reads both names. D151: safe mode
+      // and the CLAUDE.md switch on every call.
       assert.deepEqual(options.env, { HOME: '/synthetic', PATH: '/bin', CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
-        CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' });
+        CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CODE_SAFE_MODE: '1',
+        CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1' });
       assert.equal(args[args.indexOf('--model') + 1], 'sonnet');
       assert.ok(!args.includes('--bare'), 'bare mode would disable subscription OAuth authentication');
       assert.equal((await stat(directory)).mode & 0o777, 0o700);
@@ -272,7 +274,8 @@ test('M33 (l) the argv pins --effort high beside the model, and the answer key b
   assert.equal(args.filter((a) => a === '--effort').length, 1);
   assert.deepEqual(args, reviewTransportArguments({ backend: 'claude-cli', model: M33_MODEL, system: request.system }).argv);
   assert.deepEqual(fake.capture.options.env, { CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
-    CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' });
+    CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CODE_SAFE_MODE: '1',
+    CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1' });
 });
 
 test('M33 (m) a timeout sends SIGTERM first and SIGKILL only after the fixed grace', async (t) => {

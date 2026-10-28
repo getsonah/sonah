@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="generator" content="sonah.session-page/46 sonah.report-model/8">
+<title>SYNTHETIC_R_ASK1: fix greet.js so empty names give the guest greeting, and add</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f4; --card: #ffffff; --panel: rgba(235,232,228,.6); --footer: #eeede6; --ink: #251f19;
+  --muted: #68615a; --faint: #746b62; --line: #ebe8e4; --line-strong: #d4cdc7; --wash: #f7f6f2; --accent: #f48d16;
+  --accent-ink: #9a5300; --accent-soft: rgba(244,141,22,.10); --accent-edge: rgba(244,141,22,.35);
+  --add: rgba(46,140,74,.10); --del: rgba(200,64,40,.09); --mark: rgba(244,141,22,.08);
+  --shadow: 0 1px 2px rgba(37,31,25,.04), 0 24px 60px -24px rgba(37,31,25,.22);
+  --sans: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --display: "DM Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #161310; --card: #1e1a16; --panel: rgba(255,255,255,.04); --footer: #1b1814; --ink: #f1ece6;
+    --muted: #b5aca2; --faint: #a39a90; --line: #2e2823; --line-strong: #463e37; --wash: #24201b; --accent: #f59a2e;
+    --accent-ink: #ffb45e; --accent-soft: rgba(245,154,46,.14); --accent-edge: rgba(245,154,46,.40);
+    --add: rgba(90,190,120,.14); --del: rgba(240,110,90,.14); --mark: rgba(245,154,46,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 24px 60px -24px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161310; --card: #1e1a16; --panel: rgba(255,255,255,.04); --footer: #1b1814; --ink: #f1ece6;
+    --muted: #b5aca2; --faint: #a39a90; --line: #2e2823; --line-strong: #463e37; --wash: #24201b; --accent: #f59a2e;
+    --accent-ink: #ffb45e; --accent-soft: rgba(245,154,46,.14); --accent-edge: rgba(245,154,46,.40);
+    --add: rgba(90,190,120,.14); --del: rgba(240,110,90,.14); --mark: rgba(245,154,46,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 24px 60px -24px rgba(0,0,0,.6);
+}
+:root[data-theme="light"] { color-scheme: light; }
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4, p, figure, blockquote, pre, ol, ul { margin: 0; }
+a { color: var(--accent-ink); }
+code, .mono { font-family: var(--mono); }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.page { max-width: 860px; margin: 0 auto; padding: 32px 16px 80px; display: flex; flex-direction: column; gap: 24px; }
+.masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.wordmark { display: inline-flex; align-items: center; gap: 9px; font: 600 22px/1 var(--display); letter-spacing: -0.02em; }
+.logo { width: 26px; height: 26px; flex-shrink: 0; }
+.l-bg { fill: var(--ink); } .l-fg { fill: var(--bg); } .l-dim { opacity: .55; } .l-ac { fill: var(--accent); }
+.card-ui { width: 100%; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
+  box-shadow: var(--shadow); }
+.card-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 14px 18px;
+  background: var(--wash); border-bottom: 1px solid var(--line); }
+.card-bar h1, .card-bar h2 { font: 600 14px/1.3 var(--display); }
+.card-bar .mono { font-size: 12px; color: var(--faint); }
+.content { padding: clamp(16px, 4vw, 24px); display: flex; flex-direction: column; gap: 8px; }
+.title-words { font: 500 18px/1.4 var(--display); overflow-wrap: anywhere; }
+.meta { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.count { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.count a, .count-labels a { text-decoration: none; }
+.count-labels, .count-empty { font-size: 14px; overflow-wrap: anywhere; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.tag { display: inline-block; font: 600 11px/1.4 var(--mono); color: var(--ink); background: var(--wash);
+  border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 5px; margin-right: 4px; }
+.message { font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+mark.ask { background: var(--mark); color: inherit; border-bottom: 2px solid var(--accent-edge); padding: 1px 0; }
+mark.ask.s-notDone, mark.ask.s-partly, mark.ask.s-doneCode, mark.ask.s-notCheckedCode { border-bottom-color: var(--accent); }
+.join { color: var(--faint); }
+.note { font-size: 13px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.cut { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.rows { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rows li { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+ol.rows.runs { list-style: decimal; padding-left: 28px; }
+.part.tier { display: flex; flex-direction: column; gap: 12px; }
+.part.tier > h2, .fold-tier > summary h2 { font: 600 17px/1.3 var(--display); }
+.item { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
+.item-head { font: 500 16px/1.45 var(--display); overflow-wrap: anywhere; }
+.item-head .n { font: 600 12px/1 var(--mono); color: var(--faint); margin-right: 4px; }
+.item-head .scope { color: var(--accent-ink); }
+.item-quote { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--accent); font-size: 14px; overflow-wrap: anywhere; }
+.line { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.line .label, .note .label { margin-right: 6px; }
+em.by-code-review, em.by-session-review { font-style: italic; }
+q.said { quotes: "\201C" "\201D"; color: var(--ink); background: var(--accent-soft); border-radius: 3px; padding: 0 2px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+q.said::before, q.said::after { color: var(--accent-ink); font-weight: 700; }
+q.said code { font: inherit; }
+a.gh { font-size: 12px; }
+details > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  font-size: 13px; color: var(--muted); }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ""; flex-shrink: 0; align-self: center; width: 0; height: 0; border-style: solid;
+  border-width: 4px 0 4px 6px; border-color: transparent transparent transparent var(--accent); transition: transform .15s ease; }
+details[open] > summary::before { transform: rotate(90deg); }
+details.evidence { margin-top: 4px; }
+details.evidence > *:not(summary) { margin-top: 6px; }
+details.row-evidence { display: inline-block; vertical-align: baseline; }
+details.row-evidence[open] { display: block; }
+details.row-evidence > *:not(summary) { margin-top: 4px; }
+details.agent-prompt { margin-top: 4px; }
+details.agent-prompt > *:not(summary) { margin-top: 6px; }
+pre.agent-prompt-text { font: 12.5px/1.55 var(--mono); color: var(--ink); background: var(--wash); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
+  -webkit-user-select: all; user-select: all; }
+details.item.gtk > summary { font: 500 15px/1.45 var(--display); color: var(--ink); }
+.members { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.member { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 6px; }
+.member-head, details.member > summary { font: 500 15px/1.45 var(--display); color: var(--ink); overflow-wrap: anywhere; }
+.member .tier-word { color: var(--muted); }
+.fold-tier { display: flex; flex-direction: column; gap: 12px; }
+.trail-group { display: flex; flex-direction: column; gap: 8px; }
+.trail-group > summary { font: 600 15px/1.45 var(--display); color: var(--ink); }
+.trail-more { display: flex; flex-direction: column; gap: 8px; }
+.trail-more > summary { font: 500 15px/1.45 var(--display); color: var(--muted); }
+.trail-above { font: 500 15px/1.45 var(--display); color: var(--ink); overflow-wrap: anywhere; }
+.tier-tag { margin: 0 0 0 2px; }
+.fold-part > summary.card-bar { color: var(--ink); }
+.fold-part:not([open]) > summary.card-bar { border-bottom: none; }
+.sub-h { font: 600 14px/1.3 var(--display); margin-top: 12px; }
+pre.diff { font: 12.5px/1.55 var(--mono); color: var(--ink); background: var(--wash); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 0; overflow-x: auto; }
+pre.diff .lines { display: inline-block; min-width: 100%; }
+pre.diff .ln { display: block; padding: 0 14px; white-space: pre; }
+pre.diff .gutter { color: var(--faint); }
+pre.diff .add { background: var(--add); }
+.files { list-style: none; padding: 0; }
+.files li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.files li:first-child { border-top: none; }
+.cmd code { display: block; font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--wash);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; overflow-wrap: anywhere; }
+.foot { display: flex; flex-direction: column; gap: 8px; padding: 24px clamp(16px, 4vw, 24px); border-radius: 20px;
+  background: var(--footer); font-size: 14px; color: var(--muted); }
+.foot .gen { padding-bottom: 10px; border-bottom: 1px dashed var(--line-strong); font-family: var(--mono); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  details > summary::before { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+<header class="masthead"><p class="wordmark"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="l-bg" width="64" height="64" rx="14"/><rect class="l-fg" x="14" y="17" width="26" height="6" rx="3"/><rect class="l-fg l-dim" x="14" y="29" width="22" height="6" rx="3"/><rect class="l-ac" x="40" y="27" width="10" height="10" rx="2"/><rect class="l-fg" x="14" y="41" width="30" height="6" rx="3"/></svg>Sonah</p></header>
+<article class="card-ui review" aria-labelledby="review-title"><div class="card-bar"><h1 id="review-title">Sonah review</h1><span class="mono">Claude Code recording · 1 file changed, +2 −? · 5 commands</span></div><div class="content"><p class="title-words"><q class="said">SYNTHETIC_R_ASK1: fix greet.js so empty names give the guest greeting, and add</q>…</p><p class="meta no-code">No code was reviewed. Reason: this review ran without the code review. The items show no impact and no action.</p><p class="meta runs">After its last edit, the agent ran 2 commands. Results: 1 exited with code 0.</p><p class="count"><a href="#must-act">Must act 0</a> · <a href="#must-know">Must know 1</a> · <a href="#good-to-know">Good to know 2 (folded)</a> · <a href="#prompt">Your prompt: 2 done, 1 not checked after later work</a></p><p class="count-recheck">After later work, 3 items left Must act: 1 ask done, 1 corrected, 1 now in Must know.</p></div></article>
+
+<section class="part tier" id="must-act"><h2>Must act (0)</h2></section><section class="part tier" id="must-know"><h2>Must know (1)</h2><article class="item t-verify" id="item-1"><p class="item-head"><span class="n">1</span> <strong class="type">Verify:</strong> Sonah did not check ask 2 after later work.</p><blockquote class="item-quote"><q class="said">ask a helper to check the docs, then update the changelog</q></blockquote><p class="line where"><span class="label">Where:</span> <a href="#ask-2">ask 2</a></p><details class="evidence"><summary>Evidence · Why Must know</summary><p class="line"><span class="label">Before the later work, the session review cited:</span> <q class="said">The changelog is not updated.</q></p><p class="note why">Sonah puts an ask that later work followed in Must know by default.</p><p class="note"><span class="label">Item id:</span> <code>58ecb4e3f369</code></p></details></article>
+</section>
+<details class="part tier fold-tier" id="good-to-know"><summary><h2>Good to know (2)</h2></summary><details class="item gtk t-verify" id="item-2"><summary><span class="n">2</span> <strong class="type">Verify:</strong> A recorded result contradicts a claim of the agent&#39;s. A later recorded result shows that the claim holds.</summary><blockquote class="item-quote"><q class="said">All tests pass.</q></blockquote><details class="evidence"><summary>Evidence · Why Good to know</summary><p class="line"><span class="label">A recorded result shows:</span> <q class="said">not ok 1 - empty name gives the guest greeting</q></p><p class="line"><span class="label">A later recorded result shows:</span> <q class="said">ok 1 - empty name gives the guest greeting</q></p><p class="note why">Sonah puts a corrected claim in Good to know by default.</p><p class="note"><span class="label">Item id:</span> <code>574a27326f86</code></p></details></details><details class="item gtk t-verify" id="item-3"><summary><span class="n">3</span> <strong class="type">Verify:</strong> A recorded result contradicts a statement that the agent wrote into <code>/srv/r/README.md</code>. The agent replaced it in a later write. · <span class="mono">/srv/r/README.md</span></summary><blockquote class="item-quote"><q class="said">Empty names get the guest greeting.</q></blockquote><p class="line where"><span class="label">Where:</span> <code>/srv/r/README.md</code></p><details class="evidence"><summary>Evidence · Why Good to know</summary><p class="line"><span class="label">A recorded result shows:</span> <q class="said">not ok 1 - empty name gives the guest greeting</q></p><p class="line"><span class="label">The agent later wrote:</span> <q class="said">Empty names are refused with an error.</q></p><p class="note why">Sonah puts a statement that the agent wrote and replaced later in Good to know by default.</p><p class="note"><span class="label">Item id:</span> <code>af1b1660689e</code></p></details></details></details>
+
+<section class="card-ui part" id="prompt"><div class="card-bar"><h2>Your prompt (3 asks: 2 done, 1 not checked after later work)</h2></div><div class="content"><div class="message-block"><p class="message">SYNTHETIC_R_ASK1: <mark class="ask s-done" id="ask-1"><span class="tag">Done</span>fix greet.js so empty names give the guest greeting, and add a test for it</mark>.</p></div><div class="message-block"><p class="message">SYNTHETIC_R_ASK2: <mark class="ask s-notCheckedLater" id="ask-2"><span class="tag">Not checked after later work</span>ask a helper to check the docs, then update the changelog</mark>.</p></div><div class="message-block"><p class="message">SYNTHETIC_R_ASK3: <mark class="ask s-done" id="ask-3"><span class="tag">Done</span>now add the missing test</mark>.</p></div><ul class="rows ask-lines"><li>ask 2 · <span class="tag s-notCheckedLater">Not checked after later work</span> · See item 1.</li>
+</ul></div></section>
+<details class="card-ui part fold-part" id="did"><summary class="card-bar"><h2>What the agent did (1 file · 5 commands · 1 claim)</h2></summary><div class="content"><h3 class="sub-h">Files</h3><ul class="files"><li><code>/srv/r/README.md</code> · changed · <span class="mono">+2 −?</span> <a href="#item-3">→ item 3</a></li>
+</ul><h3 class="sub-h">Runs, from the recording, in order</h3><ol class="rows runs"><li id="run-1"><code>npm test</code> · failed, exit code 1 · not checked</li>
+<li id="run-2"><code>cat /srv/r/big.log</code> · Sonah found no result of it</li>
+<li id="run-3"><code>cat /srv/r/big.log</code> · Sonah found no result of it</li>
+<li id="run-4"><code>npm test</code> · exit code 0</li>
+<li id="run-5"><code>cat /srv/r/big.log</code> · Sonah found no result of it</li>
+</ol><h3 class="sub-h">Claims</h3><ul class="rows claims"><li id="claim-w1"><span class="tag">contradicted</span> <a href="#item-3">→ item 3</a> <q class="said">Empty names get the guest greeting.</q> · written into /srv/r/README.md</li>
+</ul><h3 class="sub-h">What the agent said it did not do</h3><p class="note">Sonah found no decision not to act in the agent&#39;s own words.</p><h3 class="sub-h">Decisions you settled</h3><p class="note">Sonah found no decision that you settled.</p></div></details>
+<details class="card-ui part fold-part" id="not-checked"><summary class="card-bar"><h2>What Sonah could not check (0 facts)</h2></summary><div class="content"><ul class="rows quiet"><li>Results: for 1 Sonah found no result.</li>
+</ul><h3 class="sub-h">The session review</h3><p class="note">Sonah finished its review of this session.</p></div></details>
+<footer class="foot"><p class="gen">Sonah · sonah.report-model/8</p><p>Text in quotation marks is word for word from the recording.</p><p>Titles, questions, labels and file notes in italics are the code review&#39;s words.</p><p>Words in italics inside Sonah&#39;s sentences are the session review&#39;s words.</p><p>Sonah checked only the marked parts of your message.</p><p>Read this report before you share it.</p></footer>
+</main>
+</body>
+</html>

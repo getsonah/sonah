@@ -84,7 +84,8 @@ test('D97 (7, 8, 11): the page and its .md, the printed lines, and code links af
   // typed and quoted for the shell, and how to get code links.
   const lines = first.out.split('\n');
   const count = lines.find((line) => line.startsWith('Must act '));
-  assert.match(count, /^Must act \d+ · Must know \d+ · Good to know \d+ · Your prompt: /);
+  // D161: the agent's decisions, when the review holds one, after the tiers.
+  assert.match(count, /^Must act \d+ · Must know \d+ · Good to know \d+ (?:· \d+ decisions?(?: \([^)]*\))? )?· Your prompt: /);
   assert.equal(count.includes('(folded)'), false);
   assert.equal(first.out.includes('Where your attention is needed'), false);
   const at = (text) => { const i = lines.indexOf(text); assert.ok(i >= 0, `${text}\n${first.out}`); return i; };

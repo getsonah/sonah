@@ -436,8 +436,9 @@ test('D106 on: the reads block fills its ranges smallest first within its cap; a
 test('D106 on: a changed file whose hunks hold every line but go over the change block\'s cap is shown whole when it '
   + 'fits its block, seen whole, the coverage complete; a file whose hunks the change block shows whole is not '
   + 'repeated', async () => {
-  // Two added files: each hunk holds every line of its file, and the two together are over the change block's cap.
-  const files = { 'src/x1.js': linesOf('xone', 4_500), 'src/x2.js': linesOf('xtwo', 4_800) };
+  // Two added files: each hunk holds every line of its file, and x2.js's alone is over the change block's cap (D149: two
+  // that fit apart but not together are planned as two units, each shown by its hunks: d149-unit-requests.test.js).
+  const files = { 'src/x1.js': linesOf('xone', 4_500), 'src/x2.js': linesOf('xtwo', 7_000) };
   const f = fixture({ files, rules: null });
   const off = (await runWith(f, agents(), { wholeFiles: false })).codePass;
   assert.deepEqual(off.manifest.review.files.map((x) => [x.path, x.state, x.reason ?? null]),
@@ -446,12 +447,12 @@ test('D106 on: a changed file whose hunks hold every line but go over the change
   const on = (await runWith(f, agents({ seen }), { wholeFiles: true })).codePass;
   const { prompt } = seen[0];
   const block = prompt.slice(prompt.indexOf(WHOLE_HEADING), prompt.indexOf(READS_HEADING));
-  assert.ok(block.includes(`FILE {"path":"src/x2.js","lines":4800}\n${String(1).padStart(6, ' ')}\txtwo 00001`));
-  assert.ok(block.includes(`${String(4800).padStart(6, ' ')}\txtwo 04800`), 'its last line too');
+  assert.ok(block.includes(`FILE {"path":"src/x2.js","lines":7000}\n${String(1).padStart(6, ' ')}\txtwo 00001`));
+  assert.ok(block.includes(`${String(7000).padStart(6, ' ')}\txtwo 07000`), 'its last line too');
   assert.ok(!block.includes('"path":"src/x1.js"'), 'the file whose hunks the change block shows is not repeated');
   assert.ok(!block.includes(WHOLE_NONE_WORDS.none));
   assert.deepEqual(on.manifest.review.files.map((x) => [x.path, x.state, x.shown, x.lines]),
-    [['src/x1.js', 'whole', [[1, 4_500]], 4_500], ['src/x2.js', 'whole', [[1, 4_800]], 4_800]]);
+    [['src/x1.js', 'whole', [[1, 4_500]], 4_500], ['src/x2.js', 'whole', [[1, 7_000]], 7_000]]);
   assert.ok(on.manifest.review.bytes.wholeFiles <= CODE_WHOLE_FILES.maxBytes);
   assert.deepEqual(codeSeenOf(on).files.map((x) => [x.path, x.state, x.changeSeen]),
     [['src/x1.js', 'whole', true], ['src/x2.js', 'whole', true]]);

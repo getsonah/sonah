@@ -264,7 +264,7 @@ test('M33 D F3: a notification joins only by exact recorded identities on a type
   assert.equal(twice.count('command_outcome_unknown'), 0);
 });
 
-test('M33 D F3: a queued task-notification attachment is the same typed carrier, and stays a declared row', async (t) => {
+test('M33 D F3: a queued task-notification attachment is the same typed carrier, read by its status (D150)', async (t) => {
   const r = await review(t, [
     ...launch('q1', 'bgqqq1', 'npm run q1'), queued('bgqqq1', 'q1', 'completed'),
     ...launch('q2', 'bgqqq2', 'npm run q2'), queued('bgqqq2', 'q2', 'failed', { origin: { kind: 'task-notification' } }),
@@ -277,9 +277,11 @@ test('M33 D F3: a queued task-notification attachment is the same typed carrier,
   assert.equal(act(r.raw, 'npm run q5').statusSource, COMMAND_STATUS_SOURCES.claudeTaskNotification, 'one fact twice');
   for (const cmd of ['npm run q3', 'npm run q4']) assert.equal(act(r.raw, cmd).statusSource, undefined, cmd);
   assert.equal(r.count('command_outcome_unknown'), 2);
-  // Its text is not read: every queued row stays a counted loss on its own channel — except (release fix 3b) q4's, a
-  // prompt with no origin on a typed recorder, which the labeller gives to the harness: harness context.
-  assert.equal(r.count('unsupported_message', 'observations'), 4);
+  // Its text is not read. D150 amends this test: a queued task notification (the one carrier rule) is read by its typed
+  // status, as one written as a user row is, and is no declared loss (q1, q2, q5); q3, whose human origin contradicts its
+  // notification mode, is no notification and stays a counted loss on its channel; (release fix 3b) q4's, a prompt with
+  // no origin on a typed recorder, the labeller gives to the harness: harness context.
+  assert.equal(r.count('unsupported_message', 'observations'), 1);
   assert.equal(r.count('unsupported_message', 'instructions'), 0);
 });
 

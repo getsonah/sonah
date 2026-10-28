@@ -250,15 +250,17 @@ test('M33 D: content-bearing attachments are declared on their own channel, neve
   // Release fix 3b (2026-10-12): the two rows the labeller gives to the harness — the compaction's file reference and
   // the queued prompt with no origin on a typed recorder — are harness context, no instructions loss.
   assert.equal(parsed.meta.capture.harnessContextRows, 2);
+  // D150 amends this test: a queued task notification is read by its typed status, as one written as a user row is, and
+  // is no declared loss.
   assert.deepEqual(parsed.meta.capture.unsupportedRowChannels,
-    { instructions: instructed.length + 1 - 2, commentary: 0, actions: 0, observations: observed.length });
+    { instructions: instructed.length + 1 - 2, commentary: 0, actions: 0, observations: observed.length - 1 });
   const ledger = await sliceLineage([file], { cwd: '/repo' });
   assert.equal(hasCaptureGaps(ledger), true);
   const gaps = await gapsOf(file);
   const unsupported = (channel) => gaps.filter((gap) => gap.code === 'unsupported_message' && gap.channel === channel)
     .reduce((n, gap) => n + gap.count, 0);
   assert.equal(unsupported('identity'), 0);
-  assert.equal(unsupported('observations'), observed.length);
+  assert.equal(unsupported('observations'), observed.length - 1);
   // OWNER DECISION B (2026-10-01) amends this test: a queued prompt the human submitted is read as an in-turn human
   // instruction at its row. M34 labels: so is a file or directory the human attached (an @-mention that records text;
   // a PDF reference records none and a compaction's file reference is the harness's); a queued prompt with no origin on

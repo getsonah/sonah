@@ -429,11 +429,12 @@ test('M33 the run profile is frozen plain data that binds the review\'s closed v
   // contract, and the tier table /2. D114 (0.3.0-beta.5): code-pass/13 and code-verify/4, the listed asks; D113: the
   // snapshot /13, the session's own change.
   assert.equal(Object.hasOwn(profile.codePass, 'check'), false);
+  // D152 (0.3.0-beta.9): code-verify/5, the check judges truth only, and the tier table /4.
   assert.deepEqual([profile.codePass.pass, profile.codePass.verify, profile.codePass.snapshot],
-    ['sonah.code-pass/13', 'sonah.code-verify/4', 'sonah.code-snapshot/13']);
+    ['sonah.code-pass/13', 'sonah.code-verify/5', 'sonah.code-snapshot/13']);
   // E1-F8 (D112): the tier table's /2 carried a refused read's default too, in D110's move. D122 (b) (0.3.0-beta.5): /3,
-  // that default removed.
-  assert.equal(profile.codePass.triage.table, 'sonah.tiers/3');
+  // that default removed. D152: /4, the kind `code_finding_open`.
+  assert.equal(profile.codePass.triage.table, 'sonah.tiers/4');
   assert.equal(profile.proposalReasks, 1);
   assert.deepEqual(profile.evidenceRequests, { reasks: 1, items: 8, bytes: 72_000, parsed: 256 });
   assert.equal(profile.reviewScope, 'session-only');

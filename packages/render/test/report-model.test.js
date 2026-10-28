@@ -3,8 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel, permalinkOf, tierMoves, firstScreenWords, firstScreenExcerptLines, openText, headText, itemVisibleText,
-  refusedCall, ITEM_TYPES, REPORT_MODEL_VERSION, REPORT_LIMITS } from '../report-model.js';
-import { REPORT_ITEM_KINDS, REPORT_ITEM_TYPES, RESULT_OUTCOME_WORDS, RESULT_OUTCOME_CLASSES } from '../../evidence/src/ledger.js';
+  pointerLinesText, refusedCall, ITEM_TYPES, REPORT_MODEL_VERSION, REPORT_LIMITS, reportItems } from '../report-model.js';
+import { REPORT_ITEM_KINDS, REPORT_ITEM_TYPES, RESULT_OUTCOME_WORDS, RESULT_OUTCOME_CLASSES, TIER_BOUND_REASONS } from '../../evidence/src/ledger.js';
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
@@ -21,7 +21,7 @@ const modelOf = (shape, options = repoFacts()) => {
   const session = reportSession();
   return reportModel(session, shape(session), options);
 };
-const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 const byKind = (model, kind) => itemsOf(model).filter((item) => item.kind === kind);
 const one = (model, kind) => { const found = byKind(model, kind); assert.ok(found.length, kind); return found[0]; };
@@ -29,10 +29,14 @@ const one = (model, kind) => { const found = byKind(model, kind); assert.ok(foun
 test('D97 (1): every item kind of fixture (a) is an item of its type, tier and fields', () => {
   const model = modelOf(triagedReport);
   const items = itemsOf(model);
-  // Fixture (a) is a code step of code-pass/10, before the premise contract (D110), so it holds no finding to verify
-  // (d110-premise-render.test.js shows one).
+  // Fixture (a) is a code step of code-pass/10, before the premise contract (D110) and the tie rule (D152), so it holds
+  // no finding to verify (d110-premise-render.test.js shows one) and no open finding (d152-open-render.test.js shows
+  // one). D153: nor is it a review run with the after-point re-check (d153-recheck-render.test.js and
+  // d153-recheck-unsettled-render.test.js show its four kinds).
   assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => !items.some((item) => item.kind === kind)),
-    ['code_finding_unconfirmed'], 'every kind at least once');
+    ['ask_not_checked_after_later_work', 'claim_not_checked_after_later_work', 'written_not_checked_after_later_work',
+      'code_finding_open', 'code_finding_unconfirmed', 'written_corrected'],
+    'every kind at least once');
   assert.deepEqual(items.map((item) => item.n), items.map((_, i) => i + 1), 'numbered once across the three tiers');
   for (const item of items) {
     assert.equal(item.type, ITEM_TYPES[item.kind], item.kind);
@@ -167,7 +171,10 @@ test('D97 (6): without triage (fixtures b and c) no item shows an impact or an a
       assert.equal(item.impact, null, item.kind);
       assert.equal(item.action, null, item.kind);
       assert.equal(item.tier.proposed, null);
-      assert.equal(item.tier.final, item.tier.default, item.kind);
+      // D161: a question of the code review that Sonah could not tie is at most Good to know, below its default.
+      if (item.tier.bound === 'untied_ceiling') assert.deepEqual([item.kind, item.tier.final], ['code_question',
+        'good_to_know']);
+      else assert.equal(item.tier.final, item.tier.default, item.kind);
       assert.ok(item.label.every((p) => p.by !== 'code-review'), 'the fixed kind label');
     }
     assert.equal(model.footer.triageLegend, null);
@@ -218,9 +225,9 @@ test('D97 (8): the empty Must act and Must know pair stands exactly when both ar
   // A Good to know item alone keeps the pair.
   assert.equal(itemsOf(empty).length, 0);
   // Must act empty and Must know not: no pair; the first screen's item is the first of Must know.
+  const failure = { eventId: 'W1', handling: 'passed-over' };
   const known = reportModel(session, { windowResults: [{ windowIndex: 0, eventIds: session.events.map((e) => e.id),
-    failure: null }], decisions: [{ dimension: 'retry count', chosen: 'three retries', column: 'unasked',
-    columnState: 'grounded', actions: ['W1'], stated: null }] }, {});
+    failure: null }], failures: [failure] }, {});
   assert.deepEqual([known.tiers.must_act.length, known.tiers.must_know.length], [0, 1]);
   assert.equal(known.countLine.empty, null);
   const count = (text) => text.split(/\s+/).filter(Boolean).length;
@@ -229,6 +236,21 @@ test('D97 (8): the empty Must act and Must know pair stands exactly when both ar
   assert.equal(firstScreenWords(known), count(headText(known)) + count(itemVisibleText(known.tiers.must_know[0])));
   assert.ok(count(openText(known)) > count(headText(known)), 'your prompt is not on the first screen');
   assert.ok(count(itemVisibleText(known.tiers.must_know[0])) > 0);
+  // D161: a decision alone is in the second part, tagged Must know: the tiers are empty, and still no pair, since the
+  // report holds an item tagged Must know (the pair would be false). The first screen holds no item; D163's review: it
+  // shows Must know's pointer to it, its heading and its line.
+  const decided = reportModel(session, { windowResults: [{ windowIndex: 0, eventIds: session.events.map((e) => e.id),
+    failure: null }], decisions: [{ dimension: 'retry count', chosen: 'three retries', column: 'unasked',
+    columnState: 'grounded', actions: ['W1'], stated: null }] }, {});
+  assert.deepEqual([decided.tiers.must_act.length, decided.tiers.must_know.length], [0, 0]);
+  assert.deepEqual([decided.decisions.total, decided.decisions.tagged.must_know], [1, 1]);
+  assert.equal(decided.countLine.empty, null);
+  assert.equal(decided.notChecked.quiet.includes('This does not mean that the work is correct.'), false);
+  assert.equal(decided.countLine.decisions.words, '1 decision (1 Must know)');
+  assert.equal(decided.pointers.must_know.length, 1);
+  assert.equal(firstScreenWords(decided), count(headText(decided)) + count(pointerLinesText(decided, 'must_know')
+    .join('\n')));
+  assert.equal(firstScreenExcerptLines(decided), 0);
 });
 
 test('D97 (23): a decision\'s fixed label sets the session review\'s words apart: "decision on {dimension}"', () => {
@@ -609,10 +631,11 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   assert.deepEqual(bug.what.parts.map((p) => p.by), ['code-review']);
   assert.deepEqual(bug.label.map((p) => [p.text, p.by]), [['fix the refill order', 'code-review']]);
   // D112: the Must act items the code review rated come first, so the count line shows their labels first; D138: then
-  // the contradicted claim, backed by two recorded quotes that disagree, before the asks.
+  // the contradicted claim, backed by two recorded quotes that disagree, before the asks. D161: the decision the code
+  // review rated high is in the report's second part, so the count line's labels are the first part's alone.
   assert.deepEqual(model.countLine.labels.map((l) => l.parts.map((p) => [p.text, p.by])), [
-    [['fix the refill order', 'code-review']], [['check the forced push', 'code-review']],
-    [['a false claim', 'sonah'], [' ', 'sonah'], ['(item 3)', 'sonah']]]);
+    [['fix the refill order', 'code-review']], [['a false claim', 'sonah'], [' ', 'sonah'], ['(item 2)', 'sonah']],
+    [['an edit against your words', 'sonah'], [' ', 'sonah'], ['(item 3)', 'sonah']]]);
   const question = one(model, 'code_question');
   assert.equal(question.what.parts[0].by, 'code-review');
   const file = model.did.files.groups.flatMap((g) => g.files).find((f) => f.path === 'src/limiter.js');
@@ -637,7 +660,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/7 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/8 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -646,13 +669,18 @@ test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two 
   const model = reportModel(session, triageReport(session), {});
   const items = itemsOf(model);
   // Every kind is an item but the listed ones the code review did not raise, which stay in the claims list.
-  // And (D110) a finding to verify: fixture (a) is a code step before the premise contract.
+  // And (D110) a finding to verify, and (D152) an open finding: fixture (a) is a code step before the premise contract
+  // and the tie rule; and (D153) the four kinds of a review run with the after-point re-check.
   assert.deepEqual(REPORT_ITEM_KINDS.filter((kind) => !items.some((item) => item.kind === kind)),
-    ['code_finding_unconfirmed', 'claim_incomplete', 'written_not_checked']);
+    ['ask_not_checked_after_later_work', 'claim_not_checked_after_later_work', 'written_not_checked_after_later_work',
+      'code_finding_open', 'code_finding_unconfirmed', 'written_corrected', 'claim_incomplete', 'written_not_checked']);
   assert.ok(items.some((item) => item.kind === 'claim_not_checked'), 'the listed claim proposed high is an item');
   assert.ok(Object.values(model.placement.rows).filter((p) => p.list === 'claims').length >= 2);
   const bounds = new Set(items.map((item) => item.tier.bound).filter(Boolean));
-  assert.deepEqual([...bounds].sort(), ['kind_ceiling', 'kind_floor', 'refused_call_ceiling']);
+  // Every bound is a member of the closed list (ledger.js TIER_BOUND_REASONS); fixture (a) gives all but D161's
+  // untied-question ceiling (its questions name no tie and no level that the ceiling would lower).
+  assert.ok([...bounds].every((b) => TIER_BOUND_REASONS.includes(b)));
+  assert.deepEqual([...bounds].sort(), TIER_BOUND_REASONS.filter((b) => b !== 'untied_ceiling').sort());
   // Only the primary row's entry of a merged item is used: the folded ask's "SYNTHETIC" entry is not shown.
   assert.equal(JSON.stringify(model.tiers).includes('SYNTHETIC an entry for a folded row'), false);
 });
@@ -806,8 +834,8 @@ test('D97: a part of the session review with no id is named in words, never by a
     'its finding 1');
   // Every source set has its word.
   assert.deepEqual(Object.keys(words.REPORT_NOT_CHECKED_WORDS.rowKinds).sort(),
-    ['codePass.findings', 'codePass.questions', 'codePass.unconfirmed', 'codePass.withheld', 'decisions', 'failures',
-      'findings', 'pivots', 'promises', 'requirements', 'writtenClaims']);
+    ['codePass.findings', 'codePass.open', 'codePass.questions', 'codePass.unconfirmed', 'codePass.withheld',
+      'decisions', 'failures', 'findings', 'pivots', 'promises', 'requirements', 'writtenClaims']);
 });
 
 test('D97: count-dependent words agree with their count', () => {
@@ -868,7 +896,9 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
   // Untied: Good to know, folded, still counted; its why says the default.
   const plainModel = modelOf(triagedReport);
   assert.equal(chose(plainModel).tier.final, 'good_to_know');
-  assert.ok(plainModel.tiers.good_to_know.includes(chose(plainModel)));
+  // D161: in the report's second part, tagged Good to know.
+  assert.ok(plainModel.decisions.groups.some((g) => g.items.includes(chose(plainModel))));
+  assert.equal(plainModel.tiers.good_to_know.includes(chose(plainModel)), false);
   assert.equal(chose(plainModel).why, 'Sonah puts a decision on how to do your ask in Good to know by default.');
   // A published finding of the code review follows from it (`leadsFrom`): Must know, and its why says so.
   const session = reportSession();
@@ -915,7 +945,7 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
     ['good_to_know', 'must_act', 'must_act', null, 'lead']);
   // A decision made without asking and one not to act stay in Must know, tied or not.
   for (const kind of ['decision_unasked', 'decision_not_acting'])
-    assert.ok(plainModel.tiers.must_know.some((item) => item.kind === kind), kind);
+    assert.ok(itemsOf(plainModel).some((item) => item.kind === kind && item.tier.final === 'must_know'), kind);
 });
 
 test('D97: a decision\'s what line names what it is about beside what the agent chose, for every decision kind', () => {
@@ -923,7 +953,8 @@ test('D97: a decision\'s what line names what it is about beside what the agent 
   // what it left alone folded under its evidence. The session review's dimension now stands in the line.
   const model = modelOf(triagedReport);
   const expect = { decision_not_acting: 'The agent decided not to act. About: store. Its decision: no Redis.',
-    decision_unasked: 'The agent decided on deploy: push the branch.',
+    // D161: the first of the kind in the report's second part, in the order the session recorded them.
+    decision_unasked: 'The agent decided on build output: clean dist.',
     decision_chose: 'You asked, and the agent decided on Retry-After unit: seconds.',
     decision_whether_asked: 'The agent decided on limit per client: ten requests.' };
   for (const [kind, text] of Object.entries(expect)) {

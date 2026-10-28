@@ -11,7 +11,7 @@ import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, CODE_WITHHELD_ITEMS, CODE_CLAIM_
   CODE_REVIEW_TERMINALS, CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, honestStatuses }
   from './ledger.js';
 import { codeContradictedRows, codePassFindings, codePassQuestions, codePassWithheld, codeSeenOf, codeChangeTally,
-  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven } from './code-pass.js';
+  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven, tieRuled } from './code-pass.js';
 import { askSourceOf } from './code-context.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -60,6 +60,18 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + 'finding only when the same model, with the same access, checked it and found the same problem. If the problem '
     + 'is real but not against your ask, the finding becomes an open question for you. Sonah folds the rest at the '
     + 'end, with the reason, and shows a quote only where code found it again.',
+  // D152 (the check judges truth only): `how` for a report whose code step put its findings in lists by the tie rule
+  // (code-pass.js `tieRuled`). The check judges only whether a problem is real. A checked finding (`howConfirm`, the next
+  // paragraph: its premises can make it an item to verify instead) goes where its kind and the level the code review
+  // proposed put it (D96, triage.js `boundTier`) when it is tied (`findingTied`): a row of the session review it follows
+  // from (`leadsFrom`), or a receipt its check gave of what it breaks that code found word for word (`check.breaks`); an
+  // untied one is open, with its own line (`openFinding`).
+  howTied: 'Sonah asked for a review of the change as a code reviewer reviews a pull request. The code review read what '
+    + 'Sonah sent, could open, search and list any file of the repository, and ran nothing. Sonah publishes a finding '
+    + 'only when the same model, with the same access, checked it and found the problem real. A checked finding goes '
+    + 'where its kind and the level the code review proposed put it, when something ties it. A tie is a session review '
+    + 'item it follows from, or a quote of what it breaks that Sonah found. Sonah folds the rest at the end, with the '
+    + 'reason, and shows a quote only where code found it again.',
   // D109: how many of the published open questions have a check record: each one, how many of them, or (its review)
   // none, when no question carries a check record (a batch check that failed), in the words the other case ends with.
   // D110: the same model checks them, never a second reviewer.
@@ -204,6 +216,17 @@ export const CODE_REPORT_WORDS = Object.freeze({
     ? ` Its checks read ${read < unseen ? `${read} of ${seen.length ? `those ${unseen}` : 'them'}` : unseen === 1 ? 'it'
       : unseen === 2 ? 'both' : `all ${unseen}`}. Sonah counts as seen only what it sent the code review and what the `
       + 'code review read itself.' : ''}`,
+  // D149: a review of several units (code-pass.js `manifest.units`): the files whose every changed line a request of
+  // the code review showed, in how many calls, and the files it could not show so, by why (`reasons`: `[words, n]`).
+  // What was shown, never what was checked or found sound.
+  // D149: the generated, vendored and lock files it showed so, counted apart (`generated`).
+  units: (shown, calls, reasons, generated = 0) => `Sonah showed the code review every changed line of `
+    + `${plural(shown, 'file')} in ${plural(calls, 'call')}.${generated ? ` It also showed every changed line of `
+    + `${plural(generated, 'generated, vendored or lock file')}.` : ''}${reasons.length ? ` It could not show `
+    + `${plural(reasons.reduce((n, [, k]) => n + k, 0), 'file')}: ${reasons.map(([words, k]) => `${k} ${words}`)
+      .join(', ')}.` : ''}`,
+  // D149: a file of the change whose review unit is past the most units one review plans.
+  unitCap: 'past the calls one review makes',
   // A report written before D105, which kept no manifest: what the request showed, its own words.
   shownFiles: (shown, total, others) => `The change covers ${plural(total, 'file')}, and the code review saw the change `
     + `of ${shown}.${others ? ` The others: ${others}.` : ''}`,
@@ -297,7 +320,11 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + 'there word for word.',
     language: 'Its check names documented behaviour of the language for it.',
     outside: 'Sonah could not check it in the repository or the language.' }),
-  // An open question that comes from a finding the check found real but not against what you asked.
+  // D152: a finding its check found to hold that Sonah confirms, tied to no written promise (code-pass.js `findingTied`:
+  // no row of the session review it follows from, and no receipt of what it breaks that grounded).
+  openFinding: 'Checked: the code does this. Sonah found nothing that it breaks: no ask, claim, doc, caller or test.',
+  // An open question that comes from a finding the check found real but not against what you asked (a record before
+  // D152).
   fromFinding: 'From a finding of the code review',
   fromFindingWords: 'Its check found that the code does this. It also found that this does not go against your ask or '
     + 'the contract with callers. Is it what you want?',
@@ -420,7 +447,11 @@ export const CODE_REPORT_WORDS = Object.freeze({
     receipt_ungrounded: 'Sonah did not find a quote of the check\'s word for word',
     support_off_anchor: 'the check upheld it without a quote of the lines that it is about',
     support_off_trace: 'the check upheld it without a quote of another line of its trace',
-    refutation_uncited: 'the check refuted it without a quote of the code that shows it' }),
+    refutation_uncited: 'the check refuted it without a quote of the code that shows it',
+    // D147: a quote of the check's whose relative path more than one place of the change holds: what Sonah could not
+    // tell, as for an item's own path (`path_ambiguous`).
+    receipt_path_ambiguous: 'the check named a path that more than one repository of the change holds, so Sonah could '
+      + 'not tell which file it means' }),
   kinds: Object.freeze({ bug: 'a bug', missed_case: 'a missed case', weak_test: 'a test that would still pass with the bug',
     contract_break: 'a broken contract', ask_not_met: 'an ask not met', rule_break: 'a broken rule',
     claim_false: 'a claim of the agent\'s that the code contradicts' }),
@@ -601,6 +632,8 @@ export const STYLE_FIXTURES = Object.freeze({
     [3, [['whole', 2]], 1, 1], [4, [['whole', 2]], 2, 2], [4, [], 4, 1], [4, [], 4, 4]],
   'CODE_REPORT_WORDS.questionsChecked': [[2, 2], [1, 2], [1, 3], [0, 1], [0, 2]],
   'CODE_REPORT_WORDS.shownFiles': [[1, 2, '1 binary'], [2, 2, '']],
+  'CODE_REPORT_WORDS.units': [[418, 16, [['binary', 2]]], [1, 2, []], [5, 3, [['left out for room', 1],
+    ['past the calls one review makes', 1]]], [406, 16, [['binary', 2]], 12], [3, 2, [], 1]],
   'CODE_REPORT_WORDS.seenGroups.whole': [[1]],
   'CODE_REPORT_WORDS.seenGroups.whole_not_before': [[1], [2]],
   'CODE_REPORT_WORDS.seenGroups.in_part': [[1]],
@@ -946,14 +979,16 @@ export function codeUnseenFiles(pass) {
  */
 export function codeHowLine(pass) {
   if (pass?.ran !== true) return null;
+  // D152: under the tie rule, the paragraph says that the check judges truth only.
+  const how = tieRuled(pass) ? W.howTied : W.how;
   const tally = codeChangeTally(pass);
-  if (tally !== null) return tally.answered === true ? W.how : null;
+  if (tally !== null) return tally.answered === true ? how : null;
   if (!plain(pass.agent)) return null;
   const counted = (n) => Number.isSafeInteger(n) && n > 0;
   const { terminal, turns, tools, reads } = pass.agent;
   const acted = counted(turns) || counted(reads) || (plain(tools) && Object.values(tools).some(counted));
   return terminal === REVIEW_ANSWERED || terminal === REVIEW_UNUSABLE || (terminal === REVIEW_FAILED && acted)
-    ? W.how : null;
+    ? how : null;
 }
 
 /** D109: the line after `how` that says what the records show of the open questions' checks: of the questions the code
@@ -1218,6 +1253,33 @@ export function codeReviewCoverage(pass) {
  * (`codeReviewCoverage`), that it did not finish or did not complete. D113: a change with no file to review is said by
  * the session's own change (`codeNoChangeOf`). Fixed words and counts.
  */
+/**
+ * D149: the line of a review of several units (`manifest.units`), from its hunk ledger (`manifest.hunks`): how many files
+ * of the change had every hunk shown by a sent request (`shownIn`), in how many calls (the units' requests sent), and the
+ * others by why (each file by the first closed reason of its ledger: its file state's words, or `block_cap` as too large
+ * for one call, `request_bound` as left out for room, `unit_cap` as past the calls one review makes). None for a review
+ * of one request, whose words are as before. Pure.
+ */
+export function codeUnitsLines(pass) {
+  const units = pass?.manifest?.units;
+  if (!Array.isArray(units)) return [];
+  const byPath = new Map();
+  for (const e of list(pass.manifest.hunks).filter(plain)) byPath.set(e.path, [...(byPath.get(e.path) ?? []), e]);
+  const reasonWords = { block_cap: W.states.oversize, request_bound: W.states.left_out, unit_cap: W.unitCap };
+  // D149: the generated, vendored and lock files (each unit's `generated`, by its files), counted apart.
+  const generatedPaths = new Set(units.filter((u) => plain(u) && Array.isArray(u.generated) && Array.isArray(u.paths))
+    .flatMap((u) => u.paths));
+  let shown = 0, generated = 0;
+  const reasons = new Map();
+  for (const [path, entries] of byPath) {
+    const missing = entries.find((e) => !Array.isArray(e.shownIn) || e.shownIn.length === 0);
+    if (!missing) { if (generatedPaths.has(path)) generated += 1; else shown += 1; continue; }
+    const words = reasonWords[missing.closed] ?? W.states[missing.closed] ?? W.states.unreadable;
+    reasons.set(words, (reasons.get(words) ?? 0) + 1);
+  }
+  return [W.units(shown, units.filter((u) => plain(u) && u.sent === true).length, [...reasons], generated)];
+}
+
 export function codeCoverageLines(pass) {
   const files = list(pass?.files).filter(plain);
   if (pass?.ran !== true) {
@@ -1255,8 +1317,8 @@ export function codeCoverageLines(pass) {
     if (tallied.answered !== true) return [W.noAnswer(tallied.total), ...where, ...coverage];
     const seen = Object.entries(tallied.groups).filter(([group, units]) => group !== 'not_seen' && units.length)
       .map(([group, units]) => [group, units.length]);
-    return [W.files(tallied.total, seen, tallied.groups.not_seen.length, codeUnseenReadByChecks(pass)), ...where,
-      ...coverage];
+    return [...codeUnitsLines(pass), W.files(tallied.total, seen, tallied.groups.not_seen.length,
+      codeUnseenReadByChecks(pass)), ...where, ...coverage];
   }
   // A report written before D105: a recorded write outside the working directory is listed with the change's files.
   // One the footer names as a path whose change the request did not show (it lies in the repository) is a part of the

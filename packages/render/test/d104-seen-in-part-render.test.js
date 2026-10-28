@@ -12,7 +12,7 @@
 // Synthetic sessions and judges only (evidence/test/d104-seen-in-part-fixture.js, report-fixture.js). Nothing prints.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel } from '../report-model.js';
+import { reportModel, reportItems } from '../report-model.js';
 import { sessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_SEEN_WORDS } from '../report-words.js';
@@ -22,7 +22,7 @@ import { oneTurn, cutShapes, reviewed, ROWS, CUT_ROWS, markedRows } from '../../
 import { reportSession, sessionOnlyReport, triagedReport, repoFacts } from './report-fixture.js';
 
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”` : p.text)).join('');
-const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+const itemsOf = (model) => reportItems(model);
 /** The words a mark entry says of what Sonah left out. */
 const cutOf = (seen) => REPORT_SEEN_WORDS.cut(seen);
 const isMark = (line) => line.startsWith(REPORT_SEEN_WORDS.lead);

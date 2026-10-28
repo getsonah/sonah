@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage, PAGE_LIMITS } from '../session-page.js';
-import { reportModel } from '../report-model.js';
+import { reportModel, reportItems } from '../report-model.js';
 import { REPORT_FOOTER_WORDS } from '../report-words.js';
 import { checklistSession, checklistReport } from './session-page-checklist-fixture.js';
 import { answerableRowIds, requirementRowId, failureRowId } from '../../evidence/src/checklist.js';
@@ -26,7 +26,7 @@ test('D71 (S4) every item carries the id that answers it, the command is printed
   const printed = [...html.matchAll(ROW_ID)].map((m) => m[1]);
   // Each item with a ledger or a computed id: 2 asks, 2 contradicted claims, 1 failure passed over and 2 decisions.
   const model = reportModel(checklistSession(), report, {});
-  const items = [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+  const items = reportItems(model);
   assert.equal(printed.length, items.filter((item) => item.rowId?.startsWith('sha256:')).length);
   assert.equal(printed.length, 7);
   assert.equal(new Set(printed).size, printed.length);

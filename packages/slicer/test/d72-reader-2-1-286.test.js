@@ -226,9 +226,7 @@ test('D72: a shape the reader does not list stays unclassified and declared, nev
     // A placement that is not a boolean.
     attachment({ type: 'remote_session_change', commit: 'x', pr: 'x', sendUserFileHint: 'x', url: 'x' },
       { renderedBesideToolResult: 'yes' }),
-    // The known coordinator reminder with no `commandMode` (the key its class is read from).
-    attachment({ type: 'queued_command', isMeta: true, origin: { kind: 'coordinator' }, prompt: 'x', reminderId: 'r',
-      source_uuid: 's' }),
+    // D150 amends this list: the coordinator reminder with no `commandMode` but `isMeta: true` is the harness's (below).
     // A payload key not known.
     attachment({ type: 'queued_command', commandMode: 'prompt', prompt: 'Future key.', origin: { kind: 'human' },
       futureKey: 1 }),
@@ -240,6 +238,18 @@ test('D72: a shape the reader does not list stays unclassified and declared, nev
   assert.equal(ledger.capture.incomplete, true);
   assert.ok(ledger.capture.reasons.includes(SLICE_REASONS.CAPTURE_INCOMPLETE));
   assert.equal(ledger.capture.unclassifiedRows, unread.length);
+  // D150: a queued command with no `commandMode` that the recorder flagged `isMeta: true` (the coordinator's reminder) is
+  // the harness's, as every `isMeta` queued command is (Release fix 3b): harness context, never read as anyone's words.
+  // With no `isMeta`, or with one that is not `true`, it stays unclassified.
+  const reminder = (extra = {}) => attachment({ type: 'queued_command', isMeta: true, origin: { kind: 'coordinator' },
+    prompt: 'x', reminderId: 'r', source_uuid: 's', ...extra });
+  assert.deepEqual(claudeRowClass(JSON.parse(JSON.stringify(reminder()))), { cls: 'harness', agentId: null });
+  for (const other of [reminder({ isMeta: false }), reminder({ isMeta: 'true' }),
+    reminder({ isMeta: undefined, reminderId: undefined })])
+    assert.equal(claudeRowClass(JSON.parse(JSON.stringify(other))), null, JSON.stringify(other.attachment.isMeta));
+  const meta = await slice(t, [prompt, call('b1', { command: 'make' }), result('b1', 'ok'), reminder(), said('Done.')]);
+  assert.deepEqual(kindsAndText(meta), []);
+  assert.deepEqual([meta.capture.unclassifiedRows, meta.capture.harnessContextRows], [undefined, 1]);
 });
 
 test('D72: the new keys add no decision: a 2.1.286 recording slices as the same rows without them', async (t) => {

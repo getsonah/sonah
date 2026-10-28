@@ -20,8 +20,9 @@ import { runProfile } from '../src/run-review.js';
 import { canonicalJson } from '../contracts/canonical.js';
 import { withheldWhy } from '../src/code-report.js';
 import { CODE_FILES, codeSession, dossierItems, reviewFinding, holds, allSound, verifiedFinding, batchItems,
-  itemsEnded, fatesOf, sameFindingTwice, PARSE_QUOTE, repositoryPremise, accountsHold } from '../../cli/test/code-pass-fixture.js';
-import { verifyBriefBeforePremises, requestBeforeListedAsks } from './m33-integration-fixture.js';
+  itemsEnded, fatesOf, sameFindingTwice, PARSE_QUOTE, repositoryPremise, holdsWith, accountsHold }
+  from '../../cli/test/code-pass-fixture.js';
+import { verifyBriefBeforePremises, requestBeforeListedAsks, requestBeforeTruthOnly } from './m33-integration-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -439,14 +440,13 @@ test('triage: an answer with no triage list stays usable, asks for no repair, an
   assert.equal(odd.codePass.findings.length, 1);
 });
 
-test('triage: a withheld finding or question drops its entry (`item_withheld`); a finding sent to you as a question carries its entry there', async () => {
-  // F1 refuted, F2 not against your goal (a question for you), Q1 a false premise.
+test('triage: a withheld finding or question drops its entry (`item_withheld`); a finding published open carries its entry there (D152)', async () => {
+  // F1 refuted, F2 holds and is tied to nothing it breaks (D152: published open), Q1 a false premise.
   const second = reviewFinding({ title: 'SYNTHETIC trailing spaces are kept' });
-  const verify = (finding) => (finding.title === second.title
-    ? { verdict: 'refuted', reason: 'not_against_goal', claims: finding.claims.map(({ claim }) => ({ claim, verdict: 'holds' })),
-      premises: [repositoryPremise(finding)], receipts: [], explanation: 'SYNTHETIC as stated.' }
+  const verify = (finding) => (finding.title === second.title ? holdsWith(finding, [repositoryPremise(finding)], [])
     : { verdict: 'refuted', reason: 'step_unsupported', claims: finding.claims.map(({ claim }) => ({ claim,
-      verdict: 'holds' })), premises: [repositoryPremise(finding)], receipts: [], explanation: 'SYNTHETIC refuted.' });
+      verdict: 'holds' })), premises: [repositoryPremise(finding)], breaks: [], receipts: [],
+    explanation: 'SYNTHETIC refuted.' });
   const batch = (items) => ({ questions: items.map(({ key }) => ({ key, verdict: 'false_premise', receipts: [{
     path: 'src/parse.js', side: 'new', startLine: 2, endLine: 2, quote: PARSE_QUOTE }], explanation: 'SYNTHETIC.' })) });
   // F1's place does not ground either: its entry is still one record, `item_withheld`.
@@ -454,8 +454,10 @@ test('triage: a withheld finding or question drops its entry (`item_withheld`); 
     questions: [QUESTION], triage: [entry('F1', { where: OFF_PLACE }), entry('F2', { label: 'trailing spaces' }),
       entry('Q1')] }) }));
   assert.deepEqual(result.codePass.findings, []);
-  assert.deepEqual(result.codePass.questions.map((q) => [q.id, q.from]), [['Q1', 'finding']]);
-  assert.deepEqual(result.codePass.triage.map((t) => [t.ref, t.label]), [[{ question: 'Q1' }, 'trailing spaces']]);
+  assert.deepEqual(result.codePass.questions, []);
+  assert.deepEqual(result.codePass.open.map((f) => f.title), [second.title]);
+  assert.deepEqual(result.codePass.triage.map((t) => [t.ref, t.label]), [[{ finding: result.codePass.open[0].id },
+    'trailing spaces']]);
   assert.deepEqual(result.codePass.triageDropped, [{ key: 'F1', index: 0, cause: 'item_withheld' },
     { key: 'Q1', index: 2, cause: 'item_withheld' }]);
   // A finding past the answer's item limit is withheld unchecked: its entry too.
@@ -571,12 +573,18 @@ test('triage: keeping a field apart moves no request byte — a repair names a t
     return seen;
   };
   const [byDefault, off] = [await requestsOf(undefined), await requestsOf(false)];
+  // D152 (0.3.0-beta.9) moved the finding's checking request alone (its brief: code-verify/5, the check judges truth
+  // only): rendered back (`requestBeforeTruthOnly`), each is D114's, byte for byte; no other request moved.
+  assert.equal(digestOf(off), REQUESTS_TRUTH_ONLY);
+  assert.equal(digestOf(truthBack(off)), REQUESTS_LISTED_ASKS);
+  assert.deepEqual(off.map((r, at) => r.system === truthBack(off)[at].system), [true, true, false, true]);
+  assert.equal(digestOf(byDefault), REQUESTS_TRUTH_ONLY_WITH_WHOLE_FILES);
+  assert.equal(digestOf(truthBack(byDefault)), REQUESTS_LISTED_ASKS_WITH_WHOLE_FILES);
   // D114 (0.3.0-beta.5) moved every code-step request (the person's messages, the listed asks, the briefs and the change
-  // block's heading): rendered back (`requestBeforeListedAsks`), each is 0.3.0-beta.4's, byte for byte.
-  assert.equal(digestOf(off), REQUESTS_LISTED_ASKS);
+  // block's heading): rendered back (`requestBeforeListedAsks`, which renders D152's back first), each is
+  // 0.3.0-beta.4's, byte for byte.
   assert.equal(digestOf(listedAsksBack(off)), REQUESTS_NOW);
   assert.equal(digestOf(premisesBack(listedAsksBack(off))), REQUESTS_BEFORE_FIELDS_APART);
-  assert.equal(digestOf(byDefault), REQUESTS_LISTED_ASKS_WITH_WHOLE_FILES);
   assert.equal(digestOf(listedAsksBack(byDefault)), REQUESTS_NOW_WITH_WHOLE_FILES);
   assert.equal(digestOf(premisesBack(listedAsksBack(byDefault))), REQUESTS_WITH_WHOLE_FILES);
   assert.deepEqual(byDefault.map((r, at) => [r.system === (at < 2 ? CODE_REVIEW_SYSTEM_WHOLE_FILES : off[at].system),
@@ -594,6 +602,12 @@ const REQUESTS_NOW_WITH_WHOLE_FILES = '9a5832dd5c01bbcc406664e59bfbbb770b93b36ec
 const REQUESTS_LISTED_ASKS = '02e12bdd29b7d137f83c2456e1be8dd9c9d05e3cd0b9fc1664d4d6fa21ee86c4';
 /** D114: those with part B on. */
 const REQUESTS_LISTED_ASKS_WITH_WHOLE_FILES = '54daebe7ff6256531f9e4b1809e9ccf67d542aa2d0915df0a4ae24e1ee03568f';
+/** D152: those, the finding's checking agent's brief at code-verify/5 (the check judges truth only); part B off. */
+const REQUESTS_TRUTH_ONLY = 'f5de9428a642b6e597fe0222d7c9058cd594541509edb030721976ed60438cd2';
+/** D152: those with part B on. */
+const REQUESTS_TRUTH_ONLY_WITH_WHOLE_FILES = 'c4727453abf5595993752e8ea89295278f8288ef73699a273f71014e4d904aa7';
+/** D152: requests rendered back to D149's (`requestBeforeTruthOnly`). */
+const truthBack = (requests) => requests.map(requestBeforeTruthOnly);
 /** D114: requests rendered back to 0.3.0-beta.4's (`requestBeforeListedAsks`). */
 const listedAsksBack = (requests) => requests.map(requestBeforeListedAsks);
 /** A digest of requests: each one's label, system prompt and prompt. */
@@ -879,15 +893,18 @@ test('triage: an entry that fails whole is named once in the repair, by its whol
   // requests (`sonah.code-pass/12`: every code-step request moved), run off; by default (D108: part B on), D105's with
   // part B's brief and blocks in the review's and the repair's. D110 moved the finding's checking request alone (its
   // brief, code-verify/3), and rendered back (`verifyBriefBeforePremises`) every request is bucket B's.
-  // D114 (0.3.0-beta.5) moved every request; rendered back (`requestBeforeListedAsks`), 0.3.0-beta.4's.
-  assert.equal(digestOf(seen), '98c3798ab13de78496bb13da73c3ede92abd3659995dc191324dc4a910e37dcf');
+  // D114 (0.3.0-beta.5) moved every request; rendered back (`requestBeforeListedAsks`), 0.3.0-beta.4's. D152 moved the
+  // finding's checking request alone (code-verify/5); rendered back (`requestBeforeTruthOnly`), D114's.
+  assert.equal(digestOf(seen), 'eab3053fd707661eade2fed80ba3fe983c4982cc0f7ac478a92fc4932b7b0376');
+  assert.equal(digestOf(truthBack(seen)), '98c3798ab13de78496bb13da73c3ede92abd3659995dc191324dc4a910e37dcf');
   assert.equal(digestOf(listedAsksBack(seen)), 'f440a5cbef483e34b7610ca08197ffc356aa4596d21c8816660fc1ca7fc00e61');
   assert.equal(digestOf(premisesBack(listedAsksBack(seen))),
     '97eb6a6feecf29555d8ea2d74c9c164dceaa1f71e0b1b3cf850750cfd619a90c');
   const off = [];
   await run(agents({ seen: off, review: repairing({ triage: [entry('F1', { label: 'fix the empty input case right now',
     where: OFF_PLACE }), entry(UNASKED, { where: OFF_PLACE })] }), repair: refuse }), { wholeFiles: false });
-  assert.equal(digestOf(off), '8eeaabb23864ace701bcb0c16d0f6af5675c477ba2ac1ac8ed2b1b9462729294');
+  assert.equal(digestOf(off), 'b1574de55a38d8649b726512e875bfc3ab0f76a209b6a7b410a203d582ae6e76');
+  assert.equal(digestOf(truthBack(off)), '8eeaabb23864ace701bcb0c16d0f6af5675c477ba2ac1ac8ed2b1b9462729294');
   assert.equal(digestOf(listedAsksBack(off)), '58c1c4c3267a9b2a25135a3b5b55f5942d37e2540cf9b342d5c9deb2a4829dbf');
   assert.equal(digestOf(premisesBack(listedAsksBack(off))),
     '74ff8405c5f9f69f56da61df396cc11fafee7b7fdd1c98acfbf87b772c8230be');

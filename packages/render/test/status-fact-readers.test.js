@@ -160,10 +160,12 @@ test('status fact readers: versions moved with the bytes', () => {
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {
   const { session, report } = fixture();
   // D97: the report .md lists the runs as the page does: the one proven failure as failed, the uncovered zero status as
-  // covering only the last command of its line.
+  // covering only the last command of its line. D167: the .md counts the runs in the header's result parts, as the
+  // header counts a zero status (its line exited with code 0), and lists neither; the page lists them (below).
   const story = renderReportMarkdown(session, report);
-  assert.equal((story.match(/failed, exit code/g) ?? []).length, 1);
-  assert.ok(story.includes(`SYNTHETIC_SFR_UNCOVERED\` · ${REPORT_DID_WORDS.uncoveredExit}`), story);
+  assert.ok(story.includes('\n2 runs: 1 exited with code 0, 1 failed.\n'), story);
+  assert.equal((story.match(/failed, exit code/g) ?? []).length, 0);
+  assert.equal(story.includes('SYNTHETIC_SFR_UNCOVERED'), false, story);
   assert.ok(!/\bpassed\b/i.test(story.split(QUOTE).join('')), 'no status word "passed" outside the quoted result');
   // D97: the page's runs list the one proven failure as failed, and the uncovered zero status as covering only the
   // last command of its line — never as failed, never as a plain pass.

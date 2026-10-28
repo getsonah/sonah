@@ -20,7 +20,8 @@ import { modulesBeforeRelayRule } from '../../evidence/test/m33-h-relay-rule-fix
 import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../evidence/test/m33-n-forbidden-edit-fixture.js';
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
-import { modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview, textBeforeAgentPrompt }
+import { modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview, textBeforeAgentPrompt,
+  textBeforeTruthOnly }
   from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, RUN, SID, SLUG, TEXT, linkedRun, mkdir, rm, scratch, writeTree } from './m33-w-workflow-fixture.js';
 import { W2_TEXT, captureReceivedCases, receivedLaterRows, resumedRows, verifierBeforeFixRows }
@@ -472,7 +473,23 @@ const MOVED_BY_QUIET = Object.freeze({ story: 'f5e80e33da8fae0bdd936ccb928cb4d76
  *  is added. Rendered back (`textBeforeAgentPrompt`), D133's, byte for byte. No event, gap, request, label, window or
  *  window failure moved. */
 const MOVED_BY_AGENT_PROMPT = Object.freeze({ story: 'd8e6fc521f134c62ba84572228e389dd5c9c937ed1295abd9f70513c4f9bc5a0' });
+/** D152 (0.3.0-beta.9): the story once more, by the report model's version in its footer alone (the case runs no code
+ *  step). Rendered back (`textBeforeTruthOnly`), D144's, byte for byte. */
+const MOVED_BY_TRUTH_ONLY = Object.freeze({ story: 'b18c191badd21e0e45636314b7bda4af8f8e6760d1c244f413d35c013f0ff7e9' });
+/** D161 (0.3.0-beta.9; the owner, 2026-10-27): the story, by the report's two parts (the agent's decisions after Good to
+ *  know, in the session order, numbered after the tiers; the count line's decisions), which no text rule renders back
+ *  (`back`: rendered back by D152's and D144's rules; `now`: as the code renders it). No event, gap, request, label,
+ *  window or window failure moved. */
+const MOVED_BY_TWO_PARTS = Object.freeze({
+  back: Object.freeze({ story: 'e347fb9c2c95e0eccdfafe3b6f5a5655138136d265195038e321ea8350ac15c1' }), now: Object.freeze({ story: '0d192128b940421b38063d0959d6bec6e0cbbbe317fa3e6dca35dc6d4a8b5ffb' }) });
 
+/** D167 (0.3.0-beta.9; the owner, 2026-10-28): the story, by the .md counting the runs in place of listing them, which
+ *  no text rule renders back (`back`: rendered back by D152's and D144's rules; `now`: as the code renders it). No
+ *  event, gap, request, label, window or window failure moved. Its review moved it once more, by the sentence's command
+ *  alone (`--output FILE`; no run of the case is named elsewhere): was back 9c7674bd…, now 93ad35c4…. */
+const MOVED_BY_RUNS_COUNTED = Object.freeze({
+  back: Object.freeze({ story: 'b0833e4c13c989a2fd641542baff50fda5f6b0eec57bc31dbc9af8d222a7ab25' }),
+  now: Object.freeze({ story: '1e8ba63d6a8efae3e7cfae0801a078702d878c56d85e60a703ab2d268bcf9423' }) });
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
     windowNarrative, fixtureJudge, renderStory: renderReportMarkdown };
@@ -487,12 +504,18 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
     ...MOVED_BY_D71_FIX, ...MOVED_BY_S7, ...MOVED_BY_FIX_COLUMN, ...MOVED_BY_ASKS_FIXES, ...MOVED_BY_JUDGMENT_FIRST,
     ...MOVED_BY_AGENTIC, ...MOVED_BY_STE, ...MOVED_BY_REPORT_MD, ...MOVED_BY_MD_FIXES, ...MOVED_BY_RELEASE_CHECK,
     ...MOVED_BY_ABSENCE_AUDIT, ...MOVED_BY_GROUNDING_CAUSES, ...MOVED_BY_SEEN_IN_PART, ...MOVED_BY_ONE_BOUND,
-    ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN, ...MOVED_BY_BETA6_READERS, ...MOVED_BY_MUST_FIRST, ...MOVED_BY_QUIET }));
+    ...MOVED_BY_REPORT_TRUTH, ...MOVED_BY_FIRST_SCREEN, ...MOVED_BY_BETA6_READERS, ...MOVED_BY_MUST_FIRST, ...MOVED_BY_QUIET,
+    ...MOVED_BY_TWO_PARTS.back, ...MOVED_BY_RUNS_COUNTED.back }));
   // D144 (0.3.0-beta.7): and once more (MOVED_BY_AGENT_PROMPT), by the report model's version in the footer; rendered
-  // back (`textBeforeAgentPrompt`), 0.3.0-beta.6's, byte for byte.
-  const asksFixes = beta6.map((c) => ({ ...c, ...MOVED_BY_AGENT_PROMPT }));
+  // back (`textBeforeAgentPrompt`, after D152's `textBeforeTruthOnly`: the model's version once more), 0.3.0-beta.6's,
+  // byte for byte.
+  // D152: and once more (MOVED_BY_TRUTH_ONLY), by the model's version alone.
+  // D161: and once more (MOVED_BY_TWO_PARTS), which nothing renders back: so the capture rendered back carries it too.
+  // D167: and once more (MOVED_BY_RUNS_COUNTED), the same way.
+  const asksFixes = beta6.map((c) => ({ ...c, ...MOVED_BY_AGENT_PROMPT, ...MOVED_BY_TRUTH_ONLY, ...MOVED_BY_TWO_PARTS.now,
+    ...MOVED_BY_RUNS_COUNTED.now }));
   assert.deepEqual(await captureReceivedCases({ ...modules, renderStory: (session, report) => textBeforeAgentPrompt(
-    renderReportMarkdown(session, report)) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
+    textBeforeTruthOnly(renderReportMarkdown(session, report))) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
     ...MOVED_BY_FIX_REVIEW })), 'as 0.3.0-beta.6 rendered them');
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90

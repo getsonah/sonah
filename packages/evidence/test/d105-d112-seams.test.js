@@ -25,7 +25,7 @@ import { CODE_REPORT_WORDS as W, codeCoverageLines, codeFooterLines, codeSeenLin
 import { buildCodeSession, codeSession, CODE_FILES, holds, holdsWith, repositoryPremise, allSound, verifiedFinding,
   batchItems, fatesOf, accountsHold, accountsHoldWith, fileReceipt, reviewFinding, dossierItems, PARSE_QUOTE }
   from '../../cli/test/code-pass-fixture.js';
-import { reportModel, reportPlacement, itemVisibleText } from '../../render/report-model.js';
+import { reportModel, reportPlacement, itemVisibleText, reportItems } from '../../render/report-model.js';
 import { REPORT_ITEM_WORDS } from '../../render/report-words.js';
 
 const enc = (text) => new TextEncoder().encode(text);
@@ -139,7 +139,7 @@ test('D110 x D105/D109: a finding in a file the request left out is checked by p
   // The readers: a confirmed bug, its premise said as what its check quotes, beside the line that the review did not
   // see the file.
   const model = reportModel(f.session, withCodePass(f.report, { codePass: confirmed, checks: new Map() }), {});
-  const items = Object.values(model.tiers).flat();
+  const items = reportItems(model);
   const bug = items.find((x) => x.kind === 'code_bug');
   assert.ok(bug, items.map((x) => x.kind).join());
   assert.ok(JSON.stringify(bug.evidence).includes(W.premiseSources.repository), JSON.stringify(bug.evidence));
@@ -318,7 +318,7 @@ test('D112 x D107/D110: a question of the code review on a claim that a repaired
     [['review', 'promises', 0]]);
   // D112: the claim folds into the repaired finding's item, and the question on the claim is a member of that item.
   const model = reportModel(f.session, joined, {});
-  const items = Object.values(model.tiers).flat();
+  const items = reportItems(model);
   assert.deepEqual(items.filter((x) => ['code_claim_false', 'code_question'].includes(x.kind)).map((x) => x.kind),
     ['code_claim_false'], 'the question is no item of its own');
   const item = items.find((x) => x.kind === 'code_claim_false');

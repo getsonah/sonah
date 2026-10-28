@@ -3,7 +3,8 @@
 // first timestamp, else the newest first-parent commit made by then), every path that differs from it, git's own patch
 // of each, an unrecorded change marked, nothing written to the repository, and the repository's state; D90: nothing withheld for privacy's sake (a harness home, a credential-shaped path and the home
 // folder as the repository are paths like any other); and the reuse dry run: a dry run with --code-pass and
-// --state-dir that reuses the stored session answers with no call and writes nothing.
+// --state-dir that reuses the stored session answers with no call and writes nothing, and (D149) gives the hunk ledger of
+// the request the code review would send first.
 //
 // Throwaway repositories in temporary folders, synthetic sessions, a deterministic fake reviewer: no recording, no
 // model, no network. Every commit date is fixed, so the reflog's times are too.
@@ -17,6 +18,9 @@ import { join, resolve } from 'node:path';
 import { createRepositoryReader, readCodeSnapshot, recordingStart, repositoryState, startCommit, snapshotTexts }
   from '../src/code-snapshot.js';
 import { runSessionReviewCommand, STATE_FOLDER_ENTRIES } from '../src/session-review-command.js';
+import { dryRunReplay } from '../src/session-review.js';
+import { createAnswerCache } from '../src/answer-cache.js';
+import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, codeJudge, contradictClaim, reviewFinding, sha256 }
   from './code-pass-fixture.js';
 
@@ -873,4 +877,24 @@ test('D108 review: one repository reader serves the code pass and reads each pat
   // And the record says the repository changed during the review.
   assert.ok(run.report.codePass.footer.some((f) => f.kind === 'source_changed'));
   assert.equal(run.report.codePass.coverage, 'partial');
+});
+
+test('D149: the reuse dry run gives the hunk ledger of the request the code review would send first', async (t) => {
+  const { root } = await repository(t);
+  const recording = await recordingAt(t, [{ timestamp: START }]);
+  const session = codeSession();
+  const snapshot = await readCodeSnapshot(session, { root, maxBytes: 1_000_000, recording });
+  const dir = await mkdtemp(join(tmpdir(), 'sonah-d149-dry-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const model = SESSION_REVIEW_CLAUDE_CLI_MODEL;
+  const answerCache = createAnswerCache(dir, { backend: 'claude-cli', model, readOnly: true });
+  const replay = await dryRunReplay({ session, snapshot, backend: 'claude-cli', model, answerCache });
+  assert.deepEqual(replay.codeRequests.map((r) => r.label), ['code-review:agent']);
+  // parse.js's one hunk (one line changed), shown by the request the dry run counts and does not send.
+  assert.deepEqual(replay.codeHunks.map((e) => [e.path, e.at, e.shownIn, e.added, e.removed]),
+    [['src/parse.js', 0, ['code-review:agent'], 1, 1]]);
+  assert.match(replay.codeHunks[0].id, /^hunk:[0-9a-f]{16}$/);
+  // With no code step, no ledger.
+  const none = await dryRunReplay({ session, snapshot: null, backend: 'claude-cli', model, answerCache });
+  assert.deepEqual([none.codeRequests, none.codeHunks], [[], null]);
 });

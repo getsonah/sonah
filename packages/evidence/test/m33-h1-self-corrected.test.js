@@ -125,7 +125,7 @@ const contradictions = (report) => report.findings.filter((f) => f.kind === 'cla
 test('M33 H1 the disclosure reason and the resolution rejections are frozen closed vocabularies', () => {
   // M33 H (owner decision 2026-10-01) added `helper_internal` after it (test/m33-h-helper-internal.test.js).
   // M33 brittleness M4 added `disclosed` after them: an upheld disclosure of an edit, never a role.
-  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
+  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed', 'corrected_later']);
   assert.ok(Object.isFrozen(ledger.DISCLOSURE_REASONS));
   assert.ok(Array.isArray(ledger.RESOLUTION_REJECTIONS) && Object.isFrozen(ledger.RESOLUTION_REJECTIONS));
   for (const reason of ['malformed', 'role_mismatch', 'unsupplied', 'ungrounded', 'out_of_order', 'cross_actor',

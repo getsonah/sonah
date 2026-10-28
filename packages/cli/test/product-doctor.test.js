@@ -90,7 +90,8 @@ test('B1 missing CLI, signed-out/other auth, unreadable auth, and old Node have 
   }
 });
 
-test('B1 Claude sign-in check uses the same subscription account inputs as the model transport', async () => {
+test('B1 Claude sign-in check uses the same subscription account inputs as the model transport (D151: the same config '
+  + 'folder too)', async () => {
   const fake = fakes();
   const env = { ...ENV, ANTHROPIC_API_KEY: PRIVATE, ANTHROPIC_BASE_URL: PRIVATE,
     CLAUDE_CONFIG_DIR: '/synthetic/other-account', SONAH_CLAUDE_PROJECTS: '/synthetic/recording-copy' };
@@ -99,7 +100,8 @@ test('B1 Claude sign-in check uses the same subscription account inputs as the m
   assert.equal(authEnv.HOME, ENV.HOME);
   assert.equal(authEnv.ANTHROPIC_API_KEY, undefined);
   assert.equal(authEnv.ANTHROPIC_BASE_URL, undefined);
-  assert.equal(authEnv.CLAUDE_CONFIG_DIR, undefined);
+  assert.equal(authEnv.CLAUDE_CONFIG_DIR, '/synthetic/other-account', 'D151: the folder the login lives in');
+  assert.equal(authEnv.SONAH_CLAUDE_PROJECTS, undefined);
   assert.match(result.text, /Claude recording copy for review: \/synthetic\/recording-copy/);
 });
 

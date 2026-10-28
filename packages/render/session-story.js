@@ -47,7 +47,8 @@ import { reportModel, REPORT_LIMITS, scopeMarker, foldNotes, folderNameOf, promp
   from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
-  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS } from './report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS, REPORT_TRAIL_WORDS }
+  from './report-words.js';
 
 /** The Markdown report's layout version. /32 (D97, owner decisions 2026-10-16): the story is now the report .md — the
  *  report model rendered for a pull request comment, in the page's order and with its counts: the header, the count
@@ -87,7 +88,20 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  /41 (0.3.0-beta.7, one move from 0.3.0-beta.6's /40). D144 (the owner, 2026-10-23): under each
  *  item that leads in Must act and has a prompt, a fold "Prompt for the agent" holds it as a fence, and the
  *  shortening order gains a step (`actPrompts`) after Good to know's counts and before any evidence of Must know or
- *  Must act; a report with no such prompt renders as /40, but the versions it names. */
+ *  Must act; a report with no such prompt renders as /40, but the versions it names. D161 (the owner, 2026-10-27;
+ *  0.3.0-beta.9's content moves ride the report model's one move, D152's /8, as D153's did): the report has two parts, as the page: Must act, Must know and
+ *  Good to know (folded), then the agent's decisions in the order the session recorded them, one fold a group (open
+ *  when it holds an item tagged Must act or Must know), one fold a decision with its tier as a tag; then your prompt and
+ *  the rest. The count line counts the decisions after the tiers. The shortening cuts lowest tier first across both
+ *  parts: a decision tagged Good to know as Good to know is cut (`trailEvidence` before `gtkEvidence`, `trailCounts`
+ *  before `gtkCounts`); one tagged Must act or Must know as an item of Must act or Must know (never its line). D163 (the
+ *  owner, 2026-10-28; the same move): as the page, the pointers, the line of a decision that the first part keeps, the
+ *  fold of an open group's decisions tagged Good to know and a change of approach's reading of why; the pointers keep
+ *  their numbers alone at `pointerLines`, after Good to know's counts. D167 (the owner, 2026-10-28; the same move):
+ *  unlike the page, the Runs part counts the runs by their results (the model's `runs.parts`), keeps the line of each
+ *  run that another part of the same .md names by number (its review: an item's Where too, as that .md prints them),
+ *  and says where the list is when the page lists a run that the .md does not; no shortening step cuts the count
+ *  (`runsMd`). */
 export const STORY_VERSION = 'sonah.session-story/41';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
@@ -929,10 +943,25 @@ const italic = (escaped) => {
   const [, lead, core, trail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(escaped);
   return core ? `${lead}*${core}*${trail}` : escaped;
 };
+/** D167 (its review): the runs that one composition of the .md names outside its Runs part, gathered as that
+ *  composition prints them (`composeMd`, its first rendering only; null at every other time, so nothing else records):
+ *  a link to a run (a Part whose `href` is `run-<k>`: a claim's run, a mark's) and an item's Where to a run (`anchor`
+ *  `run-<k>`: a failure's). Structure only: the target, never the words. */
+let gatheredRuns = null;
+const RUN_TARGET = /^run-(\d+)$/;
+const gatherRun = (target) => {
+  const run = gatheredRuns !== null && typeof target === 'string' ? RUN_TARGET.exec(target) : null;
+  if (run) gatheredRuns.add(Number(run[1]));
+};
+/** An item's Where that is an anchor (a run, an ask, a list), as Markdown: its words; a run's gathered. (A fold's
+ *  summary that shows the first Where shows it in its body too, by `whereMd`, so it gathers nothing of its own.) */
+const anchorMd = (w) => { gatherRun(w.anchor); return mdOwn(w.text); };
 /** One text part of the report model as Markdown: code as a code span, a verbatim quote in quotation marks (a cut
- *  outside them), a review's own words in italics, Sonah's words as they are. An in-page link is text. */
+ *  outside them), a review's own words in italics, Sonah's words as they are. An in-page link is text (D167: a link to
+ *  a run gathered). */
 function partMd(p) {
   if (!plainObject(p)) return '';
+  gatherRun(p.href);
   if (p.code) return codeSpan(p.text);
   if (p.quote) return `“${mdText(p.text)}”${p.cut ? '…' : ''}`;
   if (p.by === 'sonah') return mdOwn(p.text);
@@ -1006,9 +1035,12 @@ function headerBlocks(model) {
   blocks.push(lines.join(BR));
   const tiers = countLine.tiers.map((t) => `${REPORT_COUNT_WORDS.tier(t.words, t.n)}${t.folded
     ? ` ${REPORT_COUNT_WORDS.folded}` : ''}`).join(' · ');
-  const count = [mdOwn(`${tiers} · ${countLine.prompt}`)];
+  // D161: the agent's decisions, counted after the tiers.
+  const count = [mdOwn(`${tiers}${countLine.decisions ? ` · ${countLine.decisions.words}` : ''} · ${countLine.prompt}`)];
   // D113 amended: how many items are about code outside the evaluated session.
   if (countLine.outside) count.push(mdOwn(countLine.outside));
+  // D153: what the after-point re-check took out of Must act, by mechanism (only a report it ran on).
+  if (countLine.recheck) count.push(mdOwn(countLine.recheck));
   if (countLine.empty) count.push(mdOwn(countLine.empty));
   else if (countLine.labels.length) count.push(`${mdOwn(REPORT_COUNT_WORDS.mustActLead)} ${countLine.labels
     .map((l) => `[${partsMd(l.parts)}](#item-${l.n})`).join(' · ')}${countLine.more
@@ -1106,7 +1138,7 @@ function promptSection(model, trim, notice) {
 }
 
 function whereMd(item) {
-  const places = [...item.where.map((w) => (w.anchor ? mdOwn(w.text) : codeSpan(placeText(w)))),
+  const places = [...item.where.map((w) => (w.anchor ? anchorMd(w) : codeSpan(placeText(w)))),
     ...(item.whereMore ? [mdOwn(REPORT_ITEM_WORDS.morePlaces(item.whereMore))] : [])];
   // A member (D112) has no scope of its own: its item's marker says whether you asked.
   const asks = item.scope?.asks ?? [];
@@ -1152,6 +1184,8 @@ function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = 
     lines.push(`${mdOwn(REPORT_ITEM_WORDS.restsOutside)} ${partsMd(parts)}`);
   if (item.impact) lines.push(`${mdOwn(REPORT_ITEM_WORDS.impact)} ${partsMd(item.impact)}`);
   if (item.agentSaid) lines.push(`${mdOwn(item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid)} ${partMd(item.agentSaid)}`);
+  // D163: a change of approach's reason in the session review's words, on its own line, after the agent's own.
+  if (item.reviewWhy) lines.push(`${mdOwn(REPORT_ITEM_WORDS.reviewWhy)} ${partsMd(item.reviewWhy)}`);
   if (item.action) lines.push(`${mdOwn(REPORT_ITEM_WORDS.action)} ${partsMd(item.action)}`);
   const where = whereMd(item);
   if (where) lines.push(where);
@@ -1194,10 +1228,13 @@ function tierSection(model, tier, trim, notice, agentPrompts = true) {
   // none when the caller leaves them out (`agentPrompts` false), which is no shortening.
   const rendered = items.map((item) => itemMd(item, { evidence, excerpts: trim.excerpts,
     agentPrompts: agentPrompts && !trim.actPrompts }));
-  const blocks = [`### ${mdOwn(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[tier], items.length))}`,
-    notice ? mdOwn(notice) : null, ...rendered.map((r) => r.text)];
-  const shortened = items.length > 0 && (evidence || (trim.excerpts && rendered.some((r) => r.fenced))
-    || (agentPrompts && trim.actPrompts && items.some((item) => item.agentPrompt)));
+  // D163: the heading counts as the count line does (Must act with its pointers); after the tier's own items come its
+  // pointers to the decisions of the second part tagged with it, each kept (`pointerLines`: by its number alone).
+  const blocks = [`### ${mdOwn(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[tier], model.countLine.counts[tier]))}`,
+    notice ? mdOwn(notice) : null, ...rendered.map((r) => r.text), pointersMd(model, tier, trim.pointerLines)];
+  const shortened = (items.length > 0 && (evidence || (trim.excerpts && rendered.some((r) => r.fenced))
+    || (agentPrompts && trim.actPrompts && items.some((item) => item.agentPrompt))))
+    || (trim.pointerLines && list(model.pointers?.[tier]).length > 0);
   return { text: blocks.filter(Boolean).join('\n\n'), shortened };
 }
 
@@ -1216,13 +1253,81 @@ function goodToKnowSection(model, trim, notice) {
     // D131 (R1): an item with nothing left to fold (no visible line, its evidence shortened) is its head alone, never
     // an empty fold.
     if (!one.text) return { fenced: false, text: `<a name="item-${item.n}"></a>${itemHead(item, 'md')}`
-      + `${item.where.length ? ` · ${item.where[0].anchor ? mdOwn(item.where[0].text) : codeSpan(placeText(item.where[0]))}`
+      + `${item.where.length ? ` · ${item.where[0].anchor ? anchorMd(item.where[0]) : codeSpan(placeText(item.where[0]))}`
         : ''}` };
     return { fenced: one.fenced, text: fold(`<a name="item-${item.n}"></a>${itemHead(item, 'html')}`
       + `${where.length ? ` · ${where[0]}` : ''}`, [one.text]) };
   });
   const shortened = items.length > 0 && (trim.gtkEvidence || (trim.excerpts && rendered.some((r) => r.fenced)));
   return { text: fold(summary, [...top, ...rendered.map((r) => r.text)]), shortened };
+}
+
+/**
+ * D161: the report's second part, the agent's decisions in the order the session recorded them: one fold a group (open
+ * when the model opens it), its summary whose message it follows and its count; inside, that message's asks, then each
+ * decision as a fold whose summary is its line (its number, type word, what it is, its marker, its ask, and its tier as
+ * a tag) and whose body is the item's lines. Shortened lowest tier first, as the first part is (its review): a decision
+ * tagged Good to know loses its evidence fold with Good to know's (`trailEvidence`, before `gtkEvidence`) and, at
+ * `trailCounts` (before `gtkCounts`), its line, counted in its group; a decision tagged Must act or Must know keeps its
+ * line, its anchor and its notes, and its evidence goes only when the first part's of its tier goes (`knowEvidence`,
+ * `actEvidence`), exactly as an item of Must act or Must know. Empty with no decision.
+ * D163: a group shows the entries the model shows in it (`shown`), a decision that the first part shows by its line
+ * there; then, in an open group, one fold that counts the rest (`more`, tagged Good to know) and holds them in order. At
+ * `trailCounts` every entry tagged Good to know, shown or folded, is counted in its group, and no Must entry is cut. A
+ * decision tagged Must act carries its prompt for the agent as an item of Must act does (`agentPrompts`, `actPrompts`).
+ */
+function trailSection(model, trim, notice, agentPrompts = true) {
+  const decisions = model.decisions;
+  if (!decisions?.total) return { text: '', shortened: false };
+  const blocks = [`### ${mdOwn(REPORT_TRAIL_WORDS.heading(decisions.total))}`, notice ? mdOwn(notice) : null];
+  const openFold = (summaryHtml, inner, open) => `<details${open ? ' open' : ''}><summary>${summaryHtml}</summary>\n\n`
+    + `${inner.filter(Boolean).join('\n\n')}${inner.some(Boolean) ? '\n\n' : ''}</details>`;
+  const must = (item) => item.tier.final === 'must_act' || item.tier.final === 'must_know';
+  const mustEntry = (e) => e.tier === 'must_act' || e.tier === 'must_know';
+  const evidenceCut = (item) => (item.tier.final === 'must_act' ? trim.actEvidence : item.tier.final === 'must_know'
+    ? trim.knowEvidence : trim.trailEvidence);
+  const prompts = (item) => agentPrompts && item.tier.final === 'must_act';
+  let fenced = false, shortened = false;
+  const trailEntry = (e) => {
+    if (e.above) return `**${mdOwn(REPORT_TYPE_WORDS[e.type])}:** ${partsMd(e.what.parts)}`
+      + `${mdOwn(scopeMarker(e.scope))} · [${mdOwn(REPORT_TRAIL_WORDS.shownAbove(e.n))}](#item-${e.n})`
+      + ` · ${mdOwn(REPORT_TIER_WORDS[e.tier])}`;
+    const { item } = e;
+    const one = itemMd(item, { head: false, evidence: evidenceCut(item), excerpts: trim.excerpts, keepNotes: must(item),
+      agentPrompts: prompts(item) && !trim.actPrompts });
+    fenced = fenced || one.fenced;
+    if (evidenceCut(item) || (prompts(item) && trim.actPrompts && item.agentPrompt)) shortened = true;
+    const head = `<a name="item-${item.n}"></a>${itemHead(item, 'html')}${item.scope.asks.length
+      ? ` · ${escHtml(REPORT_ITEM_WORDS.asked(item.scope.asks[0]))}` : ''} · ${escHtml(REPORT_TIER_WORDS[item.tier.final])}`;
+    return one.text ? fold(head, [one.text]) : head;
+  };
+  for (const g of decisions.groups) {
+    const summary = `${escHtml(g.words)} · ${escHtml(g.count)}`;
+    const asks = [...g.askLines.map((a) => `- ${mdOwn(REPORT_PROMPT_WORDS.askLine(a.n))} · ${mdOwn(a.status)} · `
+      + `${partsMd(a.words)}`), ...(g.asksMore ? [`- ${mdOwn(REPORT_TRAIL_WORDS.moreAsks(g.asksMore))}`] : [])];
+    const shown = trim.trailCounts ? g.shown.filter(mustEntry) : g.shown;
+    const more = trim.trailCounts ? [] : g.more;
+    const hidden = g.entries.length - shown.length - more.length;
+    if (hidden) shortened = true;
+    blocks.push(openFold(summary, [asks.join('\n'), ...shown.map(trailEntry),
+      more.length ? fold(escHtml(g.moreWords), more.map(trailEntry)) : null,
+      hidden ? mdOwn(REPORT_TRAIL_WORDS.goodToKnowNotShown(hidden)) : null], g.open));
+  }
+  return { text: blocks.filter(Boolean).join('\n\n'), shortened: shortened || (trim.excerpts && fenced) };
+}
+
+/** D163 (L1): a tier's pointers to the decisions of the second part tagged with it, under their heading: each the
+ *  decision's number, type word and what it is, linked to its line there, then its marker and its ask. Null with none.
+ *  Shortened (`numbers`) only after Good to know is counts (`pointerLines`): each pointer then keeps its number and its
+ *  link alone, on one line, since the decision's own line in the second part, kept as Must, says the rest. */
+function pointersMd(model, tier, numbers = false) {
+  const pointers = list(model.pointers?.[tier]);
+  if (!pointers.length) return null;
+  const ask = (p) => (p.scope.asks.length ? ` · ${mdOwn(REPORT_ITEM_WORDS.asked(p.scope.asks[0]))}` : '');
+  const line = (p) => `- [${p.n} ${mdOwn(REPORT_TYPE_WORDS[p.type])}: ${partsMd(p.what.parts)}](#item-${p.n})`
+    + `${mdOwn(scopeMarker(p.scope))}${ask(p)}`;
+  return `#### ${mdOwn(REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS[tier], pointers.length))}\n\n`
+    + (numbers ? pointers.map((p) => `[${p.n}](#item-${p.n})`).join(' · ') : pointers.map(line).join('\n'));
 }
 
 const cap = (n) => Math.min(n, REPORT_LIMITS.files);
@@ -1233,17 +1338,45 @@ export const noFilesWords = (did) => (did.files.none === 'unseen' ? REPORT_DID_W
 /** D104: a row's shown-in-part mark in a list (`seen`: lines of parts), each line after the row's own, under its label. */
 const seenMd = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `${mdOwn(REPORT_SEEN_WORDS.label)} ` : ''}`
   + partsMd(line)).join('');
-function didSection(model, trim, notice) {
+/**
+ * D167 (the owner, 2026-10-28: "the .md (PR comment) keeps the counts of what the agent did and points to the page for
+ * the full runs list; the page keeps everything"): the .md's Runs part. The runs and their results counted in the
+ * header's result parts (the report model's `runs.parts`); the files no command ran after (left out with the lists at
+ * `didCounts`); the line of each run of the page's list that this composition of the .md names elsewhere (`named`, the
+ * runs `composeMd` gathered as it printed the other parts: an item's Where, a claim's run, a mark's), so every run the
+ * .md names by number has its line in the .md; and, when the page's list holds a run that the .md does not show, where
+ * that list is. Its review: the names are those this composition prints, never the whole model's, so a part that a
+ * shortening step leaves out keeps no run's line; with every run quiet (exit 0 before the last edit, no failure row)
+ * the page lists none and counts them, as the count line does, and the .md points to no list. `named` null (the first
+ * rendering, before the names are gathered): no run's line. The page lists every run.
+ */
+function runsMd(model, trim, named) {
+  const { runs } = model.did;
+  const blocks = [mdOwn(runs.total ? REPORT_DID_WORDS.runsCounted(runs.total, runs.parts.join(', '))
+    : REPORT_DID_WORDS.noRuns)];
+  if (runs.neverRan.length && !trim.didCounts) blocks.push(mdOwnNaming(REPORT_DID_WORDS.neverRan, runs.neverRan));
+  const kept = named ? runs.shown.filter((run) => named.has(run.k)) : [];
+  if (kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsNamed), kept.map((run) => `- ${mdOwn(REPORT_ITEM_WORDS.run(run.k))}`
+    + `${run.text ? ` · ${codeSpan(run.text)}` : run.tool ? ` · ${codeSpan(run.tool)}` : ''}`
+    + `${run.outcome ? ` · ${mdOwn(run.outcome)}` : ''}${run.handling ? ` · ${mdOwn(run.handling)}` : ''}`
+    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}${seenMd(run.seen)}`).join('\n'));
+  if (runs.shown.length > kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsOnPage));
+  return blocks;
+}
+function didSection(model, trim, notice, named = null) {
   const { did } = model;
   const summary = escHtml(REPORT_SECTION_WORDS.didCounted(did.files.none === 'unseen' ? null : did.files.total,
     did.runs.commands, did.runs.others, did.claims.total));
   const sub = (heading) => `#### ${mdOwn(heading)}`;
   const counted = (n) => (n ? mdOwn(REPORT_NOT_CHECKED_WORDS.rowsNotShown(n)) : null);
   const blocks = notice ? [mdOwn(notice)] : [];
-  const rows = did.files.total + did.runs.shown.length + did.claims.total + did.leftOut.length + did.settled.length;
+  // D167: the runs are counted at every step (`runsMd`); `didCounts` leaves out the line of files no command ran after,
+  // which it counts as a row, so the report says it shortened only when this step left something out. A run's line
+  // that this step cuts is one that only a claim's or a settled decision's mark named, so those rows count it.
+  const rows = did.files.total + did.runs.neverRan.length + did.claims.total + did.leftOut.length + did.settled.length;
   if (trim.didCounts) {
     blocks.push(sub(REPORT_SECTION_WORDS.files), did.files.total ? counted(did.files.total) : mdOwn(noFilesWords(did)),
-      sub(REPORT_SECTION_WORDS.runs), did.runs.total ? counted(did.runs.total) : mdOwn(REPORT_DID_WORDS.noRuns),
+      sub(REPORT_SECTION_WORDS.runs), ...runsMd(model, trim, named),
       sub(REPORT_SECTION_WORDS.claims), did.claims.total ? counted(did.claims.total) : mdOwn(REPORT_DID_WORDS.noClaims),
       sub(REPORT_SECTION_WORDS.leftOut), did.leftOut.length ? counted(did.leftOut.length) : mdOwn(REPORT_DID_WORDS.noLeftOut),
       sub(REPORT_SECTION_WORDS.settled), did.settled.length ? counted(did.settled.length) : mdOwn(REPORT_DID_WORDS.noSettled));
@@ -1282,17 +1415,8 @@ function didSection(model, trim, notice) {
   const away = did.files.outsideSession;
   if (away) blocks.push(mdOwn(away.lead), away.files.map(fileLine).join('\n'),
     ...(away.more > 0 ? [mdOwn(REPORT_DID_WORDS.moreFiles(away.more))] : []));
-  // Runs, from the recording, in order.
-  blocks.push(sub(REPORT_SECTION_WORDS.runs));
-  if (!did.runs.total) blocks.push(mdOwn(REPORT_DID_WORDS.noRuns));
-  else if (did.runs.shown.length) blocks.push(did.runs.shown.map((run) => `- ${mdOwn(REPORT_ITEM_WORDS.run(run.k))}`
-    + `${run.text ? ` · ${codeSpan(run.text)}` : run.tool ? ` · ${codeSpan(run.tool)}` : ''}`
-    + `${run.outcome ? ` · ${mdOwn(run.outcome)}` : ''}${run.handling ? ` · ${mdOwn(run.handling)}` : ''}`
-    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}${seenMd(run.seen)}`).join('\n'));
-  if (did.runs.quietExit0) blocks.push(mdOwn(REPORT_DID_WORDS.moreRuns(did.runs.quietExit0)));
-  if (did.runs.cut) blocks.push(mdOwn(REPORT_DID_WORDS.runsCut(did.runs.shown.length, did.runs.cut,
-    did.runs.cutParts.join(', ') || String(did.runs.cut))));
-  if (did.runs.neverRan.length) blocks.push(mdOwnNaming(REPORT_DID_WORDS.neverRan, did.runs.neverRan));
+  // Runs: D167, counted, not listed (`runsMd`).
+  blocks.push(sub(REPORT_SECTION_WORDS.runs), ...runsMd(model, trim, named));
   // Claims.
   blocks.push(sub(REPORT_SECTION_WORDS.claims));
   if (!did.claims.total) blocks.push(mdOwn(REPORT_DID_WORDS.noClaims));
@@ -1356,18 +1480,26 @@ function footerBlocks(model) {
 
 /**
  * What each composition shortens, in order (D97, D131), until the report fits `maxBytes`: nothing; your messages keep
- * their first `messageChars` characters (your own words, which you hold; the page cuts them first too); then the
+ * their first `messageChars` characters (your own words, which you hold; the page cuts them first too); then (D161)
+ * the evidence folds of the agent's decisions are left out; then the
  * evidence folds of Good to know are left out; then (D131, R1) your prompt keeps its counts and the rows of the asks
  * that are not done, and your messages are counted, not shown; then the lists of what the agent did keep their counts
- * only; then those of what Sonah could not check; then the code excerpts give way to their place (`path:line`, on the
- * Where line); then Good to know becomes counts by kind; then (D144) the prompts for the agent of Must act are left out:
+ * only (D167: the runs are counted at every step, so `didCounts` cuts no count of runs, only the line of files no
+ * command ran after; a run's line stays while a part that the composition prints names that run, so a step that cuts
+ * the part cuts the line; no step cuts a list of runs, since the .md lists none); then those of what Sonah could not check;
+ * then the code excerpts give way to their place (`path:line`, on the
+ * Where line); then (D161) the agent's decisions become their groups' lines with their counts; then Good to know
+ * becomes counts by kind; then (D163) the first part's pointers to the decisions tagged Must act or Must know keep their
+ * numbers and links alone; then (D144) the prompts for the agent of Must act are left out:
  * each is made from its item's evidence, so it goes before that evidence; last of all (D131's review), the evidence
  * folds of Must know are left out, then those of Must act: they are the verbatim proof. The header, the count line, the prompt's counts and its rows of asks not done, and the visible lines
- * of Must act and Must know are never shortened. An evidence fold or a prompt that is left out is not printed (never a
+ * of Must act and Must know are never shortened (D161: in both parts: a decision tagged Must act or Must know keeps its
+ * line, anchor and notes, and loses its evidence only with its tier's in the first part). An evidence fold or a prompt that is left out is not printed (never a
  * fold with nothing in it), and the report says once that it was shortened.
  */
-const MD_TRIM_STEPS = Object.freeze(['messages', 'gtkEvidence', 'askRows', 'didCounts', 'notCheckedCounts',
-  'excerpts', 'gtkCounts', 'actPrompts', 'knowEvidence', 'actEvidence']);
+const MD_TRIM_STEPS = Object.freeze(['messages', 'trailEvidence', 'gtkEvidence', 'askRows', 'didCounts',
+  'notCheckedCounts', 'excerpts', 'trailCounts', 'gtkCounts', 'pointerLines', 'actPrompts', 'knowEvidence',
+  'actEvidence']);
 function* mdCompositions() {
   let trim = Object.fromEntries(MD_TRIM_STEPS.map((step) => [step, false]));
   yield trim;
@@ -1382,13 +1514,29 @@ function composeMd(model, trim, notice, { agentPrompts = true } = {}) {
   // D144: the prompts for the agent, unless the caller leaves them out (`agentPrompts` false: the terminal).
   const must = [(said) => tierSection(model, 'must_act', trim, said, agentPrompts),
     (said) => tierSection(model, 'must_know', trim, said, agentPrompts)];
-  const sections = [...(promptAfterTiers(model) ? [...must, prompt] : [prompt, ...must]),
-    (said) => goodToKnowSection(model, trim, said), (said) => didSection(model, trim, said),
+  // D161: the first part (Must act, Must know, Good to know), then the second (the agent's decisions), then your prompt
+  // when it comes after the tiers.
+  const parts = [...must, (said) => goodToKnowSection(model, trim, said),
+    (said) => trailSection(model, trim, said, agentPrompts)];
+  // D167 (its review): What the agent did keeps the line of each run that this composition names elsewhere (`named`).
+  let named = null;
+  const did = (said) => didSection(model, trim, said, named);
+  const sections = [...(promptAfterTiers(model) ? [...parts, prompt] : [prompt, ...parts]), did,
     (said) => notCheckedSection(model, trim, said)];
-  const rendered = sections.map((section) => section(null));
+  // The first rendering gathers the runs that every section but the Runs part names, as this composition prints them
+  // (`gatheredRuns`; its Runs part, with `named` null, prints no run's line, so names none; the header and the footer
+  // name no run); then What the agent did is rendered again with them. Nothing else changes between the two
+  // renderings, so neither does whether a section is shortened.
+  const gathered = new Set();
+  let rendered;
+  gatheredRuns = gathered;
+  try { rendered = sections.map((section) => section(null)); } finally { gatheredRuns = null; }
+  named = gathered;
+  rendered[sections.indexOf(did)] = did(null);
   const first = rendered.findIndex((r) => r.shortened);
   if (first >= 0) rendered[first] = sections[first](notice);
-  return `${[...headerBlocks(model), ...rendered.map((r) => r.text), ...footerBlocks(model)].join('\n\n')}\n`;
+  return `${[...headerBlocks(model), ...rendered.map((r) => r.text).filter(Boolean), ...footerBlocks(model)]
+    .join('\n\n')}\n`;
 }
 
 /**

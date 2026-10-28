@@ -4,8 +4,9 @@
 // here. Every session and report here is synthetic (report-fixture.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, reportPlacement, REPORT_LIMITS } from '../report-model.js';
-import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed } from '../../evidence/src/code-pass.js';
+import { reportModel, reportPlacement, REPORT_LIMITS, reportItems } from '../report-model.js';
+import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen }
+  from '../../evidence/src/code-pass.js';
 import { renderSessionPage } from '../session-page.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { STORY_KEY } from './session-story-fixture.js';
@@ -21,11 +22,13 @@ function sourceKeys(report) {
   codePassQuestions(report).forEach((_, index) => keys.push(`codePass.questions:${index}`));
   // D110: the findings code's label does not confirm, each an item to verify.
   codePassUnconfirmed(report).forEach((_, index) => keys.push(`codePass.unconfirmed:${index}`));
+  // D152: the confirmed findings tied to nothing they break, each an item of its own kind.
+  codePassOpen(report).forEach((_, index) => keys.push(`codePass.open:${index}`));
   codePassWithheld(report).forEach((_, index) => keys.push(`codePass.withheld:${index}`));
   return keys.sort();
 }
 const PLACES = Object.freeze(['item', 'foldedInto', 'memberOf', 'ask', 'list', 'notChecked']);
-const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 
 function assertPlaced(model, report, label) {
@@ -60,7 +63,9 @@ function assertPlaced(model, report, label) {
   const held = items.flatMap((item) => item.rows.map((r) => `${r.source}:${r.index}`));
   assert.equal(new Set(held).size, held.length, `${label}: no row in two items`);
   // The counts: the count line's equal the sections'; every fold's equals its contents.
-  for (const t of model.countLine.tiers) assert.equal(t.n, model.tiers[t.tier].length, `${label} ${t.tier}`);
+  // D163: Must act's section holds its items and its pointers to the decisions tagged Must act.
+  for (const t of model.countLine.tiers) assert.equal(t.n, model.tiers[t.tier].length + (t.tier === 'must_act'
+    ? model.pointers.must_act.length : 0), `${label} ${t.tier}`);
   const prompt = model.prompt.counts;
   assert.equal(Object.values(prompt).reduce((a, b) => a + b, 0), model.prompt.asks.length, `${label}: prompt counts`);
   const did = model.did;
@@ -142,7 +147,7 @@ test('D97 (3): a row a display bound cuts is still placed, and its list counts i
   assertPlaced(model, report, 'many claims');
 });
 
-test('D97 (3): every row is placed exactly once on the triage contract\'s fixtures (a) to (g) too', async () => {
+test('D97 (3): every row is placed exactly once on the triage contract\'s fixtures (a) to (h) too', async () => {
   const { TRIAGE_REPORTS, triageSession } = await import('../../evidence/test/report-triage-fixture.js');
   for (const [letter, shape] of Object.entries(TRIAGE_REPORTS)) {
     const session = triageSession();

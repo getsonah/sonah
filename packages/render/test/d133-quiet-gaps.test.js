@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { renderSessionPage, sessionPage, escapeHtml } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
-import { reportModel, REPORT_FOLD_CHOICES } from '../report-model.js';
+import { reportModel, REPORT_FOLD_CHOICES, reportItems } from '../report-model.js';
 import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_PARTS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_ITEM_WORDS,
   REPORT_TRIM_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_SECTION_WORDS } from '../report-words.js';
 import { coverageCauses } from '../../evidence/src/review.js';
@@ -225,7 +225,7 @@ test('D133: a page past its size keeps, in each evidence fold it shortens, what 
     dimension: `${d.dimension} ${i}`, chosen: `${d.chosen} ${i} ${'x'.repeat(200)}` }))] };
   const page = sessionPage(session, big, {});
   assert.equal(page.whole, false, 'the page left something out');
-  const items = Object.values(reportModel(session, big, {}).tiers).flat().filter((item) => item.scope?.askedUnknown
+  const items = reportItems(reportModel(session, big, {})).filter((item) => item.scope?.askedUnknown
     && !item.scope?.notAsked);
   assert.ok(items.length > 1_500);
   assert.equal(count(page.html, REPORT_ITEM_WORDS.askedUnknown), items.length);
@@ -272,7 +272,7 @@ test('D133 (its review): "Sonah did not find this quote in the recording." is it
   + 'never on the item\'s visible lines, also when the fold is shortened', () => {
   const said = REPORT_ITEM_WORDS.quoteMissing;
   const { session, report } = missingQuote();
-  const items = Object.values(reportModel(session, report, repoFacts()).tiers).flat().filter((i) => i.quoteMissing);
+  const items = reportItems(reportModel(session, report, repoFacts())).filter((i) => i.quoteMissing);
   assert.ok(items.length >= 1 && items.some((i) => i.tier.final !== 'good_to_know'), 'an open item without its quote');
   const html = renderSessionPage(session, report, repoFacts());
   assert.equal(count(closedText(html), said), 0);

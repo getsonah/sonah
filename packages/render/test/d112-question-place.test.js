@@ -6,7 +6,7 @@
 // item of its own. The item it joins is never below the question's own tier. Synthetic sessions only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, reportPlacement } from '../report-model.js';
+import { reportModel, reportPlacement, reportItems } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { reportSession, triagedReport, repoFacts } from './report-fixture.js';
@@ -14,7 +14,7 @@ import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
 const TIERS = ['must_act', 'must_know', 'good_to_know'];
 const RANK = { good_to_know: 0, must_know: 1, must_act: 2 };
-const itemsOf = (model) => TIERS.flatMap((tier) => model.tiers[tier]);
+const itemsOf = (model) => reportItems(model);
 const holds = (item, source, index) => item.rows.some((r) => r.source === source && r.index === index);
 const receipt = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
 const id = (c) => `sha256:${c.repeat(64).slice(0, 64)}`;
@@ -35,8 +35,10 @@ test('D112 amended: a question that names no place stays its own item at its own
   assert.ok(own, 'an item of its own');
   assert.equal(memberOf(model, 0), undefined, 'no item holds it');
   assert.deepEqual(reportPlacement(model)['codePass.questions:0'], { item: own.n });
-  // Its own tier, not lowered: the code review proposed medium and Sonah kept it.
-  assert.equal(own.tier.final, 'must_know');
+  // D161: the code review proposed medium, but no code checked its tie, so it is at most Good to know.
+  assert.deepEqual([own.tier.proposed, own.tier.final, own.tier.bound], ['must_know', 'good_to_know', 'untied_ceiling']);
+  assert.equal(own.why, 'The code review proposed medium. Sonah could not tie this question to an item or an ask, so it '
+    + 'puts it in Good to know.');
   const decision = itemsOf(model).find((x) => holds(x, 'decisions', 3));
   assert.deepEqual(decision.members, []);
   // D116: it names no item either. Its key names the decision, but no code checked that tie (it names no place), so

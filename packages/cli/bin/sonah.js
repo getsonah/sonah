@@ -137,7 +137,7 @@ function usage() {
     row('sonah review --commits A..B [--choose N]', 'review the session that the commits name'),
     row('sonah decision accept|change|clarify HASH ID --report FILE --reason TEXT',
       'record your answer to one row of a session page'),
-    row(['sonah doctor [--no-probe] [--timeout MS]', '[--backend claude-cli|codex-cli] [--model ID]'],
+    row(['sonah doctor [--no-probe] [--timeout MS]', '[--backend claude-cli|codex-cli] [--model ID] [--effort LEVEL]'],
       'Node, sign-in, one model check, session locations'),
     row('sonah hook add [--repo DIR]', 'Claude Code\'s commits get an Agent-Session line'),
     row('sonah hook remove [--repo DIR]', 'remove that hook (lines in history stay)'),

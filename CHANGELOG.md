@@ -1,5 +1,182 @@
 # Changelog
 
+## 0.3.0-beta.9 (2026-10-28)
+
+This beta is experimental: the report's layout is new, and we want to hear how it reads for you.
+
+If you use Claude Code 2.1.311 or later, update now. Its stream no longer names the `[1m]` long-context selector, so
+0.3.0-beta.7 could not confirm that an answer came under the 1M-token window and refused every answer: `sonah review`
+failed and `sonah doctor` said it could not confirm the model. Sonah now checks the window from the usage that Claude
+Code reports.
+
+The report now comes in two parts. First Must act, Must know and Good to know; then the agent's decisions, in the order
+it made them, under the message of yours each one followed, each tagged with its tier, so you can read how the agent got
+from your task to its result. A decision that holds a Must act or Must know question of the code review stays in the
+first part, and Must act and Must know name each decision further down that is tagged with them. The .md and the PR
+comment no longer list every run: they count them by their results, and the HTML page lists them as before. A long
+session's change is now reviewed whole, a real problem the code review found is no longer folded away as a question, and
+a session that works in several worktrees of one repository gets its code review's checks counted.
+
+This beta follows 0.3.0-beta.7: there was no 0.3.0-beta.8. To update, run `npm install -g getsonah@latest`.
+[Update](docs/INSTALL.md#update) gives the other ways. After you update, the session review's stored answers stay,
+except those of a second check that did not run for a decision: Sonah asks that check again. The code review asks each
+finding's check again once, since a check now judges only whether its finding is true; a change larger than one request
+is reviewed again, in parts, and one that several repositories or folders hold is reviewed again. Commands, the page and
+the files under `~/.sonah` can still change between betas.
+
+### Claude Code 2.1.311 and later
+
+Sonah works again with Claude Code 2.1.311 and later. Its stream no longer names the `[1m]` long-context selector, so
+Sonah could not confirm that the answer came under the 1M-token window and refused every answer: `sonah review` failed
+its windows and its code step, and `sonah doctor` said it could not confirm the answer came from `claude-sonnet-5-5`
+under its 1M-token window. Sonah now checks the 1M window from the usage that Claude Code reports for each call, and
+still refuses an answer whose window is another one or is not reported. Nothing that Sonah sends changes, so your stored
+answers still replay.
+
+### The report in two parts
+
+The report now comes in two parts. Must act, Must know and Good to know hold every item but the agent's decisions: what
+the agent did not do, what the recording or the code contradicts, bugs, weak tests, failures passed over and the code
+review's questions. A decision stays there too when it holds one of those in Must act or Must know. Right after them,
+the agent's decisions come in the order it made them, under the message of yours each one followed, each with its tag:
+Must act, Must know or Good to know. Skim that part alone to see how the agent got from your task to its result; open a
+decision to see its words and what Sonah checked. A group that holds a decision tagged Must act or Must know is open.
+The count line, the page, the .md and the PR comment count the decisions apart from the tiers (a decision tagged Must
+act also counts in Must act). A code question that Sonah cannot tie to anything in the review is now Good to know. The
+two parts move no finding out of Must act or Must know. Nothing that Sonah sends changes, so your stored answers still
+replay.
+
+Right after their own items, Must act and Must know now have one line for each decision further down that is tagged with
+them, linked to it in the decisions part, so a decision that needs you is in the first part too. A decision tagged Must
+act counts in Must act, and the count line names it after the first part's own items when there is room, so Must act
+never reads 0 while one is. The decisions part now lists every decision: one that stays in Must act or Must know has a
+line at its place that links to it. In an open group, the decisions tagged Good to know fold under one line that counts
+them, after the Must ones. When the agent changed its approach, each quote now says whose it is when the recording shows
+it, such as what the agent said or a recorded result, and the reason that the session review gave is shown on its own
+line, in italics, as the session review's words, never as the agent's. Such a quote is a recorded result only when it is
+the result of a command, a read, a write, an edit or a delete; the result of another tool, such as an MCP tool, may be
+another model's words and has no label. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### The PR comment counts the runs
+
+The .md and the PR comment no longer list the commands that the agent ran. Under What the agent did, they count the runs
+by their results, such as "12 runs: 9 exited with code 0, 3 failed.". A run that another part of the .md names by its
+number keeps its line there when the HTML page lists that run, such as the command of a failure that the agent passed
+over, or the check that a claim rests on; when Sonah shortens the .md and leaves that part out, the run's line goes with
+it. When the HTML page lists a run that the .md does not, the .md says that the list is on the page, which
+`sonah review --format html --output FILE` writes. The HTML page lists the runs as before. Nothing that Sonah sends
+changes, so your stored answers still replay.
+
+### The reviewer's effort
+
+`sonah review --effort LEVEL` (or `SONAH_EFFORT`) is the effort Sonah asks Claude Code for: `low`, `medium`, `high`,
+`xhigh` or `max`, the levels that `claude --help` lists. It applies to every call of the review, the code step's agents
+included. The default stays `high`, and a review that names no effort sends every byte as before, so your stored answers
+still replay. An answer stored at one level is never reused at another. Any other value, or an effort with `--backend
+codex-cli` or `anthropic-api`, stops the review before it reads anything. `sonah doctor --effort LEVEL` asks its check
+at that level too. Claude Code may run a lower level when the model does not offer the one asked, or when your settings
+cap it.
+
+### A review by session id keeps where it cut
+
+A review by session id now keeps where it cut your session: the time it took the cut, to the millisecond, and the size
+of each recording file then, in `review/frozen-read.json` in the review's folder. Nothing that Sonah sends changes.
+
+### A decision left out unchecked is counted
+
+When a check that could have kept a decision does not run, Sonah now says so. A decision that the session review's
+check rejected gets a second check. If that check's call failed, the run reached its budget, or the reply left the
+decision out, Sonah left the decision out without a word, and the review still read as complete. The decision still
+stays out, but What Sonah could not check, on the page and in the .md, now says how many decisions it left out this way,
+and so does the terminal's `Windows complete` line, with the remedy: run the same review again. Sonah forgets the
+stored answers of such a check, so the next run asks it again. A decision that two parts of the session both proposed
+counts once, and not at all when one part kept it. Nothing that Sonah sends changes, so your other stored answers
+still replay, and the exit code is as before.
+
+### Sonah's calls sign in from your Claude Code config folder
+
+Sonah's calls to Claude Code now sign in with the login of your own Claude Code config folder. If you set
+`CLAUDE_CONFIG_DIR`, for example to keep a work account apart, every review call and `sonah doctor` now use that
+folder's login, the folder Sonah reads your sessions from. Before, they used the login in `~/.claude`: another account,
+or none, so Sonah could tell you to sign in although you were signed in. A login that you give with
+`CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, as on a remote machine) now reaches them too. Sonah gives Claude
+Code an absolute `CLAUDE_CONFIG_DIR` as you wrote it, and a relative one as the folder that it names from where you run
+Sonah. On macOS a relative one does not carry your keychain login into Sonah's calls, so set it as an absolute path.
+Each call also runs in Claude Code's safe mode and loads no `CLAUDE.md` file, not even one that your organisation
+manages, and no plugin that you installed. Your organisation's managed policy still applies. `sonah doctor` now names
+the folder that the calls sign in from, and checks that your Claude Code knows safe mode. Nothing that Sonah sends
+changes, so your stored answers still replay as they were, even where safe mode or another login would now answer
+differently, as on a computer with managed settings. To ask again, review with a fresh `--state-dir`.
+
+### A real problem stays a problem
+
+A real problem that the code review found is no longer folded away as a question because its check thought it did not go
+against your ask. The check now judges only whether a finding is true: it holds, it is refuted on a fact about the code,
+or the check cannot tell. Where a finding goes comes from its kind and from what ties it: an item of the session review
+it follows from (an ask, a claim, a decision or a failure the agent passed over, say), or a doc line, a caller, a test
+or your words that its check quotes, each found word for word. A real problem that Sonah confirms but ties to none of
+them is shown as checked, in Good to know by default and never in Must act, with a line that says Sonah found nothing it
+breaks. When the code review finds one problem more than once, Sonah keeps what ties each copy, so where it shows no
+longer depends on which copy came first. The paragraph on how the code review works says what places a finding. After
+you update, each finding's check asks again once.
+
+### Several worktrees of one repository
+
+When a session works in several worktrees of one repository, the code review's checks now count. A check that named a
+file by a path relative to its worktree was thrown away as if its quote were not in the file, and asked again in those
+words, so a question it had checked was shown as unchecked, and that alone could make the page say that the code
+review did not finish every part of its work. Now Sonah tells such a check that the path names a file in more than one
+worktree, and asks it once more to name the file by its absolute path. When more than one repository or folder holds
+the change, the code review is shown every file by its absolute path and every agent of it is asked for absolute paths
+from the start, so its notes on each changed file now stay on the page too. Sonah still never guesses which file a
+relative path means: a quote counts only when it is word for word on the lines of the file that its path names.
+
+A review whose change one repository or folder holds sends every request as before, so its stored answers stay. One
+whose change several hold asks the code review again once.
+
+### A long session's change is reviewed whole
+
+A long session's change is now reviewed whole. When the change is larger than one request to the code review holds,
+Sonah splits it by file into parts, keeping together the files that one item of its review touched, then the files of
+one folder, and sends each part in its own call, six at a time, with the whole change's list of files. When two parts
+report the same kind of problem on the same lines, Sonah checks it once and shows it once. Generated and vendored files
+(by your `.gitattributes`) and lock files that package tools write come last, shown by their changed lines, and the page
+counts them apart. Each part can also read the changed files of the working folder's repository as they were at the
+commit the session started from, from a folder Sonah makes in its own state folder and removes after the review. Before,
+Sonah left the largest files out. The page says how many files Sonah showed the code review every changed line of, and
+in how many calls. A change that fits one request and that one repository or folder holds is reviewed as before, with
+the same request. After you update, a larger one is reviewed again, in parts.
+
+The Files list now gives git's added and removed lines for every changed file whose diff Sonah holds, whether or not
+the code review's input left it out. So when Sonah holds the diff of every changed file, the first screen gives the size
+of the change in lines, on a long session too. Each review also keeps, in its private record, every hunk of the change
+and which request of the code review showed it. Nothing that Sonah sends changes, so stored answers stay.
+
+### Fewer records that Sonah cannot read
+
+Far fewer records of a Claude Code 2.1.303 or later session count as records that Sonah cannot read. Claude Code now
+records each request it sends the model beside the session: the request itself, its system prompt and tools, and a copy
+of each message it sends. Sonah read the records of the main session's requests, but not those of its helpers, nor the
+record of a request's system prompt and tools, nor any copy of a message, and counted each one as a record of a form it
+cannot read. It now reads them as what the harness sent the model, never as anything the person or the agent said. A
+copy of a message counts as read only when every part of it is, byte for byte, in the place the session recorded it:
+words where the session recorded that message, the agent's call, words and thinking where the agent recorded them, a
+result where it was recorded, a reminder where the harness recorded it. Any other copy still counts as not read.
+
+A background task's report that Claude Code queues for the agent is now read by the status it records, as the same
+report written as a message already was, so it no longer counts as not read; some sessions that only these reports left
+incomplete are now complete. A message the person queues while the agent works is read as before: an instruction at
+the point it arrived. A helper's final structured answer, which repeats its own call, now counts as read, so some
+helpers that only it left incomplete are now complete.
+
+The line about what Sonah could not read now says it by kind: copies of messages sent to the agent that Sonah could not
+match with the session's records, hook outputs, and notices of files changed outside the agent's edits, each record
+counted once. Before, a record was counted once for each part of it that Sonah could not read.
+
+The session review of such a session sends the same requests as before, so its stored answers stay. A session that links
+a helper whose records these changes read differently gets a new session hash, so the answers you gave its decisions on
+an earlier page are not shown on its next one.
+
 ## 0.3.0-beta.7 (2026-10-23)
 
 Type `/sonah` in Claude Code when the agent says it is done: Sonah reviews that exact session in the background and

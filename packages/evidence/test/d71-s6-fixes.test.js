@@ -153,9 +153,10 @@ test('S6 L4, L5, M5, L7: the report .md marks a decision not to act; the outcome
     relevance: 'unchecked', reasons: [] };
   // D97: a decision not to act is an item of its own kind, said in its own words.
   const story = renderReportMarkdown(session, { findings: [], decisions: [decision], reviewScope: 'session-only' });
-  // R14: what it is about stands beside what the agent chose, each behind its own label.
-  assert.ok(story.includes(`**1 Decide:** ${REPORT_WHAT_WORDS.notActingAbout} *rerun*. ${REPORT_WHAT_WORDS.notActingDecision} `
-    + '*no rerun*.'), story);
+  // R14: what it is about stands beside what the agent chose, each behind its own label. D161: in the report's second
+  // part, its line a fold's summary (HTML), the session review's words in <em>.
+  assert.ok(story.includes(`1 Decide: ${REPORT_WHAT_WORDS.notActingAbout} <em>rerun</em>. `
+    + `${REPORT_WHAT_WORDS.notActingDecision} <em>no rerun</em>.`), story);
   assert.equal(RESULT_OUTCOME_WORDS['output-no-status'].output, 'output recorded; no exit code or completion typed for it');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.

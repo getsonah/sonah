@@ -10,11 +10,11 @@
 //
 // Pure: no model, network, clock or random source. Code, never the model, assigns every label.
 
-import { verifyReceipt, receiptProjection, effectOf, ACTION_EFFECTS } from './session.js';
+import { verifyReceipt, receiptProjection, effectOf, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS } from './session.js';
 import { identityDigest } from '../contracts/canonical.js';
 import { WRITTEN_LABELS, WRITTEN_WITHHELD_CAUSES, WRITTEN_CONTRADICTION_REJECTIONS,
   RESOLUTION_CHALLENGE_OUTCOMES, UNRUN_WRITE_REASON, quotesOnlyUnrunWrite, writeActionOf, ownWrittenCheck,
-  EVIDENCE_QUOTE_MAX, OWN_WRITTEN_SOURCE, SOURCE_REWRITTEN_CAUSE } from './ledger.js';
+  EVIDENCE_QUOTE_MAX, OWN_WRITTEN_SOURCE, SOURCE_REWRITTEN_CAUSE, RECHECK_WITHHELD } from './ledger.js';
 
 // W2: one definition of the agent's own write, in ledger.js (the `own_written` contradiction source reads it too).
 export { writeActionOf };
@@ -31,8 +31,10 @@ export const WRITTEN_CHANNEL = 'writtenClaims';
 export const WRITTEN_ITEM_TYPE = 'written';
 
 /** D98 (F9): the effects (session.js ACTION_EFFECTS) the record states as a write that did not happen: refused before
- *  it ran, or failed or cancelled. */
-const [NO_EFFECT, UNDONE_EFFECT] = ACTION_EFFECTS;
+ *  it ran, or failed or cancelled; D153: and the one it states as a write that happened. */
+const [NO_EFFECT, UNDONE_EFFECT, LANDED_EFFECT] = ACTION_EFFECTS;
+/** D153: the re-check's reason (ledger.js RECHECK_WITHHELD) for a later write that is no correction of a statement. */
+const NOT_REWRITTEN = RECHECK_WITHHELD[8];
 const ITEM_KEYS = Object.freeze(['text', 'stated', 'contradictedBy']);
 const RECEIPT_KEYS = Object.freeze(['eventId', 'role', 'quote']);
 
@@ -182,6 +184,54 @@ export function readWrittenStatement(item, { session, sourceMap, until = null, r
   if (!Number.isSafeInteger(at) || !Number.isSafeInteger(write.sequence) || at <= write.sequence)
     return { statement, ignored: NOT_LATER };
   return { statement, contradiction: grounded.receipt };
+}
+
+/** D153: does a change hold its whole written side, as the record has it — its body recorded, not cut by the recorder,
+ *  no line dropped by the redactor, every span of it resolved? A change that does not proves nothing about what it holds
+ *  or no longer holds. */
+const wholeSide = (session, change, field) => change.truncated !== true && change?.extent?.truncated !== true
+  && change?.extent?.recorded !== false && !(Number(change?.extent?.redactedLines) > 0)
+  && session.textSpanInfoOf(change, field).complete === true;
+/** D153: a write whose written side is the file's whole new body: a structured write that is not an append, an insert or
+ *  an edit entry (as the session page reads a change, render session-story.js `wholeBody`). */
+const wholeBodyWrite = (write, change) => write.operation === 'write' && change?.extent?.append !== true
+  && change?.extent?.insert !== true && change?.extent?.priorState !== 'edit-text' && change?.extent?.recorded !== false;
+
+/**
+ * D153: is the write a later receipt cites (`later`, role code) a correction of the written statement whose stated
+ * receipt is `stated` — the agent's later write or edit, proved to have landed (session.js `effectOf`), that changed a
+ * file holding the statement (a path of a change of the statement's own write whose written side holds its quote) so that
+ * the file no longer holds the quote: a whole new body of that path without it, or an edit of it whose replaced text holds
+ * it and whose written text does not, each side whole as recorded; and no typed change of that path recorded after the
+ * write, by an action that could have changed it (CHANGING_EFFECTS), writes the quote back, or has a written side the
+ * record does not hold whole (cut, not recorded, redacted or unresolved: it may write it back, so it proves nothing
+ * stayed corrected; precision over recall). Null when it is; else the
+ * re-check's reason `not_rewritten`. Structure and verbatim search only: whether the change corrects what the recording
+ * contradicted is the model's, under the challenge. Pure; never throws.
+ */
+export function writtenCorrection(session, stated, later) {
+  try {
+    const quote = stated?.quote;
+    const earlier = writeActionOf(session, stated?.eventId);
+    const write = writeActionOf(session, later?.eventId);
+    if (typeof quote !== 'string' || !quote || !earlier || !write || write === earlier) return NOT_REWRITTEN;
+    if (effectOf(session, write) !== LANDED_EFFECT) return NOT_REWRITTEN;
+    const holds = (change, field) => session.textSpansOf(change, field).some((span) => span.includes(quote));
+    const paths = new Set(earlier.changes.filter((change) => plain(change) && typeof change.path === 'string'
+      && holds(change, 'after')).map((change) => change.path));
+    if (!paths.size) return NOT_REWRITTEN;
+    const replaces = write.changes.some((change) => plain(change) && paths.has(change.path)
+      && wholeSide(session, change, 'after') && !holds(change, 'after')
+      && (wholeBodyWrite(write, change) || (Array.isArray(change.replaced) && holds(change, 'replaced'))));
+    if (!replaces || !Number.isSafeInteger(write.sequence)) return NOT_REWRITTEN;
+    const effect = effectReader(session);
+    const putBack = (Array.isArray(session.events) ? session.events : []).some((event) => event !== write
+      && event?.kind === 'invocation' && Array.isArray(event.changes) && Number.isSafeInteger(event.sequence)
+      && event.sequence > write.sequence && CHANGING_EFFECTS.includes(effect(event))
+      && event.changes.some((change) => plain(change) && paths.has(change.path)
+        && (holds(change, 'after') || !wholeSide(session, change, 'after'))));
+    return putBack ? NOT_REWRITTEN : null;
+  } catch { return NOT_REWRITTEN; }
 }
 
 /** The challenge item of a statement whose contradiction passed every code check: the statement and the

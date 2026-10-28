@@ -865,7 +865,8 @@ test('D111 second review: in every combination of an entry\'s end and a publishe
     // the line with no finding when none is published; D109's line of the open questions' checks when one is published),
     // then one list — the accounting's calls that did not answer or were not made, then the count — then the session
     // review's rows that no reader reads.
-    const paragraphs = [W.how, W.howConfirm, ...(p.questions.length ? [codeQuestionsLine(p)] : []), W.base(null),
+    // D152: a code step under the tie rule says that its check judges truth only (`howTied`).
+    const paragraphs = [W.howTied, W.howConfirm, ...(p.questions.length ? [codeQuestionsLine(p)] : []), W.base(null),
       W.files(1, [['whole', 1]], 0), ...(p.findings.length ? [] : [W.proposedNone])];
     const bullets = [...(c.calls ?? []), ...(counted ? [W.unaccounted.ask.person(1)] : [])].map((line) => `${line}.`);
     assert.deepEqual(story, [`#### ${REPORT_NOT_CHECKED_WORDS.codeReview}`, ...paragraphs,

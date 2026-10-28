@@ -19,9 +19,10 @@
 // The vocabularies are closed and live in ledger.js. Pure: no model, network, clock or random source; the same
 // session and claim give the same answer. Never throws on model output.
 
-import { verifyReceipt, recordedFailure, effectReader, CHANGING_EFFECTS } from './session.js';
+import { verifyReceipt, recordedFailure, effectReader, CHANGING_EFFECTS, ACTION_EFFECTS } from './session.js';
 import { SUPPORT_REJECTIONS, RESULT_OUTCOME_CLASSES, STOPPED_OUTCOME_FORMS, CHANGED_SINCE_LABEL, actorKeyOf,
-  writeActionOf, samePathChangedBetween, resultOutcome } from './ledger.js';
+  writeActionOf, samePathChangedBetween, resultOutcome, PROMISE_STATUSES } from './ledger.js';
+import { sessionFacts } from './struggle.js';
 
 const [CONTRADICTED, MALFORMED, ROLE_MISMATCH, UNSUPPLIED, UNGROUNDED, NOT_LATER, CROSS_ACTOR, FAILED_RESULT,
   NOT_SAME_TURN, STALE_RUN] = SUPPORT_REJECTIONS;
@@ -178,4 +179,69 @@ export function supportCheck(session, claim, sourceMap, { checklist = false } = 
     if (since === true || (since.length && !checklist)) return { ok: false, reason: STALE_RUN };
     return { ok: true, receipt: grounded.receipt, ...marked, ...(since.length ? { changedSince: since } : {}) };
   } catch { return { ok: false, reason: MALFORMED }; }
+}
+
+/** D158: a claim's status once its support was upheld (PROMISE_STATUSES). */
+const VERIFIED = PROMISE_STATUSES[1];
+/** D98: the effect of an edit the record proves landed (ACTION_EFFECTS). */
+const LANDED_EDIT = ACTION_EFFECTS[2];
+
+/**
+ * D158: the claims-against-runs fact of one verified claim — what was changed in the repository after the run that
+ * supports it. `verified` (D59, D87) means a run supported the claim when it was said; it does not mean nothing changed
+ * after. `{ run, result, closing, edits }`: `result` the supporting RESULT (the claim's support receipt, its second
+ * receipt, role observation) and `run` the command it answers; `closing` whether the claim's words are the last message
+ * of any turn (the adapter's `phase: final` on the stated message, read from structure); `edits` every edit, write or
+ * delete in the repository, of any agent, recorded after that RESULT that could have changed a file (struggle.js
+ * `sessionFacts`: D98's one effect rule, as `staleRun` reads a change since a run), as `[{ eventId, path, effect }]` in
+ * recorded order, `effect` `landed` where the record proves it and `unknown` where it proves neither way (a Claude Code
+ * helper's edit is one: its recording carries no result sidecar; a helper's edit with a typed native result can be
+ * proved landed), each by its place (`sessionFacts`): a write parsed from a command stands at that command, so the
+ * supporting command's own write is never after it, and a helper's edit stands where the adapter places its history
+ * (C-03 M33 P). Null for a claim that is not verified, or whose support names no RESULT with a recorded order (at or
+ * before `until`, a sequence, when given).
+ * Ordering and typed effects only. The status never moves (D87): this is a fact beside it. Pure; never throws.
+ */
+export function editsAfterSupport(session, promise, { until = null, facts = null } = {}) {
+  try {
+    if (!plain(promise) || promise.status !== VERIFIED || !Array.isArray(promise.receipts)) return null;
+    const support = promise.receipts[1];
+    if (!plain(support) || support.role !== 'observation' || typeof support.eventId !== 'string') return null;
+    const result = session.event(support.eventId);
+    if (result?.kind !== 'observation' || !Number.isSafeInteger(result.sequence)
+      || (Number.isSafeInteger(until) && result.sequence > until)) return null;
+    const stated = plain(promise.stated) && typeof promise.stated.eventId === 'string'
+      ? session.event(promise.stated.eventId) : null;
+    const read = facts ?? sessionFacts(session, { until });
+    const edits = read.edits.filter((edit) => edit.place > result.sequence)
+      .flatMap((edit) => edit.paths.map((path) => ({ eventId: edit.event.id, path, effect: edit.effect })));
+    return { run: typeof result.invocation === 'string' ? result.invocation : null, result: result.id,
+      closing: stated?.kind === 'commentary' && stated.phase === 'final', edits };
+  } catch { return null; }
+}
+
+/**
+ * D158: the claims-against-runs join of a review — each verified claim of `promises` beside the edits recorded after its
+ * supporting run (`editsAfterSupport`, over one reading of the session's facts). `{ claims: [{ promise, run, result,
+ * closing, edits }], counts: { verified, unread, editedAfter, landedAfter, closing, closingEditedAfter } }`: `promise`
+ * the claim's id; `unread` the verified claims whose support names no readable RESULT; `editedAfter` those with an edit
+ * after it, `landedAfter` those with one the record proves landed. Pure; never throws.
+ */
+export function claimsAgainstRuns(session, promises, { until = null } = {}) {
+  const claims = [];
+  let verified = 0;
+  try {
+    const facts = sessionFacts(session, { until });
+    for (const promise of Array.isArray(promises) ? promises : []) {
+      if (!plain(promise) || promise.status !== VERIFIED) continue;
+      verified++;
+      const fact = editsAfterSupport(session, promise, { until, facts });
+      if (fact) claims.push({ promise: typeof promise.id === 'string' ? promise.id : null, ...fact });
+    }
+  } catch { /* the claims read so far */ }
+  return { claims, counts: { verified, unread: verified - claims.length,
+    editedAfter: claims.filter((claim) => claim.edits.length > 0).length,
+    landedAfter: claims.filter((claim) => claim.edits.some((edit) => edit.effect === LANDED_EDIT)).length,
+    closing: claims.filter((claim) => claim.closing).length,
+    closingEditedAfter: claims.filter((claim) => claim.closing && claim.edits.length > 0).length } };
 }

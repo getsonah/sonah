@@ -127,7 +127,7 @@ test('Disclosure narrowed: the proposition and the note ask whether the agent sa
     + 'human\'s instruction by this change?'));
   assert.ok(!challenge.DISCLOSURE_NOTE.includes('did that statement tell the human about this change?'));
   // The closed vocabularies did not move: an improvement-framed statement is refuted by the challengers, counted as such.
-  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
+  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed', 'corrected_later']);
   assert.deepEqual(ledger.DISCLOSURE_REJECTIONS, ['malformed', 'unsupplied', 'ungrounded', 'not_later', 'cross_actor',
     'refuted', 'unsettled', 'unexecuted']);
 });

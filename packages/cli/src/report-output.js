@@ -60,17 +60,22 @@ const partsText = (parts) => (Array.isArray(parts) ? parts : []).map((p) => (p?.
   : String(p?.text ?? ''))).join('');
 
 /**
- * The terminal's count lines (D97): the tiers and your prompt's statuses (the D93 split: an ask with a code
- * finding counted apart), with no "(folded)"; then the Must act labels (the code review's or the fixed kind label), or,
+ * The terminal's count lines (D97): the tiers, (D161) the agent's decisions with how many carry the tag Must act or Must
+ * know, and your prompt's statuses (the D93 split: an ask with a code finding counted apart), with no "(folded)"; then the Must act labels (the code review's or the fixed kind label), or,
  * when Must act and Must know are empty, the fixed sentence that says Sonah found nothing for them (D133: the sentence
  * after it, that this does not mean the work is correct, is in the page's and the report's fold What Sonah could not
- * check).
+ * check). D163: each as the report model counts it, so Must act counts the decisions tagged Must act and its labels
+ * name them.
  */
 export function countLines(model) {
   const { countLine } = model;
-  const lines = [`${countLine.tiers.map((t) => `${t.words} ${t.n}`).join(' · ')} · ${countLine.prompt}`];
+  // D161: the agent's decisions, counted after the tiers.
+  const lines = [`${countLine.tiers.map((t) => `${t.words} ${t.n}`).join(' · ')}`
+    + `${countLine.decisions ? ` · ${countLine.decisions.words}` : ''} · ${countLine.prompt}`];
   // D113 amended: how many items are about code outside the evaluated session.
   if (countLine.outside) lines.push(countLine.outside);
+  // D153: what the after-point re-check took out of Must act, by mechanism (only a report it ran on).
+  if (countLine.recheck) lines.push(countLine.recheck);
   if (countLine.empty) lines.push(countLine.empty);
   else if (countLine.labels.length) lines.push(`${REPORT_COUNT_WORDS.mustActLead} ${countLine.labels
     .map((l) => partsText(l.parts)).join(' · ')}${countLine.more ? ` ${REPORT_COUNT_WORDS.more(countLine.more)}` : ''}`);

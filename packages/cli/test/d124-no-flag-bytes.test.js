@@ -8,6 +8,9 @@
 // reason (`no_seen_write`) now ends with the way out, `--code-repo`, which is taken out before its report is digested.
 // A later change that moves these bytes on purpose records the new digests here with the decision that moved them.
 // D129 renders its moves back instead (the cost sentence and the readers' versions), so the digests stay D124's.
+// D147 renders its move back too: the sibling shape is a change that two places hold, so each of its code-step requests
+// is sent the absolute-path brief and names each file of the working directory by its absolute path; each such request
+// is put back to the one-place brief and to the names relative to its working directory before it is digested.
 //
 // Throwaway folders and repositories, synthetic sessions, a deterministic fake reviewer: no recording, no model, no
 // network. Every commit date and every file time that a rule reads is fixed.
@@ -23,7 +26,9 @@ import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
-import { textBeforeAgentPrompt } from '../../evidence/test/m33-integration-fixture.js';
+import { textBeforeAgentPrompt, textBeforeTruthOnly } from '../../evidence/test/m33-integration-fixture.js';
+import { CODE_BRIEFS_ABSOLUTE, CODE_REVIEW_SYSTEM, CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_VERIFY_SYSTEM,
+  CODE_BATCH_VERIFY_SYSTEM, CODE_ACCOUNT_SYSTEM } from '../../evidence/src/code-pass.js';
 
 const START = '2030-01-01T00:00:00.000Z';
 const END = '2030-01-02T00:00:00.000Z';
@@ -34,6 +39,14 @@ const GIT_ENV = { ...Object.fromEntries(Object.entries(process.env).filter(([k])
   GIT_AUTHOR_EMAIL: 's@example.invalid', GIT_COMMITTER_NAME: 'synthetic', GIT_COMMITTER_EMAIL: 's@example.invalid' };
 const NO_ROWS = () => ({ decisions: [], pivots: [], claims: [], requirements: [] });
 const digest = (text) => createHash('sha256').update(text).digest('hex').slice(0, 16);
+/** D147: each absolute-path brief and the one-place brief it was before. */
+const RELATIVE_BRIEF = new Map([[CODE_BRIEFS_ABSOLUTE.review, CODE_REVIEW_SYSTEM],
+  [CODE_BRIEFS_ABSOLUTE.reviewWholeFiles, CODE_REVIEW_SYSTEM_WHOLE_FILES], [CODE_BRIEFS_ABSOLUTE.verify, CODE_VERIFY_SYSTEM],
+  [CODE_BRIEFS_ABSOLUTE.batch, CODE_BATCH_VERIFY_SYSTEM], [CODE_BRIEFS_ABSOLUTE.account, CODE_ACCOUNT_SYSTEM]]);
+/** D147 rendered back: a request sent the absolute-path brief, with its brief put back and every name it gave by the
+ *  working directory's absolute path (`<root>/…`) put back relative to it; any other request as it was. */
+const beforeAbsoluteNames = (r) => (!RELATIVE_BRIEF.has(r.system) ? r : { ...r, system: RELATIVE_BRIEF.get(r.system),
+  prompt: r.prompt.split(`${r.agent.root}/`).join('') });
 /** The options `readCode` was given before D124, by name. */
 const READ_CODE_OPTIONS = ['harnessHomes', 'maxBytes', 'own', 'recording', 'root'];
 /** The package's version, which the .md's footer names (the tree before D124 named 0.3.0-beta.5). */
@@ -133,8 +146,10 @@ async function digestsOf(t, shape) {
   // no compaction renders as before but for them. D129 (C7) rendered back too: the footer's sentence of what this run
   // cost, which nothing else moves here. Each release renders back too: the footer's version is put back to the one that
   // the tree before D124 named, so a new version moves no digest. D144 (0.3.0-beta.7) rendered back first
-  // (`textBeforeAgentPrompt`): each prompt for the agent's fold, and the readers' versions it moved.
-  const before = (text) => textBeforeAgentPrompt(text).replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
+  // (`textBeforeAgentPrompt`): each prompt for the agent's fold, and the readers' versions it moved. D152 (0.3.0-beta.9)
+  // rendered back before that (`textBeforeTruthOnly`): the paragraph on how the code review works, and the model's
+  // version.
+  const before = (text) => textBeforeAgentPrompt(textBeforeTruthOnly(text)).replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
     .replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '')
     .replace(/<p>In this run, Sonah made [^<]*<\/p>/g, '').replace(/In this run, Sonah made [^\n]*  \n/g, '')
     .replaceAll('sonah.report-model/6', 'sonah.report-model/5').replaceAll('sonah.session-page/45', 'sonah.session-page/44')
@@ -168,14 +183,15 @@ async function digestsOf(t, shape) {
     return out;
   }).join('\n');
   const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
-  const requests = calls.map((r) => JSON.stringify([r.label ?? null, r.system ?? null, r.prompt ?? null,
-    r.agent ? [r.agent.root, r.agent.addDirs] : null]));
+  const absolute = calls.filter((r) => RELATIVE_BRIEF.has(r.system)).map((r) => r.label ?? null);
+  const requests = calls.map(beforeAbsoluteNames).map((r) => JSON.stringify([r.label ?? null, r.system ?? null,
+    r.prompt ?? null, r.agent ? [r.agent.root, r.agent.addDirs] : null]));
   return { read: read.map(([, options]) => Object.keys(options).sort()),
     given: [JSON.stringify(report), ...requests].some((text) => text.includes('"given"')),
     requests: digest(named(requests.join('\n'))),
     md: digest(named(before(mdOrder(unlocatedBack(await readFile(join(run, 'story.md'), 'utf8')))))),
     page: digest(named(before(pageOrder(renderSessionPage(session, report, { folder: recorded }))))),
-    labels: calls.map((r) => r.label ?? null) };
+    labels: calls.map((r) => r.label ?? null), absolute };
 }
 
 test('D124: without --code-repo, the requests and the report of each shape are byte for byte those of the tree before '
@@ -186,14 +202,24 @@ test('D124: without --code-repo, the requests and the report of each shape are b
     assert.deepEqual(read, [READ_CODE_OPTIONS], `${shape}: readCode is given what it was before`);
     assert.equal(given, false, `${shape}: no place is marked as given`);
   }
+  // D147: only the sibling shape's code-step requests are sent the absolute-path brief (two places hold its change).
+  assert.deepEqual(Object.fromEntries(Object.entries(got).map(([shape, { absolute }]) => [shape, absolute])),
+    { ordinary: [], sibling: ['code-review:agent', 'code-account:1'], script: [] });
   assert.deepEqual(Object.fromEntries(Object.entries(got).map(([shape, { requests, md, page, labels }]) =>
     [shape, { requests, md, page, labels }])), {
     // D133 (R2): the readers' lines about what Sonah could not check moved into their folds (the .md and the page only);
-    // no request moved.
-    ordinary: { requests: '3c472f0b2f284287', md: 'dc0a8516eeda471b', page: 'c4f2596aa9e740b8',
+    // no request moved. D161: the report's two parts moved the .md and the page once more (was ordinary dc0a8516eeda471b,
+    // c4f2596aa9e740b8; sibling 0494b0af596c3eb2, 6bf1bef7ecc2418a; script 3f561852160daaea, 36d515d60bfa22fc); no
+    // request moved. D163: the page's three new style rules, which every page carries, moved the page alone (was
+    // ordinary 9f99e009e1e477bb, sibling 52270a36ccb5e6c5, script ae0a3e716e358055); no .md and no request moved.
+    // D167: the .md counts the runs in place of listing them, which moved the script shape's .md alone, the one shape
+    // with a run (was a77fe0a283737ee2); no page and no request moved. Its review: that run is quiet (exit 0 before the
+    // last edit), which the page does not list, so the .md no longer says the list is on the page (was
+    // 2d5ba7a8e05f9184).
+    ordinary: { requests: '3c472f0b2f284287', md: '069c1ac7864cfec3', page: 'b76844956962288d',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    sibling: { requests: '1d3c67aaf360cf88', md: '0494b0af596c3eb2', page: '6bf1bef7ecc2418a',
+    sibling: { requests: '1d3c67aaf360cf88', md: '61b3262c1a3f4bce', page: '68cb29f37291560f',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    script: { requests: 'afe064acbf3c9007', md: '3f561852160daaea', page: '36d515d60bfa22fc', labels: ['narrative:w1'] },
+    script: { requests: 'afe064acbf3c9007', md: '86b886eaeb816962', page: 'bbcd8b8cc5e7e7b6', labels: ['narrative:w1'] },
   });
 });

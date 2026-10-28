@@ -87,7 +87,8 @@ sonah doctor --no-probe
 This checks Node, the `claude` command and its sign-in, the optional `codex` command, where your recordings are,
 whether the code step is on and, in a git repository, whether the commit link is on there, with a fix for anything
 missing. It makes no model call. Without `--no-probe`, `sonah doctor` also makes one tiny
-synthetic request (it quotes no session) and checks that `claude-sonnet-5-5[1m]` answers under its 1M-token window.
+synthetic request (it quotes no session) and checks that `claude-sonnet-5-5[1m]` answers under its 1M-token window,
+asked at the effort that `--effort LEVEL` (or `SONAH_EFFORT`) names, as a review would ask.
 For Codex: `sonah doctor --backend codex-cli --model gpt-6.1-sol`. Doctor does not check your plan or billing; when
 `claude` reports how much of your plan's usage limits is used, it prints it in a `Claude usage:` line, read like the
 review's usage line below.
@@ -165,7 +166,8 @@ session) are reviewed with their parent, never as separate sessions. Other choic
 - `--session ID`: the session with this id, whatever the repository and whatever is newer. Sonah finds the recording
   whose file name carries the id (Claude Code: `<projects>/<folder>/<ID>.jsonl`), never by what its rows say. It reads that recording, and every
   recording reviewed with it, as it was when the review started, so a session that the agent is still writing to is
-  reviewed as it was then. Add `--background` to print one line and review in the background: Sonah writes the page,
+  reviewed as it was then. It keeps that cut, the time it took it and the size of each recording file then, in
+  `review/frozen-read.json` in the review's folder. Add `--background` to print one line and review in the background: Sonah writes the page,
   the Markdown report and a log in the review's folder under `~/.sonah/session-reviews/`, and opens the page when the
   review ends (`--no-open` keeps it closed).
 
@@ -265,18 +267,27 @@ The report has this order:
 1. A header. It says what the work was and how large the change is. It counts the commands that the agent ran after
    its last edit, and how they ended. For a session continued after a compaction, it says how many recordings Sonah
    read, or that the session continues from an earlier part.
-2. A count line. It counts the items in each section, and the asks of each status.
-3. Must act and Must know: the items that need you, first.
-4. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
+2. A count line. It counts the items in each section, the asks of each status, and the agent's decisions with their
+   tags. Must act also counts the decisions tagged Must act.
+3. Must act and Must know: the items that need you, first. Right after its own items, each has one line for each
+   decision further down that is tagged with it, linked to that decision.
+4. Good to know, folded.
+5. The agent's decisions, in the order it made them, under the message of yours that each one followed, each with its
+   tag: Must act, Must know or Good to know. A group that holds a decision tagged Must act or Must know is open, and
+   folds its decisions tagged Good to know under one line that counts them. A decision that stays in Must act or Must
+   know has a line here, at its place, that links to it.
+6. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
    code review concerns it. Each compaction of the agent's context shows between your messages, with how many tokens
    it dropped. An ask's row has its own small fold: why Sonah did not check the ask, or that the session review cited
    only the agent's words for it. In the .md, the asks table is cut at each compaction, under one line "Before
    compaction N." above the asks that you gave before it. When your prompt holds more than 30 asks, Sonah folds it,
    and its heading keeps the count of each status.
-5. Good to know, folded.
-6. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
-   results. It also lists the claims, what the agent said it did not do, and the decisions that you settled.
-7. What Sonah could not check, folded. Its first lines say what Sonah did not check, the results that Sonah could not
+7. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
+   results. It also lists the claims, what the agent said it did not do, and the decisions that you settled. The .md
+   does not list the runs (the commands, and the other calls that a failure is about): it counts them by their results.
+   It keeps the line of a run that another part of the .md names by its number, such as a failure's, when the HTML
+   page lists that run. When the HTML page lists a run that the .md does not, the .md says that the list is on the page.
+8. What Sonah could not check, folded. Its first lines say what Sonah did not check, the results that Sonah could not
    read, and, for a session continued after a compaction, that Sonah did not read the earlier part. It lists each
    limit of the recording with its count, also when Sonah shortens the .md. The legend at the end says that Sonah
    checked only the marked parts of your message.
@@ -323,15 +334,18 @@ gh pr comment --body-file review.md
 With no pull request number, `gh` posts on the pull request of your current branch. To post on another pull request,
 put its number after `comment`. Sonah posts nothing itself. When it can, Sonah keeps the .md within 60,000 bytes, so
 it fits in a GitHub comment. To fit, it takes these steps in order, and stops as soon as the .md fits. First, it shows
-only the start of your long messages. Then it leaves out the evidence folds of Good to know. Then the table of your
-prompt keeps the asks that are not done, and Sonah counts your messages in place of showing them. Then it counts the
-rows of the lists in What the agent did, then in What Sonah could not check, and shows the counts in place of the rows;
-What Sonah could not check still lists its first lines and each limit of the recording, with its count. Then it leaves
-out the code excerpts. Then it shows Good to know as a count of each kind of item. Then it leaves out the prompts for
-the agent. Last of all, it leaves out the evidence folds of Must know, then of Must act; a fold keeps only what Sonah could not check of its item,
-when there is something. It says so at the top of the first part that it shortened. It never
+only the start of your long messages. Then it leaves out the evidence folds of the agent's decisions tagged Good to
+know, then of Good to know. Then the table of your prompt keeps the asks that are not done, and Sonah counts your
+messages in place of showing them. Then it counts the rows of the lists in What the agent did, then in What Sonah
+could not check, and shows the counts in place of the rows; What Sonah could not check still lists its first lines and
+each limit of the recording, with its count. Then it leaves out the code excerpts. Then each group of the agent's
+decisions counts its decisions tagged Good to know in place of showing them. Then it shows Good to know as a count of
+each kind of item. Then the lines in Must act and Must know that link to the decisions further down keep only each
+decision's number. Then it leaves out the prompts for the agent. Last of all, it leaves out the evidence folds of Must
+know, then of Must act, with those of the decisions tagged with them; a fold keeps only what Sonah could not check of
+its item, when there is something. It says so at the top of the first part that it shortened. It never
 shortens the header, the count line, the counts of your prompt or its asks that are not done. It keeps the open lines
-of the Must act and Must know items whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
+of the Must act and Must know items, and of the decisions tagged with them, whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
 prints no `gh` command (see TROUBLESHOOTING.md). The .md pings no one. Sonah puts a mention, an issue number or a commit
 hash from the recording in a code span. In the .md, "you" means the person who ran the agent.
 
@@ -485,17 +499,25 @@ read them all (`git fetch https://github.com/OWNER/REPO.git pull/N/head`, which 
 
 **Claude Code (default).** Your `claude` login and the model `claude-sonnet-5-5[1m]` (Sonnet 5.5 with its 1M-token
 window). Leave `--model` out. Each call of the session review runs in an empty private folder with Claude Code's tools,
-MCP servers, settings and slash commands switched off, and only a basic environment: not your API keys, proxy settings
-or `CLAUDE_CONFIG_DIR`. The code step's agents run in your working directory with the same environment and three
-read-only tools (Read, Grep and Glob), confined to your repository, each within a budget of turns and time (the review
-agent 150 turns and 45 minutes, each check 60 or 80 turns and 30 minutes). Every answer is checked to come from the
-model and window asked for; if not, the answer is never kept: that part is marked not reviewed, or the review stops with
-`model_unavailable`. If you want subscription usage rather than API billing, remove `ANTHROPIC_API_KEY` and endpoint
-overrides from the terminal you sign in from. Each checking call of the session review (the calls that test what the
-reviewer proposed) is limited to 32,768 output tokens per attempt, a cost guard against a reply that runs on; the
-`claude` CLI may ask the model to continue a cut reply up to three times, so one checking call costs at most 131,072
-output tokens. A continuation that answers whole is read like any other reply; a reply still cut after the third counts
-as a check that did not run, and nothing cut is ever read in part. The call that reads a window has no such limit.
+MCP servers, settings and slash commands switched off, and only a basic environment with your login: not your API keys
+or proxy settings. The login is the one of your Claude Code config folder (`CLAUDE_CONFIG_DIR` when you set it, an
+absolute one passed as you wrote it, else `~/.claude`), the folder Sonah reads your sessions from, or the token in
+`CLAUDE_CODE_OAUTH_TOKEN` when you set it (from `claude setup-token`); `sonah doctor` names which. Set
+`CLAUDE_CONFIG_DIR` as an absolute path: on macOS a relative one does not carry your keychain login into Sonah's calls.
+Each call runs in Claude Code's safe mode and loads no `CLAUDE.md` file as its instructions, and no plugin, skill or
+connector that you installed. Your organisation's managed policy still applies. On each call Claude Code updates its
+state file (`~/.claude.json` in your home folder, or `.claude.json` inside the folder `CLAUDE_CONFIG_DIR` names) and its
+plugin cache in the config folder, as in any session. With `CLAUDE_CONFIG_DIR` set, these writes now go to your folder.
+The code step's agents run in your working directory with the same environment and three read-only tools (Read, Grep and
+Glob), confined to your repository, each within a budget of turns and time (the review agent 150 turns and 45 minutes,
+each check 60 or 80 turns and 30 minutes). Every answer is checked to come from the model and window asked for; if not,
+the answer is never kept: that part is marked not reviewed, or the review stops with `model_unavailable`. If you want
+subscription usage rather than API billing, remove `ANTHROPIC_API_KEY` and endpoint overrides from the terminal you sign
+in from. Each checking call of the session review (the calls that test what the reviewer proposed) is limited to 32,768
+output tokens per attempt, a cost guard against a reply that runs on; the `claude` CLI may ask the model to continue a
+cut reply up to three times, so one checking call costs at most 131,072 output tokens. A continuation that answers whole
+is read like any other reply; a reply still cut after the third counts as a check that did not run, and nothing cut is
+ever read in part. The call that reads a window has no such limit.
 
 **Codex.** `--backend codex-cli --model gpt-6.1-sol`, with the Codex CLI signed in to your ChatGPT account (on macOS
 the CLI inside the ChatGPT or Codex app is preferred; `SONAH_CODEX_BIN` names another). It runs read-only with its
@@ -508,6 +530,13 @@ as an argument). This bills your API account.
 `SONAH_REVIEW_BACKEND` and `SONAH_MODEL` set the same choices from the environment; unset them if an older setup left
 them behind. Whenever the code step runs, `--code-model ID` (or `SONAH_CODE_MODEL`) runs it on its own model, on the
 same reviewer; the session review keeps its own. Without either, the code step uses the session review's model.
+
+**Effort.** On Claude Code, `--effort LEVEL` (or `SONAH_EFFORT`; the flag wins) is the effort Sonah asks for on every
+call of the review, the code step's agents included: `low`, `medium`, `high`, `xhigh` or `max`, the levels that
+`claude --help` lists. The default is `high`. Another level asks each question again: the answers stored at one level
+are reused only at that level. Any other value, or an effort with `--backend codex-cli` or `anthropic-api`, stops the
+review before it reads anything. Claude Code may run a lower level when the model does not offer the one asked, or when
+your settings cap it.
 
 ## Time and usage
 
@@ -526,6 +555,7 @@ of input tokens and tens of minutes. Yours will differ with the length of the se
 | --- | --- |
 | Stored model answers, progress and the report of each review | `~/.sonah/session-reviews/<hash of the recording path>/` (`--state-dir DIR` moves it) |
 | The page, Markdown report and log of a review started with `--background` | `background/` in that folder |
+| Where a review by `--session` cut your recordings | `review/frozen-read.json` in that folder |
 | Your answers to rows | `~/.sonah/decision-reviews.ndjsonl` |
 | Your settings (the code step's, from `sonah config`) | `~/.sonah/config.json` |
 | The page or Markdown | the `--output` file you named |
@@ -626,10 +656,12 @@ quote only your words or a recorded result, never the agent's: a helper's report
 edited or deleted in the session, count as the agent's). Every quote
 is checked word for word by code against the file it names; an answer that breaks the contract goes back to the agent
 once, naming what is wrong. Then a checking agent with the same tools tries to refute each finding, never shown the
-agent's words from the session, and one more checks the questions it asks. A finding is published only when its
-checker upholds it with quotes of the code; a supporting sentence the checker finds false is cut and not shown; a
-behaviour that is as stated but may be what you wanted becomes a question for you; anything
-withheld is listed with its reason. A binary file (or one git diffs as binary, through a `binary` or `-diff` attribute),
+agent's words from the session, and one more checks the questions it asks. A finding is published only when its checker
+upholds it with quotes of the code; a supporting sentence the checker finds false is cut and not shown; a finding that
+Sonah confirms but ties to nothing (no item of the session review it follows from, such as an ask, a claim, a decision
+or a failure the agent passed over, and no doc line, caller, test or words of yours that its check quotes) is shown as
+checked, in Good to know by default and never in Must act; anything withheld is listed with its reason. A binary file
+(or one git diffs as binary, through a `binary` or `-diff` attribute),
 one too large, and a file the session deleted that is there again have no lines in the change the agent is given; the
 code review does not read as complete while any part of the change went unshown, or while the repository changed
 during the review. A file that changed after the session's last recorded edit (a formatter, say) is shown with its
@@ -700,7 +732,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.7`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.9`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

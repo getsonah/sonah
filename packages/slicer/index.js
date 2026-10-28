@@ -4,7 +4,7 @@
 // summarise the old one, so a single task can span several files, and a directory can hold several
 // unrelated tasks. The caller names a lineage's files, oldest first; `sliceLineage` emits ONE ledger per lineage.
 
-import { readSession, SCHEMA_VERSION } from './src/records.js';
+import { readSession, SCHEMA_VERSION, UNREAD_ROW_KINDS } from './src/records.js';
 import { opensTurn, partsOf, applyLabel, emptyCounts, countLabel, LINEAGE_ROLES, LABEL_GAPS, END_MENTIONED_REASONS }
   from './src/labels.js';
 import { buildEvents, BACKGROUND_ENDS } from './src/events.js';
@@ -120,6 +120,15 @@ function continuedThrough(through, count) {
  *   written reads it as it was when the review started. Without it, every byte is as before.
  * @returns {Promise<Ledger>}
  */
+/** D150: `{ unreadRows }` in UNREAD_ROW_KINDS order, or nothing when no row was left unread. */
+function unreadKindsOf(rows, eventsUnclassified) {
+  const all = new Map(rows);
+  if (Number.isSafeInteger(eventsUnclassified) && eventsUnclassified > 0)
+    all.set(UNREAD_ROW_KINDS.other, (all.get(UNREAD_ROW_KINDS.other) ?? 0) + eventsUnclassified);
+  const kinds = Object.values(UNREAD_ROW_KINDS).filter((kind) => all.get(kind) > 0);
+  return kinds.length ? { unreadRows: Object.fromEntries(kinds.map((kind) => [kind, all.get(kind)])) } : {};
+}
+
 export async function sliceLineage(allFiles, opts = {}) {
   const cut = continuedThrough(opts.through, allFiles.length);
   const byteEnds = byteEndsOf(opts.byteEnds, allFiles.length);
@@ -171,6 +180,7 @@ export async function sliceLineage(allFiles, opts = {}) {
   const codexShapeMisses = [];
   // D128: each Claude file's rows read by their structure, by kind and recorder version (the recorder census).
   const structuralRows = [];
+  const unreadRows = new Map();
   for (const [i, read] of reads.slice(first).entries()) {
     const { records: own, meta: m, corrupt: c, unknownSchema } = read;
     // D126 (N0): a row an earlier recording of the continued session holds is that recording's row, read there.
@@ -183,6 +193,10 @@ export async function sliceLineage(allFiles, opts = {}) {
       for (const [carrier, count] of Object.entries(m.shapeMisses))
         codexShapeMisses.push({ carrier, count, version: m.version ?? null });
     if (Array.isArray(m.structuralRows)) structuralRows.push(...m.structuralRows);
+    // D150: each file's rows left unread, by kind (records.js UNREAD_ROW_KINDS).
+    if (m.unreadRows && typeof m.unreadRows === 'object')
+      for (const [kind, n] of Object.entries(m.unreadRows))
+        if (Number.isSafeInteger(n) && n > 0) unreadRows.set(kind, (unreadRows.get(kind) ?? 0) + n);
     if (m.helperRows === true) helperRows = true;
     sources.push(m.sourceIdentity ?? { adapter: m.agent ?? 'unknown', identityConflict: true });
     if (unknownSchema) unknownSchemaFiles++;
@@ -272,7 +286,7 @@ export async function sliceLineage(allFiles, opts = {}) {
     else countLabel(labelCounts, labelGaps, value);
   }
 
-  const { events, ask, interjections, projectInstructions, claim, sayings, commentary, commentaryCapture, instructionCapture,
+  const { events, ask, interjections, projectInstructions, editedFiles, claim, sayings, commentary, commentaryCapture, instructionCapture,
     actionCapture, observationCapture, marks, workflowLaunches, deliveries, backgroundRuns, launchMisses } = buildEvents(all,
     { cwd: meta.cwd ?? '',
     outcomes: opts.outcomes ?? null, claudeLocators: opts.claudeLocators === true,
@@ -454,6 +468,15 @@ export async function sliceLineage(allFiles, opts = {}) {
     // `projectInstructions`), at their rows. Present only when there is one, so every other ledger keeps its bytes;
     // redaction validates each before slice_hash, and the evidence adapter places them beside the session's events.
     ...(projectInstructions.length ? { projectInstructions } : {}),
+    // D150: each file the harness noticed changed outside the agent's edit calls (events.js `editedFiles`: its path and
+    // recorded snippet), at its row, an observation never the agent's. Present only when there is one. No reader of a
+    // review reads it yet: slice_hash leaves it out until one does, and its rows keep their declared loss.
+    ...(editedFiles.length ? { editedFiles } : {}),
+    // D150: the rows the slicer left unread, each once, by kind (records.js UNREAD_ROW_KINDS; a user row's
+    // block of a type no reader reads, events.js, is `other`, unless the reader already counted its row), so the page can
+    // say what Sonah could not read by kind. Only when there is one; not in slice_hash (no review reads it: the page's
+    // sentence does).
+    ...(unreadKindsOf(unreadRows, instructionCapture.unreadRows)),
     ledger: events,
     claim,
     sayings,

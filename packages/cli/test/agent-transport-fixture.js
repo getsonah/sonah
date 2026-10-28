@@ -34,7 +34,7 @@ export async function repository(t) {
 /**
  * A fake `claude` on a temporary PATH. It logs each call (argv, working directory, environment, stdin) to
  * HOME/calls.jsonl and prints the events of HOME/scenario.json, then exits with its `exit` code. The judge passes HOME
- * and PATH through (review-judge.js `localEnvironment`), so the fake finds both.
+ * and PATH through (review-judge.js `claudeEnvironment`), so the fake finds both.
  */
 export async function fakeClaude(t, scenario) {
   const home = await scratch(t, 'home'), bin = join(home, 'bin');

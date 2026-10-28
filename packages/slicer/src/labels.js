@@ -107,6 +107,23 @@ export const LABEL_BASIS = Object.freeze({
   systemRow: 'system_row',
   /** Any other attachment row (reminders, listings, hook output, …). */
   attachmentRow: 'attachment_row',
+  /** D150: a row of any other row type (no `user`, `assistant`, `system` or `attachment` row: a queue operation,
+   *  recording metadata, a request record, a form no list names), labelled by the class its reader gives it from its row
+   *  type and fields (records.js `claudeRowClass`): harness context or recording metadata is harness; a form the reader
+   *  leaves unclassified carries no label and the gap `unknown_row`. */
+  recorderRow: 'recorder_row',
+  /** D150: a Claude Code request blob (`api-request-blob`, one message of a model request, stored under its hash) every
+   *  block of whose message has its structural twin in the same recording (request-copies.js): a copy of what the
+   *  recording holds, the harness's, never a turn. Any other blob keeps no label and the gap `unknown_row`. */
+  requestCopy: 'request_copy',
+  /** D150: a hook's context the harness gave the model (`hook_additional_context`): the harness's, read by its type. */
+  hookContext: 'hook_context',
+  /** D150: a hook command the harness ran on an event (`hook_success`, `hook_non_blocking_error`), with its exit code and
+   *  output: the harness's run, never the agent's call. */
+  hookRun: 'hook_run',
+  /** D150: a `structured_output` attachment whose `data` equals, after a canonical JSON form, the input of the recorded
+   *  call its `toolUseID` names: the harness's copy of the agent's own call, which the call already holds. */
+  structuredOutputCopy: 'structured_output_copy',
   /** An assistant row the recorder wrote itself (`model: <synthetic>`, `isApiErrorMessage`). */
   syntheticAssistant: 'synthetic_assistant',
   /** A user row of a modern recorder with no origin, no flag and text that is only top-level elements: a local

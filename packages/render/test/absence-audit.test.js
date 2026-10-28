@@ -196,7 +196,53 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // D143's review round: 4 sonah in (what Sonah found in a pull request's partial list, the values it lists no session
   // for, a compressed recording, a folder in no repository) and 1 other (the files of an id that several recordings
   // carry); the absence words now name a session, and stand on their proofs as before. + [0, 4, 1].
-  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 488, 441]);
+  // D147 (0.3.0-beta.9, a check's quote whose relative path more than one place of the change holds): 1 sonah in, the
+  // closed cause of that check (what Sonah could not tell). + [0, 1, 0].
+  // D149 (0.3.0-beta.9, review units): 2 sonah in, what Sonah showed the code review of several units, and the files past
+  // the calls one review makes. + [0, 2, 0].
+  // D150: 3 sonah in, the rows Sonah left unread said by kind (what Sonah could not match or did not
+  // read). + [0, 3, 0].
+  // D152 (0.3.0-beta.9, the check judges truth only): 2 sonah in (what Sonah found that an open finding breaks: nothing;
+  // the open kind's words) and 2 other (how the code review works under the tie rule; the open finding's row kind).
+  // + [0, 2, 2].
+  // Joined at the merge of D150 and D152: [97, 491, 441] + D150's [0, 3, 0] + D152's [0, 2, 2].
+  // D151 (0.3.0-beta.9, doctor's lines on Sonah's own Claude Code calls): 2 sonah in (a safe mode refused: Sonah cannot
+  // tell that its calls run in it; not checked: Sonah could not read the sign-in state) and 5 other (the three login
+  // lines, a relative CLAUDE_CONFIG_DIR said by what Sonah found and gives the calls, a safe mode accepted). Each
+  // negative was reworded to what Sonah found or checked; none states an absence. + [0, 2, 5].
+  // D155 (decisions left out because their second check did not run): 2 sonah in, the page's cause and the terminal's
+  // window line, each what Sonah left out and which of its checks did not run. + [0, 2, 0].
+  // D153 (0.3.0-beta.9, an ask no later window settled, and the corrections): 4 sonah in (the unsettled ask's
+  // what line, kind, status and count part: what Sonah did not check after later work) and 10 other (the count line's
+  // sentence on the re-check and its three parts, the two correction sentences, three evidence labels and the corrected
+  // statement's kind). None states an absence; none accuses. + [0, 4, 10]. Its fix round: 1 sonah in (the code-review
+  // note's status of such an ask: what the session review did not check after later work) and 1 other (the count line's
+  // part for a statement that the agent wrote and replaced later); the count line read again with it (other). + [0, 1, 1].
+  // Joined at the merge of D155 and D153: [97, 498, 448] + D155's [0, 2, 0] + D153's [0, 5, 11].
+  // D153, the owner's calls of 2026-10-26 (a reaffirmed row shown as one not checked after later work; a claim and a
+  // statement no later window settled shown so too): 5 sonah in (the claim's and the statement's what lines and kinds,
+  // and the claims list's status: what Sonah did not check after later work) and 4 other (the reaffirmed ask's later
+  // quote's label, by where it is from, and the count line's three parts: counts and places); the count line read again
+  // with them (other). None states an absence; none accuses. + [0, 5, 4]. Its fix round: the three kinds' words read
+  // again as what followed (sonah to other: [0, -3, +3]); 8 other in (that later work followed an ask or a claim: its
+  // what lines, prompt status and part, claims list status, code-review note; the PR comment's line; the count line's
+  // one Must know part); 5 other out (the count line's parts merged); the count line, the corrected part, the corrected
+  // statement's kind and three tier sentences read again in their classes. + [0, -3, +6].
+  // D160, the effort a review asks for: 2 sonah in (an effort Sonah refused, and an effort named on a backend that takes
+  // none: what Sonah did not read or send); the review's usage text read again with its --effort line (other). None
+  // states an absence. + [0, 2, 0].
+  // D161, the report's two parts: 2 sonah in (a question Sonah could not tie, so at most Good to know; the group of the
+  // decisions Sonah could not place in the session order: what Sonah could not do); 5 other in (the count of the agent's
+  // decisions and its tags, the second part's heading, the group heads after an ask and before your first ask, the asks
+  // a group does not list). None states an absence; none accuses. + [0, 2, 5]. Its review: 1 sonah in (the decisions
+  // tagged Good to know a shortened .md does not show), 1 other (the group of a session with no ask). + [0, 1, 1].
+  // D163, the report's pointers, entries and reading: 4 other in (the heading over a tier's pointers to the decisions
+  // tagged with it, the line of a decision the first part shows, an open group's count of its decisions tagged Good to
+  // know, and the label of a change of approach's reason in the session review's words). None states an absence; none
+  // accuses. + [0, 0, 4].
+  // D167, the .md's runs counted: 3 other in (the count of the runs in the header's result parts, the label over the
+  // lines of the runs another part names, and where the list of runs is). None states an absence. + [0, 0, 3].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 512, 482]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);

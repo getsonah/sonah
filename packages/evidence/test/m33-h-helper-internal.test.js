@@ -163,10 +163,12 @@ const part = (report, name = 'T1') => report.parts.find((p) => p.part === name);
 
 test('M33 H helper_internal is a closed disclosure reason beside self_corrected, with the story\'s sentence', () => {
   // M33 brittleness M4 added `disclosed` after them: an upheld disclosure of an edit, never a role.
-  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed']);
+  assert.deepEqual(ledger.DISCLOSURE_REASONS, ['self_corrected', 'helper_internal', 'disclosed', 'corrected_later']);
   assert.ok(Object.isFrozen(ledger.DISCLOSURE_REASONS));
   // D97: the page's and the report .md's words for it (report-words.js).
-  assert.deepEqual(Object.keys(REPORT_DISCLOSURE_WORDS.claim).sort(), ['disclosed', 'helper_internal', 'self_corrected']);
+  // D153: and a later window's correction of a claim, which the after-point re-check gives.
+  assert.deepEqual(Object.keys(REPORT_DISCLOSURE_WORDS.claim).sort(), ['corrected_later', 'disclosed', 'helper_internal',
+    'self_corrected']);
   assert.equal(typeof REPORT_DISCLOSURE_WORDS.claim.helper_internal, 'string');
   assert.equal(REPORT_ITEM_WORDS.helperSaid, 'A helper said:');
 });

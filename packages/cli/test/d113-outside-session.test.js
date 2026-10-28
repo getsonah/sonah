@@ -24,11 +24,11 @@ import { askCodeLinks } from '../../evidence/src/ask-code-links.js';
 import { ATTENTION_WORDS } from '../../evidence/src/review.js';
 import { honestStatuses } from '../../evidence/src/ledger.js';
 import { publicCommentText } from '../../github/publication.js';
-import { reportModel } from '../../render/report-model.js';
+import { reportModel, reportItems } from '../../render/report-model.js';
 import { sessionPage, escapeHtml } from '../../render/session-page.js';
 import { REPORT_COUNT_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_NOT_CHECKED_WORDS }
   from '../../render/report-words.js';
-import { CODE_FILES, CODE_TEXT, PARSE_QUOTE, buildCodeSession, codeJudge, holds, repositoryPremise, reviewFinding,
+import { CODE_FILES, CODE_TEXT, PARSE_QUOTE, buildCodeSession, codeJudge, holds, holdsWith, repositoryPremise, reviewFinding,
   dossierItems, accountsHold, sha256, readsEveryFile, SYNTHETIC_RUN } from './code-pass-fixture.js';
 
 const W = CODE_REPORT_WORDS;
@@ -110,7 +110,7 @@ async function reviewIn(t, { root, recording, session, judge, at = null, argv = 
 const plainText = (md) => md.replace(/\\(.)/g, '$1');
 /** The ask's words a trace step of the code review may quote (the person's root instruction). */
 const ASK_QUOTE = 'add a parse function that returns [] for empty input';
-const NOT_AGAINST_GOAL = 'SYNTHETIC_NOT_AGAINST_GOAL: the later doc names no version';
+const OPEN_AWAY = 'SYNTHETIC_OPEN_AWAY: the later doc names no version';
 
 /**
  * The code review's answer: the fixture's claim the code contradicts (on the session's own src/parse.js); and, when the
@@ -132,15 +132,15 @@ const reviewWith = (prompt) => {
       quote: 'export const old = 2;' }],
     anchor: { path: 'lib/old.js', side: 'new', startLine: 1, endLine: 1 }, leadsFrom: [ask.key, claim.key], ...over });
   return { findings: [own, old({}), old({ kind: 'ask_not_met', lens: 'ask', title: 'the ask is not met in lib/old.js',
-    leadsFrom: [ask.key] }), { kind: 'bug', lens: 'behaviour', title: NOT_AGAINST_GOAL, claims: [], input: 'read it',
+    leadsFrom: [ask.key] }), { kind: 'bug', lens: 'behaviour', title: OPEN_AWAY, claims: [], input: 'read it',
     trace: [{ step: 'The doc line.', path: 'docs/later.md', side: 'new', startLine: 1, endLine: 1,
       quote: 'SYNTHETIC_LATER_DOC' }], anchor: { path: 'docs/later.md', side: 'new', startLine: 1, endLine: 1 },
     leadsFrom: [ask.key] }], questions: [] };
 };
-/** Every finding holds, but the one its check finds not against the goal. */
-const verifyWith = (finding) => (finding.title === NOT_AGAINST_GOAL ? { ...holds(finding), verdict: 'refuted',
-  reason: 'not_against_goal', receipts: [], premises: [repositoryPremise(finding)],
-  explanation: 'Synthetic: as stated, not against the ask.' } : holds(finding));
+/** Every finding holds. D152: the one on docs/later.md with no receipt of what it breaks, so that, tied to nothing of
+ *  the session (outside it, its `leadsFrom` is dropped), it is published open. */
+const verifyWith = (finding) => (finding.title === OPEN_AWAY ? holdsWith(finding, [repositoryPremise(finding)], [])
+  : holds(finding));
 /** The item-by-item check agrees with the code review, and adds one finding of its own on lib/old.js. */
 const accountWith = (prompt) => ({ ...accountsHold(prompt), findings: [{ kind: 'bug', lens: 'behaviour',
   title: 'SYNTHETIC_ACCOUNT: other is 3', claims: [], input: 'import { other }',
@@ -205,9 +205,11 @@ test('D113 amended: the files outside the evaluated session are read apart and g
   assert.ok(withheldWhy(notMet).startsWith(W.outsideTie.ask_not_met), withheldWhy(notMet));
   assert.ok(!withheldWhy(notMet).includes(W.withheldReasons.out_of_scope), withheldWhy(notMet));
   assert.ok(withheldWhy(accounted).startsWith(W.withheldReasons.out_of_scope), withheldWhy(accounted));
-  // The finding its check found not against the goal: a question, tagged, that concerns nothing of the session.
-  const asked = pass.questions.find((q) => q.from === 'finding');
-  assert.deepEqual([asked.question, asked.concerns, asked.outsideSession], [NOT_AGAINST_GOAL, null, true]);
+  // D152: the finding on docs/later.md, tied to nothing (outside the evaluated session its rows are dropped, and its
+  // check gave no receipt of what it breaks): published open, tagged; no question comes from a finding.
+  const open = pass.open.find((f) => f.title === OPEN_AWAY);
+  assert.deepEqual([open.leadsFrom, open.outsideSession, pass.questions.filter((q) => q.from === 'finding')],
+    [[], true, []]);
   // No ask tie and no claim contradiction from them: only the session's own finding contradicts the claim, and no ask
   // links anything outside the evaluated session.
   const claim = run.report.promises.find(Boolean);
@@ -235,7 +237,7 @@ test('D113 amended: the files outside the evaluated session are read apart and g
   // An item's head, its words in emphasis (Markdown, or HTML in a fold), then the marker.
   const heads = text.replace(/<\/?em>|\*/g, '');
   assert.ok(heads.includes(`old is 2 where its callers expect 1 ${REPORT_ITEM_WORDS.outsideSession}`), 'the item');
-  assert.ok(heads.includes(`${NOT_AGAINST_GOAL} ${REPORT_ITEM_WORDS.outsideSession}`), 'the question from it');
+  assert.ok(heads.includes(`${OPEN_AWAY} ${REPORT_ITEM_WORDS.outsideSession}`), 'the open finding on it');
   assert.ok(heads.includes(`the ask is not met in lib/old.js · ${W.outsideTag} · `
     + `${REPORT_NOT_CHECKED_WORDS.withheldWhy(withheldWhy(notMet))}`), 'the withheld finding, and why');
   assert.ok(!heads.includes(`not the empty list the agent said ${REPORT_ITEM_WORDS.outsideSession}`), 'the session\'s own');
@@ -252,7 +254,7 @@ test('D113 amended: the files outside the evaluated session are read apart and g
   assert.ok(ATTENTION_WORDS.codeFindingsOutside(1).includes(OUTSIDE_SESSION_WORDS));
   assert.ok(!comment.includes(ATTENTION_WORDS.codeFindings(2)), comment);
   const model = reportModel(session, run.report, {});
-  const items = [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+  const items = reportItems(model);
   const awayItems = items.filter((item) => item.scope.outsideSession === true);
   assert.equal(awayItems.length, 2);
   // Must act names each item by its label: tagged exactly when the item is about code outside the evaluated session.

@@ -9,7 +9,7 @@
 // recording, no model, no network. Nothing prints.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reportModel, itemVisibleText } from '../report-model.js';
+import { reportModel, itemVisibleText, reportItems } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import * as reportWords from '../report-words.js';
@@ -19,7 +19,7 @@ import { codeContradictedRows, codeRowCheck } from '../../evidence/src/code-pass
 import { premiseReport, triageReport, triageSession, OUTSIDE_PREMISE, UNCONFIRMED_ID, ROWS }
   from '../../evidence/test/report-triage-fixture.js';
 
-const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 const modelOf = (make, options = {}) => { const session = triageSession(); return reportModel(session, make(session), options); };
 const W = reportWords.REPORT_ITEM_WORDS;

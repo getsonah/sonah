@@ -6,13 +6,14 @@
 // part there:
 //   1. D114 x D115/D116: an ask that the session review did not check and whose row cites nothing (D115's row
 //      sentence), that the code review ties to by its listed key (D114). The page says what the row cites, beside the
-//      code review's finding on the ask and the question that quotes the ask's own words; a question routed from a
-//      finding, whose `concerns` names the same ask by that key but whose place (a line of the change) the ask's row
-//      does not name, points nowhere and stands beside no ask (D116).
-//   2. D113 x D116: a question about a file named apart as changed outside the session's recorded writes (no part of
-//      the change, never given to the code review; its notes name it) names as related only an item whose recorded
-//      place names that file (the decision whose recorded read named it), never the decision on the session's own
-//      write.
+//      code review's finding on the ask and the question that quotes the ask's own words. D152: a second finding on
+//      the ask, its check holding, is a finding tied by the ask (before D152, its check routed it to you as a question,
+//      which pointed nowhere and stood beside no ask: D116, read on reports saved before D152 by
+//      render d115-d116-report-truth.test.js).
+//   2. D113 x D116, under D152: a finding about a file named apart as changed outside the session's recorded writes (no
+//      part of the change, never given to the code review; its notes name it), its check holding, is a finding tied
+//      by the decision it follows from, related to that decision whatever its recorded place; no question comes from
+//      it.
 //   3. D114 x D115: an ask that an agent wrote into a helper's brief, read by one lineage on both sides: every check of
 //      the code step is shown it by its key and whose words it is alone, never its words (D89), while the review is
 //      shown its words as the agent's; and the page names it as an ask that an agent wrote into a helper's brief,
@@ -29,7 +30,7 @@ import { CHECKLIST_REQUIREMENT_FACT_WORDS } from '../src/review.js';
 import { sessionsOwnChange } from '../../cli/src/code-snapshot.js';
 import { buildCodeSession, CODE_FILES, holds, allSound, verifiedFinding, batchItems, accountsHold, reviewFinding,
   dossierItems, askedItems, memoryRepo, PARSE_QUOTE } from '../../cli/test/code-pass-fixture.js';
-import { reportModel } from '../../render/report-model.js';
+import { reportModel, reportItems } from '../../render/report-model.js';
 import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_WORDS } from '../../render/report-words.js';
 
 const enc = (text) => new TextEncoder().encode(text);
@@ -42,7 +43,7 @@ const PARSE_PATCH = ['diff --git a/src/parse.js b/src/parse.js', 'index 1111111.
   ' }', ''].join('\n');
 const R = (eventId, role, quote) => ({ eventId, role, quote });
 const TIERS = ['must_act', 'must_know', 'good_to_know'];
-const every = (model) => TIERS.flatMap((tier) => model.tiers[tier]).flatMap((item) => [item, ...item.members]);
+const every = (model) => reportItems(model).flatMap((item) => [item, ...item.members]);
 const textOf = (parts) => parts.map((p) => p.text).join('');
 const ofRow = (model, source, index) => every(model).find((x) => x.rows.some((r) => r.source === source
   && r.index === index));
@@ -71,10 +72,9 @@ async function codeStep({ session, report, review, verify = holds, base = GIT, n
     repo: memoryRepo({ root: ROOT, now, before: { 'src/parse.js': BASE_PARSE, ...before } }) });
   return { seen, codePass: result.codePass, saved: withAskCodeLinks(withCodePass(report, result), session) };
 }
-/** A check's verdict that the finding's behaviour is as stated but defeats no listed ask: the code step publishes it as
- *  a question for you, routed from the finding (`from: 'finding'`, `quote` null, its anchor its place). */
-const notAgainstGoal = (finding) => ({ ...holds(finding), verdict: 'refuted', reason: 'not_against_goal', receipts: [],
-  explanation: 'Synthetic: the behaviour is as stated; whether it matters is your call.' });
+// D152 (the check judges truth only): no check routes a finding to you as a question any more. A finding whose check
+// holds is published as a finding; the place rule of D116 for a question routed from a finding is read on reports saved
+// before D152 (render d115-d116-report-truth.test.js builds them).
 
 // ---- 1. D114 x D115/D116: one ask row of the session review, tied to by its listed key ---------------------------
 
@@ -101,8 +101,8 @@ const keyedReport = () => ({ repo: { host: 'github.com', id: '0' }, reviewScope:
 const TOTAL_FINDING = 'SYNTHETIC parse("") returns [""], not the total parse you asked for';
 const BLANK_FINDING = 'SYNTHETIC parse(" ") keeps one blank part';
 const QUESTION = 'SYNTHETIC should parse("") return [] or throw?';
-/** The review: on the second ask, by its listed key, a finding that it is not met, a finding that its check routes to
- *  you as a question, and a question quoting the ask's own words. */
+/** The review: on the second ask, by its listed key, a finding that it is not met, a second finding (before D152, its
+ *  check routed it to you as a question), and a question quoting the ask's own words. */
 const keyedReview = (prompt) => {
   const total = askedItems(prompt).find((a) => a.asked === TOTAL);
   return { findings: [reviewFinding({ kind: 'ask_not_met', lens: 'ask', title: TOTAL_FINDING, leadsFrom: [total.key] }),
@@ -110,7 +110,7 @@ const keyedReview = (prompt) => {
       leadsFrom: [total.key] })],
   questions: [{ question: QUESTION, key: total.key, quote: TOTAL }] };
 };
-const keyedVerify = (finding) => (finding.title === BLANK_FINDING ? notAgainstGoal(finding) : holds(finding));
+const keyedVerify = holds;
 
 test('seam D114 x D115/D116: an ask row that cites nothing, tied to by its listed key, says what it cites and names only the question whose place is its own', async () => {
   const session = keyedSession();
@@ -121,17 +121,17 @@ test('seam D114 x D115/D116: an ask row that cites nothing, tied to by its liste
   assert.deepEqual(listed.map((a) => a.asked), ['split the input on commas', TOTAL]);
   const totalKey = listed[1].key;
   assert.equal(dossierItems(seen[0].prompt).find((item) => item.key === totalKey).kind, 'ask');
-  // Its key is the row: the finding's ask, the question's and the routed question's `concerns` all name requirements[1].
+  // Its key is the row: both findings' asks and the question's `concerns` name requirements[1]. D152: the second
+  // finding, its check holding, is a finding tied by the row it follows from, never a question.
   const toTotal = (ref) => ref?.kind === 'ask' && ref.source === 'requirements' && ref.index === 1;
-  assert.ok(codePass.findings.some((f) => f.title === TOTAL_FINDING && f.leadsFrom.some(toTotal)));
+  for (const title of [TOTAL_FINDING, BLANK_FINDING])
+    assert.ok(codePass.findings.some((f) => f.title === title && f.leadsFrom.some(toTotal)), title);
   const reviewQ = codePass.questions.findIndex((q) => q.from === 'review');
-  const routedQ = codePass.questions.findIndex((q) => q.from === 'finding');
-  assert.ok(reviewQ >= 0 && routedQ >= 0, JSON.stringify(codePass.questions));
-  assert.ok(toTotal(codePass.questions[reviewQ].concerns) && toTotal(codePass.questions[routedQ].concerns));
-  assert.equal(codePass.questions[routedQ].quote, null);
-  // Both questions are linked to the row by the key alone (ask-code-links.js reads only a ref to an ask row).
-  assert.deepEqual(saved.requirements[1].codeLinks.filter((l) => l.link === 'question_concerns').map((l) => l.question)
-    .sort(), [reviewQ, routedQ].sort());
+  assert.deepEqual([reviewQ, codePass.questions.filter((q) => q.from === 'finding'), codePass.open], [0, [], []]);
+  assert.ok(toTotal(codePass.questions[reviewQ].concerns));
+  // The question is linked to the row by the key alone (ask-code-links.js reads only a ref to an ask row).
+  assert.deepEqual(saved.requirements[1].codeLinks.filter((l) => l.link === 'question_concerns').map((l) => l.question),
+    [reviewQ]);
 
   const model = reportModel(session, saved, {});
   const ask = model.prompt.asks[1];
@@ -141,19 +141,18 @@ test('seam D114 x D115/D116: an ask row that cites nothing, tied to by its liste
   assert.equal(CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end,
     'The session review did not check whether the agent did this ask: it cited nothing that does it.');
   assert.ok(lines.some((l) => l.startsWith('The code review found a problem here.')), JSON.stringify(lines));
-  // D116: of the two questions the key links to the row, the line beside the ask names only the one whose place (your
-  // words of this ask, one recorded event with the row) is the row's: never the routed one, whose place is a line of
-  // src/parse.js that the row does not name.
+  // D116: the line beside the ask names the question whose place (your words of this ask, one recorded event with the
+  // row) is the row's.
   const asked = ofRow(model, 'codePass.questions', reviewQ);
-  const routed = ofRow(model, 'codePass.questions', routedQ);
   assert.deepEqual(lines.filter((l) => QUESTION_LINE.test(l)), [REPORT_PROMPT_WORDS.codeQuestion(asked.n)]);
-  // Its pointer goes to the ask (no item holds a row that is not checked); the routed one names only its own place,
-  // the line of src/parse.js, and no ask or item.
+  // Its pointer goes to the ask (no item holds a row that is not checked). D152: the second finding is an item of its
+  // kind, at its place in src/parse.js, related to the ask it follows from.
   assert.equal(ofRow(model, 'requirements', 1), undefined);
   assert.deepEqual(pointers(asked), [`ask-${ask.n}`]);
-  assert.deepEqual(pointers(routed), []);
-  assert.deepEqual(routed.where.map((w) => w.path), ['src/parse.js']);
-  assert.deepEqual([routed.related.items, routed.related.asks], [[], []]);
+  const blank = ofRow(model, 'codePass.findings', codePass.findings.findIndex((f) => f.title === BLANK_FINDING));
+  assert.equal(blank.kind, 'code_bug');
+  assert.deepEqual(blank.where.map((w) => w.path), ['src/parse.js']);
+  assert.deepEqual(blank.related.asks, [ask.n]);
 });
 
 // ---- 2. D113 x D116: a question about a file named apart ---------------------------------------------------------
@@ -181,7 +180,8 @@ const apartReport = () => ({ repo: { host: 'github.com', id: '0' }, reviewScope:
     { id: `sha256:${'3'.repeat(64)}`, dimension: 'Which notes to follow', chosen: 'docs/notes.md', actions: ['R1'],
       column: 'unasked', stated: null }] });
 /** The review: a claim_false finding (a kind that may anchor outside the change when a step of its trace quotes a
- *  changed line) anchored in docs/notes.md, following from the decision at `decision`; its check routes it to you. */
+ *  changed line) anchored in docs/notes.md, following from the decision at `decision` (before D152, its check routed
+ *  it to you). */
 const apartReview = (decision) => (prompt) => {
   const item = dossierItems(prompt).filter((x) => x.kind === 'decision')[decision];
   return { findings: [reviewFinding({ kind: 'claim_false', lens: 'claims', title: 'SYNTHETIC the notes say a blank part '
@@ -192,7 +192,7 @@ const apartReview = (decision) => (prompt) => {
   anchor: { path: 'docs/notes.md', side: 'new', startLine: 1, endLine: 1 }, leadsFrom: [item.key] })], questions: [] };
 };
 
-test('seam D113 x D116: a question about a file named apart as changed outside the session is related only to an item whose recorded place names that file', async () => {
+test('seam D113 x D116 (D152): a finding about a file named apart as changed outside the session, its check holding, is a finding tied by the row it follows from, never a question', async () => {
   const session = apartSession();
   // D113: git shows two paths differing from the start commit; only src/parse.js was written by a recorded write, and
   // docs/notes.md last changed after the session's recorded window: it is named apart, no part of the change.
@@ -203,7 +203,7 @@ test('seam D113 x D116: a question about a file named apart as changed outside t
   assert.deepEqual([own.plan.map((e) => e.path), own.changedOutside], [['src/parse.js'], ['docs/notes.md']]);
   const base = { ...GIT, changedOutside: own.changedOutside, written: own.plan.length };
   const run = (decision) => codeStep({ session, report: apartReport(), review: apartReview(decision),
-    verify: notAgainstGoal, base, now: { ...CODE_FILES, 'docs/notes.md': NOTES },
+    verify: holds, base, now: { ...CODE_FILES, 'docs/notes.md': NOTES },
     before: { 'docs/notes.md': NOTES_BEFORE } });
 
   for (const [decision, names] of [[1, true], [0, false]]) {
@@ -213,28 +213,27 @@ test('seam D113 x D116: a question about a file named apart as changed outside t
     assert.ok(!seen[0].prompt.includes('SYNTHETIC_NOTES'), at);
     assert.deepEqual(codePass.files.map((f) => f.path), ['src/parse.js'], at);
     assert.deepEqual(codePass.base.changedOutside, ['docs/notes.md'], at);
-    // The finding is routed to you: a question whose one place is its anchor, a line of the file named apart.
-    const q = codePass.questions.findIndex((x) => x.from === 'finding');
-    assert.ok(q >= 0, `${at}: ${JSON.stringify(codePass.withheld)}`);
-    assert.deepEqual([codePass.questions[q].concerns.source, codePass.questions[q].concerns.index],
-      ['decisions', decision], at);
-    assert.equal(codePass.questions[q].finding.anchor.path, 'docs/notes.md', at);
+    // D152: the finding is published, tied by the decision it follows from, its anchor a line of the file named apart;
+    // no question comes from it.
+    assert.deepEqual(codePass.questions, [], at);
+    assert.equal(codePass.findings.length, 1, `${at}: ${JSON.stringify(codePass.withheld)}`);
+    const [finding] = codePass.findings;
+    assert.deepEqual([finding.leadsFrom.map((r) => [r.source, r.index]), finding.anchor.path],
+      [[['decisions', decision]], 'docs/notes.md'], at);
 
     const model = reportModel(session, saved, {});
     // The code review's notes name the file apart (D113), as What Sonah could not check.
     const outside = codeChangedOutsideLine(codePass);
     assert.ok(outside && outside.includes('docs/notes.md'), at);
     assert.ok(model.notChecked.code.some((parts) => textOf(parts).includes('docs/notes.md')), at);
-    // D116: the question, whose one place is its anchor in the file named apart, is joined to the decision it follows
-    // from only where that decision's recorded place names the file: the read of docs/notes.md does; the write of
-    // src/parse.js does not. A question routed from a finding names its anchor as its place, and the item by its
-    // related items.
-    const question = ofRow(model, 'codePass.questions', q);
+    // A finding names its anchor as its place, and the row it follows from among its related items, whatever that
+    // row's recorded place: the place rule of D116 is a question's.
+    const item = ofRow(model, 'codePass.findings', 0);
     const target = ofRow(model, 'decisions', decision);
-    assert.ok(target && question && !question.memberOf, at);
-    assert.deepEqual(question.where.map((w) => w.path), ['docs/notes.md'], at);
-    assert.deepEqual(question.related.items, names ? [target.n] : [], at);
-    assert.deepEqual(pointers(question), [], at);
+    assert.ok(target && item && !item.memberOf, `${at} (${names ? 'its place names the file' : 'its place does not'})`);
+    assert.equal(item.kind, 'code_claim_false', at);
+    assert.deepEqual(item.where.map((w) => w.path), ['docs/notes.md'], at);
+    assert.deepEqual(item.related.items, [target.n], at);
   }
 });
 

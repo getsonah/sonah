@@ -74,7 +74,7 @@
 // file) that costs time in proportion, and a list larger than git's output bound leaves the state unknown (null).
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, readSync,
   realpathSync, statSync } from 'node:fs';
-import { lstat, open, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createInterface } from 'node:readline';
@@ -268,11 +268,12 @@ const GIT_FLAGS = Object.freeze(['--no-optional-locks', '-c', 'core.fsmonitor=fa
 export const gitEnvironment = (env = process.env) => ({ ...Object.fromEntries(Object.entries(env)
   .filter(([key]) => !key.startsWith('GIT_'))), GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C' });
 /** Run git with `args` in `cwd`: `{ ok, stdout }` (a Buffer), never a throw. `maxBuffer` bounds what it may print;
- *  `differ` reads exit status 1 as an answer (`git diff --no-index` exits 1 when the two sides differ). */
-export function runGit(args, { cwd, maxBuffer = 64 * 1024 * 1024, differ = false }) {
+ *  `differ` reads exit status 1 as an answer (`git diff --no-index` exits 1 when the two sides differ, `git grep` when
+ *  it finds nothing). D157: `timeout` (milliseconds, none by default) ends a call that runs longer, as a failure. */
+export function runGit(args, { cwd, maxBuffer = 64 * 1024 * 1024, differ = false, timeout = 0 }) {
   return new Promise((done) => {
     execFile('git', [...GIT_FLAGS, ...args], { cwd, maxBuffer, encoding: 'buffer', env: gitEnvironment(),
-      windowsHide: true }, (error, stdout) => {
+      windowsHide: true, timeout }, (error, stdout) => {
       if (!error) return done({ ok: true, stdout });
       if (differ && error.code === 1 && Buffer.isBuffer(stdout)) return done({ ok: true, stdout });
       return done({ ok: false, stdout: null, overflow: error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
@@ -562,6 +563,34 @@ export const isPlaceOfChange = (entries, changes = null, readable = () => false)
 
 /** The file at the start commit and git's own patch of one differing path, for a path the reader showed or found
  *  deleted:`{ base: { bytes } | { state } | null, patch: string | null }`. Nothing is read of any other. */
+/** D149: the most paths one `git check-attr` call is given. */
+const ATTRIBUTE_CHUNK = 200;
+/**
+ * D149: the git attribute that makes each path generated or vendored (evidence ledger.js CODE_GENERATED_SOURCES, in
+ * that order of precedence): `linguist-generated` set, `linguist-vendored` set, `diff` unset (`-diff`), as
+ * `git check-attr` reads them in the repository at `top` (`paths` as git names them there), 200 paths a call. A Map of
+ * the paths that have one to it; a call that fails gives none. Reads only.
+ */
+export async function gitAttributesOf(paths, { top, git = runGit }) {
+  const found = new Map();
+  const on = (value) => value === 'set' || value === 'true';
+  for (let from = 0; from < paths.length; from += ATTRIBUTE_CHUNK) {
+    const text = out(await git(['check-attr', '-z', 'linguist-generated', 'linguist-vendored', 'diff', '--',
+      ...paths.slice(from, from + ATTRIBUTE_CHUNK)], { cwd: top }));
+    if (text === null) continue;
+    const parts = text.split('\0');
+    const of = new Map();
+    for (let at = 0; at + 2 < parts.length; at += 3) of.set(`${parts[at]}\0${parts[at + 1]}`, parts[at + 2]);
+    for (const path of paths.slice(from, from + ATTRIBUTE_CHUNK)) {
+      const source = on(of.get(`${path}\0linguist-generated`)) ? 'linguist-generated'
+        : on(of.get(`${path}\0linguist-vendored`)) ? 'linguist-vendored'
+          : of.get(`${path}\0diff`) === 'unset' ? 'diff-unset' : null;
+      if (source) found.set(path, source);
+    }
+  }
+  return found;
+}
+
 async function readGitSide(change, head, { top, commit, maxBytes, git }) {
   const readable = head.bytes instanceof Uint8Array;
   const deleted = head.state === DELETED;
@@ -684,6 +713,9 @@ export async function repositoryState({ top, commit = null, git = runGit, omit =
  * of the change there (one not there now). Exactly one such file: its name (another place's file by the name the change
  * gives it, else by the reader's name for it); more than one: ambiguous, so it names none (D107's principle: an ambiguous
  * match matches none); none: itself, read as before. A quote is then checked word for word in the file it resolves to.
+ * D147: when more than one place holds a file of the change (the working folder's repository among them when it holds
+ * one), an absolute path that names a file of the change, there now or gone, is that file's name in the change (as
+ * `read` names it); any other absolute path is itself.
  */
 export function createRepositoryReader({ root, top = null, commit = null, maxBytes, places = [], files = [] }) {
   let realRoot = null, realTop = null;
@@ -785,8 +817,28 @@ export function createRepositoryReader({ root, top = null, commit = null, maxByt
       return statSync(real).isFile() && readable(real) ? real : null;
     } catch { return null; }
   };
+  // D147: more than one place holds a file of the change (code-pass.js `manyPlacesHold`): then every request names a
+  // file by its absolute path, and an absolute path that names a file of the change is read under the name the change
+  // gives it (a file of the working folder's repository by its relative name, another place's by the change's), as
+  // `read` names what it reads; any other absolute path is itself, as before.
+  const manyPlaces = otherPlaces.length > 0 && (primaryNames.size > 0 || otherPlaces.length > 1);
+  const changeNameOf = (path) => {
+    const [place] = candidatesOf(path);
+    if (place === undefined) return null;
+    if (named.has(place)) return named.get(place);
+    const real = fileThere(place);
+    if (real !== null && named.has(real)) return named.get(real);
+    const at = real ?? place;
+    if (!inside(at, realTop)) return null;
+    const own = repoName(at, realRoot);
+    return primaryNames.has(own) ? own : null;
+  };
   const resolveName = (path) => {
     const as = { path };
+    if (manyPlaces && typeof path === 'string' && path && !path.includes('\0') && isAbsolute(path)) {
+      const own = changeNameOf(path);
+      return own === null ? as : { path: own };
+    }
     if (typeof path !== 'string' || !path || path.includes('\0') || isAbsolute(path) || HOME_SPELLED.test(path)
       || !otherPlaces.length) return as;
     const hits = new Map();
@@ -1138,6 +1190,7 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   // D122: the writes that have nothing to review in a folder the code review reads are no file of the change.
   for (let at = kept.length - 1; at >= 0; at--) if (kept[at].placed.kind === NO_CHANGE_PLACE) kept.splice(at, 1);
   const reads = [];
+  const attributeAsks = [];
   const finalPlan = kept.map(({ entry }) => entry);
   for (const { entry, placed } of kept) {
     const head = await readEntry(entry, placed, { maxBytes });
@@ -1150,7 +1203,14 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
     if (!change) { reads.push({ ...head, ...where }); continue; }
     const from = place ? { top: place.at, commit: place.base.commit } : { top: gitBase.top, commit: gitBase.commit };
     const side = await readGitSide(change, head, { ...from, maxBytes, git });
+    if (typeof change.gitPath === 'string') attributeAsks.push({ at: reads.length, top: from.top, gitPath: change.gitPath });
     reads.push({ ...head, type: change.type, ...side, ...where });
+  }
+  // D149: each file's git attribute that makes it generated or vendored (`gitAttributesOf`), by its repository.
+  for (const top of [...new Set(attributeAsks.map((a) => a.top))]) {
+    const asks = attributeAsks.filter((a) => a.top === top);
+    const found = await gitAttributesOf([...new Set(asks.map((a) => a.gitPath))], { top, git });
+    for (const a of asks) if (found.has(a.gitPath)) reads[a.at] = { ...reads[a.at], gitAttribute: found.get(a.gitPath) };
   }
   // D113 amended (the owner, 2026-10-18: "for code review, you can even review code that is outside the session, but
   // tag it by outside the evaluated session"): the paths named apart are read as the change's are — the file now, at the
@@ -1278,3 +1338,125 @@ export async function changeState(snapshot, { git = runGit } = {}) {
 export const snapshotTexts = (snapshot) => (Array.isArray(snapshot?.files) ? snapshot.files : [])
   .flatMap((file) => [file?.text, file?.base?.text]).filter((text) => typeof text === 'string');
 
+
+/** D149: the most paths one read of the start-commit folder asks git for. */
+const START_CHUNK = 200;
+/** D149: the most bytes one such read may print. */
+const START_MAX_BYTES = 256 * 1024 * 1024;
+/** D149: the file that marks a start-commit folder as Sonah's own: only a folder that holds it is ever removed. */
+export const START_FOLDER_MARK = '.sonah-start-commit';
+/**
+ * D149: the objects `git cat-file --batch` printed for `asked` (each `<commit>:<git path>`, one a line, in that order):
+ * `[{ asked, bytes }]` for each one git holds as a blob, its bytes as git stores them (no filter, no conversion, no
+ * glob); a name git does not hold, or not as a blob, gives none. Pure.
+ */
+export function batchBlobs(buffer, asked) {
+  const found = [];
+  let at = 0;
+  for (const name of asked) {
+    const end = buffer.indexOf(0x0a, at);
+    if (end < 0) break;
+    const head = buffer.subarray(at, end).toString('utf8');
+    at = end + 1;
+    const m = /^[0-9a-f]{40}(?:[0-9a-f]{24})? (\S+) (\d+)$/.exec(head);
+    // `<name> missing` (or `ambiguous`): no content follows.
+    if (!m) continue;
+    const size = Number(m[2]);
+    const bytes = buffer.subarray(at, at + size);
+    at += size + 1;
+    if (m[1] === 'blob' && bytes.length === size) found.push({ asked: name, bytes: Buffer.from(bytes) });
+  }
+  return found;
+}
+/** D149: where a folder lies, its last name never followed: the real path of its nearest folder that exists, then the
+ *  names below it. */
+async function unfollowedPlace(path) {
+  const whole = resolve(path);
+  const rest = [basename(whole)];
+  for (let up = dirname(whole); ; rest.unshift(basename(up)), up = dirname(up)) {
+    try { return join(await realpath(up), ...rest); } catch { if (dirname(up) === up) return whole; }
+  }
+}
+/** D149: clear `at` for a fresh start-commit folder: nothing there, a link (unlinked, never followed) or a folder of
+ *  Sonah's own (it holds START_FOLDER_MARK: removed). Anything else is refused: false. */
+async function clearStartPlace(at) {
+  let entry;
+  try { entry = await lstat(at); } catch { return true; }
+  if (entry.isSymbolicLink()) { await unlink(at); return true; }
+  if (!entry.isDirectory()) return false;
+  try { if (!(await lstat(join(at, START_FOLDER_MARK))).isFile()) return false; } catch { return false; }
+  await rm(at, { recursive: true, force: true });
+  return true;
+}
+/**
+ * D149: the start-commit folder of a review of several units: the files of the change that have an earlier side
+ * (`paths`, as the change names them, under the working directory), as they were at the start commit (`commit`), each
+ * read as git stores it (`git cat-file --batch` on `<commit>:<git path>`, the path literal, 200 a call: no filter, no
+ * conversion, no export rule) and written as those bytes at its path from the repository's top folder under `into`
+ * (Sonah's state folder's `code-pass/start-commit`), made afresh and marked Sonah's (START_FOLDER_MARK). `into`'s own
+ * name is never followed: a link there is unlinked, and a folder there that is not Sonah's is left as it is and no
+ * folder is made. None either when the snapshot has no repository or no git base, or when `into` lies in a folder the
+ * code step's agents read (the working directory, the repository, the change's other folders) or holds one: Sonah never
+ * writes where the review reads the repository. A name that would leave `into` is never written. Any failure while it
+ * is made removes it and gives none: the review goes on without it. With `dryRun`, the same answer and nothing written.
+ * `{ at, files: [{ path, copy }], chunks, failedChunks }` (a call that failed gives none of its files), or null.
+ */
+export async function makeStartFolder({ snapshot, commit, paths, into, gitInput = runGitInput, dryRun = false }) {
+  const top = snapshot?.top, real = snapshot?.realRoot;
+  if (snapshot?.repository !== true || snapshot?.base?.kind !== GIT_BASE || typeof commit !== 'string'
+      || !HASH.test(commit) || typeof top !== 'string' || typeof real !== 'string' || typeof into !== 'string'
+      || !isAbsolute(into)) return null;
+  const target = await unfollowedPlace(into);
+  const readHere = [top, real, snapshot.dir, ...(Array.isArray(snapshot.folders) ? snapshot.folders : [])]
+    .filter((folder) => typeof folder === 'string' && isAbsolute(folder));
+  if (readHere.some((folder) => inside(target, folder) || inside(folder, target))) return null;
+  const asked = [];
+  for (const path of Array.isArray(paths) ? paths : []) {
+    if (typeof path !== 'string' || !path || isAbsolute(path) || path.includes('\n')) continue;
+    const gitPath = relative(top, join(real, path)).split(sep).join('/');
+    if (!gitPath || gitPath === '..' || gitPath.startsWith('../') || gitPath === START_FOLDER_MARK
+        || asked.some((a) => a.gitPath === gitPath)) continue;
+    asked.push({ path, gitPath });
+  }
+  if (!asked.length) return null;
+  const copyOf = (a) => join(target, ...a.gitPath.split('/'));
+  const chunks = Math.ceil(asked.length / START_CHUNK);
+  if (dryRun) return { at: target, files: asked.map((a) => ({ path: a.path, copy: copyOf(a) })), chunks, failedChunks: 0 };
+  if (!(await clearStartPlace(target).catch(() => false))) return null;
+  try {
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await mkdir(target, { mode: 0o700 });
+    await writeFile(join(target, START_FOLDER_MARK), '', { mode: 0o600, flag: 'wx' });
+    const files = [];
+    let failedChunks = 0;
+    for (let from = 0; from < asked.length; from += START_CHUNK) {
+      const chunk = asked.slice(from, from + START_CHUNK);
+      const names = chunk.map((a) => `${commit}:${a.gitPath}`);
+      const result = await gitInput(['cat-file', '--batch'], `${names.join('\n')}\n`, { cwd: top,
+        maxBuffer: START_MAX_BYTES });
+      if (!result.ok || !Buffer.isBuffer(result.stdout)) { failedChunks += 1; continue; }
+      const blobs = new Map(batchBlobs(result.stdout, names).map((b) => [b.asked, b.bytes]));
+      for (const a of chunk) {
+        const bytes = blobs.get(`${commit}:${a.gitPath}`);
+        const copy = copyOf(a);
+        if (!bytes || !inside(copy, target) || copy === target) continue;
+        await mkdir(dirname(copy), { recursive: true, mode: 0o700 });
+        await writeFile(copy, bytes, { mode: 0o600, flag: 'wx' });
+        files.push({ path: a.path, copy });
+      }
+    }
+    return { at: target, files, chunks, failedChunks };
+  } catch {
+    await removeStartFolder(target);
+    return null;
+  }
+}
+/** D149: the start-commit folder removed (a link there unlinked, a folder of Sonah's own removed, anything else left as
+ *  it is): whether nothing is there now. Never throws. */
+export async function removeStartFolder(at) {
+  try {
+    const place = await unfollowedPlace(at);
+    await clearStartPlace(place);
+    try { await lstat(place); return false; } catch { return true; }
+  } catch { return false; }
+}

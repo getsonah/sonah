@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage, PAGE_VERSION } from '../session-page.js';
-import { reportModel } from '../report-model.js';
+import { reportModel, reportItems } from '../report-model.js';
 import { REPORT_SECTION_WORDS, REPORT_ITEM_WORDS } from '../report-words.js';
 import { CHECKLIST_REQUIREMENT_FACT_WORDS, escapeSource } from '../../evidence/src/review.js';
 import { renderReportMarkdown, STORY_VERSION } from '../session-story.js';
@@ -135,7 +135,7 @@ const esc = (text) => text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replac
 /** D97: the page's items and What Sonah could not check, where the code step's report is shown (the code section is gone). */
 const codeSectionOf = (page) => page.slice(page.indexOf('id="must-act"'), page.indexOf('<footer'));
 const PAGE_CODE_WORDS = CODE_REPORT_WORDS;
-const itemsOf = (model) => [...model.tiers.must_act, ...model.tiers.must_know, ...model.tiers.good_to_know];
+const itemsOf = (model) => reportItems(model);
 const itemByTitle = (model, title) => itemsOf(model).find((item) => item.what.parts.some((p) => p.text === title));
 const itemHtml = (page, n) => { const at = page.indexOf(`id="item-${n}"`);
   const end = Math.min(...['</article>', '</details>\n<details class="item', '</details></details>'].map((m) => {
@@ -426,7 +426,9 @@ test('agentic code step: a review question with no session receipt shows its que
   const ends = [story.indexOf('<a name="item-', at + 1), story.indexOf('\n### ', at), story.indexOf('<details><summary>Your prompt', at)]
     .filter((i) => i > at);
   const block = story.slice(at, ends.length ? Math.min(...ends) : undefined);
-  assert.ok(block.includes('*SYNTHETIC should the input be split on commas?*'), block);
+  // D161: with no checked tie it is Good to know: its line is a fold's summary (HTML), its words in <em>.
+  assert.equal(asked.tier.final, 'good_to_know');
+  assert.ok(block.includes('<em>SYNTHETIC should the input be split on commas?</em>'), block);
   assert.ok(!block.includes('“') && !/null|undefined/.test(block), block);
 });
 
@@ -446,6 +448,22 @@ test('agentic code step: an earlier report\'s statements found to hold and its r
   }
   assert.equal(Object.hasOwn(codeSectionPlan(earlier), 'held'), false);
   assert.equal(codeStepWithheld(earlier).length, withheld().length, 'its withheld statement is listed nowhere');
+});
+
+// D149: who proposed a finding in a review of several units (`proposedBy`) and which unit's block its check was shown
+// (`checkUnit`) stay in the private record: the report model every reader reads, the page, the report .md, the count
+// lines and the PR comment are byte for byte what they are without them.
+test('D149: who proposed a finding and which unit checked it are on no reader', () => {
+  const units = (f, proposedBy, checkUnit) => ({ ...f, proposedBy: proposedBy.map((unit) => ({ unit, angle: 'review',
+    round: 'R1' })), checkUnit });
+  const withUnits = report({ findings: [units(finding(), ['U1', 'U2'], 'U2'), units(restFinding(), ['U2'], null)] });
+  const without = report();
+  assert.deepEqual(reportModel(codeSession(), withUnits), reportModel(codeSession(), without));
+  assert.equal(renderSessionPage(codeSession(), withUnits), renderSessionPage(codeSession(), without));
+  assert.equal(mdOf(withUnits), mdOf(without));
+  assert.deepEqual(countLines(reportModel(codeSession(), withUnits)), countLines(reportModel(codeSession(), without)));
+  assert.equal(publicCommentText({ ...withUnits, ...honestStatuses(withUnits) }).summary,
+    publicCommentText({ ...without, ...honestStatuses(without) }).summary);
 });
 
 // What the check withheld is listed by its closed kind and reason: an item outside either list is not one Sonah's code
@@ -818,7 +836,8 @@ test('agentic code step: one word table — every closed token of the report has
     ['key_missing', 'key_outside_contract', 'value_outside_list', 'text_over_limit', 'dossier_key_unknown',
       'ask_key_required', 'claim_key_required', 'quote_ungrounded', 'anchor_off_quote', 'file_not_readable', 'out_of_scope',
       'path_ambiguous'],
-    ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace', 'refutation_uncited']]);
+    ['shape', 'receipt_ungrounded', 'support_off_anchor', 'support_off_trace', 'refutation_uncited',
+      'receipt_path_ambiguous']]);
   for (const list of [CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS, CODE_QUESTION_VERDICTS, CODE_WITHHELD_REASONS,
     CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES]) assert.ok(Object.isFrozen(list));
   assert.doesNotMatch(W.how, /three independent|checking passes/);

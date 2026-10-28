@@ -11,14 +11,14 @@
 // Synthetic sessions, snapshots and deterministic fake agents: no recording, no model, no network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { codeSnapshotPlan, freezeCodeSnapshot, runCodePass, changeBlock, codeChangeTally, codeSeenOf,
+import { isCodeReviewLabel, codeSnapshotPlan, freezeCodeSnapshot, runCodePass, changeBlock, codeChangeTally, codeSeenOf,
   CODE_CHANGE_BLOCK_MAX_BYTES } from '../src/code-pass.js';
 import { CODE_REPORT_WORDS as W, codeBaseLine, codeCoverageLines, codeFooterLines, codeSeenLines, codeUnseenFiles,
   codeQuestionsLine, codeHowLine, withheldWhy } from '../src/code-report.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
-import { CODE_FILES, codeSession, memoryRepo, holds, allSound, withRun, reviewFinding, verifiedFinding, batchItems,
-  SYNTHETIC_RUN } from '../../cli/test/code-pass-fixture.js';
+import { CODE_FILES, codeSession, memoryRepo, holds, holdsWith, repositoryPremise, allSound, withRun, reviewFinding,
+  verifiedFinding, batchItems, SYNTHETIC_RUN } from '../../cli/test/code-pass-fixture.js';
 
 const enc = (text) => new TextEncoder().encode(text);
 const ROOT = '/work/repo';
@@ -57,7 +57,8 @@ function snapshotOf(extra = []) {
 }
 /** The code step's fake agents: the review answers `review()` (by default nothing), each check holds or is sound. */
 const judgeOf = ({ review = () => withRun({ findings: [], questions: [] }) } = {}) => async (request) => {
-  if (request.label === 'code-review:agent' || request.label === 'code-review:repair') return review(request);
+  // D149: and each review unit's request (`code-review:review:U<k>:R1`), with its repair.
+  if (isCodeReviewLabel(request.label)) return review(request);
   if (/^code-verify:F\d+/.test(request.label)) return holds({});
   if (/^code-verify:batch/.test(request.label)) return allSound({ items: [] });
   throw new Error(`unexpected request ${request.label}`);
@@ -155,25 +156,25 @@ test('D109 review: a file whose hunks alone are over the change block\'s cap is 
   assert.ok(!block.alone.includes('src/b.js'), 'b.js fits alone: left out for room');
   // At the real cap, through the code step (part A, so no file is shown whole instead): hunks of about 460 KB as the
   // change block shows them (about 51 bytes a row), and two of about 204 KB and 214 KB that fit alone but not together.
+  // D149: those two are planned as two review units, each shown by its own request; huge.js, over every unit's room
+  // alone, stays too large on its own.
   const real = snapshotOf([addedFile('src/huge.js', 9_000, 30), addedFile('src/one.js', 4_000, 30),
     addedFile('src/two.js', 4_200, 30)]);
   const { codePass } = await runOn(real, judgeOf(), { wholeFiles: false });
   const entries = Object.fromEntries(codePass.manifest.review.files.map((e) => [e.path, e]));
   assert.deepEqual([entries['src/huge.js'].state, entries['src/huge.js'].reason, entries['src/huge.js'].alone],
     ['left_out', 'block_cap', true]);
-  assert.deepEqual([entries['src/two.js'].state, entries['src/two.js'].reason, entries['src/two.js'].alone],
-    ['left_out', 'block_cap', undefined]);
-  // one.js's hunks are shown, and an added file's hunks hold every line of it.
-  assert.equal(entries['src/one.js'].state, 'whole');
+  // one.js's and two.js's hunks are shown, each in its unit, and an added file's hunks hold every line of it.
+  assert.deepEqual([entries['src/one.js'].state, entries['src/two.js'].state], ['whole', 'whole']);
+  assert.equal(codePass.manifest.units.length, 2);
   assert.equal(CODE_CHANGE_BLOCK_MAX_BYTES, 400_000);
   const states = Object.fromEntries(codePass.files.map((f) => [f.path, f.state]));
-  assert.deepEqual([states['src/huge.js'], states['src/two.js']], ['oversize', 'left_out']);
+  assert.deepEqual([states['src/huge.js'], states['src/two.js']], ['oversize', 'shown']);
   const units = Object.fromEntries(codeChangeTally(codePass).units.map((u) => [u.path, u.state]));
-  assert.deepEqual([units['src/huge.js'], units['src/two.js']], ['oversize', 'left_out']);
+  assert.deepEqual([units['src/huge.js'], units['src/two.js']], ['oversize', 'shown']);
   assert.deepEqual(codePass.footer.filter((e) => ['withheld', 'clipped'].includes(e.kind)),
-    [{ kind: 'withheld', path: 'src/huge.js' }, { kind: 'clipped', path: 'src/two.js' }]);
+    [{ kind: 'withheld', path: 'src/huge.js' }]);
   const lines = codeFooterLines({ codePass });
-  assert.ok(lines.includes(W.footerKinds.clipped({ paths: ['src/two.js'] })), lines.join('\n'));
   assert.ok(lines.includes(W.footerKinds.withheld({ n: 1, states: [[W.states.oversize, 1]], paths: ['src/huge.js'] })),
     lines.join('\n'));
   assert.equal(codePass.gaps.find((g) => g.code === 'code_unreviewable').byState.oversize, 1);
@@ -212,8 +213,8 @@ test('D109 review: the paragraph on how the code review works prints only where 
     if (/^code-verify:batch/.test(request.label)) return batch(batchItems(request.prompt));
     throw new Error(`unexpected request ${request.label}`);
   };
-  const goal = (f) => withRun({ ...holds(f), verdict: 'refuted', reason: 'not_against_goal', receipts: [],
-    explanation: 'Behaviour as stated.' });
+  // D152: a check that holds, with no receipt of what the behaviour breaks, of a finding that follows from no row.
+  const open = (f) => withRun(holdsWith(f, [repositoryPremise(f)], []));
   const unusable = () => withRun({ findings: 'none' });
   const ungrounded = reviewFinding({ title: 'A finding whose quote is not in the file',
     trace: [{ ...reviewFinding().trace[0], quote: 'not in the file at all' }] });
@@ -224,8 +225,8 @@ test('D109 review: the paragraph on how the code review works prints only where 
       questions: [question] }) }), true],
     ['an answer whose checks failed', agents({ review: answer({ findings: [reviewFinding()], questions: [question] }),
       verify: fails('model_unavailable'), batch: fails('model_unavailable') }), true],
-    ['an answer whose finding its check found not against your ask', agents({ review: answer({
-      findings: [reviewFinding()] }), verify: goal }), true],
+    ['an answer whose finding its check found real, tied to nothing it breaks', agents({ review: answer({
+      findings: [reviewFinding()] }), verify: open }), true],
     ['an answer whose item the one repair fixed', agents({ review: answer({ findings: [ungrounded] }),
       repair: answer({ findings: [reviewFinding()] }) }), true],
     ['a reply outside the contract that the one repair answered', agents({ review: unusable,
@@ -246,22 +247,23 @@ test('D109 review: the paragraph on how the code review works prints only where 
     false]);
   const said = [W.noFile, W.noRoot, ...Object.values(W.notRun)];
   const unread = (line, total) => said.includes(line) || line === W.noAnswer(total) || line === W.tooLarge(total);
+  // D152: every state here runs under the tie rule, so the paragraph is its words (`howTied`); a record before it reads
+  // `how` (below).
   for (const [name, codePass, prints] of ran) {
-    assert.equal(codeHowLine(codePass), prints ? W.how : null, name);
+    assert.equal(codeHowLine(codePass), prints ? W.howTied : null, name);
     for (const text of [textOf(renderSessionPage(fixture.session, { ...report, codePass })),
       renderReportMarkdown(fixture.session, { ...report, codePass })])
-      assert.equal(text.includes(W.how), prints, `${name}: the paragraph on a reader`);
+      assert.equal(text.includes(W.howTied), prints, `${name}: the paragraph on a reader`);
     // Printed, the record shows that the review read what Sonah sent it, and the coverage line says what it saw; not
     // printed, the coverage line says what became of the review instead.
     const tally = codeChangeTally(codePass);
     const total = tally?.total ?? 0;
     assert.equal(unread(codeCoverageLines(codePass)[0], total), !prints, `${name}: ${codeCoverageLines(codePass)[0]}`);
     if (prints) assert.equal(tally.sent === true && tally.answered === true, true, name);
-    // The paragraph's rules hold in every state: each published finding has a check that found the same problem, each
-    // question that comes from a finding was found real but not against your ask, and each item withheld has its reason.
-    assert.ok(codePass.findings.every((f) => f.check?.verdict === 'holds'), name);
-    assert.ok(codePass.questions.filter((q) => q.from === 'finding').every((q) => q.check?.reason === 'not_against_goal'),
-      name);
+    // The paragraph's rules hold in every state: each published finding, tied or open, has a check that found the
+    // problem real, no question comes from a finding (D152), and each item withheld has its reason.
+    assert.ok([...codePass.findings, ...codePass.open].every((f) => f.check?.verdict === 'holds'), name);
+    assert.deepEqual(codePass.questions.filter((q) => q.from === 'finding'), [], name);
     assert.ok(codePass.withheld.every((w) => withheldWhy(w) !== null), name);
   }
   // The states are what their names say.
@@ -270,8 +272,7 @@ test('D109 review: the paragraph on how the code review works prints only where 
     at('an answer whose finding and question each have a check').questions.map((q) => q.check?.verdict)], [1, ['sound']]);
   assert.deepEqual(at('an answer whose checks failed').withheld.map((w) => w.reason), ['request_failed']);
   assert.deepEqual(at('an answer whose checks failed').questions.map((q) => q.check ?? null), [null]);
-  assert.deepEqual(at('an answer whose finding its check found not against your ask').questions.map((q) => q.from),
-    ['finding']);
+  assert.deepEqual(at('an answer whose finding its check found real, tied to nothing it breaks').open.length, 1);
   assert.deepEqual([at('an answer whose item the one repair fixed').calls.repair,
     at('an answer whose item the one repair fixed').findings.length], [1, 1]);
   assert.deepEqual(['a reply outside the contract that the one repair answered', 'a reply outside the contract, and its '
@@ -283,7 +284,7 @@ test('D109 review: the paragraph on how the code review works prints only where 
   assert.equal(at('no change to review').manifest, undefined);
   assert.equal(at('a step that did not run').ran, false);
   // The words never say that the code review read the change, or that Sonah reviewed it.
-  assert.doesNotMatch(W.how, /read the change|Sonah reviewed/);
+  for (const words of [W.how, W.howTied]) assert.doesNotMatch(words, /read the change|Sonah reviewed/);
   // A report written before D105 (no manifest) is read by its review agent's record; a step before code-pass/7, with
   // no such record, worked another way, and none prints.
   const { manifest, agents: runs, receiptPlaces, ...earlier } = at('an answer with nothing to publish');
@@ -292,9 +293,12 @@ test('D109 review: the paragraph on how the code review works prints only where 
     [{ ...failed, turns: 2 }, true], [{ ...failed, reads: 1 }, true], [{ ...failed, tools: { Read: 0, Grep: 1, Glob: 0 } },
       true], [failed, false], [{ ...failed, terminal: 'not_sent' }, false], [undefined, false]]) {
     const pass = { ...earlier, ...(agent ? { agent } : { agent: undefined }) };
-    assert.equal(codeHowLine(pass), prints ? W.how : null, JSON.stringify(agent));
-    assert.equal(renderReportMarkdown(fixture.session, { ...report, codePass: pass }).includes(W.how), prints,
+    assert.equal(codeHowLine(pass), prints ? W.howTied : null, JSON.stringify(agent));
+    assert.equal(renderReportMarkdown(fixture.session, { ...report, codePass: pass }).includes(W.howTied), prints,
       JSON.stringify(agent));
+    // D152: a record before the tie rule (its version names none) prints the paragraph of its day.
+    const { tie: _tie, ...before } = pass.version;
+    assert.equal(codeHowLine({ ...pass, version: before }), prints ? W.how : null, JSON.stringify(agent));
   }
   // A step that did not run prints none, whatever else its record holds.
   assert.equal(codeHowLine({ ...earlier, ran: false, agent: { ...failed, terminal: 'answered' } }), null);

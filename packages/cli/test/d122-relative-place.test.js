@@ -19,7 +19,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRepositoryReader, readCodeSnapshot } from '../src/code-snapshot.js';
 import { reviewCodePass } from '../src/session-review.js';
-import { CODE_ITEM_ERROR_WORDS, fileNoteShape, placesHolding } from '../../evidence/src/code-pass.js';
+import { CODE_ITEM_ERROR_WORDS, CODE_BRIEFS_ABSOLUTE, fileNoteShape, manyPlacesHold, placesHolding }
+  from '../../evidence/src/code-pass.js';
 import { CODE_REPORT_WORDS } from '../../evidence/src/code-report.js';
 import { CODE_TEXT, buildCodeSession, codeJudge, holds } from './code-pass-fixture.js';
 
@@ -261,4 +262,75 @@ test('D122 (d): a file note is checked on the name its path resolves to (fileNot
   // With no resolver, the path is itself, as before.
   assert.deepEqual(fileNoteShape(note('lib/b.js'), { paths }), { ok: false, error: 'file_not_in_change',
     at: 'files.path "lib/b.js"' });
+});
+
+test('D147: through the repository reader, a check whose receipt names a relative path that both repositories hold is '
+  + 'void with its own cause and re-asked in the repair\'s words; named by its absolute path, it grounds', async (t) => {
+  const { B, session, snapshot } = await workspace(t, { inA: true });
+  assert.equal(manyPlacesHold(snapshot.files, placesHolding(snapshot.base, snapshot.files)), true);
+  // The checking agent quotes every code step of the trace, each path named from B's top folder: a relative path that
+  // the working repository holds too. On its re-ask, by its absolute path when `again`.
+  const checkOf = (again) => (finding, request) => {
+    const verdict = holds(finding);
+    const absolute = /:reask$/.test(request.label) && again;
+    const strip = (r) => ({ ...r, path: !absolute && r.path.startsWith(`${B}/`) ? r.path.slice(B.length + 1) : r.path });
+    return { ...verdict, receipts: verdict.receipts.map(strip),
+      premises: verdict.premises.map((p) => ({ ...p, receipts: p.receipts.map(strip) })) };
+  };
+  for (const again of [true, false]) {
+    const seen = [];
+    const { report } = await reviewCodePass({ session, report: {}, snapshot, answerCache: null, store: memoryStore(),
+      backend: 'claude-cli', judge: codeJudge({ review: answerOn(join(B, 'lib', 'b.js')), verify: checkOf(again),
+        seen }) });
+    const pass = report.codePass;
+    // Every brief says that a path is the file's absolute path (the review's and the finding's check's: the report holds
+    // no item for the accounting).
+    assert.deepEqual([...new Set(seen.filter((r) => r.label.startsWith('code-')).map((r) => r.system))].sort(),
+      [CODE_BRIEFS_ABSOLUTE.reviewWholeFiles, CODE_BRIEFS_ABSOLUTE.verify].sort());
+    const reask = seen.find((r) => r.label === 'code-verify:F1:reask');
+    assert.ok(reask?.prompt.includes(`receipt_path_ambiguous (${CODE_ITEM_ERROR_WORDS.path_ambiguous}) at lib/b.js:1`),
+      reask?.prompt.slice(-400));
+    if (again) {
+      assert.deepEqual(pass.withheld, []);
+      assert.deepEqual(pass.findings.map((f) => [f.anchor.path, f.check?.verdict]), [[join(B, 'lib', 'b.js'), 'holds']]);
+    } else {
+      assert.deepEqual(pass.findings, []);
+      assert.deepEqual(pass.withheld.map((w) => [w.reason, w.cause]), [['verify_unexecuted', 'receipt_path_ambiguous']]);
+    }
+  }
+});
+
+test('D147: with more than one place, the reader reads an absolute path of a file of the change under the change\'s '
+  + 'name, so a file note named by its absolute path is kept; any other absolute path, and every path with one place, '
+  + 'is itself', async (t) => {
+  const { A, B, session, snapshot } = await workspace(t, { inA: true });
+  const reader = readerOf(snapshot);
+  // A file of the working repository's change, by its absolute path: its relative name, as the change gives it.
+  assert.deepEqual(reader.name(join(A, 'src', 'a.js')), { path: 'src/a.js' });
+  // Another place's file of the change, by its absolute path: the change's name for it.
+  assert.deepEqual(reader.name(join(B, 'lib', 'b.js')), { path: join(B, 'lib', 'b.js') });
+  // An absolute path that names no file of the change (one the working repository holds, unchanged; one nowhere): itself.
+  for (const path of [join(A, 'only-a.md'), join(A, 'lib', 'b.js'), join(A, 'nothing.js')])
+    assert.deepEqual(reader.name(path), { path });
+  // A file of the change that is gone now, by its absolute path: still the change's name.
+  await rm(join(A, 'src', 'a.js'));
+  assert.deepEqual(readerOf(snapshot).name(join(A, 'src', 'a.js')), { path: 'src/a.js' });
+  await put(A, { 'src/a.js': 'export const a = 2;\n' });
+  // One place (the working repository alone, or another place alone): an absolute path is itself, as before.
+  const lone = createRepositoryReader({ root: snapshot.dir, top: snapshot.top, maxBytes: 1_000_000, files: snapshot.files });
+  assert.deepEqual(lone.name(join(A, 'src', 'a.js')), { path: join(A, 'src', 'a.js') });
+  const sibling = await workspace(t);
+  assert.deepEqual(readerOf(sibling.snapshot).name(join(sibling.B, 'lib', 'b.js')), { path: join(sibling.B, 'lib', 'b.js') });
+  assert.deepEqual(readerOf(sibling.snapshot).name(join(sibling.A, 'only-a.md')), { path: join(sibling.A, 'only-a.md') });
+  // Through the code step: a file note on the working repository's file by its absolute path is kept, on that file; the
+  // same note by the relative path that both repositories hold is dropped, as before.
+  const noted = (path) => () => ({ findings: [onA], questions: [], triage: [],
+    files: [{ path, what: 'a moves from 1 to 2', asks: [] }] });
+  const absolute = await reviewCodePass({ session, report: {}, snapshot, judge: codeJudge({ review: noted(join(A, 'src',
+    'a.js')) }), answerCache: null, store: memoryStore(), backend: 'claude-cli' });
+  assert.deepEqual(absolute.report.codePass.filesDropped, []);
+  assert.equal(absolute.report.codePass.files.find((f) => f.path === 'src/a.js')?.what, 'a moves from 1 to 2');
+  const relative = await reviewCodePass({ session, report: {}, snapshot, judge: codeJudge({ review: noted('lib/b.js') }),
+    answerCache: null, store: memoryStore(), backend: 'claude-cli' });
+  assert.deepEqual(relative.report.codePass.filesDropped, [{ key: 'lib/b.js', index: 0, cause: 'path_ambiguous' }]);
 });

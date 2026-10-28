@@ -5,8 +5,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { renderSessionPage, sessionPage, PAGE_VERSION, PAGE_LIMITS, PAGE_CSS } from '../session-page.js';
-import { reportModel, REPORT_MODEL_VERSION } from '../report-model.js';
-import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS } from '../report-words.js';
+import { reportModel, REPORT_MODEL_VERSION, reportItems } from '../report-model.js';
+import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_TIER_WORDS }
+  from '../report-words.js';
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
@@ -41,15 +42,20 @@ test('D97, D131: the page is the report model in its order — header, count lin
   const html = page();
   const at = (marker) => { const i = html.indexOf(marker); assert.ok(i >= 0, marker); return i; };
   // D131 (R1, B12): Must act and Must know before your prompt, on every page (report-model.js `promptAfterTiers`).
-  const order = ['id="review-title"', 'class="count"', 'id="must-act"', 'id="must-know"', 'id="prompt"',
-    'id="good-to-know"', 'id="did"', 'id="not-checked"', 'class="foot"'].map(at);
+  // D161: then Good to know and the agent's decisions, before your prompt.
+  const order = ['id="review-title"', 'class="count"', 'id="must-act"', 'id="must-know"', 'id="good-to-know"',
+    'id="decisions"', 'id="prompt"', 'id="did"', 'id="not-checked"', 'class="foot"'].map(at);
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
   // Must act and Must know are open sections; Good to know, what the agent did and what Sonah could not check are
   // native folds, closed (no `open` attribute: the page runs no script).
   assert.match(html, /<section class="part tier" id="must-act">/);
   assert.match(html, /<details class="part tier fold-tier" id="good-to-know">/);
   assert.match(html, /<details class="card-ui part fold-part" id="did">/);
-  assert.equal(/<details[^>]* open/.test(html), false);
+  // D161: but a group of the agent's decisions that holds one tagged Must act or Must know, open (no script either).
+  const model0 = modelOf();
+  assert.deepEqual([...html.matchAll(/<details([^>]*) open>/g)].map((m) => m[1]),
+    model0.decisions.groups.filter((g) => g.open).map(() => ' class="trail-group"'));
+  assert.ok(model0.decisions.groups.some((g) => g.open));
   // Every fold's summary carries its count.
   const model = modelOf();
   assert.match(html, new RegExp(`Good to know \\(${model.tiers.good_to_know.length}\\)`));
@@ -63,6 +69,10 @@ test('D97, D131: the page is the report model in its order — header, count lin
     assert.match(html, new RegExp(`<article class="item t-[a-z]+" id="item-${item.n}">`));
   for (const item of model.tiers.good_to_know)
     assert.match(html, new RegExp(`<details class="item gtk t-[a-z]+" id="item-${item.n}"><summary>`));
+  // D161: each of the agent's decisions is one line that opens to the full item, its tier a tag.
+  for (const item of model.decisions.groups.flatMap((g) => g.items))
+    assert.match(html, new RegExp(`<details class="item gtk trail-item t-[a-z]+" id="item-${item.n}"><summary>[^\\n]*`
+      + `<span class="tag tier-tag">${REPORT_TIER_WORDS[item.tier.final]}</span></summary>`));
   // The generator meta names both versions.
   assert.match(html, new RegExp(`<meta name="generator" content="${PAGE_VERSION} ${REPORT_MODEL_VERSION}">`));
   // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
@@ -92,7 +102,8 @@ test('D97 (13): the page is inert: one CSP, no script, no resource; the only lin
   for (const href of out) assert.match(href, new RegExp(`^https://github\\.com/example-org/example-api/blob/(?:${HEAD}|2{40})/`));
   for (const tag of html.matchAll(/<a [^>]*href="https:[^>]*>/g)) assert.match(tag[0], /rel="noreferrer noopener"/);
   for (const href of hrefs.filter((h) => h.startsWith('#')))
-    assert.match(href, /^#(?:ask|item|run|claim|not-checked|did|prompt|must-act|must-know|good-to-know)(?:-[A-Za-z0-9]+)?$/);
+    // D161: and the agent's decisions (`#decisions`).
+    assert.match(href, /^#(?:ask|item|run|claim|not-checked|did|prompt|must-act|must-know|good-to-know|decisions)(?:-[A-Za-z0-9]+)?$/);
   // Without the facts, no link leaves the page at all; facts that are not valid build none either.
   assert.equal(/href="https?:/.test(page(triagedReport, {})), false);
   assert.equal(/href="https?:/.test(page(triagedReport, repoFacts({ github: { owner: 'two words' } }))), false);
@@ -180,10 +191,14 @@ test('D97 (14): a page past its bound folds the evidence first, then cuts the li
   assert.equal(html.includes(REPORT_TRIM_WORDS.messagesTrimmed), false);
   // Each trim says so once where it happens.
   const said = (sentence) => html.split(sentence).length - 1;
-  // The evidence folds of Good to know, then of Must act and Must know: said once in each place the trim happens.
-  assert.equal(said(REPORT_TRIM_WORDS.trimmed), 2);
+  // The evidence folds of the agent's decisions (D161), of Good to know, then of Must act and Must know: said once in
+  // each place the trim happens.
+  assert.equal(said(REPORT_TRIM_WORDS.trimmed), 3);
+  const trail = html.slice(html.indexOf('id="decisions"'), html.indexOf('id="prompt"'));
+  assert.equal(trail.split(REPORT_TRIM_WORDS.trimmed).length - 1, 1, 'said once in the agent\'s decisions');
+  for (const item of model.decisions.groups.flatMap((g) => g.items)) assert.ok(trail.includes(`id="item-${item.n}"`));
   // The lists of what the agent did are cut, and so is the list of messages that hold no ask: said once in each place.
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"'));
   const did = html.slice(html.indexOf('id="did"'), html.indexOf('id="not-checked"'));
   assert.equal(said(REPORT_TRIM_WORDS.listsTrimmed), 2);
   assert.equal([prompt, did].map((part) => part.split(REPORT_TRIM_WORDS.listsTrimmed).length - 1).join(), '1,1');
@@ -259,8 +274,8 @@ test('ported (M33 Y): who said it is read from the recording — you, the agent,
   ] };
   const html = renderSessionPage(session, report, {});
   const model = reportModel(session, report, {});
-  const of = (chosen) => itemOf(html, [...model.tiers.must_know, ...model.tiers.good_to_know]
-    .find((item) => item.what.parts.some((p) => p.text === chosen)).n);
+  // D161: the decisions are in the report's second part.
+  const of = (chosen) => itemOf(html, reportItems(model).find((item) => item.what.parts.some((p) => p.text === chosen)).n);
   const first = of('in-memory Map');
   assert.match(first, /You asked:<\/span> <q class="said">Store sessions somewhere durable<\/q>/);
   assert.match(first, /The agent said:<\/span> <q class="said">keep the session store in memory<\/q>/);
@@ -320,7 +335,7 @@ test('ported (D69 f): a long message is shown in part with its marks, folded who
     { text: 'item 11', instruction: r('instruction', 'I1', 'change the module named part11 carefully'), status: 'done' },
     { text: 'item 0', instruction: r('instruction', 'I1', 'change the module named part0 carefully'), status: 'done' },
     { text: 'second half', instruction: r('instruction', 'I2', 'Second half of it.'), status: 'not-checked' }] }, {});
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"'));
   // The start, then the whole message folded with its line breaks; each ask's id given once.
   assert.match(prompt, /<details class="whole"><summary>Show the whole message<\/summary><p class="message">Please do these things:\n- item 0/);
   assert.equal((prompt.match(/id="ask-1"/g) ?? []).length, 1);
@@ -474,7 +489,7 @@ test('ported (M33 Y): the page bound is hard — long messages keep their start,
   assert.ok(Buffer.byteLength(html, 'utf8') <= PAGE_LIMITS.maxBytes, `${Buffer.byteLength(html, 'utf8')} bytes`);
   // A long message is shown only in part: its start, with the cut said; the trim is said once, where it happens.
   assert.doesNotMatch(html, /<details class="whole"/, 'a long message is shown only in part');
-  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="good-to-know"'));
+  const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"'));
   assert.equal(html.split(REPORT_TRIM_WORDS.messagesTrimmed).length - 1, 1);
   assert.ok(prompt.includes(REPORT_TRIM_WORDS.messagesTrimmed));
   // Every ask has its place once: the start ones marked, the end ones listed with their words.

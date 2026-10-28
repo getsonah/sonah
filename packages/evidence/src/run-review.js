@@ -7,11 +7,12 @@ import { planWindows, carriedContext, carriedRecord, carriedIds, aliasTable, map
   windowingProfileOf, windowParts } from './windows.js';
 import { EVIDENCE_REQUEST_LIMITS, EVIDENCE_REQUEST_MEMBER, EVIDENCE_REQUEST_REFUSALS, requestsOf, withoutRequests,
   serveEvidence, emptyEvidenceRecord, addRound, withServed, servedSoFar } from './evidence-requests.js';
-import { verifyReceipts, verifyReceipt, repairReceipt, decisionIdentity, receiptProjection, shownSession } from './session.js';
+import { verifyReceipts, verifyReceipt, repairReceipt, decisionIdentity, receiptProjection, shownSession, recordedFailure }
+  from './session.js';
 import { identityDigest } from '../contracts/canonical.js';
 import { requestImages, deliveredView, clearedView } from './images.js';
 import { buildChallengeDossier, challengeEvidenceOf, buildNarrativePrompt, NARRATIVE_SCHEMA, SESSION_NARRATIVE_SCHEMA, PROMPT_VERSION,
-  narrativeSchemaOf, restatusRequest, recolumnRequest, reanchorRequest } from './prompt.js';
+  narrativeSchemaOf, restatusRequest, recolumnRequest, reanchorRequest, recheckRequest } from './prompt.js';
 import { reviewAgentProfile } from './review-agent.js';
 import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withheldRejection,
   withheldCauseCounts, declaredCauses, JUDGE_FAILURE_CODES, RUN_FAILURE_CODES, windowEnd,
@@ -27,11 +28,17 @@ import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withhe
   DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, groundDecision, codeContradictionSource, SUPPORT_ASKED,
   OWN_WRITTEN_SOURCE, RESTS_ON_REPAIRED, DECISION_RECOLUMN_RECORD, NOT_ACTING_REANCHOR_WITHHELD,
   NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD, groundingFieldsOf, GROUNDING_CAUSES,
-  GROUNDING_LENGTH_CAUSES, GROUNDING_ANCHOR_CAUSES, QUOTE_PLACES, QUOTE_LIMITS, nestedReceipts, VALUE_UNCHECKED_CAUSES }
+  GROUNDING_LENGTH_CAUSES, GROUNDING_ANCHOR_CAUSES, QUOTE_PLACES, QUOTE_LIMITS, nestedReceipts, VALUE_UNCHECKED_CAUSES,
+  RECHECK_OUTCOMES, RECHECK_WITHHELD, RECHECK_MOVE_ROLES, RECHECK_ITEM_TYPE, RECHECK_VERSION, actorKeyOf,
+  RECHECK_KINDS, RECHECK_CLAIM_ITEM_TYPE, RECHECK_WRITTEN_ITEM_TYPE, DISCLOSURE_REASONS, PUBLIC_STATUSES, resolutionRoles,
+  groundingCheck, SESSION_EDGE_VERSION }
   from './ledger.js';
 import { checkedRequirement, claimRestsOn, windowAsks, notClaimsCheck, closingCoverage, windowFailures, failuresCheck,
   publishedResponse } from './checklist.js';
-import { supportCheck, supportShape } from './claims.js';
+import { recheckSelection } from './recheck.js';
+import { ITEM_SOURCES } from './triage.js';
+import { supportCheck, supportShape, claimsAgainstRuns } from './claims.js';
+import { struggleMap } from './struggle.js';
 import { statusUncovered } from './status-fact.js';
 import { challengeItems, mergeChallengeRuns, CHALLENGE_PROFILE, requestFits, reviewInputBytes, verbatimWords,
   forbiddenEditProposition, challengeOutcome, disclosureAsks, disclosureOutcomes, disclosureCounts, REFUTING_VOTES,
@@ -39,8 +46,8 @@ import { challengeItems, mergeChallengeRuns, CHALLENGE_PROFILE, requestFits, rev
 import { FORBIDDEN_CHANNEL, forbiddenShape, forbiddenListOf, readForbiddenEdit, forbiddenChallengeItem,
   forbiddenFindingCandidate, forbiddenEditIdentity } from './forbidden.js';
 import { WRITTEN_CHANNEL, WRITTEN_ITEM_TYPE, writtenChatClaim, asWrittenStatement, readWrittenStatement,
-  writtenChallengeCandidate, publishedStatement, writtenShape, shownWrittenBodies, WRITTEN_CONTRADICTION_ROLES }
-  from './written.js';
+  writtenChallengeCandidate, publishedStatement, writtenShape, shownWrittenBodies, WRITTEN_CONTRADICTION_ROLES,
+  writtenCorrection } from './written.js';
 import { CHALLENGE_TIER_BOUNDS, REVIEW_SPEED_PROFILES, challengeProfileOf, dossierChallenge, isStandardProfile, reviewSpeedProfile,
   requestBoundOf, tieredChallenge } from './review-profiles.js';
 import { CODE_PASS_PROFILE } from './code-pass.js';
@@ -1755,6 +1762,85 @@ export function windowCompletion(windowResults) {
   return { windows: windows.length, complete, byReason, unexplained };
 }
 
+/** D155: the window records of the two second checks (W1 A's `recolumn`, G2's `reanchor`). */
+const RECOLUMN_MEMBER = 'recolumn';
+const REANCHOR_MEMBER = 'reanchor';
+
+/**
+ * D155 (its fix round). Can a second check's run be run by asking it again? Its record is there, and every batch it
+ * formed was one it could send: `challengeItems` plans calls only for a batch that is neither too large to send nor
+ * invalid (`plannedCalls`), and such a batch is never sent, on any run; nor is a run with no record (its input was
+ * refused before any call). Structure only.
+ */
+export function recheckResendable(run) {
+  const passes = run?.profile?.passes;
+  return plain(run) && Number.isSafeInteger(run.plannedBatches) && run.plannedBatches > 0
+    && Number.isSafeInteger(passes) && passes > 0 && run.plannedCalls === run.plannedBatches * passes;
+}
+
+/** D155: a window record's second-check runs that left a decision unexecuted and that asking again can run, each
+ *  `{ member, n, prefix }`: the record's member, how many decisions it left unexecuted, and the label prefix of its
+ *  run's requests (`challenge:wN:exists:…`, `challenge:wN:reanchor:…`; null when the window's index cannot be read). */
+function recheckRunsOf(window) {
+  if (!plain(window)) return [];
+  const [, , , UNEXECUTED_MEMBER] = RESOLUTION_CHALLENGE_OUTCOMES;
+  const [, RECOLUMN_EXISTENCE] = DECISION_RECOLUMN_RECORD;
+  const [, , , REANCHOR_EXISTENCE] = NOT_ACTING_REANCHOR_RECORD;
+  const at = Number.isSafeInteger(window.windowIndex) && window.windowIndex >= 0 ? window.windowIndex + 1 : null;
+  return [[RECOLUMN_MEMBER, RECOLUMN_EXISTENCE, window.recolumnExistsChallenge, EXISTS_SUFFIX],
+    [REANCHOR_MEMBER, REANCHOR_EXISTENCE, window.reanchorExistsChallenge, REANCHOR_SUFFIX]]
+    .map(([member, existence, run, suffix]) => ({ member, n: window[member]?.[existence]?.[UNEXECUTED_MEMBER], run,
+      prefix: at === null ? null : `challenge:w${at}${suffix}:` }))
+    .filter(({ n, run }) => Number.isSafeInteger(n) && n > 0 && recheckResendable(run))
+    .map(({ member, n, prefix }) => ({ member, n, prefix }));
+}
+
+/**
+ * D155. How many decisions a review left out because their second check did not run: the window's challenge refuted
+ * them, and the existence check that could have kept them (`recolumnedDecisions` step 1, `reanchoredChoices` step 2)
+ * ended unexecuted for them (a call that failed after its retry or was not retried, a budget stop, or a reply that left
+ * the item out, or could not be read, even after its re-ask), in a run that asking again can run (`recheckResendable`).
+ * A finished review forgets that run's stored answers (`rechecksToReask`), so running the same review again asks it.
+ * The fix round: counted once per decision by identity, less any decision another window kept (`runReview` states it,
+ * `report.counts.rechecksUnexecuted`); a report written before it is counted from its windows' records, one per copy.
+ * These checks never make a window incomplete (`windowIncompleteReasons`), so this count is apart from
+ * `windowCompletion`. A count, 0 when none.
+ */
+export function rechecksUnexecuted(report) {
+  const stated = report?.counts?.rechecksUnexecuted;
+  if (Number.isSafeInteger(stated) && stated >= 0) return stated;
+  return (Array.isArray(report?.windowResults) ? report.windowResults : [])
+    .reduce((n, window) => n + recheckRunsOf(window).reduce((m, run) => m + run.n, 0), 0);
+}
+
+/** D155 (its fix round): the label prefixes of the second-check runs whose stored answers a finished review forgets
+ *  (cli session-review.js, beside F226's windows), so that running the same review again asks them. */
+export function rechecksToReask(windowResults) {
+  return (Array.isArray(windowResults) ? windowResults : []).flatMap(recheckRunsOf).map((run) => run.prefix)
+    .filter((prefix) => prefix !== null);
+}
+
+/** D155 (its fix round): the decisions the windows left out because their second check did not run, once each by
+ *  identity (`decisionIdentity`, as `mergeWindowOutputs` merges copies), less any decision some window kept; only
+ *  those of a run that `recheckRunsOf` counts (`runsOf[i]`, window i's). */
+function rechecksLeftOutCount({ repo, perWindow, runsOf }) {
+  let unkeyed = 0;
+  const identify = (candidate) => {
+    try { return decisionIdentity(repo, candidate); } catch { return `unkeyed:${unkeyed++}`; }
+  };
+  const kept = new Set(perWindow.flatMap((window) => window?.decisions ?? []).map(identify));
+  const left = new Set();
+  perWindow.forEach((window, i) => {
+    const members = new Set((runsOf[i] ?? []).map((run) => run.member));
+    for (const { member, candidate } of window?.rechecksLeftOut ?? []) {
+      if (!members.has(member)) continue;
+      const identity = identify(candidate);
+      if (!kept.has(identity)) left.add(identity);
+    }
+  });
+  return left.size;
+}
+
 /**
  * M33 (C-07). The one word for how a finished window ended, derived exactly as `windowCompletion`
  * counts it: `failed` when its call failed (`failure !== null`), `complete` when it is complete,
@@ -2101,6 +2187,18 @@ function bindingParts(item) {
   if (item.type === 'claim' && !candidate.contradictedBy && Array.isArray(candidate.restsOn) && candidate.restsOn.length)
     return { results: [], statements: [candidate.stated].filter(receiptLike),
       actions: candidate.restsOn.filter((id) => typeof id === 'string') };
+  // D153: a re-checked ask binds through its new receipt alone — the later deliverable (done) or the later shortfall
+  // (not-done), an event of the window that re-checks it — never its instruction: no vote that cites only the ask upholds
+  // a move.
+  if (item.type === RECHECK_ITEM_TYPE) return { results: (candidate.status === 'done' ? [candidate.deliverable]
+    : candidate.status === 'partly-done' ? [candidate.deliverable, candidate.shortfall] : [candidate.shortfall])
+    .filter(receiptLike), statements: [] };
+  // D153: a claim's later correction binds through its RESULT alone (never the agent's words beside it), a
+  // written statement's through the later write; never the earlier receipts, which no vote may cite.
+  if (item.type === RECHECK_CLAIM_ITEM_TYPE) return { results: [candidate.correctedBy?.observation].filter(receiptLike),
+    statements: [] };
+  if (item.type === RECHECK_WRITTEN_ITEM_TYPE) return { results: [candidate.correctedBy].filter(receiptLike),
+    statements: [] };
   // D71 (S3, c): a failure row binds through its response or the RESULT it answers for (and, one hop, that RESULT's ACTION).
   if (item.type === FAILURE_ITEM_TYPE) return { results: [], statements: [candidate.response].filter(receiptLike),
     actions: [candidate.eventId].filter((id) => typeof id === 'string') };
@@ -2248,6 +2346,322 @@ async function restatedRequirements({ refuted, byKey, request, aliases, judge, s
   return { restated, record, challenge };
 }
 
+/** D153: the label suffix of the after-point re-check's request of window N (`narrative:wN:recheck`) and of the run that
+ *  checks the new statuses its answer gave (`challenge:wN:recheck:…`) — both read as window N's by the CLI. */
+const RECHECK_SUFFIX = ':recheck';
+const [RECHECK_MOVED, RECHECK_REAFFIRMED, RECHECK_UNSETTLED] = RECHECK_OUTCOMES;
+const [RECHECK_NOT_ASKED, RECHECK_BOUND, RECHECK_NO_ANSWER, RECHECK_NO_ROW, RECHECK_UNGROUNDED, RECHECK_NOT_AFTER,
+  RECHECK_COMMENTARY_ONLY, RECHECK_FAILED_RESULT, RECHECK_NOT_REWRITTEN, RECHECK_REFUTED, RECHECK_CHALLENGE_UNSETTLED]
+  = RECHECK_WITHHELD;
+const [DONE_STATUS, PARTLY_STATUS, NOT_DONE_STATUS] = REQUIREMENT_STATUSES;
+/** D153: the receipts each status a re-check may give rests on. */
+const RECHECK_RECEIPTS = Object.freeze({ [DONE_STATUS]: Object.freeze(['deliverable']),
+  [PARTLY_STATUS]: Object.freeze(['deliverable', 'shortfall']), [NOT_DONE_STATUS]: Object.freeze(['shortfall']) });
+/** D153: the disclosure reason of a claim or a written statement a later window corrected, and the status a
+ *  corrected claim's finding is published with. */
+const CORRECTED_LATER = DISCLOSURE_REASONS[3];
+const [, FYI_STATUS] = PUBLIC_STATUSES;
+/** D153: the report arrays the re-check reads, by the source names of triage.js ITEM_SOURCES. */
+const [REQUIREMENTS_SOURCE, , WRITTEN_SOURCE, FINDINGS_SOURCE] = ITEM_SOURCES;
+/** D153: a contradicted claim's two receipts, as its finding cites them — the agent's words (the first of role
+ *  commentary) and what contradicts them (the first other) — and a written statement's: its stated write and the other.
+ *  Null when one is missing. */
+function contradictionPair(source, row) {
+  const receipts = Array.isArray(row?.receipts) ? row.receipts.filter(plain) : [];
+  const said = source === FINDINGS_SOURCE ? receipts.find((r) => r.role === 'commentary') : row?.stated;
+  const against = receipts.find((r) => r !== said && !(r.eventId === said?.eventId && r.quote === said?.quote
+    && r.role === said?.role));
+  return plain(said) && plain(against) ? { stated: said, contradictedBy: against } : null;
+}
+
+/**
+ * D153: the after-point re-check of the accusing rows, after every window has answered, `mergeWindowOutputs` has run
+ * and the ledger has published the findings. A window is judged against the record up to its own end (D59), so an ask it
+ * found partly done or not done, a claim it found contradicted and a statement written into a file it found contradicted
+ * are judged before the work a later window of their session records. recheck.js `recheckSelection` names, by order and
+ * window only, each such row (an ask_partly_done or ask_not_done item among the merged asks, a claim_contradicted item
+ * among the published findings, a written_contradicted item among the merged written statements), its after point, and
+ * the later windows of its own session that hold only work recorded after it. Each such window k is asked once, with
+ * every row it re-checks in order (asks, then claims, then statements): its kept request with only its "Now answer"
+ * replaced (prompt.js `recheckRequest`, named `narrative:wK:recheck`), every request sent before any answer is read, so a
+ * stored answer replays it (D60). An ask is asked when the window names its instruction, a claim when it names its
+ * stated words (an earlier thought it carries); a statement by its text, which no other statement of the window shares.
+ *
+ * An ask: its answer's one readable row whose instruction is the row's own (event and words, exactly) gives the new
+ * status; partly-done is a new status only for a row found not-done (for a row found partly-done it is read as
+ * not-done: the row keeps its own status) and not-checked settles nothing. Code checks it as any row
+ * (checklist.js `checkedRequirement`, against window k's source map and end), then each of its new receipts
+ * (RECHECK_RECEIPTS): one of window k's own events of the row's session (never its carried context), all of which the
+ * selection placed after the after point (`not_after_anchor` otherwise); and a deliverable only of RECHECK_MOVE_ROLES
+ * (`commentary_only` otherwise: the agent's own words never move a row).
+ * A claim: its answer's one readable row whose stated words are the claim's own (event and quote) gives its
+ * correction, `resolvedBy` (the resolution's shape: a RESULT and the agent's words), or none (settles nothing), and
+ * may give `contradictedBy`, a RESULT of window k that shows the claim not holding, through the same gate (never
+ * challenged: it accuses nothing new, and only voids a correction recorded before it, below). Each
+ * receipt passes the one quote gate (ledger.js `groundingCheck`, against what window k showed) and is one of window k's
+ * own events of the row's session, all after its after point; the RESULT is not one the record types as failed
+ * (`failed_result`). A RESULT is always in it, so a correction never rests on the agent's words alone.
+ * A written statement: its answer's one row of the same text (a row of none settles nothing) gives its
+ * correction, the later write it quotes (role code), through the same gate and to window k's own events, that replaced
+ * the statement in its file (written.js `writtenCorrection`, `not_rewritten` otherwise).
+ *
+ * Each that holds is its own item in window k's three-pass challenge (`ask`, the decide bounds in a tiered profile, the
+ * window's whole evidence): RECHECK_ITEM_TYPE for an ask, RECHECK_CLAIM_ITEM_TYPE and RECHECK_WRITTEN_ITEM_TYPE for a
+ * correction, each binding only through its new receipt (an ask's later deliverable or shortfall, a correction's RESULT
+ * or write), and settles the row only when upheld. The latest window that settles a row wins. An ask: done, or
+ * partly-done for a row found not-done, is `moved` (the row takes the later status and window k's receipts, the earlier
+ * status and receipts kept beside it), not-done `reaffirmed` (the row keeps its status, its shortfall the later one, the
+ * earlier kept beside). A claim or a statement is `moved` when corrected: its finding FYI with the disclosure reason
+ * `corrected_later` and its correction (`correctedBy`); its statement the same reason and correction beside its label,
+ * which stays. No answer reaffirms one; but a claim's correction stands only when no window's RESULT recorded after its
+ * own shows the claim not holding again (a correction so voided is counted, `voided`), as a statement's stands only when
+ * no later write may have put it back (`writtenCorrection`). A row no later window settles is
+ * `not_checked_after_later_work`, kept as it was.
+ * Every accusing row carries its outcome (`recheck`). `runners[k]` is window k's in-memory hand-over from `reviewWindow`
+ * (its kept request, aliases, source map, shown session, end and challenge runner), null when its answer was not read;
+ * `judgeOf(k)` its judge. Returns `{ requirements, findings, written, record }`: the rows with the accusing ones
+ * replaced, and the counts (`report.recheck`). Model output is read structurally only; nothing here reads a word of it.
+ */
+export async function recheckedRows({ session, windows, perWindow, requirements, findings = [], written = [], runners,
+  judgeOf, requestBound }) {
+  const judgedIn = new Map();
+  perWindow.forEach((w, k) => { for (const row of w?.requirements ?? []) if (!judgedIn.has(row)) judgedIn.set(row, k); });
+  const sources = { [REQUIREMENTS_SOURCE]: requirements, [FINDINGS_SOURCE]: findings, [WRITTEN_SOURCE]: written };
+  const selection = recheckSelection({ session, windows, rows: [
+    ...requirements.map((row, index) => ({ source: REQUIREMENTS_SOURCE, index, row, window: judgedIn.get(row) ?? null })),
+    ...findings.map((row, index) => ({ source: FINDINGS_SOURCE, index, row, window: null })),
+    ...written.map((row, index) => ({ source: WRITTEN_SOURCE, index, row, window: null }))] });
+  const withheld = zeros(RECHECK_WITHHELD);
+  const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
+  const causes = zeros(GROUNDING_CAUSES);
+  const runTotals = { attemptedCalls: 0, reaskCalls: 0, plannedItems: 0 };
+  const record = { version: RECHECK_VERSION, rows: selection.rows.length, outcomes: zeros(RECHECK_OUTCOMES),
+    kinds: Object.fromEntries(RECHECK_KINDS.map((kind) => [kind, { rows: 0, outcomes: zeros(RECHECK_OUTCOMES) }])),
+    launched: selection.rows.filter((row) => row.launched.length > 0).length, calls: 0,
+    pairs: selection.rows.reduce((n, row) => n + row.later.length, 0), notChecked: 0, upheld: 0, recontradicted: 0,
+    settled: { done: 0, partlyDone: 0, notDone: 0, claimCorrected: 0, writtenCorrected: 0 }, voided: 0, withheld,
+    challenged, challengeCalls: runTotals };
+  const byAt = new Map(selection.rows.map((row) => [row.at, row]));
+  const rowOf = (at) => sources[byAt.get(at).source][byAt.get(at).index];
+  const pairOf = (at) => contradictionPair(byAt.get(at).source, rowOf(at));
+  // Window k's own events (never its carried context) of one session, by id. The selection re-checks a row in window k
+  // only when every one of these, for the row's session, was recorded after its after point: a receipt among them is
+  // after it (the design's `not_after` cause, made exact by id and window).
+  const ownOf = (k, actor) => new Set((Array.isArray(windows[k]?.events) ? windows[k].events
+    : windowParts(windows[k]).flatMap((part) => (Array.isArray(part?.events) ? part.events : [])))
+    .filter((event) => actorKeyOf(session, event) === actor).map((event) => event?.id));
+  const sent = selection.windows.map((ats, k) => {
+    if (!ats.length) return null;
+    const runner = runners[k] ?? null;
+    const named = (eventId) => runner && (runner.aliases === null || runner.aliases.has(eventId));
+    const of = (source) => ats.filter((at) => byAt.get(at).source === source);
+    // A written statement is named by its text: one the window's other statements share is not asked.
+    const texts = of(WRITTEN_SOURCE).map((at) => rowOf(at).text);
+    const asked = runner ? [...of(REQUIREMENTS_SOURCE).filter((at) => named(rowOf(at)?.instruction?.eventId)),
+      ...of(FINDINGS_SOURCE).filter((at) => pairOf(at) && named(pairOf(at).stated.eventId)),
+      ...of(WRITTEN_SOURCE).filter((at) => pairOf(at) && typeof rowOf(at).text === 'string'
+        && texts.filter((text) => text === rowOf(at).text).length === 1)] : [];
+    withheld[RECHECK_NOT_ASKED] += ats.length - asked.length;
+    if (!asked.length) return null;
+    const bySource = (source) => asked.filter((at) => byAt.get(at).source === source);
+    const correction = (at) => ({ text: byAt.get(at).source === FINDINGS_SOURCE ? rowOf(at).explanation : rowOf(at).text,
+      ...pairOf(at) });
+    const request = recheckRequest({ request: runner.request, rows: bySource(REQUIREMENTS_SOURCE).map(rowOf),
+      claims: bySource(FINDINGS_SOURCE).map(correction), written: bySource(WRITTEN_SOURCE).map(correction),
+      aliases: runner.aliases, label: `narrative:w${k + 1}${RECHECK_SUFFIX}` });
+    if (request === null) { withheld[RECHECK_NOT_ASKED] += asked.length; return null; }
+    if (!requestFits(request, requestBound)) { withheld[RECHECK_BOUND] += asked.length; return null; }
+    record.calls++;
+    let answer;
+    try { answer = Promise.resolve(judgeOf(k)(request)).catch(() => undefined); }
+    catch { answer = Promise.resolve(undefined); }
+    return { k, runner, asked, answer };
+  });
+  const bare = (receipt) => ({ eventId: receipt.eventId, role: receipt.role, quote: receipt.quote });
+  const byQuote = (receipt) => ({ role: receipt.role, quote: receipt.quote });
+  // Each window's answer read, checked and challenged on its own; the windows' runs go on together.
+  // Per window: the rows it settled (`out`), and the claims a RESULT of its own shows not holding (`again`: that
+  // RESULT's recorded sequence and, when it is published as the windows publish theirs, its receipt).
+  const settledIn = await Promise.all(sent.map(async (pending) => {
+    const out = new Map(), again = new Map();
+    if (pending === null) return { out, again };
+    const { k, runner, asked } = pending;
+    const answer = await pending.answer;
+    if (!narrativeShape(answer, true)) { withheld[RECHECK_NO_ANSWER] += asked.length; return { out, again }; }
+    // One receipt of a correction through the one quote gate (in what window k showed), then to window k's own events of
+    // the row's session, every one of which the selection placed after the row's after point: the order and session
+    // test, by id and window (the gate's own anchor test would hold whenever this one does). The reason, or null.
+    const gate = (chosen, value, roles) => {
+      const check = groundingCheck(runner.shown, value, { field: 'deliverable', roles, sourceMap: runner.sourceMap });
+      if (!check.ok) {
+        if (Object.hasOwn(causes, check.cause)) causes[check.cause]++;
+        return RECHECK_UNGROUNDED;
+      }
+      return ownOf(k, chosen.actor).has(value.eventId) ? null : RECHECK_NOT_AFTER;
+    };
+    const published = (value) => verifyReceipt(runner.shown, value);
+    const items = [];
+    for (const at of asked) {
+      const chosen = byAt.get(at), row = rowOf(at);
+      if (chosen.source === FINDINGS_SOURCE) {
+        const { stated, contradictedBy } = pairOf(at);
+        const found = (Array.isArray(answer.claims) ? answer.claims : []).filter((x) => plain(x) && plain(x.stated)
+          && !unreadableIn('claims', x, SESSION_NARRATIVE_SCHEMA) && x.stated.eventId === stated.eventId
+          && x.stated.quote === stated.quote);
+        if (found.length !== 1) { withheld[RECHECK_NO_ROW]++; continue; }
+        // A RESULT of this window that shows the claim not holding, through the same gate: never challenged, it accuses
+        // nothing new; it only voids an earlier correction (below).
+        const contradiction = found[0].contradictedBy;
+        const refusedAgain = contradiction == null ? null : gate(chosen, contradiction, ['observation']);
+        if (contradiction != null && refusedAgain === null) {
+          const shown = published(contradiction);
+          again.set(at, { sequence: session.event(contradiction.eventId)?.sequence ?? null,
+            receipt: shown.ok ? shown.receipt : null });
+        }
+        if (found[0].resolvedBy == null) {
+          if (contradiction == null) record.notChecked++;
+          else if (refusedAgain === null) record.recontradicted++;
+          else withheld[refusedAgain]++;
+          continue;
+        }
+        const pair = resolutionShape(found[0].resolvedBy);
+        if (!pair || !resolutionRoles(pair)) { withheld[RECHECK_UNGROUNDED]++; continue; }
+        const refused = gate(chosen, pair.observation, ['observation']) ?? gate(chosen, pair.statement, ['commentary']);
+        if (refused) { withheld[refused]++; continue; }
+        if (recordedFailure(session.event(pair.observation.eventId))) { withheld[RECHECK_FAILED_RESULT]++; continue; }
+        const receipts = [published(pair.observation), published(pair.statement)];
+        if (receipts.some((check) => !check.ok)) { withheld[RECHECK_UNGROUNDED]++; continue; }
+        items.push({ at, settled: { correctedBy: { observation: receipts[0].receipt, statement: receipts[1].receipt } },
+          item: { key: `${FINDINGS_SOURCE}:${chosen.index}${RECHECK_SUFFIX}`, type: RECHECK_CLAIM_ITEM_TYPE, candidate: {
+            text: row.explanation, stated: bare(stated), correctedBy: { observation: bare(pair.observation),
+              statement: bare(pair.statement) }, earlier: { contradictedBy: byQuote(contradictedBy) } } } });
+        continue;
+      }
+      if (chosen.source === WRITTEN_SOURCE) {
+        const { stated, contradictedBy } = pairOf(at);
+        const found = (Array.isArray(answer[WRITTEN_CHANNEL]) ? answer[WRITTEN_CHANNEL] : []).filter((x) => plain(x)
+          && x.text === row.text);
+        if (!found.length) { record.notChecked++; continue; }
+        if (found.length > 1) { withheld[RECHECK_NO_ROW]++; continue; }
+        const later = found[0].stated;
+        const refused = gate(chosen, later, ['code']);
+        if (refused) { withheld[refused]++; continue; }
+        if (writtenCorrection(session, stated, later) !== null) { withheld[RECHECK_NOT_REWRITTEN]++; continue; }
+        const receipt = published(later);
+        if (!receipt.ok) { withheld[RECHECK_UNGROUNDED]++; continue; }
+        items.push({ at, settled: { correctedBy: receipt.receipt },
+          item: { key: `${WRITTEN_SOURCE}:${chosen.index}${RECHECK_SUFFIX}`, type: RECHECK_WRITTEN_ITEM_TYPE, candidate: {
+            text: row.text, correctedBy: bare(later), earlier: { stated: byQuote(stated),
+              contradictedBy: byQuote(contradictedBy) } } } });
+        continue;
+      }
+      const own = row.instruction;
+      const found = answer.requirements.filter((x) => !unreadableIn('requirements', x, SESSION_NARRATIVE_SCHEMA)
+        && plain(x.instruction) && x.instruction.eventId === own?.eventId && x.instruction.quote === own?.quote);
+      if (found.length !== 1) { withheld[RECHECK_NO_ROW]++; continue; }
+      // Partly-done is a new status only for a row found not-done (a part of it delivered later); for a row found
+      // partly-done it is read as not-done (the row keeps its own status and deliverable).
+      const status = found[0].status === PARTLY_STATUS && row.status === PARTLY_STATUS ? NOT_DONE_STATUS : found[0].status;
+      const checked = checkedRequirement(runner.shown, { ...found[0], status, text: row.text, instruction: own },
+        { sourceMap: runner.sourceMap, windowEnd: runner.end });
+      if (checked.reason) {
+        withheld[RECHECK_UNGROUNDED]++;
+        if (Object.hasOwn(causes, checked.cause)) causes[checked.cause]++;
+        continue;
+      }
+      // Not-checked settles nothing (`checkedRequirement` keeps it, with no receipt).
+      if (![DONE_STATUS, PARTLY_STATUS, NOT_DONE_STATUS].includes(checked.candidate.status)) {
+        record.notChecked++;
+        continue;
+      }
+      // The new status's receipts: its deliverable (done, partly-done) and its shortfall (partly-done, not-done).
+      const fields = RECHECK_RECEIPTS[checked.candidate.status];
+      if (fields.some((field) => !ownOf(k, chosen.actor).has(checked.candidate[field].eventId))) {
+        withheld[RECHECK_NOT_AFTER]++;
+        continue;
+      }
+      if (fields.includes('deliverable') && !RECHECK_MOVE_ROLES.includes(checked.candidate.deliverable.role)) {
+        withheld[RECHECK_COMMENTARY_ONLY]++;
+        continue;
+      }
+      // Published as the windows publish theirs (`verifyReceipt`: the recording's session key, and a helper's child id);
+      // shown to the challengers as every other item's receipts are, in the response contract's shape alone.
+      const receipts = fields.map((field) => published(checked.candidate[field]));
+      if (receipts.some((check) => !check.ok)) { withheld[RECHECK_UNGROUNDED]++; continue; }
+      items.push({ at, settled: { ...checked.candidate, instruction: own,
+        ...Object.fromEntries(fields.map((field, n) => [field, receipts[n].receipt])) },
+      item: { key: `${REQUIREMENTS_SOURCE}:${chosen.index}${RECHECK_SUFFIX}`, type: RECHECK_ITEM_TYPE, candidate: {
+        text: row.text, instruction: bare(own), status: checked.candidate.status,
+        ...Object.fromEntries(fields.map((field) => [field, bare(checked.candidate[field])])),
+        earlier: { status: row.status, shortfall: byQuote(row.shortfall) } } } });
+    }
+    if (!items.length) return { out, again };
+    let run = null;
+    try { run = await runner.ask(items.map(({ item }) => item)); } catch { run = null; }
+    for (const key of Object.keys(runTotals)) runTotals[key] += count(run?.[key]);
+    const ended = new Map((run?.results ?? []).map((result) => [result.key, result]));
+    for (const { at, settled, item } of items) {
+      const outcome = challengeOutcome(ended.get(item.key));
+      challenged[outcome]++;
+      if (outcome === UPHELD) { out.set(at, settled); record.upheld++; }
+      else withheld[outcome === REFUTED_OUTCOME ? RECHECK_REFUTED : RECHECK_CHALLENGE_UNSETTLED]++;
+    }
+    return { out, again };
+  }));
+  if (Object.values(causes).some((n) => n > 0)) record.ungroundedCauses = causes;
+  const replaced = { [REQUIREMENTS_SOURCE]: requirements.slice(), [FINDINGS_SOURCE]: findings.slice(),
+    [WRITTEN_SOURCE]: written.slice() };
+  for (const chosen of selection.rows) {
+    const row = rowOf(chosen.at);
+    // The latest window that settled it wins (windows in review order).
+    let last = null, window = null;
+    settledIn.forEach(({ out }, k) => { if (out.has(chosen.at)) { last = out.get(chosen.at); window = k; } });
+    // A claim's correction stands only when no RESULT a window holds after its own shows the claim not holding again:
+    // otherwise the latest recorded work no longer shows it holding, and the row is left as it was, unsettled.
+    const sequenceOf = (receipt) => session.event(receipt?.eventId)?.sequence ?? null;
+    let latestAgain = null, againWindow = null;
+    settledIn.forEach(({ again }, k) => {
+      const hit = again.get(chosen.at);
+      if (hit && hit.sequence !== null && (latestAgain === null || hit.sequence > latestAgain.sequence)) {
+        latestAgain = hit; againWindow = k;
+      }
+    });
+    if (last && chosen.source === FINDINGS_SOURCE && latestAgain !== null
+        && !(sequenceOf(last.correctedBy.observation) > latestAgain.sequence)) { last = null; record.voided++; }
+    let outcome = chosen.outcome ?? RECHECK_UNSETTLED;
+    let next = { ...row, recheck: { outcome } };
+    if (last && chosen.source !== REQUIREMENTS_SOURCE) {
+      // A claim or a statement a later window corrected: FYI (a finding's status), the reason and its correction beside it.
+      outcome = RECHECK_MOVED;
+      record.settled[chosen.source === FINDINGS_SOURCE ? 'claimCorrected' : 'writtenCorrected']++;
+      next = { ...row, ...(chosen.source === FINDINGS_SOURCE ? { status: FYI_STATUS } : {}),
+        disclosureReason: CORRECTED_LATER, correctedBy: last.correctedBy, recheck: { outcome, window: window + 1 } };
+    } else if (last && last.status !== NOT_DONE_STATUS) {
+      // Done, or partly done where the row was not done: the row moves to the later status and its receipts.
+      outcome = RECHECK_MOVED;
+      record.settled[last.status === DONE_STATUS ? 'done' : 'partlyDone']++;
+      next = { ...last, recheck: { outcome, window: window + 1, earlier: { status: row.status,
+        ...(row.deliverable ? { deliverable: row.deliverable } : {}), shortfall: row.shortfall } } };
+    } else if (last) {
+      outcome = RECHECK_REAFFIRMED;
+      record.settled.notDone++;
+      next = { ...row, shortfall: last.shortfall, recheck: { outcome, window: window + 1,
+        earlier: { shortfall: row.shortfall } } };
+    } else if (chosen.source === FINDINGS_SOURCE && latestAgain?.receipt) {
+      // D153's fix round: a claim no correction stands for, whose latest later RESULT a window grounded shows it not
+      // holding again, keeps that RESULT beside it (`later`, with its window) as a structural fact, so every reader can
+      // show it; it is never challenged, so its outcome stays unsettled and it accuses nothing new.
+      next = { ...row, recheck: { outcome, window: againWindow + 1, later: { observation: latestAgain.receipt } } };
+    }
+    replaced[chosen.source][chosen.index] = next;
+    record.outcomes[outcome]++;
+    record.kinds[chosen.kind].rows++;
+    record.kinds[chosen.kind].outcomes[outcome]++;
+  }
+  return { requirements: replaced[REQUIREMENTS_SOURCE], findings: replaced[FINDINGS_SOURCE],
+    written: replaced[WRITTEN_SOURCE], record };
+}
+
 /** W1 A: the label suffix of a window's run that checks whether the agent made each choice the challenge refuted on who
  *  decided it (`challenge:wN:exists:…`), and of the run that checks the new column its re-ask gave
  *  (`challenge:wN:recolumn:…`; the re-ask itself is `narrative:wN:recolumn:K`). */
@@ -2317,8 +2731,11 @@ function choiceStructure(candidate) {
  * `recolumned`, the item's key to the candidate it publishes; `record`, the counts (DECISION_RECOLUMN_WITHHELD,
  * RESOLUTION_CHALLENGE_OUTCOMES for each check); and the two checks' own records (`existsChallenge`, `challenge`), kept
  * apart from the window's (like a support's: they never make a window incomplete), each null when nothing was asked or
- * its run failed. A failed call or check withholds only its own decision's new column. Model output is read
- * structurally only; nothing here reads a word of it.
+ * its run failed. A failed re-ask, or a failed check of a new column (step 3), withholds only its own decision's new
+ * column: the decision is still published, "could not tell". D155: a step 1 check that did not run for a decision (its
+ * outcome unexecuted) withholds the whole decision, as one that does not uphold it, because the window's challenge
+ * refuted it; the record counts it (`existence`), it is returned as proposed (`unexecuted`), and the report says how
+ * many (`rechecksUnexecuted`). Model output is read structurally only; nothing here reads a word of it.
  */
 async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, session, windowEnd: end, repo, pr,
   requestBound, label, ask, existenceBounds }) {
@@ -2343,12 +2760,15 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
   const made = [];
   // G2: and every choice the existence check refuted, with that check's refuting votes (`reanchoredChoices`).
   const existenceRefuted = [];
+  // D155: and every decision that check left unexecuted, as proposed (the review counts them by identity).
+  const unexecuted = [];
   for (const item of refuted) {
     const ended = existsEnded.get(`${item.key}${EXISTS_SUFFIX}`);
     const outcome = challengeOutcome(ended);
     existence[outcome]++;
     if (outcome === UPHELD) made.push(item);
     else if (outcome === REFUTED_OUTCOME) existenceRefuted.push({ item, refutations: refutingVotesIn(ended) });
+    else if (outcome === UNEXECUTED) unexecuted.push(item.candidate);
   }
   const sent = made.map((item) => {
     const refutations = refutationsOf(item);
@@ -2398,7 +2818,7 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
   for (const item of made)
     if (!recolumned.has(item.key))
       recolumned.set(item.key, { ...item.candidate, [CHALLENGE_ENDED]: DECISION_COLUMN_REFUTED });
-  return { recolumned, record, existsChallenge, challenge, existenceRefuted };
+  return { recolumned, record, existsChallenge, challenge, existenceRefuted, unexecuted };
 }
 
 /** G2: the label suffix of a window's run that checks whether the agent made each choice not to act its re-ask
@@ -2453,8 +2873,11 @@ const sameAnchor = nestedReceipts;
  * At most one re-ask per choice: nothing here is asked again. Returns `reanchored`, the item's key to the candidate it
  * publishes; `record`, the counts (NOT_ACTING_REANCHOR_RECORD); and the two checks' own records (`existsChallenge`,
  * `challenge`), kept apart from the window's (like a support's: they never make a window incomplete), each null when
- * nothing was asked or its run failed. A failed call or check withholds only its own choice. Model output is read
- * structurally only; nothing here reads a word of it.
+ * nothing was asked or its run failed. A failed re-ask, or a step 2 check that did not run for it, withholds only its
+ * own choice (D155: the record counts the latter, `existence`, it is returned, `unexecuted`, and the report says how
+ * many, `rechecksUnexecuted`); a
+ * step 3 check that did not run publishes it "could not tell", as above. Model output is read structurally only;
+ * nothing here reads a word of it.
  */
 async function reanchoredChoices({ refuted, request, aliases, judge, session, windowEnd: end, repo, pr, requestBound,
   label, ask, existenceBounds }) {
@@ -2508,9 +2931,12 @@ async function reanchoredChoices({ refuted, request, aliases, judge, session, wi
   const existsEnded = new Map((existsChallenge?.results ?? []).map((result) => [result.key, result]));
   if (existsChallenge) delete existsChallenge.survivors;
   const columnAsked = [];
+  const unexecuted = [];
   for (const { item, candidate } of anchored) {
     const outcome = challengeOutcome(existsEnded.get(`${item.key}${REANCHOR_SUFFIX}`));
     existence[outcome]++;
+    // D155: a choice this check left unexecuted, as the window proposed it (the review counts it by identity).
+    if (outcome === UNEXECUTED) unexecuted.push(item.candidate);
     if (outcome !== UPHELD) continue;
     if (groundedColumn(candidate, place) !== null) {
       columnAsked.push({ key: `${item.key}${REANCHOR_COLUMN_SUFFIX}`, of: item.key, type: 'decision', candidate });
@@ -2536,7 +2962,7 @@ async function reanchoredChoices({ refuted, request, aliases, judge, session, wi
     }
     if (challenge) delete challenge.survivors;
   }
-  return { reanchored, record, existsChallenge, challenge };
+  return { reanchored, record, existsChallenge, challenge, unexecuted };
 }
 
 /**
@@ -2637,7 +3063,7 @@ function contradictedFromAnotherSession(session, claim) {
 
 async function reviewWindow({ session, pr, repo, window, request, sourceMap, promptVersion, slice,
   judge, challengeJudge, reviewScope, profile = REVIEW_SPEED_PROFILES.standard, context = null, settings = null,
-  aliases = null, backend = undefined, requestBound = requestBoundOf(profile, reviewScope, backend) }) {
+  aliases = null, backend = undefined, requestBound = requestBoundOf(profile, reviewScope, backend), recheck = false }) {
   // Gain I (2026-10-13): every check of a window whose request carries images is sent them too — its evidence names
   // them (prompt.js `IMAGES_ATTACHED`) and its scope is the request's. A window that carries none sends its checks as
   // before. D145: the copy keeps the first pass's REPLY_BEGUN (`withReplyBegun`), which a spread leaves behind.
@@ -2669,6 +3095,9 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   // G2: what became of the choices not to act whose existence check refuted them (`reanchoredChoices`), and the records
   // of the runs that checked their new anchors and columns — each null when the window has none.
   let reanchorRecord = null, reanchorExistsChallenge = null, reanchorChallenge = null;
+  // D155: the decisions whose second check (W1 A's or G2's existence check) ended unexecuted, each with the record
+  // member of its run — in memory only, for the review's count by identity (`rechecksLeftOutCount`).
+  const rechecksLeftOut = [];
   // S1: what the one whole-window vote on the requirements the single-pass dossier check left unsettled came to, and
   // that run's record — both null when the window has none (or its profile shows its single pass no dossier).
   let windowVoteRecord = null, windowVoteChallenge = null;
@@ -3290,12 +3719,24 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
           ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds });
         ({ recolumned, record: recolumnRecord, existsChallenge: recolumnExistsChallenge, challenge: recolumnChallenge }
           = run);
+        // D155: the decisions its check left unexecuted, for the review's count by identity (in memory only), each as
+        // the window's decisions carry it (`toCandidates`, with its actor), so its identity is the one the merge reads.
+        const proposed = (candidate) => {
+          try { return toCandidates({ decisions: [candidate] }, shownRecord).decisions[0] ?? candidate; }
+          catch { return candidate; }
+        };
+        rechecksLeftOut.push(...run.unexecuted.map((candidate) => ({ member: RECOLUMN_MEMBER,
+          candidate: proposed(candidate) })));
         const choicesRefuted = run.existenceRefuted.filter(({ item }) => item.candidate?.notActing === true);
-        if (choicesRefuted.length)
+        if (choicesRefuted.length) {
+          const g2 = await reanchoredChoices({ refuted: choicesRefuted, request, aliases, judge, session: shownRecord,
+            windowEnd: upTo, repo, pr, requestBound, label: `narrative:w${window.index + 1}${REANCHOR_SUFFIX}`,
+            ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds });
           ({ reanchored, record: reanchorRecord, existsChallenge: reanchorExistsChallenge, challenge: reanchorChallenge }
-            = await reanchoredChoices({ refuted: choicesRefuted, request, aliases, judge, session: shownRecord,
-              windowEnd: upTo, repo, pr, requestBound, label: `narrative:w${window.index + 1}${REANCHOR_SUFFIX}`,
-              ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds }));
+            = g2);
+          rechecksLeftOut.push(...g2.unexecuted.map((candidate) => ({ member: REANCHOR_MEMBER,
+            candidate: proposed(candidate) })));
+        }
       }
       // D71 (S2; owner decision D71 b): a session-only requirement the challenge did not uphold is KEPT, lowered to
       // not-checked (its receipts dropped: the weakest status needs none), with the closed reason of how its check ended.
@@ -3555,9 +3996,17 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
     // bytes.
     ...(reanchorRecord ? { reanchor: reanchorRecord } : {}),
     ...(reanchorExistsChallenge ? { reanchorExistsChallenge } : {}), ...(reanchorChallenge ? { reanchorChallenge } : {}),
+    // D155: the decisions its second checks left unexecuted, in memory only (never in a record): absent when none.
+    ...(rechecksLeftOut.length ? { rechecksLeftOut } : {}),
     // S1: counts only, and the whole-window vote's run — each absent when the window had no such requirement.
     ...(windowVoteRecord ? { windowVote: windowVoteRecord } : {}),
-    ...(windowVoteChallenge ? { windowVoteChallenge } : {}) };
+    ...(windowVoteChallenge ? { windowVoteChallenge } : {}),
+    // D153: when the review runs the after-point re-check, and only then, what it needs of this window, in memory only
+    // (never in a record): its kept request, aliases, source map and shown session, its end, and its challenge runner
+    // with the decide bounds (three passes) in every profile, over its whole evidence. Absent when its answer was not read.
+    ...(recheck && narrative !== null && failure === null && typeof ask === 'function' ? { recheckRunner: { request,
+      aliases, sourceMap, shown: shownRecord, end: upTo,
+      ask: (list) => ask(list, RECHECK_SUFFIX, tiered ? CHALLENGE_TIER_BOUNDS.decide : undefined) } } : {}) };
 }
 
 const REVIEW_SCOPES = Object.freeze(['combined', 'session-only']);
@@ -3812,12 +4261,18 @@ function callSlots(max) {
  * nothing is the standard profile, byte for byte. It sets the window source budget, the request
  * bound, the window lanes (`concurrency` defaults to, and may not exceed, its `windowConcurrency`)
  * and — for a tiered profile — the challenge tiers. An unknown name is a RangeError before any call.
+ *
+ * `sessionEdgeMaps` (D158, off by default; no CLI flag names it): the report gains `sessionEdge`, the struggle map
+ * (struggle.js) and the claims-against-runs join (claims.js `claimsAgainstRuns`), both zero-call and deterministic.
  */
 export async function runReview({ session, pr, diff = null, judge, challengeJudge = judge,
   onProgress = () => {}, windowDiffFor = null, concurrency = undefined,
   reviewScope = 'combined', signal = null, onWindowFinished = null, plan = null, speedProfile = undefined,
-  backend = undefined }) {
+  backend = undefined, afterPointRecheck = false, sessionEdgeMaps = false }) {
   const profile = speedProfileFor(speedProfile, reviewScope);
+  // D153: the after-point re-check of a session-only review's accusing rows, off unless the caller turns it on (no CLI
+  // flag names it). Off, no request, record or report byte moves.
+  const recheck = afterPointRecheck === true && reviewScope === 'session-only';
   const lanes = concurrency === undefined ? profile.windowConcurrency : concurrency;
   if (!Number.isSafeInteger(lanes) || lanes < 1 || lanes > profile.windowConcurrency)
     throw new RangeError('Window concurrency must be an integer between 1 and the profile\'s windowConcurrency');
@@ -3859,7 +4314,8 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
       const index = next++;
       const built = requests[index];
       perWindow[index] = await reviewWindow({ session, pr, repo, ...built, judge: unaliased(windowJudge, built.aliases),
-        challengeJudge: unaliased(windowChallengeJudge, built.aliases), reviewScope, profile, backend, requestBound });
+        challengeJudge: unaliased(windowChallengeJudge, built.aliases), reviewScope, profile, backend, requestBound,
+        ...(recheck ? { recheck } : {}) });
       // M33: resolved after the abort — not finished, never announced.
       if (aborted()) return;
       if (typeof onWindowFinished === 'function') {
@@ -3961,6 +4417,19 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
     // D84: and "made without asking you" also checks the project instruction files a window showed.
     projectFilesShown: reviewScope === 'session-only',
   });
+  // D153 (phase B2): the after-point re-check of the accusing rows — the merged asks, the claims the ledger published
+  // as contradicted and the written statements the windows labelled contradicted — before anything else reads them.
+  let recheckRecord = null;
+  if (recheck) {
+    const run = await recheckedRows({ session, windows, perWindow, requirements: merged.requirements,
+      findings: report.findings, written: merged.writtenClaims, runners: perWindow.map((w) => w?.recheckRunner ?? null),
+      judgeOf: (k) => unaliased(windowJudge, requests[k]?.aliases ?? null), requestBound });
+    if (aborted()) throw runFailure(REVIEW_INTERRUPTED);
+    merged.requirements = run.requirements;
+    report.findings = run.findings;
+    merged.writtenClaims = run.written;
+    recheckRecord = run.record;
+  }
 
   // `windowConcurrency` is the instrument's frozen ceiling, not this run's lane count: a run
   // that used fewer lanes produces the same report, which is the whole point of W3-7.
@@ -4004,6 +4473,8 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
   // read each other's answers, so two of them can legitimately report the instruction they can
   // both see in the inventory; `mergeWindowOutputs` publishes one row for it.
   report.requirements = merged.requirements;
+  // D153: what the after-point re-check came to, counts only (present only when the review ran it).
+  if (recheckRecord) report.recheck = recheckRecord;
   // D71 (S2; D59, D60): the end of the recording, applied at report time from the whole session, never
   // in a request — a not-checked row with no deliverable whose last reporting window holds the recording's last event
   // carries the fact `no_deliverable_by_end` beside it (fixed words, ledger.js REQUIREMENT_FACT_WORDS), never a stronger
@@ -4069,6 +4540,12 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
     [...report.findings, ...unsettledSaid]);
   report.promises = promises;
   report.counts.promisesAsFindings = beside.asFindings;
+  // D158: the session's edge maps — the struggle map and the claims-against-runs join — built from the recording's typed
+  // facts and order, with no call, only when the caller turns them on (no CLI flag names it). Off, no request, record or
+  // report byte moves. Private: no reader shows them yet.
+  if (sessionEdgeMaps === true)
+    report.sessionEdge = { version: SESSION_EDGE_VERSION, struggle: struggleMap(session),
+      claims: claimsAgainstRuns(session, promises) };
   // D71 (S3, owner decision D71 f): the claims the reviewer marked as assumptions — proposed, and published as promises.
   if (reviewScope === 'session-only' && report.counts.checklist)
     report.counts.checklist.assumptions = {
@@ -4274,6 +4751,12 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
   if (moved) report.counts.eventRepairedReceipts = moved;
   const repeats = perWindow.reduce((n, w) => n + count(w.carriedRepeats), 0);
   if (repeats) report.counts.carriedRepeats = repeats;
+  // D155 (its fix round): the decisions left out because their second check did not run, once each by identity, less
+  // any that another window kept (`rechecksLeftOutCount`). Present whenever a window's record counts one, even when the
+  // count is 0, so a report without it was written before and is counted from its windows (`rechecksUnexecuted`).
+  const recheckRuns = report.windowResults.map(recheckRunsOf);
+  if (recheckRuns.some((runs) => runs.length))
+    report.counts.rechecksUnexecuted = rechecksLeftOutCount({ repo, perWindow, runsOf: recheckRuns });
   // D78: the copies of a claim already kept that the windows' answers held, dropped before any check
   // (`withoutRepeats`), by class — present only when some window's answer held one, so a review without any reports
   // the counts it always did.

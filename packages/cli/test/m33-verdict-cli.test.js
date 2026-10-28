@@ -73,7 +73,8 @@ test('D71 the CLI says what of its own review ran, and prints no status', async 
   const marked = countLines(reportModel(session, { ...completed, findings: [],
     decisions: [{ notActing: true, column: null, chosen: 'skip the docs' }],
     failures: [{ eventId: 'O1', action: 'A1', handling: 'passed-over', outcome: 'ran-failed', form: 'exit' }] }));
-  assert.match(marked[0], /^Must act 0 · Must know 2 · Good to know 0 · /);
+  // D161: the decision not to act is in the report's second part, counted after the tiers with its tag.
+  assert.match(marked[0], /^Must act 0 · Must know 1 · Good to know 0 · 1 decision \(1 Must know\) · /);
   assert.ok(marked.every((line) => !line.includes('**')));
   for (const line of [runStateLine(completed, 'initial'), runStateLine(failed, 'initial'), ...lines, ...marked])
     assert.doesNotMatch(line, STATUS_WORDS);

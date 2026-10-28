@@ -19,7 +19,7 @@ import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
 import { modulesBeforeM36Conversation, modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview,
-  textBeforeAgentPrompt } from '../../evidence/test/m33-integration-fixture.js';
+  textBeforeAgentPrompt, textBeforeTruthOnly } from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, CALL, RESULTS, RUN, SID, SID_EARLIER, SLUG, TEXT, captureStableCases, fixerRows, journalKey,
   linkedRun, mkdir, parentRows, resulted, rm, scratch, started, symlink, testerRows, workflowRows, writeFile, writeTree }
   from './m33-w-workflow-fixture.js';
@@ -973,6 +973,35 @@ const MOVED_BY_AGENT_PROMPT = Object.freeze([
   { story: 'b0658352664bc45b377bb2ec0119b8f2438b9751566cdde54f9b2ea0fa1c1487' },
   { story: '227024e706ec8a60d49a33ef860ab351e2b5f3659bfffef5a2b5f5f0c390b070' },
   { story: '1688838b4512e2b77ac6455f6e63c1678a48e58c975345acf7ff7846b3434ece' }]);
+/** D152 (0.3.0-beta.9): every story once more, by the report model's version in its footer alone (no case runs the code
+ *  step). Rendered back (`textBeforeTruthOnly`), D144's, byte for byte. */
+const MOVED_BY_TRUTH_ONLY = Object.freeze([
+  { story: '6d91c2801b13be6979dfaa7d0b6f8b1fff6e37f76d6cf38c54361d704df0d431' },
+  { story: '4e7ccef0d9dc12a81e25f9ecc6ff76e0bb090e573fe6c6338bc0f8da966b45dd' },
+  { story: 'e9b3493f6f65dcf1e730b518e0f4e159e876de7c56ddd419a4c710a909b0cb3e' }]);
+/** D161 (0.3.0-beta.9; the owner, 2026-10-27): each story whose case holds a decision or an untied question of the code
+ *  review, by the report's two parts (the agent's decisions after Good to know, in the session order, numbered after the
+ *  tiers; the count line's decisions; a question Sonah could not tie at most Good to know), which no text rule renders
+ *  back (`back`: the story rendered back by D152's and D144's rules; `now`: as the code renders it). No ledger, gap,
+ *  request, label, window or window failure moved. */
+const MOVED_BY_TWO_PARTS = Object.freeze({ back: Object.freeze([
+  { story: '324d20083e7d3c14e1f8229ca0e82b7d0ff2ad466ed2063665340ea3d8ce8d88' },
+  { story: '87f7627e6f3033ff3ac79f8071e9abb9df380c25ad8114204c072452f07cc6a7' },
+  { story: 'cca15a0b7c64d638ec03546a0ae1341f6d4e547c97f5a207e7a8602ec352b494' }]),
+  now: Object.freeze([{ story: '423dd2f73a4f0e8a97057457b7ef70725570ca617371bbe8765961dde408297e' },
+    { story: '9098357ee56b19c2ab5ea9e1e760f6d961d7a38ab8505a88a4e03ac7db0274b3' },
+    { story: 'ac012f5aa68068c9f29dd959c7a761dd4234214202d9f3c5c799e9803b3b6f28' }]) });
+/** D167 (0.3.0-beta.9; the owner, 2026-10-28): each story whose case holds a run, by the .md counting the runs in place
+ *  of listing them (the count line in the header's result parts, the lines of the runs another part names, where the
+ *  list is), which no text rule renders back (`back`: rendered back by D152's and D144's rules; `now`: as the code
+ *  renders it). No ledger, gap, request, label, window or window failure moved. Its review moved both once more, by the
+ *  sentence's command alone (`--output FILE`; no run of these cases is named elsewhere): was back 90d6448e…, bfdafe9c…;
+ *  now fe02dd7b…, 8c2b0040…. */
+const MOVED_BY_RUNS_COUNTED = Object.freeze({ back: Object.freeze([
+  { story: '5a506299f150fe5d08df87c6a3a06b2229ba183b1b0bf01a341242fa7b194f45' },
+  { story: '4b20ee804846e1b1ec22d37d3263c23fe4322935a2786f98deee9eb5e7272803' }, {}]),
+  now: Object.freeze([{ story: '64a9127bd5ee42d7eebc7dffd7a302f2ab961515560b5b10b074ee428e6c2dbc' },
+    { story: '7dd6f91a22f65f8abea1cad994da26f28a1be4d8b754c6f3aadf7d8f540bc029' }, {}]) });
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1099,12 +1128,18 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
     ...MOVED_BY_STE[at], ...MOVED_BY_REPORT_MD[at], ...MOVED_BY_MD_FIXES[at], ...MOVED_BY_RELEASE_CHECK[at],
     ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at],
     ...MOVED_BY_ONE_BOUND[at], ...MOVED_BY_REPORT_TRUTH[at], ...MOVED_BY_FIRST_SCREEN[at],
-    ...MOVED_BY_EVIDENCE_KINDS[at], ...MOVED_BY_BETA6_READERS[at], ...MOVED_BY_MUST_FIRST[at], ...MOVED_BY_QUIET[at] }));
+    ...MOVED_BY_EVIDENCE_KINDS[at], ...MOVED_BY_BETA6_READERS[at], ...MOVED_BY_MUST_FIRST[at], ...MOVED_BY_QUIET[at],
+    ...MOVED_BY_TWO_PARTS.back[at], ...MOVED_BY_RUNS_COUNTED.back[at] }));
   // D144 (0.3.0-beta.7): and every story once more (MOVED_BY_AGENT_PROMPT), by the report model's version in the
-  // footer; rendered back (`textBeforeAgentPrompt`), 0.3.0-beta.6's, byte for byte.
-  const asksFixes = beta6.map((c, at) => ({ ...c, ...MOVED_BY_AGENT_PROMPT[at] }));
+  // footer; rendered back (`textBeforeAgentPrompt`, after D152's `textBeforeTruthOnly`: the model's version once
+  // more), 0.3.0-beta.6's, byte for byte.
+  // D152: and once more (MOVED_BY_TRUTH_ONLY), by the model's version alone. D161: and once more (MOVED_BY_TWO_PARTS),
+  // which nothing renders back: so the capture rendered back carries it too. D167: and once more (MOVED_BY_RUNS_COUNTED),
+  // the same way.
+  const asksFixes = beta6.map((c, at) => ({ ...c, ...MOVED_BY_AGENT_PROMPT[at], ...MOVED_BY_TRUTH_ONLY[at],
+    ...MOVED_BY_TWO_PARTS.now[at], ...MOVED_BY_RUNS_COUNTED.now[at] }));
   assert.deepEqual(await captureStableCases({ ...STABLE_MODULES, renderStory: (session, report) => textBeforeAgentPrompt(
-    renderReportMarkdown(session, report)) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
+    textBeforeTruthOnly(renderReportMarkdown(session, report))) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
     ...MOVED_BY_W3[at], ...MOVED_BY_FIX_REVIEW[at] })), 'as 0.3.0-beta.6 rendered them');
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.

@@ -14,8 +14,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, rename, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_TRANSPORT_VERSION, agentRequestOf, agentRunRecord, isAgentRequest,
-  reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf } from './review-judge.js';
+import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_EFFORT, REVIEW_EFFORTS, REVIEW_TRANSPORT_VERSION, agentRequestOf,
+  agentRunRecord, isAgentRequest, reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf } from './review-judge.js';
 
 /** The record format and the key's own shape. A change to either is a new version, never read as this one.
  *  /2: the key binds the transport's own arguments (F227). */
@@ -56,11 +56,11 @@ export const REPO_STATE = /^[0-9a-f]{64}$/;
  * keyed byte for byte as before. An agent request no transport can send (not claude-cli, malformed, or with images:
  * review-judge.js refuses all three) has no key either.
  */
-function agentAnswerKey(request, { backend, model, transportArguments, repoState }) {
+function agentAnswerKey(request, { backend, model, named, transportArguments, repoState }) {
   const agent = agentRequestOf(request);
   if (agent === null || backend !== 'claude-cli' || typeof repoState !== 'string' || !REPO_STATE.test(repoState)
       || requestImagesOf(request)?.length !== 0) return null;
-  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema });
+  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema, ...named });
   if (!Array.isArray(args?.argv)) return null;
   return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_AGENT_TRANSPORT_VERSION,
     backend, model, agent: reviewAgentKeyArgs(args.argv), system: request.system, prompt: request.prompt,
@@ -75,14 +75,19 @@ function agentAnswerKey(request, { backend, model, transportArguments, repoState
  * for another transport. `null` for a request the transport could not send at all (no string
  * `system` or `prompt`): it is never looked up and never stored. An agent request is keyed by `agentAnswerKey`, with
  * `repoState`.
+ * D160: `effort`, the review's (review-judge.js `reviewEffortOf`), is bound through the transport's arguments, which
+ * carry it (`--effort`): the arguments are asked for with it only when it is not the default, so a request at the
+ * default is keyed byte for byte as before, and one at another effort has another key. No field of the key is added.
  */
-export function answerKey(request, { backend, model, transportArguments = reviewTransportArguments, repoState = null }) {
+export function answerKey(request, { backend, model, effort = REVIEW_EFFORT, transportArguments = reviewTransportArguments,
+  repoState = null }) {
   if (typeof request?.system !== 'string' || typeof request?.prompt !== 'string') return null;
-  if (isAgentRequest(request)) return agentAnswerKey(request, { backend, model, transportArguments, repoState });
+  const named = effort === undefined || effort === null || effort === REVIEW_EFFORT ? {} : { effort };
+  if (isAgentRequest(request)) return agentAnswerKey(request, { backend, model, named, transportArguments, repoState });
   const images = requestImagesOf(request);
   if (images === null) return null;
-  const args = (images.length ? transportArguments({ backend, model, system: request.system, images })
-    : transportArguments({ backend, model, system: request.system })) ?? null;
+  const args = (images.length ? transportArguments({ backend, model, system: request.system, images, ...named })
+    : transportArguments({ backend, model, system: request.system, ...named })) ?? null;
   return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_TRANSPORT_VERSION,
     backend, model, args, system: request.system, prompt: request.prompt,
     ...(images.length ? { [SENT_IMAGE_FIELD]: images.map((image) => [image.mediaType,
@@ -178,16 +183,21 @@ async function readOwnerOnly(path) {
  * `repoState` (the agent transport): the state of the repository the review's agent requests read (REPO_STATE), bound in
  * each agent request's key (`answerKey`); with none, an agent request is never looked up or stored. Every other
  * request's key ignores it.
+ *
+ * `effort` (D160): the review's effort, as its settings carry it (review-judge.js `reviewJudgeConfig`: only when it is
+ * not the default), bound in every key through the transport's arguments (`answerKey`); with none, the default.
  */
-export function createAnswerCache(directory, { backend, model, transportArguments = reviewTransportArguments,
-  maxBytes = ANSWER_STORE_MAX_BYTES, readOnly = false, repoState = null } = {}) {
+export function createAnswerCache(directory, { backend, model, effort = REVIEW_EFFORT,
+  transportArguments = reviewTransportArguments, maxBytes = ANSWER_STORE_MAX_BYTES, readOnly = false,
+  repoState = null } = {}) {
   if (typeof directory !== 'string' || !directory) throw new TypeError('An answer cache needs a directory');
   if (typeof backend !== 'string' || !backend || typeof model !== 'string' || !model)
     throw new TypeError('An answer cache is keyed by the backend and model that answer');
+  if (!REVIEW_EFFORTS.includes(effort)) throw new TypeError('An answer cache is keyed by an effort the review may ask');
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new TypeError('An answer cache bound is a byte count');
   if (repoState !== null && (typeof repoState !== 'string' || !REPO_STATE.test(repoState)))
     throw new TypeError('A repository state is a SHA-256 in hex');
-  const keyOf = (request) => answerKey(request, { backend, model, transportArguments, repoState });
+  const keyOf = (request) => answerKey(request, { backend, model, effort, transportArguments, repoState });
   const pathOf = (key, occurrence) => join(directory, `${key}.${occurrence}.json`);
   return {
     directory,

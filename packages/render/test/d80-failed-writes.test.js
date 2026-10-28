@@ -135,8 +135,9 @@ test('D80 an interrupted and a cancelled denial read the same, stopped before it
       const t = textOf(page);
       const result = session.event('H1-r');
       return {
-        story: [c.failed, c.didNotRun, c.stopped,
-          story.includes("`cat > src/a.js <<'EOF' export const a = 1; EOF npm test` · stopped before it finished"),
+        // D167: the .md counts the run by its result in place of listing it; the page lists it.
+        story: [c.failed, c.didNotRun, c.stopped, story.includes('\n1 run: 1 stopped before it finished.\n')
+          && !story.includes("`cat > src/a.js <<'EOF' export const a = 1; EOF npm test`"),
           story.includes(REPORT_DID_WORDS.unconfirmed(1)), /failed, exit code|did not run: refused/.test(story)],
         page: [/<li id="run-1"><code>[^<]*<\/code> · stopped before it finished<\/li>/.test(page),
           // The write parsed from the command is its last recorded edit, after the command itself.
@@ -175,13 +176,14 @@ test('D80 page: the header and the runs count failed, refused and stopped comman
     assert.match(html, /<code>rm -rf build<\/code> · did not run: refused<\/li>/);
     assert.match(html, /<code>npm run watch<\/code> · stopped before it finished<\/li>/);
     assert.match(html, /<code>npm run long<\/code> · stopped before it finished<\/li>/);
-    // The report .md: the same header and the same runs, each kind apart.
+    // The report .md: the same header and the same runs, each kind apart. D167: the runs counted by their results, in
+    // place of their lines.
     const story = renderReportMarkdown(s, reportOf(s));
     assert.ok(story.includes('After its last edit, the agent ran 3 commands. Results: 1 failed, 2 stopped before they '
       + 'finished. The recording shows 1 command after the agent\'s last edit as refused before it ran.'), story);
-    for (const line of ['`npm test` · failed, exit code 1', '`rm -rf build` · did not run: refused',
-      '`npm run watch` · stopped before it finished', '`npm run long` · stopped before it finished'])
-      assert.ok(story.includes(line), line);
+    assert.ok(story.includes('\n4 runs: 1 failed, 1 did not run, 2 stopped before they finished.\n'), story);
+    for (const line of ['`npm test`', '`rm -rf build`', '`npm run watch`', '`npm run long`'])
+      assert.equal(story.includes(line), false, line);
   });
 
 test('D80 page: a failure row of a stopped call reads stopped before it finished, read again from the recording',

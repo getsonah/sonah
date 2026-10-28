@@ -37,7 +37,9 @@ const BASE_STORE = Object.freeze([
   ['bcd882a716807ac9.0', '5454c2991ae749cb'], ['bcd882a716807ac9.1', '3175ad84f8ca03b5'],
   ['bcd882a716807ac9.2', '71412f0873a1633e']]);
 // The window record lists its answers in the order they were sent: 0981e645 sent a batch's passes together,
-// `6590.0 6a17.0 6a17.1 6a17.2 bcd8.0 bcd8.1 bcd8.2`; D145 sends every batch's first pass first.
+// `6590.0 6a17.0 6a17.1 6a17.2 bcd8.0 bcd8.1 bcd8.2`; D145 sends every batch's first pass first. Sent is the order the
+// requests reach the answer store (`memoizeJudge`, the judge the challenge run calls), which never depends on timing;
+// the transport behind it receives the requests in flight together in whatever order their store lookups end.
 const SENT = Object.freeze(['narrative:w1', 'challenge:w1:b1:p1', 'challenge:w1:b2:p1', 'challenge:w1:b1:p2',
   'challenge:w1:b1:p3', 'challenge:w1:b2:p2', 'challenge:w1:b2:p3']);
 const RECORD = Object.freeze(['6590483e866653d9.0', '6a1771d9489161b1.0', 'bcd882a716807ac9.0', '6a1771d9489161b1.1',
@@ -51,8 +53,15 @@ test('D145 through the command: the same bytes, keys, occurrences and stored ans
     assert.equal(run.code, 0);
     assert.deepEqual(run.requests, BASE_REQUESTS);
     assert.deepEqual(run.store, BASE_STORE, 'every stored answer is byte for byte the one 0981e645 stored');
-    assert.deepEqual(run.sent, SENT);
+    // The record is the requests in the order they were sent, every batch's first pass first.
+    const filed = new Map(run.requests.map(([label, , key, occurrence]) => [label, `${key}.${occurrence}`]));
+    assert.deepEqual(SENT.map((label) => filed.get(label)), RECORD);
     assert.deepEqual(run.records, [RECORD]);
+    // At the transport, a batch's later passes start once its first pass's reply has begun; this transport never says
+    // so, so once its first pass's call has returned.
+    for (const label of SENT.filter((name) => /:p[2-9]$/.test(name)))
+      assert.ok(run.returnedBefore[label].includes(label.replace(/:p\d+$/, ':p1')),
+        `${label} reached the transport before its first pass returned: ${run.sent.join(', ')}`);
     // The same command again over the same state: every answer replayed, the record rewritten byte for byte.
     assert.deepEqual(run.replay, { code: 0, calls: 0, records: [RECORD] });
   }
