@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/3",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "eb9eab3f09f19e4433fafb2d9a4e9afd69102452",
+  "sourceHead": "0a548205ed1d4fbd6a94f36fbc3d591682242ed8",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -657,8 +657,8 @@
     },
     {
       "path": "packages/cli/test/d157-code-map.test.js",
-      "sha256": "5ab8af042faecfcb063c00a69e7975f780bf53381a002b99af1a19709456d75e",
-      "bytes": 25417,
+      "sha256": "0dfa7119f311e82975b5656bb0ab46e0c4095f355017b6c72633c0f90418e3b3",
+      "bytes": 25575,
       "mode": 420
     },
     {

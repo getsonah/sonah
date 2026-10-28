@@ -316,7 +316,8 @@ test('D157: a tracked file that matches an ignore pattern is searched by name: u
   await writeFile(join(repo.top, 'dist', '[id].js'), 'parse("bracketed");\n');
   await writeFile(join(repo.top, 'dist', 'i.js'), 'parse("untracked and ignored");\n');
   await writeFile(join(repo.top, '.env.example'), 'PARSE=parse\n');
-  repo.git(['add', '-f', 'dist/bundle.js', 'dist/[id].js', '.env.example']);
+  // Each name literal (`:(literal)`): git 2.50 and later read `[id]` in a pathspec as a glob, which would add dist/i.js.
+  repo.git(['add', '-f', '--', ':(literal)dist/bundle.js', ':(literal)dist/[id].js', ':(literal).env.example']);
   repo.git(['commit', '-q', '-m', 'tracked though ignored']);
   const snapshot = await snapshotOf(repo);
   const seen = [];
