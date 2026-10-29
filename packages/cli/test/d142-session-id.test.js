@@ -19,6 +19,8 @@ import { readCodeSnapshot, recordingEnd, recordingStart } from '../src/code-snap
 import { codexNameCarries, recordingsNamed, resolveSessionId } from '../src/session-id.js';
 import { BACKGROUND_MARK, REVIEW_FIX_DEFAULT, REVIEW_FIX_WORDS, SESSION_ID_WORDS, STATE_FOLDER_ENTRIES,
   parseSessionReviewArgs, runSessionReviewCommand, startDetachedReview } from '../src/session-review-command.js';
+import { updateNoticeApplies } from '../src/update-check.js';
+import { mdPathFor } from '../src/report-output.js';
 import { buildCodeSession, CODE_TEXT } from './code-pass-fixture.js';
 import * as WF from './m33-w-workflow-fixture.js';
 
@@ -232,12 +234,16 @@ test('D142: --background prints one line and starts the review detached with the
     assert.equal(log, `${page.slice(0, -'.html'.length)}.log`);
     assert.deepEqual(child, ['review', '--session', ID, ...(noOpen ? ['--no-open'] : []), '--profile', 'standard',
       '--format', 'html', '--output', page]);
+    // D171: the detached review is one the entry checks for a newer Sonah, so its page's footer can say so (the
+    // command that starts it does not check: its one line is what the agent relays).
+    assert.deepEqual([updateNoticeApplies(child), updateNoticeApplies(['review', ...argv])], [true, false]);
     assert.equal(cwd, h.repo);
     assert.equal(env, h.env);
     // One line, and nothing of a review: no estimate, no counts, no report, no PR comment line. With --no-open, the
     // line never says that Sonah opens the page.
     const W = SESSION_ID_WORDS;
-    assert.equal(out.chunks.stdout, `${(noOpen ? W.startedNoOpen : W.started)(page, log)}\n`);
+    // D173: the line names the .md beside the page, the path the detached review writes (d173-md-location.test.js).
+    assert.equal(out.chunks.stdout, `${(noOpen ? W.startedNoOpen : W.started)(page, mdPathFor(page), log)}\n`);
     assert.equal(out.chunks.stderr, '');
     // The mark names the started review's process, so a second start finds it while it runs.
     assert.deepEqual(JSON.parse(await readFile(join(state, 'background', BACKGROUND_MARK), 'utf8')), { pid: 4242 });

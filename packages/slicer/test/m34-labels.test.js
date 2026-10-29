@@ -127,13 +127,13 @@ test('M34: slash commands — a local command is harness, a prompt command the h
   const prompt = labelOne(ask(slash('review', 'the parser module')));
   assert.deepEqual([prompt.label, prompt.markers, prompt.gap], ['human', ['command'], undefined]);
   assert.equal(humanWordsOf(prompt), '/review the parser module');
-  // 2.1.255 and later: the invocation row is isMeta with the recorder's own command elements and no arguments: human +
-  // command, its arguments declared unrecorded.
+  // D170 (reverses M34's rule here): an isMeta row with the recorder's own command elements and no arguments is a
+  // command the harness wrote, the harness's: no command marker, no unrecorded-arguments gap, no words of the human.
   const meta = labelOne(user('<command-message>review</command-message>\n<command-name>/review</command-name>\n'
     + '<skill-format>true</skill-format>', { isMeta: true }));
-  assert.deepEqual([meta.label, meta.basis, meta.markers, meta.gap], ['human', LABEL_BASIS.promptCommand, ['command'],
-    LABEL_GAPS.commandArgsUnrecorded]);
-  assert.equal(humanWordsOf(meta), '/review');
+  assert.deepEqual([meta.label, meta.basis, meta.markers, meta.gap], ['harness', LABEL_BASIS.metaCommand, undefined,
+    undefined]);
+  assert.equal(humanWordsOf(meta), '');
   // A skill's expansion (isMeta prose) and a local-command caveat stay harness.
   assert.equal(labelOne(user('Review the parser carefully.', { isMeta: true })).label, 'harness');
   assert.equal(labelOne(user('<local-command-caveat>Caveat</local-command-caveat>', { isMeta: true })).label, 'harness');

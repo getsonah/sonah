@@ -106,7 +106,8 @@ test('D90: a reason holding a key-shaped string is recorded as the person wrote 
 test('D69 f (g) through the binary: recorded with exit 0, refused with 1, a usage error with 2', async (t) => {
   const { dir, report } = await home(t);
   const run = async (args) => {
-    try { const r = await exec(process.execPath, [BIN, 'decision', ...args], { env: { PATH: '/usr/bin:/bin', HOME: dir, SONAH_HOME: dir } });
+    try { const r = await exec(process.execPath, [BIN, 'decision', ...args], { env: { PATH: '/usr/bin:/bin', HOME: dir, SONAH_HOME: dir,
+      SONAH_NO_UPDATE_CHECK: '1' } });
       return { code: 0, ...r }; } catch (e) { return { code: e.code, stdout: e.stdout, stderr: e.stderr }; }
   };
   assert.deepEqual(await run(['accept', HASH, '1234567890ab', '--report', report, '--reason', 'Good.']),

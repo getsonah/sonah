@@ -1214,8 +1214,8 @@ const askSidecar = (value) => plain(value) && keySet(value, ['questions', 'answe
  *              user-rejected`; observation again in a session no human submitted); otherwise, in order:
  *              `origin` human → human; task-notification → observation; peer → peer; coordinator → human from the
  *              parent agent in a helper, else peer; any other origin → unlabelled (`origin_unknown`).
- *              `isMeta` → harness, except a prompt command's invocation (only the recorder's command elements) →
- *              human + command, its arguments unrecorded where it records no `command-args` element.
+ *              `isMeta` → harness (`recorder_meta`); D170: one whose text is only the recorder's command elements too
+ *              (`meta_command`: a command the harness wrote, such as the skill it loads beside the person's prompt).
  *              `sourceToolUseID` → harness. `promptSource` typed/queued/suggestion_accepted → human.
  *              A helper's (`isSidechain`) string row → human from the parent agent (its brief, and the parent's later
  *              messages); its other rows → harness, untyped.
@@ -1339,9 +1339,13 @@ export function claudeLabeller() {
       if (kind === 'coordinator') return helperRow ? human(d, B.fromParentAgent) : value(L.peer, B.originPeer);
       return value(null, B.originOther, { gap: G.originUnknown });
     }
+    // D170 (the owner, 2026-10-28, the broad form; reverses M34's rule): every `isMeta` row reaching here (no
+    // notification carrier, no `origin`) is the harness's, one whose text is only the recorder's command elements too
+    // (`meta_command`). Read from the recorder's flag and its own command elements; `turnCompanion` and the command's
+    // name are not read.
     if (flagged(d.isMeta)) {
       const command = recorderCommand(text);
-      return command && command.name ? human(d, B.promptCommand) : value(L.harness, B.recorderMeta);
+      return value(L.harness, command && command.name ? B.metaCommand : B.recorderMeta);
     }
     if (flagged(d.sourceToolUseID)) return value(L.harness, B.recorderToolRow);
     if (CLAUDE_SESSION_TYPE.humanPromptSources.includes(d.promptSource)) return human(d, B.promptSourceHuman);

@@ -3,11 +3,13 @@
 Sonah runs on your computer. It reads the recording your coding agent (Claude Code, Codex or Cursor) already keeps,
 and, with the code step (on by default, with the `claude` reviewer), your repository as it is now, through agents that
 open, search and list its files with read-only tools. Since 0.3.0-beta.5 the code step also reads the files that the
-session wrote in other git repositories, such as a sibling worktree, and its agents can read each repository that holds a
-file of the change. A folder that no git repository holds, such as a notes folder, is never read: Sonah names it and
+session wrote in other git repositories, such as a sibling worktree, and its agents can read each repository that holds
+a file of the change. A folder that no git repository holds, such as a notes folder, is never read: Sonah names it and
 counts the files the session wrote there. What leaves your computer is the review itself: requests to the model you
 choose, through your own `claude` or `codex` login, or your API key with `--backend anthropic-api`. The only other
-requests go to GitHub, and only when you name a pull request with `--github` ([below](#what-leaves-your-computer)).
+requests are a check for a newer Sonah that holds nothing about you or your work, once a day at most and only with a
+review's first call to the reviewer or in `sonah doctor`, to npm's public registry, and requests to GitHub, only when
+you name a pull request with `--github` ([below](#what-leaves-your-computer)).
 
 Sonah masks nothing and withholds nothing for privacy's sake. The model reads your session as it was recorded and, in
 the code step, any file of your repository, or of another git repository that holds a file of the change, that its
@@ -82,17 +84,29 @@ folder, as in any session of yours. With `CLAUDE_CONFIG_DIR` set, these writes n
 agents run in your working directory instead, with the same basic environment and three read-only tools (Read, Grep and
 Glob), and nothing else: no settings, MCP servers or slash commands, and your project's `CLAUDE.md` files are not loaded
 as their instructions (they may open them as files). Claude Code's restricted mode confines them to the working
-directory, the repository it lies in, and each other git repository that holds a file of the change (its top folder). A
-folder that no git repository holds is never one of them, whatever the session wrote there.
+directory, the repository it lies in, each other git repository that holds a file of the change (its top folder) and,
+when the change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit. A folder that
+no git repository holds is never one of them, whatever the session wrote there.
 `--backend codex-cli --model gpt-6.1-sol` uses your `codex` login instead, read-only, with its tools and web search off.
 `--backend anthropic-api` posts the same requests to Anthropic's API with your `ANTHROPIC_API_KEY`.
 
-Sonah itself makes no other network request: no telemetry, no analytics, no update check. There are two exceptions,
-both to GitHub and both only when you name a pull request: a PR comment you ask for with `--github OWNER/REPO --pr N
---post-comment`, for which Sonah reads that pull request's metadata and posts the comment only once you confirm it (see
-Sharing below); and `sonah sessions --github OWNER/REPO --pr N`, which reads that pull request's metadata and the list
-of its commits (their ids, messages and times) and posts nothing ([The Agent-Session line](#the-agent-session-line)).
-Each sends your GitHub token when you have one. Your provider's own terms apply to what it receives.
+Sonah sends nothing to us: no telemetry, no analytics. It makes one request that you do not ask for, the update check:
+once a day at most, with a review's first call to the reviewer and in `sonah doctor`, a GET of
+`https://registry.npmjs.org/-/package/getsonah/dist-tags`, npm's public list of getsonah's version tags, so that it can
+tell you when a newer Sonah is out (one line on stderr after the review, a line in `sonah doctor`, and a line in the
+review page's footer). A dry run, a review that stops before its first call to the reviewer, a review on stored answers
+alone and every other command never check. The request holds no session text, path, setting, token or id: npm's registry
+sees the request itself, from your IP address, as for any package download. Sonah gives up after 2 seconds and says
+nothing when the registry does not answer, keeps the answer and its time in `~/.sonah/update-check.json`, and never
+installs anything. `sonah config update-check off` or `SONAH_NO_UPDATE_CHECK=1` turns it off, and it is off whenever
+`CI` is set.
+
+The other requests go to GitHub, both only when you name a pull request: a PR comment you ask for with `--github
+OWNER/REPO --pr N --post-comment`, for which Sonah reads that pull request's metadata and posts the comment only once
+you confirm it (see Sharing below); and `sonah sessions --github OWNER/REPO --pr N`, which reads that pull request's
+metadata and the list of its commits (their ids, messages and times) and posts nothing ([The Agent-Session
+line](#the-agent-session-line)). Each sends your GitHub token when you have one. Your provider's own terms apply to what
+it receives.
 
 ## What is never sent
 
@@ -106,10 +120,11 @@ Each sends your GitHub token when you have one. Your provider's own terms apply 
 - A part of the session too large for one request: it is not sent at all, never cut down, and the review says it
   could not be checked.
 - With the code step, any file outside your repository and outside the other git repositories that hold a file of the
-  change: its agents are confined to the working directory, the repository it lies in and those repositories. A file the
-  session wrote in Claude Code's, Codex's or Sonah's own folders, or in a folder that no git repository holds (your home
-  folder, a notes or temporary folder), never makes its folder one of them: such a file is counted and its folder named,
-  and nothing of it is read or sent. (What the session itself read elsewhere is part of the session, above.)
+  change: its agents are confined to the working directory, the repository it lies in, those repositories and, when the
+  change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit. A file the session
+  wrote in Claude Code's, Codex's or Sonah's own folders, or in a folder that no git repository holds (your home folder,
+  a notes or temporary folder), never makes its folder one of them: such a file is counted and its folder named, and
+  nothing of it is read or sent. (What the session itself read elsewhere is part of the session, above.)
 
 ## Nothing is masked or withheld
 
@@ -156,6 +171,8 @@ recorded, like the recording itself.
 | Stored model answers and the review's report | `~/.sonah/session-reviews/<a hash of the recording's path>/` (or `--state-dir DIR`) | Lets a review resume and a rerun cost nothing. The requests themselves are not stored. The answers and the report can quote the session as recorded, secrets included; they are never sent anywhere. Keep a `--state-dir` outside every Git repository, so they are never committed. With the code step, its agents' answers are kept apart in `code-pass/answers/` there, and the report also holds each changed file's path, state and SHA-256, the lines of any file of the repository its findings, the statements it found to hold and their checks quote, the words of what its checks withheld, and for each item of its item-by-item check the answer and the lines of code it quotes (never a whole file). The page and the Markdown report show only how many items that check did not examine in a way that Sonah could use. |
 | Your answers to checklist rows (`sonah decision`) | `~/.sonah/decision-reviews.ndjsonl` | Never sent anywhere. |
 | Your settings (`sonah config`) | `~/.sonah/config.json` | Whether the code step is on. Readable by you only; one that is not yours, that others can write or that cannot be read stops a review given no `--code-pass` or `--no-code-pass`, before anything is read. |
+| The update check's setting (`sonah config update-check`) | `~/.sonah/update-check-setting.json` | Whether the update check is on, once you set it. Readable by you only; one that is not yours, that others can write or that cannot be read turns the check off. |
+| The update check's last answer | `~/.sonah/update-check.json` | When Sonah last asked npm's registry for getsonah's latest version, and the version it answered (none when it did not answer). Readable by you only. Written only with a review's first call to the reviewer and by `sonah doctor`, and not while the check is off. |
 | The page or Markdown you asked for | the `--output` file | Never overwrites an existing file. It holds your session as recorded. |
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
 | The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |

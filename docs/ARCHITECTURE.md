@@ -111,11 +111,13 @@ reads it.
 The reviewer gets text (and pasted images) and returns text; it cannot act. The `claude` reviewer runs in an empty
 private folder with its tools, MCP servers, settings and slash commands switched off, a minimal environment, and the
 request on standard input. The code step's agents are the one exception, and only on `claude-cli`: they run in the
-working directory with three read-only tools (Read, Grep and Glob) in Claude Code's restricted mode, which confines
-them to the working directory and the repository it lies in; a call that uses any other tool fails. The Codex
-reviewer runs read-only with its tools and web search off. Nothing in `evidence` calls a model or reads the disk by
-itself: `runReview` and the code step are given a function that answers a request (and the code step a repository
-reader), which is how the tests run the whole pipeline with stand-in reviewers and agents.
+working directory with three read-only tools (Read, Grep and Glob) in Claude Code's restricted mode, which confines them
+to the working directory, the repository it lies in, each other git repository that holds a file of the change (its top
+folder) and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit; a
+call that uses any other tool fails. The Codex reviewer runs read-only with its tools and web search off. Nothing in
+`evidence` calls a model or reads the disk by itself: `runReview` and the code step are given a function that answers a
+request (and the code step a repository reader), which is how the tests run the whole pipeline with stand-in reviewers
+and agents.
 
 ## Where state lives
 
@@ -125,7 +127,8 @@ reader), which is how the tests run the whole pipeline with stand-in reviewers a
 | Stored model answers | `~/.sonah/session-reviews/<SHA-256 of the recording's path>/answers/`; the code step's in `code-pass/answers/` beside it |
 | Finished parts, progress and the report | `~/.sonah/session-reviews/<same>/review/` (`report.private.json`; `publication/` after a PR comment) |
 | Your answers to rows | `~/.sonah/decision-reviews.ndjsonl` |
-| Your settings (`sonah config`) | `~/.sonah/config.json` |
+| Your settings (`sonah config`) | `~/.sonah/config.json`; the update check's, once set, `~/.sonah/update-check-setting.json` |
+| The update check's last answer | `~/.sonah/update-check.json` |
 | The page and the .md | The `--output` file, and the .md beside the page |
 
 `SONAH_HOME` moves `~/.sonah`, and `--state-dir` moves one review's folder. Every file is written readable by its

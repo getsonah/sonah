@@ -459,7 +459,8 @@ test('D160: sonah doctor takes --effort (else SONAH_EFFORT) as the review does, 
   const high = await probe({ effort: 'high' });
   assert.doesNotMatch(high.result.text, /at effort/, 'the default is not named');
   // The command table of `sonah --help` lists it on doctor's row, within 80 columns.
-  const help = spawnSync(process.execPath, [join(HERE, '..', 'bin', 'sonah.js'), '--help'], { encoding: 'utf8' });
+  const help = spawnSync(process.execPath, [join(HERE, '..', 'bin', 'sonah.js'), '--help'], { encoding: 'utf8',
+    env: { ...process.env, SONAH_NO_UPDATE_CHECK: '1' } });
   assert.match(help.stdout + help.stderr, /^ {6}\[--backend claude-cli\|codex-cli\] \[--model ID\] \[--effort LEVEL\]$/m);
   assert.ok((help.stdout + help.stderr).split('\n').every((line) => line.length <= 80));
 });

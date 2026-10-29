@@ -706,8 +706,14 @@ export const COVERAGE_SENTENCE = Object.freeze({
   // D150: the recording rows Sonah left unread, said by kind, each row once (the slicer's `unreadRows`): a
   // copy of a message sent to the agent that no structural twin settles, a hook's row, a file changed outside the agent's
   // edits. Every other unread row, and every other such declaration, stays `unsupported_message`.
-  request_copies_unread: (counts) => `Sonah could not match ${amount(counts)} ${nounOf(counts, 'copy', 'copies')} of `
-    + 'messages sent to the agent with the records of the session',
+  // D177: a copy is what the recorder sent the agent (slicer records.js `claudeLabeller`: harness when every block has
+  // a byte-equal structural twin in the same recording, else no label), never one message of yours: the labeller never
+  // gives a copy the person's label, so the second sentence holds (d177-request-copies-words.test.js). Never "could not
+  // match" or "messages" (docs/STYLE.md S4: a message is one message of yours). No cause (D177's review): a copy of a
+  // form the reader does not list is counted here too and is never compared with a twin, so "because they differ" would
+  // not be true of it.
+  request_copies_unread: (counts) => `Sonah did not read ${amount(counts)} ${nounOf(counts, 'copy', 'copies')} of what `
+    + "the recorder sent the agent. Sonah reads your messages from the recorder's other records",
   hook_outputs_unread: (counts) => `Sonah did not read ${amount(counts)} hook ${nounOf(counts, 'output', 'outputs')}`,
   edited_files_unread: (counts) => `Sonah did not read ${amount(counts)} ${nounOf(counts, 'notice', 'notices')} of a `
     + "file changed outside the agent's edits",

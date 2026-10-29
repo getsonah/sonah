@@ -146,7 +146,7 @@ test('one installer command in a fresh HOME produces an installed CLI and a synt
   const env = { HOME: freshHome, PATH: `${fakeBin}:${dirname(process.execPath)}:${process.env.PATH}`, LANG: 'C.UTF-8',
     SONAH_HOME: join(freshHome, '.sonah'), SONAH_CODEX_BIN: join(fakeBin, 'codex-absent'), npm_config_cache: join(directory, 'npm-cache'),
     npm_config_userconfig: userConfig, npm_config_globalconfig: join(directory, 'no-global-npmrc'),
-    npm_config_offline: 'true', npm_config_update_notifier: 'false',
+    npm_config_offline: 'true', npm_config_update_notifier: 'false', SONAH_NO_UPDATE_CHECK: '1',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: '0',
     GIT_AUTHOR_NAME: 'Synthetic Installer', GIT_AUTHOR_EMAIL: 'installer@example.invalid',
     GIT_COMMITTER_NAME: 'Synthetic Installer', GIT_COMMITTER_EMAIL: 'installer@example.invalid' };

@@ -1,5 +1,149 @@
 # Changelog
 
+## 0.3.0-beta.10 (2026-10-29)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+Sonah now tells you when a newer version is out. Once a day at most, with a review's first call to the reviewer and in
+`sonah doctor`, it asks npm's public registry for getsonah's latest version, in a request that holds nothing about you
+or your work. Turn it off with `sonah config update-check off`. Run inside Claude Code, `sonah review` with no path now
+reviews the session it runs in. The report no longer reads a skill that Claude Code loads beside your prompt as a
+command you typed, and a problem in a file that several worktrees hold byte for byte is now one item. Some lines of the
+report now say only what Sonah can show.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay, except for a session that holds a skill that Claude Code loaded, a script's write
+after a `cd`, or a helper that the agent resumed: for such a session, Sonah asks again for the parts of its review that
+change. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+### When a newer Sonah is out
+
+Sonah now tells you when a newer version is out. Once a day at most, it asks npm's public registry for getsonah's latest
+version. It asks only with a review's first call to the reviewer, and in `sonah doctor`: a dry run, a review that stops
+before its first call to the reviewer, a review on stored answers alone and every other command never check. When that
+version is newer than yours, Sonah says so in one line on stderr after the review's own output, in a line of
+`sonah doctor`'s own output, and at the foot of the review page that `/sonah` opens. It never installs anything. The
+request holds nothing about you or your work, and the check gives up after 2 seconds. Turn it off with
+`sonah config update-check off` or `SONAH_NO_UPDATE_CHECK=1`; it is off when `CI` is set. `sonah config` now shows this
+setting under the code step's. Nothing that Sonah sends to the model changes, so your stored answers still replay.
+
+### The session that `sonah review` reviews
+
+Run inside Claude Code, by the agent or after `!` in its prompt, `sonah review` with no path now reviews the session it
+runs in, not the newest session of the project. Claude Code names that session in `CLAUDE_CODE_SESSION_ID`. Sonah takes
+it when its recording is one of this project's, reads it as it was when the review started, as `--session ID` does,
+and says so in one line after the recording's. From a plain terminal, or with `--choose N`, a path, `--session ID` or
+`--commits A..B`, Sonah chooses as before, and `--choose 1` takes the newest. Nothing that Sonah sends for a recording
+changes, so your stored answers still replay.
+
+### A skill that Claude Code loads, and the title
+
+A skill that Claude Code loads beside your prompt is no longer read as a slash command you typed. Claude Code writes
+such a skill on a row of its own and marks the row as its own; Sonah listed it among your asks, often as not checked,
+could take the report's title from it, and read the agent's work after it apart from your prompt. It is now Claude
+Code's row, and that work stays under your prompt. A slash command that Claude Code records as yours is read as
+before. For a session that holds such a row, Sonah asks the review again for the parts that the row changes; the rest
+of its stored answers replay.
+
+The report's title is no longer taken from your answer to a question the agent asked you. When all your asks are in
+such answers, or only such answers hold words of your own, the report has no title of your words.
+
+### One finding for a file that several worktrees hold
+
+When two or more worktrees or clones of one repository hold a file byte for byte, a problem that the code review found
+in that file is now one item, not one item for each worktree. The item's Where line names the file in each place (past
+three, it counts the rest), and its evidence says in how many repositories or folders Sonah read the same bytes of the
+file. Sonah joins findings only when the checks of all of them hold, they are of one kind on the same lines of the same
+bytes, they quote the same words of your session (or none), and each worktree holds only one of them. A finding that
+Sonah withheld stays where it was. A finding in your working folder of such a change now shows the lines that it is
+about, with the lines the change made marked, where it showed the lines of one step before. A second note of the code
+review about the same item no longer counts as a note that failed Sonah's checks. Reviews that Sonah wrote before keep
+one item for each worktree until you run them again. Nothing that Sonah sends changes, so your stored answers still
+replay.
+
+### An ask whose command result Sonah did not read
+
+When a review read a command of the agent's own (not of a helper) after the last of your messages in what it read, and
+not that command's result, an ask of that message that the review left not checked now says what Sonah found, unless the
+count line already counts it in another part, such as with a code finding. Its status is "Not checked: command result
+not read", the count line counts it apart ("1 not checked with a command result not read"), and its evidence fold says:
+"A command that the agent called after this message has no result in what the session review read." This can happen when
+you ask the agent to run Sonah on the session it is in and the review reads the recording before that command has a
+result, or when a recording ends with a command cut short, for example by a crash. Every other ask of that message, and
+every other message, is shown as before. The header still counts these asks among the ones Sonah did not check. Nothing
+that Sonah sends changes, so your stored answers still replay.
+
+### Where `/sonah` writes the .md
+
+The one line that `sonah review --session ID --background` prints, which `/sonah` repeats, now also names the Markdown
+report that Sonah writes beside the page, the .md to post on your pull request. The README now says that
+`--output ~/review.html` puts the page and the .md in your home folder, outside the project, so the next review does
+not read them as part of the change, and that a path inside the project works when `.gitignore` holds it. Nothing
+that Sonah sends changes, so your stored answers still replay.
+
+### A script's writes after a `cd`
+
+A file that a script writes after a `cd` into another folder is now placed in that folder when the command names the
+folder in full, or through a variable that the command sets, as Sonah already placed the shell's own writes there. Sonah
+read such a write as a change to the same path in your working folder, so the code review could look at a file the agent
+never touched, miss the file it did change, and say that a file changed after the agent's last recorded edit when it had
+not. As for the shell's own writes, Sonah does not follow a `cd` to a relative folder or to `~`, `pushd`, a subshell,
+another shell, or a script that changes folder by itself: a write after one of them stays where the last `cd` that Sonah
+followed put it, or in your working folder. A `cd` to a folder that Sonah cannot read from the command puts the write
+back in your working folder. For a session that holds such a write, Sonah asks the review again for the parts that the
+write changes; the rest of its stored answers replay.
+
+### A helper that the agent resumed
+
+When the agent resumes a helper it launched in Claude Code (with SendMessage), the helper's later work is now placed
+where the agent received it: the task notification that Claude Code records for that message. Sonah placed all of that
+work after your last request and said that it could not tell when the agent received it, so the helper's work could read
+as done after the agent's own claims. A later request of the helper is placed this way when Claude Code records which
+helper the message resumed and the notification that received it, the helper's own recording holds that message, and no
+task of the helper's own woke it again after it replied. Otherwise, as in older Claude Code recordings, that work and
+the helper's work after it are placed as before. For a session with such a helper, Sonah asks the review again for the
+parts that change; the rest of its stored answers replay.
+
+### The size line and worktrees
+
+When two worktrees of one repository held the same change of a file, the size line in the report's header counted it
+twice. It now also says how many files that is with each repeat counted once, for example "a change of 104 files (58
+with each repeat counted once) in 2 repositories or folders". A repeat is a file with the same start commit, the same
+path in its repository and the same bytes now. Sonah says this only when it could compare every file that could repeat
+another; when it could not, for example a binary file or a file outside your working directory, the line counts every
+file, as before. The Files section, the coverage line and the line counts still count every file. Sonah now records
+where your working directory lies in its repository, so it can compare your working directory's files with another
+worktree's. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### Runs that the report names
+
+A run that another part of the report names by its number now has its line, on the HTML page and in the .md. A run
+that an item names but that the page's list of runs leaves out, such as the command of a failure that the agent passed
+over in a session of more than 40 runs, is now listed after that list, under its own sentence, its number first. The
+.md keeps the line of each run that it names. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### An empty Good to know
+
+With nothing in Good to know, the report now shows Good to know (0) as a heading, as it shows an empty Must act, not as
+a fold with nothing in it, and the count line no longer says that it is folded.
+
+### What Sonah could not check
+
+On the HTML page, What Sonah could not check now lists what Sonah could not check of the code review under the heading
+The code review, as the .md does, not under The session review.
+
+Under What Sonah could not check, and in the PR comment's "Not covered" line, the copies of what Claude Code sent the
+agent that Sonah did not read no longer sound as if Sonah missed your words. The line said that Sonah "could not match"
+copies of "messages". It now says that Sonah did not read those copies, and that Sonah reads your messages from the
+recorder's other records. The count is the same. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### A shortened .md
+
+When Sonah shortens the .md that it writes beside the HTML page, it no longer says that the page holds every part. The
+page keeps limits on its lists, such as 40 runs and 50 claims, and counts what each list leaves out. The .md now says
+that Sonah did not shorten the HTML page, which is true. Nothing that Sonah sends changes, so your stored answers still
+replay.
+
 ## 0.3.0-beta.9 (2026-10-28)
 
 This beta is experimental: the report's layout is new, and we want to hear how it reads for you.
@@ -1346,7 +1490,7 @@ Commands, the page and the files under `~/.sonah` can change between betas.
 
 - Sonah is source-available under the Business Source License 1.1: free for teams of up to three people using it, for
   non-profits and for a 30-day trial, with no licence key and no licence check. Every version becomes Apache-2.0 two
-  years after it is first published. See [Pricing and licence](README.md#pricing-and-licence).
+  years after it is first published. See [License](README.md#license).
 
 ### Known limits
 

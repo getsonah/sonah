@@ -43,7 +43,7 @@ async function cli(args, { env = {} } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'sonah-cli-wording-home-'));
   try {
     const r = await exec(process.execPath, [BIN, ...args], { cwd: home,
-      env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin', ...env }, timeout: 30_000 });
+      env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin', SONAH_NO_UPDATE_CHECK: '1', ...env }, timeout: 30_000 });
     return { code: 0, ...r };
   } catch (e) { return { code: e.code, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }; }
   finally { await rm(home, { recursive: true, force: true }); }

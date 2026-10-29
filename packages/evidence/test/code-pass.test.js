@@ -57,7 +57,7 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   COMPACTION_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace, UNITS_LEFT_OUT_REASON,
   UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, TRUTH_ONLY_REFUTATION, TRUTH_ONLY_KIND,
-  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS } from './m33-integration-fixture.js';
+  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS } from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
   verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
   from '../../cli/test/code-pass-fixture.js';
@@ -354,8 +354,11 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D152 (0.3.0-beta.9): the report model once more (TRUTH_ONLY_READER_VERSIONS), one link after 0.3.0-beta.7's; the
   // page and the story did not move.
   assert.deepEqual(TRUTH_ONLY_READER_VERSIONS.model.before, AGENT_PROMPT_READER_VERSIONS.model.after);
+  // D169 (0.3.0-beta.10): the report model once more (RENDER_FIX_READER_VERSIONS), one link after 0.3.0-beta.9's; the
+  // page and the story did not move.
+  assert.deepEqual(RENDER_FIX_READER_VERSIONS.model.before, TRUTH_ONLY_READER_VERSIONS.model.after);
   assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [AGENT_PROMPT_READER_VERSIONS.page.after,
-    AGENT_PROMPT_READER_VERSIONS.story.after, TRUTH_ONLY_READER_VERSIONS.model.after]);
+    AGENT_PROMPT_READER_VERSIONS.story.after, RENDER_FIX_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

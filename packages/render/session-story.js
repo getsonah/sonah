@@ -458,7 +458,9 @@ const pastedOf = (event) => {
  * review tied to each (`requirements`, `distinctRequirements`); `unattached`, files you attached before any message;
  * `steps`, the review's steps — `{ index, n, request, events, windows, failure }`; `whole`, what the session did
  * (`stepActivity`: its commands, its changed files with their line counts, the writes not recorded as done, the files
- * changed outside the repository); and the hand-off briefs and inter-agent messages the recorder encrypted.
+ * changed outside the repository); the hand-off briefs and inter-agent messages the recorder encrypted; and `openTurn`
+ * (D180), the message (`k`) of the review's last step when that step holds a command of the main thread whose result no
+ * window holds, else null.
  *
  * /14 (owner decision D77 C): a step is one of your messages — every event the review windows hold that belongs to it
  * (`requestOfEvent`), in session order, whichever windows hold them; work before your first message is a step of its
@@ -548,6 +550,19 @@ export function storyFacts(session, report) {
   const requirements = distinctRequirements(session, report, new Set(kOfAsk.keys()));
   for (const ask of asks) ask.requirements = requirements.filter((r) => kOfAsk.get(r.ask) === ask.k);
 
+  // D180: a review cannot read its own end: one the agent started from its own session reads the recording while the
+  // command that started it has no result yet, and a recording cut short by a crash or a kill ends the same way. So the
+  // read's last step, when it holds a command of the main thread (never a helper's) whose result (its first terminal
+  // observation, `outcomeIndex`) no window holds, names its message (null for work before your first message). For a
+  // command of the main thread that message is the last of yours recorded at or before it (`requestOfEvent`), so the
+  // words say "after this message", whatever the command was for. Held-based, so a render of the same review over a
+  // recording that has grown since (its result, or later messages of yours, recorded now) gives the same message.
+  // Structure only: the recorder's kinds, the main thread's lineage and what the windows hold, never the words.
+  const lastStep = steps.at(-1);
+  const openTurn = lastStep?.events.some((event) => event.kind === 'invocation' && event.operation === 'command'
+    && !(typeof event.childId === 'string' && event.childId !== '') && !held.has(outcomes.result(event.id)?.id))
+    ? lastStep.request : null;
+
   const whole = stepActivity(session, events, outcomes, counted);
   // M33 T: every hand-off (a spawn or a follow-up, the parent's or a transferred helper's) whose brief the recorder
   // encrypted.
@@ -559,7 +574,7 @@ export function storyFacts(session, report) {
     && gap.channel === 'children' && gap.note === INTER_AGENT_GAP_NOTES.encrypted);
   const encryptedMessages = { n: encryptedGaps.reduce((n, gap) => n + (Number.isSafeInteger(gap.count) && gap.count > 0
     ? gap.count : 1), 0), atLeast: encryptedGaps.some((gap) => !(Number.isSafeInteger(gap.count) && gap.count > 0)) };
-  return { events, steps, asks, unattached, whole, encryptedBriefs, encryptedMessages };
+  return { events, steps, asks, unattached, whole, encryptedBriefs, encryptedMessages, openTurn };
 }
 
 /** A requirement's text as compared, for rows whose quote cannot be located: case, whitespace and punctuation
@@ -1240,6 +1255,9 @@ function tierSection(model, tier, trim, notice, agentPrompts = true) {
 
 function goodToKnowSection(model, trim, notice) {
   const items = model.tiers.good_to_know;
+  // D169: with no item, its heading, as an empty Must act's, never an empty fold.
+  if (!items.length) return { text: `### ${mdOwn(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know, 0))}`,
+    shortened: false };
   const summary = escHtml(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know, items.length));
   const top = notice ? [mdOwn(notice)] : [];
   if (trim.gtkCounts && items.length) {
@@ -1348,19 +1366,24 @@ const seenMd = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `${mdOwn(R
  * that list is. Its review: the names are those this composition prints, never the whole model's, so a part that a
  * shortening step leaves out keeps no run's line; with every run quiet (exit 0 before the last edit, no failure row)
  * the page lists none and counts them, as the count line does, and the .md points to no list. `named` null (the first
- * rendering, before the names are gathered): no run's line. The page lists every run.
+ * rendering, before the names are gathered): no run's line.
+ * D169: a run that the page lists apart (the report model's `runs.named`: another part names it, and the list leaves it
+ * out) keeps its line too, in run order, so no run the .md names is left without one; and the .md points to the page
+ * when the page lists, in either list, a run that the .md does not show (a quiet run that no part names is counted
+ * there, not listed).
  */
 function runsMd(model, trim, named) {
   const { runs } = model.did;
   const blocks = [mdOwn(runs.total ? REPORT_DID_WORDS.runsCounted(runs.total, runs.parts.join(', '))
     : REPORT_DID_WORDS.noRuns)];
   if (runs.neverRan.length && !trim.didCounts) blocks.push(mdOwnNaming(REPORT_DID_WORDS.neverRan, runs.neverRan));
-  const kept = named ? runs.shown.filter((run) => named.has(run.k)) : [];
+  const listed = [...runs.shown, ...runs.named].sort((a, b) => a.k - b.k);
+  const kept = named ? listed.filter((run) => named.has(run.k)) : [];
   if (kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsNamed), kept.map((run) => `- ${mdOwn(REPORT_ITEM_WORDS.run(run.k))}`
     + `${run.text ? ` · ${codeSpan(run.text)}` : run.tool ? ` · ${codeSpan(run.tool)}` : ''}`
     + `${run.outcome ? ` · ${mdOwn(run.outcome)}` : ''}${run.handling ? ` · ${mdOwn(run.handling)}` : ''}`
     + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}${seenMd(run.seen)}`).join('\n'));
-  if (runs.shown.length > kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsOnPage));
+  if (listed.length > kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsOnPage));
   return blocks;
 }
 function didSection(model, trim, notice, named = null) {
@@ -1472,6 +1495,8 @@ function notCheckedSection(model, trim, notice) {
 }
 
 function footerBlocks(model) {
+  // D171: never `footer.newer` (a newer Sonah is out): the .md is the PR comment, read by others than the person whose
+  // Sonah it is, and the CLI does not give the .md that fact.
   const { footer } = model;
   // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it.
   return ['---', [footer.provenance, footer.usage, ...footer.legend, footer.triageLegend, REPORT_FOOTER_WORDS.youMeans,
@@ -1549,10 +1574,10 @@ function composeMd(model, trim, notice, { agentPrompts = true } = {}) {
  * (report-output.js). `options` are the report model's: `title`, `sonahVersion`, and the CLI's repository and GitHub
  * facts (`repo`, `github`), from which the report model builds the code links; `folder`, the folder the code step looked
  * in, which this report names by its name alone, and `homes`, the home folder's spellings (`folderNameOf`); and `page`,
- * `{ whole }` when the same run wrote the HTML page (session-page.js `sessionPage`), so a shortened report says the page
- * holds every part only when that is so; and (D144) `agentPrompts`, false to leave out every prompt for the agent: the
- * CLI prints the report to the terminal so, since a review run in the agent's own shell would hand the agent its
- * prompts unasked. Pure: the same inputs give the same bytes.
+ * `{ whole }` when the same run wrote the HTML page (session-page.js `sessionPage`), so a shortened report says that
+ * Sonah did not shorten the page only when that is so (D176); and (D144) `agentPrompts`, false to leave out every
+ * prompt for the agent: the CLI prints the report to the terminal so, since a review run in the agent's own shell would
+ * hand the agent its prompts unasked. Pure: the same inputs give the same bytes.
  */
 export function renderReportMarkdown(session, report, options = {}) {
   const opts = plainObject(options) ? options : {};
@@ -1561,8 +1586,9 @@ export function renderReportMarkdown(session, report, options = {}) {
   // `options.homes`, as `~`), never the path: the page and the terminal name the path.
   const model = reportModel(session, plainObject(report) ? report : {}, { ...opts,
     folder: folderNameOf(opts.folder, opts.homes) });
-  // R2: the sentence that the HTML page holds every part only when this run wrote the page and the page kept every
-  // part (`options.page`: `{ whole }` from session-page.js `sessionPage`; none with `--format md`, the default).
+  // R2: the sentence that Sonah did not shorten the HTML page only when this run wrote the page and the page needed no
+  // size trim (`options.page`: `{ whole }` from session-page.js `sessionPage`; none with `--format md`, the default).
+  // D176: never that the page holds every part, since it keeps the display limits (REPORT_LIMITS) and counts the rest.
   const said = (base) => [base, ...(opts.page?.whole === true ? [REPORT_TRIM_WORDS.pageWhole] : [])].join(' ');
   // D144: `agentPrompts` false leaves out every prompt for the agent (the CLI prints the report to the terminal so).
   const how = { agentPrompts: opts.agentPrompts !== false };

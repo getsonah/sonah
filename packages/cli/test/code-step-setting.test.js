@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { CLI_SAFE_ERROR_CODES } from '../../evidence/src/ledger.js';
 import { codeStepLine, runSessionReviewCommand } from '../src/session-review-command.js';
 import { CODE_PASS_DEFAULT, CODE_PASS_SOURCES, parseSettings, readSettings, resolveCodePass, runConfigCommand,
-  settingsPath, sonahHome } from '../src/settings.js';
+  settingsPath, sonahHome, UPDATE_CHECK_SETTING_WORDS } from '../src/settings.js';
 import { doctor } from '../src/doctor.js';
 import { codeJudge, codeSession, contradictClaim, findEmptyInput, repoWith, sha256 } from './code-pass-fixture.js';
 
@@ -105,26 +105,31 @@ test('sonah config shows the setting, sets it, says how to change it, and refuse
   const box = await scratch(t);
   const path = settingsPath({ env: box.env });
   const shown = await config(box, []);
+  // D171: and the update check's line after it (d171-update-check.test.js reads its every state).
   assert.deepEqual([shown.code, shown.stdout, shown.stderr], [0, 'code-pass: on (the default). A review also runs the '
     + 'code step: a review agent reads the repository with read-only tools and reviews the session\'s change. Change it '
-    + 'with sonah config code-pass off, or for one review with --no-code-pass.\n', '']);
+    + `with sonah config code-pass off, or for one review with --no-code-pass.\n${UPDATE_CHECK_SETTING_WORDS.on(null)}\n`,
+  '']);
   await assert.rejects(stat(box.env.SONAH_HOME), { code: 'ENOENT' }, 'showing writes nothing');
   const off = await config(box, ['code-pass', 'off']);
   assert.deepEqual([off.code, off.stdout], [0, `code-pass: off (set in ${path}). A review reads and sends the session `
     + 'only. Change it with sonah config code-pass on, or for one review with --code-pass.\n']);
-  assert.equal((await config(box, [])).stdout, off.stdout);
+  assert.equal((await config(box, [])).stdout, `${off.stdout}${UPDATE_CHECK_SETTING_WORDS.on(null)}\n`);
   const on = await config(box, ['code-pass', 'on']);
   assert.match(on.stdout, new RegExp(`^code-pass: on \\(set in ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)\\. `));
   for (const argv of [['code-pass'], ['code-pass', 'yes'], ['code-pass', 'off', 'on'], ['other', 'on'], ['--code-pass']]) {
     const bad = await config(box, argv);
-    assert.deepEqual([bad.code, bad.stdout, bad.stderr], [2, '', 'usage: sonah config [code-pass on|off]\n'], argv.join(' '));
+    assert.deepEqual([bad.code, bad.stdout, bad.stderr], [2, '', 'usage: sonah config [code-pass|update-check on|off]\n'],
+      argv.join(' '));
   }
   assert.equal(await readFile(path, 'utf8'), '{"version":1,"codePass":true}\n', 'a refused command changes nothing');
-  // An unreadable file: `sonah config` says so and how to fix it (exit 1), and setting it writes it again.
+  // An unreadable file: `sonah config` says so and how to fix it (exit 1), and setting it writes it again. D171 fix
+  // round: the update check's setting is a file of its own, so its line is as before.
   await writeFile(path, '{"version":1,"codePass":maybe}\n');
   const unreadable = await config(box, []);
   assert.deepEqual([unreadable.code, unreadable.stdout], [1, `code-pass: the settings file ${path} could not be read. `
-    + 'Fix: run sonah config code-pass on or sonah config code-pass off to write it again.\n']);
+    + `Fix: run sonah config code-pass on or sonah config code-pass off to write it again.\n${
+      UPDATE_CHECK_SETTING_WORDS.on(null)}\n`]);
   assert.equal((await config(box, ['code-pass', 'off'])).code, 0);
   assert.equal(await readFile(path, 'utf8'), '{"version":1,"codePass":false}\n');
   // A folder that cannot be written: exit 3, and the fix.
@@ -137,7 +142,8 @@ test('sonah config shows the setting, sets it, says how to change it, and refuse
 
 test('the installed command: sonah config is dispatched, and its --help writes nothing', async (t) => {
   const box = await scratch(t);
-  const run = (args) => exec(process.execPath, [BIN, ...args], { env: { ...box.env, PATH: '/usr/bin:/bin' },
+  const run = (args) => exec(process.execPath, [BIN, ...args], { env: { ...box.env, PATH: '/usr/bin:/bin',
+    SONAH_NO_UPDATE_CHECK: '1' },
     cwd: box.home }).then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
   const help = await run(['config', '--help']);
   assert.equal(help.code, 0);

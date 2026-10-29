@@ -13,7 +13,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
-  RUN_FAILURE_CODES, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
+  RUN_FAILURE_CODES, SESSION_ID_PROBLEMS, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
 import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL, rechecksUnexecuted }
   from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILE_NAMES, reviewSpeedProfile, requestBoundOf } from '../../evidence/src/review-profiles.js';
@@ -60,8 +60,8 @@ export const DEFAULT_REVIEW_CONCURRENCY = 4;
 /** `sonah review --help`: the usage line, then each option group, within 80 columns. `--profile standard` is listed;
  *  the other values are experiments, accepted and not listed. */
 export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
-  'Reviews one recorded session. With no path, it reviews the latest one of this',
-  'repository.',
+  'Reviews one recorded session. With no path, it reviews the session that it',
+  'runs in (from inside Claude Code), else the latest one of this repository.',
   '',
   'options:',
   '  --repo DIR, --choose N   where to look, and the Nth session that',
@@ -326,13 +326,19 @@ export const REVIEW_FIX_WORDS = Object.freeze({
  *  --background, each outcome before the review starts is one line on stdout: the agent relays it. */
 export const SESSION_ID_WORDS = Object.freeze({
   missing: 'Sonah got an empty session id, so it reviewed nothing. Run sonah sessions to choose a session.',
-  started: (page, log) => `Sonah started a review of this session in the background. When it ends, Sonah opens ${page}. `
-    + `Its log is ${log}.`,
+  // D173: the start names the page, the Markdown report beside it (`md`, the path the detached review writes:
+  // `mdPathFor(page)`) and the log, so the agent that relays the line names where each file goes.
+  started: (page, md, log) => `Sonah started a review of this session in the background. When it ends, Sonah opens ${page} `
+    + `and writes the report for your pull request beside it: ${md}. Its log is ${log}.`,
   // With --no-open, the page is written and not opened.
-  startedNoOpen: (page, log) => `Sonah started a review of this session in the background. When it ends, its page is `
-    + `${page}. Its log is ${log}.`,
+  startedNoOpen: (page, md, log) => `Sonah started a review of this session in the background. When it ends, its page is `
+    + `${page}, and the report for your pull request is ${md}. Its log is ${log}.`,
   failed: (code, fix) => `Review could not complete: ${code}. Fix: ${fix}`,
   matches: (files) => `Recordings with this session id: ${files.join(', ')}.`,
+  // D172: after the recording's line, when a review given no path, --session, --commits or --choose took the Claude Code
+  // session that it runs in.
+  own: 'Sonah reviews the Claude Code session that this command runs in. To review another one, give its path or '
+    + '--choose N (sonah sessions lists them).',
 });
 /** What the review prints when it finds no recording for the repository (`claude`, `codex`: the folders it
  *  searched). */
@@ -391,8 +397,10 @@ export const STYLE_FIXTURES = Object.freeze({
   'ANSWER_REUSE_WORDS.session': [[1, 2], [5, 5]], 'ANSWER_REUSE_WORDS.code': [[0, 3], [3, 3]],
   'CONTINUED_RECORDING_WORDS.read': [[1], [2]], 'WINDOW_LINE_WORDS.rechecksUnexecuted': [[1], [2]],
   'SESSION_ID_WORDS.started': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
+    '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.md',
     '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.log']],
   'SESSION_ID_WORDS.startedNoOpen': [['/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.html',
+    '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.md',
     '/state/session-reviews/0a1b/background/review-2026-10-23T10-00-00-000Z.log']],
   'SESSION_ID_WORDS.failed': [['session_id_not_found', 'Check the id.']],
   'SESSION_ID_WORDS.matches': [[['/codex/sessions/2026/10/23/rollout-a.jsonl', '/codex/sessions/2026/10/23/rollout-b.jsonl']]],
@@ -479,7 +487,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   createJudge = createReviewJudge, runSession = reviewSession, loadReviews = loadDecisionReviews,
   signal = null, installSignals = true, openPage = openLocalPage, client = null, confirm = undefined,
   resolveToken = null, readCode = readCodeSnapshot, runCode = reviewCodePass, resolveSession = resolveSessionId,
-  freeze = freezeRecordings, startReview = startDetachedReview } = {}) {
+  freeze = freezeRecordings, startReview = startDetachedReview, updateNotice = async () => null } = {}) {
   let options;
   try { options = parseSessionReviewArgs(argv); }
   catch (error) {
@@ -512,6 +520,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   let admissionFailure = null;
   let latestRateLimit = null;
   let budget = null, reviewStarted = false;
+  // D171 (option A): the update check's answer, started with the review's first call to the reviewer; null until then.
+  let newerAnswer = null;
   // --code-model: the models the usage line names (the code step's and the session's); none otherwise.
   let usageModels = undefined;
   // D129's review: the store that keeps what each run cost, and the closed code this run failed with.
@@ -582,6 +592,26 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
         throw error;
       }
     }
+    // D172: with no path, no --session, no --commits and no --choose, a review run inside Claude Code reviews the session
+    // it runs in: the one recording that Claude Code's CLAUDE_CODE_SESSION_ID names, by D142's rule (its file name, any
+    // case, exactly one), and only when that recording is one of this repository's discovered sessions. It is then a
+    // review by session id (the frozen read below). Else, the newest, as before; discovery runs once. Codex's own
+    // variable is not read.
+    let discovered = null, ownSession = false;
+    if (options.session === undefined && !options.file && options.choose === undefined
+        && typeof env.CLAUDE_CODE_SESSION_ID === 'string' && SESSION_ID_SHAPE.test(env.CLAUDE_CODE_SESSION_ID)) {
+      const id = env.CLAUDE_CODE_SESSION_ID.toLowerCase();
+      let named = null;
+      try { named = await resolveSession(id, { claudeProjects: roots.claude, codexHome: roots.codex }); }
+      catch (error) { if (!SESSION_ID_PROBLEMS.includes(error?.code)) throw error; }
+      if (named?.adapter === 'claude') {
+        discovered = await discover({ repo, claudeProjects: roots.claude, codexHome: roots.codex });
+        if (discovered.sessions.some((found) => resolve(found.file) === resolve(named.file))) {
+          options.session = id;
+          ownSession = true;
+        }
+      }
+    }
     if (options.session !== undefined) {
       // D142: the recording whose file name carries the agent's own session id, or none: never the newest one. An
       // empty id (the harness gave none) reviews nothing.
@@ -609,7 +639,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
           const pid = await startReview({ argv: ['review', ...argv.filter((arg) => arg !== '--background'), '--format',
             'html', '--output', page], cwd, env, log });
           await markBackgroundStart(mark, pid);
-          stdout.write(`${(options.noOpen ? SESSION_ID_WORDS.startedNoOpen : SESSION_ID_WORDS.started)(page, log)}\n`);
+          stdout.write(`${(options.noOpen ? SESSION_ID_WORDS.startedNoOpen : SESSION_ID_WORDS.started)(page,
+            mdPathFor(page), log)}\n`);
           return 0;
         } catch (error) {
           await rm(mark.path, { force: true }).catch(() => {});
@@ -623,7 +654,7 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       if (!frozenReadValid(frozenRead)) frozenRead = null;
     } else if (options.file) file = resolve(cwd, options.file);
     else {
-      const discovered = await discover({ repo, claudeProjects: roots.claude, codexHome: roots.codex });
+      discovered ??= await discover({ repo, claudeProjects: roots.claude, codexHome: roots.codex });
       if (!discovered.sessions.length) {
         const W = NO_SESSION_WORDS;
         stdout.write(`${W.none}\n${W.searched(roots.claude, roots.codex)}\n${W.elsewhere}\n`);
@@ -638,6 +669,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       claudeProjects: roots.claude, sessionKey: 'session', ...(frozen ? { frozen } : {}) });
     const { session, hash } = loaded;
     stdout.write(`Recording: ${file} (${adapter ?? session.adapter}).\n`);
+    // D172: the review took the session it runs in, not the newest one: said once, with how to choose another.
+    if (ownSession) stdout.write(`${SESSION_ID_WORDS.own}\n`);
     // D126 (N0): a session that opens on a compaction, read with the recordings it continues, or not.
     const continued = session.continued ?? null;
     if (continued?.earlier > 0) stdout.write(`${CONTINUED_RECORDING_WORDS.read(continued.earlier)}\n`);
@@ -751,8 +784,17 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       latestRateLimit = rateLimitRecordOf(metadata?.rateLimit) ?? latestRateLimit;
       reports.getStore()?.push(metadata);
     };
-    const transport = createJudge({ config, env, timeoutMs: options.timeoutMs ?? 20 * 60_000,
-      signal: controller.signal, onResult: onResultOf(null) });
+    // D171 (option A, the owner, 2026-10-29): the update check starts with the review's first call to the reviewer: a
+    // call of a transport, the session's or the code step's, whether or not it then leaves this computer (no API key,
+    // no `claude`). An answer stored on this computer is no call, and the wrap is inside the budget's, so a call the
+    // budget refuses starts nothing. A dry run, a review that stops before its first call and a run on stored answers
+    // alone never check.
+    const asksUpdate = (send) => (...args) => {
+      newerAnswer ??= Promise.resolve().then(updateNotice).catch(() => null);
+      return send(...args);
+    };
+    const transport = asksUpdate(createJudge({ config, env, timeoutMs: options.timeoutMs ?? 20 * 60_000,
+      signal: controller.signal, onResult: onResultOf(null) }));
     // Each answer's admission: one successful attempt, its served model attested as the one requested, and the context
     // window that model's selector asks for. The code step's judge (--code-model) is admitted by the same rule against
     // its own model.
@@ -772,8 +814,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // re-asks) goes to a transport of its own — an agent-capable one — on the code model (--code-model) or, with none,
     // on the session's model, counted in the same budget (its share tallied apart) and stopped by the same signals.
     const stepConfig = codeConfig ?? config;
-    const codeJudge = snapshot ? admitted(budget.wrap(createJudge({ config: stepConfig, env,
-      timeoutMs: options.timeoutMs ?? 20 * 60_000, signal: controller.signal, onResult: onResultOf(CODE_STEP_PART) }),
+    const codeJudge = snapshot ? admitted(budget.wrap(asksUpdate(createJudge({ config: stepConfig, env,
+      timeoutMs: options.timeoutMs ?? 20 * 60_000, signal: controller.signal, onResult: onResultOf(CODE_STEP_PART) })),
     CODE_STEP_PART), selectedContextWindow(stepConfig.model)) : judge;
     if (signal?.aborted) controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
@@ -853,8 +895,15 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     if (codeAnswers)
       stdout.write(`${ANSWER_REUSE_WORDS.code(codeAnswers.reused, codeAnswers.calls + codeAnswers.reused)}\n`);
     // D97: the Markdown report for your pull request always; with --format html the page too, the report beside it.
-    // R2: the report says the page holds every part only when this run writes the page and the page kept every part.
+    // R2: the report says that Sonah did not shorten the page only when this run writes the page and the page needed no
+    // size trim (D176: the page keeps the display limits and counts what each list leaves out).
+    // D171: the page's footer says that a newer Sonah is out when the CLI's update check knows one (`updateNotice`, the
+    // entry's, started with the review's first call to the reviewer; none in a library call, nor when the review made
+    // no call): for /sonah, whose person never sees stderr. The .md never carries it: it is the PR comment, and says
+    // nothing about the reader's own Sonah.
+    const newer = options.format === 'html' && newerAnswer ? await newerAnswer : null;
     const page = options.format === 'html' ? sessionPage(session, report, { sessionHash: hash, ...linkFacts,
+      ...(newer && typeof newer.latest === 'string' ? { newerVersion: newer.latest } : {}),
       decisionReviews: answersFor(hash, await loadReviews().catch(() => new Map())) }) : null;
     // D118 (a), amended (the owner, 2026-10-19: "yes, folder name only"): the report .md names that folder by its name
     // alone, and the home folder itself as `~` (render report-model.js `folderNameOf`), by the home as the environment

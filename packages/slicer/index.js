@@ -510,8 +510,8 @@ export async function sliceLineage(allFiles, opts = {}) {
 /**
  * M33 P. The slicer's delivery side channel as the loader joins it. An arrival is kept only when its recorded recipient
  * is the recording's OWN task path (codexOwnTaskPath: the row was addressed to this helper itself); a report is marked
- * `toParent` only when its recipient is this recording's own path (the M33 F rule: the parent received it). Paths and
- * tokens stay in memory: the loader drops this before any ledger is kept.
+ * `toParent` only when its recipient is this recording's own path (the M33 F rule: the parent received it). Paths,
+ * tokens and (D175) a resume's message stay in memory: the loader drops this before any ledger is kept.
  */
 function helperDeliveriesOf(deliveries, sources) {
   const own = (source) => codexOwnTaskPath(sources[source]);
@@ -526,6 +526,11 @@ function helperDeliveriesOf(deliveries, sources) {
       .map(({ recipient, ...arrival }) => arrival),
     reports: deliveries.reports.map(({ recipient, ...report }) => ({ ...report,
       toParent: own(report.source) !== null && recipient === own(report.source) })),
+    // D175: each typed resume of a launched Claude helper and its receipt (its message in memory only).
+    resumes: deliveries.resumes,
+    // D175 fix round: each row on which a task notification reached this recording's agent as a message of its own (in a
+    // helper's own recording: a task of its own waking it).
+    wakes: deliveries.wakes,
   };
 }
 

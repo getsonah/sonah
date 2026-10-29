@@ -70,7 +70,9 @@ function assertPlaced(model, report, label) {
   assert.equal(Object.values(prompt).reduce((a, b) => a + b, 0), model.prompt.asks.length, `${label}: prompt counts`);
   const did = model.did;
   assert.equal(did.files.groups.reduce((n, g) => n + g.files.length, 0), did.files.total, `${label}: files`);
-  assert.equal(did.runs.shown.length + did.runs.quietExit0 + did.runs.cut, did.runs.total, `${label}: runs`);
+  // D169: and the runs an item names that the list leaves out, listed apart.
+  assert.equal(did.runs.shown.length + did.runs.named.length + did.runs.quietExit0 + did.runs.cut, did.runs.total,
+    `${label}: runs`);
   assert.equal(did.claims.shown.length + did.claims.more, did.claims.total, `${label}: claims`);
   const nc = model.notChecked;
   // D133's review: the first screen's lines said in it (`quiet`) are not counted.

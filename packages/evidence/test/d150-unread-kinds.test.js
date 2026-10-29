@@ -49,11 +49,17 @@ test('D150: the rows Sonah left unread are named by kind, each once; any other s
       ['hook_outputs_unread', { n: 2 }], ['edited_files_unread', { n: 1 }]]);
     assert.deepEqual(coverageCauses(report).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)), [
       '2 records have a form that Sonah cannot read',
-      'Sonah could not match 2 copies of messages sent to the agent with the records of the session',
+      // D177: what the recorder sent the agent, never your messages, and where Sonah reads yours.
+      "Sonah did not read 2 copies of what the recorder sent the agent. Sonah reads your messages from the recorder's "
+        + 'other records',
       'Sonah did not read 2 hook outputs', "Sonah did not read 1 notice of a file changed outside the agent's edits"]);
     // No other row and no other declaration: no "form" line at all.
     const only = await review(GAPS.slice(0, 3), { request_copy: 3, hook_output: 0, edited_file: 0, other: 0 });
     assert.deepEqual(coverageCauses(only), [['request_copies_unread', { n: 3 }]]);
+    // D177: one copy, in the singular.
+    const one = await review(GAPS.slice(0, 3), { request_copy: 1, hook_output: 0, edited_file: 0, other: 0 });
+    assert.deepEqual(coverageCauses(one).map(([cause, counts]) => COVERAGE_SENTENCE[cause](counts)), ['Sonah did not '
+      + "read 1 copy of what the recorder sent the agent. Sonah reads your messages from the recorder's other records"]);
     // With no count by kind (a ledger written before D150, another recorder), every declaration is summed as before.
     const before = await review(GAPS, null);
     assert.deepEqual(coverageCauses(before), [['unsupported_message', { n: 10 }]]);

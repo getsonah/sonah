@@ -182,7 +182,10 @@ export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/13';
  *  named by its absolute path, every request byte is as before. Inside /13 (D149): the record keeps the hunk ledger of
  *  the change (`manifest.hunks`: every hunk's id, numbers, rows and changed lines, the requests that showed its rows or
  *  why none did; `hunkLedger`), and every file whose hunks from the start commit Sonah holds keeps its added and removed
- *  lines, shown or not; no request byte moves. */
+ *  lines, shown or not; no request byte moves. Inside /13 (D179, 0.3.0-beta.10): after the checks, the held findings
+ *  that are one defect in several places of the change on the same bytes (`samePlacesLeads`: one key, one finding in
+ *  each place) are merged into the first; it keeps its label and gains the copies' ties and `places` (each place's
+ *  anchor, its own first); no request byte, answer key or profile moves. */
 export const CODE_PASS_VERSION = 'sonah.code-pass/13';
 /** The checking agents' requests (/1): one per finding, told to refute by tracing and to judge the title and each
  *  supporting claim; one for the held statements and the questions; a void verdict re-asked once, naming its cause.
@@ -4391,7 +4394,8 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
         if (verdict.verdict === HOLDS) {
           const finding = { origin: CODE_FINDING_ORIGIN, status: 'DECIDE', scope: CODE_FINDING_SCOPE, kind: entry.kind,
             lens: entry.lens, foundByLenses: [entry.lens], title: entry.title, claims: verdict.claims, input: entry.input,
-            trace, anchor, ...anchorFieldsOf(anchor, context), leadsFrom, receipts: codeReceiptsOf(trace),
+            trace, anchor, ...anchorFieldsOf(anchor, context, entry.anchor.path), leadsFrom,
+            receipts: codeReceiptsOf(trace),
             check: { verdict: HOLDS, explanation: verdict.explanation, receipts: verdict.receipts,
               premises: verdict.premises, ...breaks }, ...tag, ...units };
           // Published once by its identity (`PUBLISHED_AS`). One id is in one list: the first finding of that identity
@@ -4408,6 +4412,25 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
           explanation: verdict.explanation, premises: verdict.premises, ...breaks };
         withheld.push({ ...base_, reason: verdict.verdict === CANNOT_TELL ? VERIFY_CANNOT_TELL : VERIFY_REFUTED, check });
       });
+      // D179 (D156's design; D179's review): once every check is read, the held findings that are one defect in several
+      // places of the change on the same bytes (`samePlacesLeads`; a finding's place by the file of the change its
+      // anchor names, `anchorPlacesOf`) are one: the first in check order leads and keeps its check's label; each copy
+      // merges its ties into it (`mergeTies`) and its anchor joins the lead's `places`, and every key and candidate that
+      // named the copy's id names the lead's (`findingAt`, `became`). A copy goes in no list; a withheld copy stays
+      // withheld, as it was.
+      const held = [...heldOf.values()];
+      const leadAt = samePlacesLeads(held, anchorPlacesOf(toc));
+      const mergedInto = new Map();
+      held.forEach((copy, at) => {
+        if (leadAt[at] === at) return;
+        const lead = held[leadAt[at]];
+        mergeTies(lead, copy);
+        lead.places = [...(lead.places ?? [placeEntryOf(lead.anchor)]), placeEntryOf(copy.anchor)];
+        heldOf.delete(copy.id);
+        mergedInto.set(copy.id, lead.id);
+      });
+      for (const named of [findingAt, became]) for (const [k, v] of named)
+        if (mergedInto.has(v?.finding)) named.set(k, { finding: mergedInto.get(v.finding) });
       // Each held identity in the list code's label puts it in (D110, `findingConfirmed`): confirmed, or not confirmed (a
       // premise outside the repository and the language); and (D152, `findingTied`) a confirmed one tied to no written
       // promise apart, open. The label first: a finding to verify is never open.
@@ -4670,7 +4693,10 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
       ...(literalOf(base).length ? { literal: literalOf(base) } : {}),
       // D124's review: the person gave the repository that holds the working directory with --code-repo (read by its
       // own rule, never made a place again), so the readers can say so (`repositoriesGiven`).
-      ...(base.given === true ? { given: true } : {}) },
+      ...(base.given === true ? { given: true } : {}),
+      // D178: the working directory's offset in its repository, so a reader can tell a file there from the same file of
+      // another place (`changeRepeatsOf`). No request reads the base whole, so no request byte moves.
+      ...(withinOf(base) !== null ? { within: withinOf(base) } : {}) },
     // D117 amended: the session ran a shell command, so edits that helper agents or scripts after a
     // `cd` made can be missing from the change (`mayMissEdits`): every reader says so in one fixed sentence.
     ...(going && mayMissEdits(session) ? { unseenEdits: true } : {}),
@@ -4997,6 +5023,181 @@ export function codeChangeTally(codePass) {
 }
 
 /**
+ * D178: the working directory's offset in its repository, as the snapshot records it on a git base (`base.within`: cli
+ * code-snapshot.js `readCodeSnapshot`, the posix path from the repository's top folder to the working directory, '' at
+ * the top), or null: no such record (every base made before D178, a base with no git repository), or one that is not a
+ * relative path of whole names that stays in the repository. Structure only. Pure.
+ */
+export function withinOf(base) {
+  const at = plain(base) ? base.within : undefined;
+  if (typeof at !== 'string' || isAbsolute(at) || at.includes('\\')) return null;
+  return at === '' || at.split('/').every((name) => name && name !== '.' && name !== '..') ? at : null;
+}
+/** D178, D179: the place of the change that a file of the change lies in, as the change's record names it (`place`:
+ *  another place's top folder), or null for the working folder's repository. The one place rule of the files of the
+ *  change: the size line's repeats (`changeRepeatsOf`, a unit of the one tally) and the place a finding is anchored in
+ *  (`anchorPlacesOf`, the file its anchor names). Structure only. Pure. */
+const placeOfFile = (file) => (typeof file?.place === 'string' && file.place ? file.place : null);
+/** D179: the working folder's repository as a place a finding is anchored in (`anchorPlacesOf`): its files name no
+ *  place (`placeOfFile` null), and every other place's top folder is an absolute path, never empty. */
+const WORKING_FOLDER_PLACE = '';
+/**
+ * D179 (0.3.0-beta.10): the place of the change that a finding is anchored in, by the file of the change its anchor
+ * names (`anchor.path`, as the step names a file of the change): that file's place (`placeOfFile`, D178's rule: another
+ * place's top folder, or `''` for the working folder's repository). `files`: the files of the change, each `{ path,
+ * place? }` (the snapshot's files with a diff; in a record, the `codePass.files` entries that count `hunks`). Null when
+ * the anchor names no file of the change (a kind that may anchor outside it, a file outside the evaluated session): such
+ * a finding is never placed by its path's spelling, so it never merges (`samePlacesKeyOf`). Returns `(finding) => place |
+ * null`. Structure only. Pure.
+ */
+export function anchorPlacesOf(files) {
+  const byPath = new Map();
+  for (const f of list(files)) if (plain(f) && typeof f.path === 'string' && f.path && !byPath.has(f.path))
+    byPath.set(f.path, f);
+  return (finding) => {
+    const path = plain(finding) && plain(finding.anchor) ? finding.anchor.path : null;
+    const file = typeof path === 'string' ? byPath.get(path) : undefined;
+    return file === undefined ? null : placeOfFile(file) ?? WORKING_FOLDER_PLACE;
+  };
+}
+/** D179: a SHA-256 in hex, as `anchorSha256` holds one (`anchorFieldsOf`: the reader's hash of the anchor's file). */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+/** D179's review: the grounded receipts of a finding's session steps (`groundFinding`'s `{ source: 'session', eventId,
+ *  role, quote }`), each once, in one fixed order: the ties a reader reads from a finding's own trace (ask-code-links.js
+ *  `trace_quotes_ask`), which `mergeTies` does not carry. */
+const sessionTiesOf = (trace) => [...new Set(list(trace).filter((t) => plain(t) && t.source === 'session')
+  .map(({ eventId, role, quote }) => JSON.stringify([eventId ?? null, role ?? null, quote ?? null])))].sort();
+/**
+ * D179 (0.3.0-beta.10; D156's design, steps 1 and 3; D179's review): what a held finding shares with each copy of it in
+ * another place of the change that holds the same file byte for byte, as one string; null when it never merges. Null
+ * unless its check holds (`check.verdict`), its kind is a member of CODE_FINDING_KINDS (a null kind never merges), its
+ * anchor is in its closed shape, its `anchorSha256` is 64-hex (the bytes of the anchor's file on that side as the step
+ * read them; none for a file not readable, collided or ambiguous) and `placeOf` (`anchorPlacesOf`'s) gives it a place.
+ * The key: the kind; the anchor's side and its lines, equal (D179's review: lines that merely overlap are not an
+ * equivalence, so which findings joined depended on check order); the hash; the scope (outside the evaluated session or
+ * not: D113, a reader reads no tie of a finding outside it, so a copy's ties would be lost on such a lead); and the
+ * finding's own session ties (`sessionTiesOf`: a copy whose trace quotes an ask its lead's does not would lose that
+ * link). Every other tie a reader reads, `mergeTies` carries. Structure and hashes only: no word of a finding is read.
+ */
+function samePlacesKeyOf(f, placeOf) {
+  if (!plain(f) || !plain(f.check) || f.check.verdict !== HOLDS || !CODE_FINDING_KINDS.includes(f.kind)
+    || !plain(f.anchor) || anchorError(f.anchor, 'anchor') !== null || typeof f.anchorSha256 !== 'string'
+    || !SHA256_HEX.test(f.anchorSha256) || typeof placeOf(f) !== 'string') return null;
+  const { side, startLine, endLine } = f.anchor;
+  return JSON.stringify([f.kind, side, startLine, endLine, f.anchorSha256, f.outsideSession === true,
+    sessionTiesOf(f.trace)]);
+}
+/**
+ * D179 (0.3.0-beta.10; D156's design, steps 1 and 3): whether the held finding `f` and the held finding `lead` are one
+ * defect in two places of the change that hold the same file byte for byte: both have one key (`samePlacesKeyOf`), and
+ * their places are known and different (one place at two paths is never this). False when `placeOf` is not a function.
+ * Pure.
+ */
+export function samePlacesCopy(lead, f, placeOf) {
+  if (typeof placeOf !== 'function') return false;
+  const key = samePlacesKeyOf(lead, placeOf);
+  return key !== null && key === samePlacesKeyOf(f, placeOf) && placeOf(lead) !== placeOf(f);
+}
+/**
+ * D179's review: which held findings are one defect, merged into which. `held`: the held findings, one per published
+ * identity (D152's same-id merge done), in check order. The findings of one key (`samePlacesKeyOf`) are one group; a
+ * group of two or more merges into its first in check order only when each of its findings is in a place of its own. Two
+ * of one group in one place are two findings there (`PUBLISHED_AS` keeps them apart, as it does with no other place), and
+ * either could be the other place's copy: ambiguous, so none of the group merges (precision; as `mergeRepair`'s
+ * `oneToOne`). Which findings join never depends on check order; which of them leads does (it keeps its label, D110).
+ * Returns, for each finding of `held`, the index of the finding it merges into: its own when it leads or stands alone.
+ * Pure.
+ */
+export function samePlacesLeads(held, placeOf) {
+  const all = list(held);
+  const leadAt = all.map((_, at) => at);
+  if (typeof placeOf !== 'function') return leadAt;
+  const groups = new Map();
+  all.forEach((f, at) => {
+    const key = samePlacesKeyOf(f, placeOf);
+    if (key === null) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(at);
+  });
+  for (const members of groups.values())
+    if (members.length > 1 && new Set(members.map((at) => placeOf(all[at]))).size === members.length)
+      for (const at of members) leadAt[at] = members[0];
+  return leadAt;
+}
+/** D179: a place a published finding names (`places`): its anchor's file and lines, as the step names them. */
+const placeEntryOf = ({ path, side, startLine, endLine }) => ({ path, side, startLine, endLine });
+/** D178: a unit's path in its repository: for another place's unit (`place`, its repository's top folder), its absolute
+ *  path relative to that folder; for a unit of the working folder's repository, its path under the working directory
+ *  joined to the working directory's offset (`within`, `withinOf`). Null when that is not proved: an absolute path of the
+ *  working folder's, a path with a `..` name, no offset recorded, a path outside its place. Posix. String work only. */
+function repositoryPathOf(path, place, within) {
+  if (typeof path !== 'string' || !path) return null;
+  if (place !== null) {
+    if (!isAbsolute(path) || !isAbsolute(place)) return null;
+    const rel = relative(resolve(place), resolve(path));
+    if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+    return rel.split(sep).join('/');
+  }
+  if (within === null || isAbsolute(path) || path.includes('\\')) return null;
+  const names = path.split('/');
+  if (!names.every((name) => name && name !== '.' && name !== '..')) return null;
+  return within === '' ? path : `${within}/${path}`;
+}
+
+/**
+ * D178 (0.3.0-beta.10): how many units of the one tally (`codeChangeTally`) repeat a unit of another place, so a
+ * reader can count each repeat once. Two worktrees of one repository (or two clones) that hold the same files are two
+ * places, and each file is a unit in each. A unit's key: its place's start commit (the working folder's `base.commit`,
+ * another place's `commit`: git bases only), its path in its repository (`repositoryPathOf`), its record's change `type`
+ * and its head (its record's `sha256`, or `deleted`). Equal start commits and paths give equal start bytes (git's tree),
+ * and an equal head gives equal bytes now, so the two units are one change. A unit with no git base takes no part (it
+ * has no start commit, so it repeats nothing). A unit is a repeat when a unit of another place holds its key; the count
+ * does not depend on the order the units are walked.
+ * D178's review: a unit that could repeat another (its start commit is that of another place holding a unit of the
+ * tally) but has no head digest (binary, withheld, unreadable, no record) or no proved path (a working-folder file
+ * outside the working directory, any working-folder file of a record with no `base.within`) is `unproved`: the rule
+ * cannot say whether it repeats. `distinct`, the units with each repeat counted once, is a number only when no unit is
+ * unproved, so a reader that says it says no more than the rule proves; else null.
+ * `{ repeats, unproved, distinct }`; null with no tally. Structure only. Pure.
+ */
+export function changeRepeatsOf(codePass, tally = codeChangeTally(codePass)) {
+  if (!plain(tally) || !Array.isArray(tally.units)) return null;
+  const base = plain(codePass?.base) ? codePass.base : {};
+  const commitOf = (kind, commit) => (kind === GIT_BASE && typeof commit === 'string' && commit ? commit : null);
+  const commits = new Map([[null, commitOf(base.kind, base.commit)],
+    ...placesOf(base).map((p) => [p.at, commitOf(p.kind, p.commit)])]);
+  const within = withinOf(base);
+  const records = new Map(list(codePass?.files).filter((f) => plain(f) && typeof f.path === 'string')
+    .map((f) => [f.path, f]));
+  const keyed = [];
+  const placesByCommit = new Map();
+  for (const unit of tally.units) {
+    if (!plain(unit)) continue;
+    const place = placeOfFile(unit);
+    const commit = commits.get(place) ?? null;
+    if (commit === null) continue;
+    const path = repositoryPathOf(unit.path, place, within);
+    const record = records.get(unit.path);
+    const head = !plain(record) || !CODE_CHANGE_TYPES.includes(record.type) ? null : record.type === DELETED ? DELETED
+      : typeof record.sha256 === 'string' && record.sha256 ? record.sha256 : null;
+    if (!placesByCommit.has(commit)) placesByCommit.set(commit, new Set());
+    placesByCommit.get(commit).add(place);
+    keyed.push({ place, commit, key: path === null || head === null ? null
+      : JSON.stringify([commit, path, record.type, head]) });
+  }
+  const holders = new Map();
+  let repeats = 0, unproved = 0;
+  for (const { place, commit, key } of keyed) {
+    if (placesByCommit.get(commit).size < 2) continue;
+    if (key === null) { unproved++; continue; }
+    const held = holders.get(key);
+    if (!held) holders.set(key, new Set([place]));
+    else if (!held.has(place)) { held.add(place); repeats++; }
+  }
+  return { repeats, unproved, distinct: unproved === 0 ? tally.units.length - repeats : null };
+}
+
+/**
  * Where each published finding's code receipts sit (code-pass/12, F2 part A5: counted, never enforced until a blind
  * measure shows it separates false findings): `inside` — its lines lie within lines the review request showed (the
  * shown hunks' lines on its side, or a rule file shown whole) or the review agent or its repair read; `unknown` — not
@@ -5043,11 +5244,15 @@ export const ANCHOR_SPAN_LIMITS = Object.freeze({ lines: 12, lineChars: 160 });
  * charsCut }`: its lines from its start, at most ANCHOR_SPAN_LIMITS.lines, each its first ANCHOR_SPAN_LIMITS.lineChars
  * characters, the lines and characters left out counted; `anchorSha256` the file's hash on the anchor's side (a reader
  * shows the lines only when it is the file's in the record); `anchorChanged` the lines kept that the change added or
- * modified on that side (code-context.js `changedSpans`). Nothing when its file is not readable. Pure but for the
- * reader.
+ * modified on that side (code-context.js `changedSpans`). Nothing when its file is not readable. D179: the file is read
+ * under the name its grounding read it by (`readAs`: the answer's own spelling of the anchor, `groundFinding`), never
+ * again under the name the reader gave it: in a change that several places hold, the working folder's relative name of a
+ * file that another place holds too names none (D122 (d), D147), so a finding the checks held there kept no lines and
+ * no hash. Wherever both names read, they read one file (the reader's name is its own), so the fields are as before.
+ * Pure but for the reader.
  */
-function anchorFieldsOf(anchor, context) {
-  const file = context.source(anchor.path, anchor.side);
+function anchorFieldsOf(anchor, context, readAs = anchor.path) {
+  const file = context.source(readAs, anchor.side);
   if (!file || file.collided) return {};
   const lines = file.text.split('\n').slice(anchor.startLine - 1, anchor.endLine);
   const keptLines = lines.slice(0, ANCHOR_SPAN_LIMITS.lines);

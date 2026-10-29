@@ -2018,6 +2018,28 @@ export function textBeforeTruthOnly(text) {
   for (const { before, after } of Object.values(TRUTH_ONLY_READER_VERSIONS)) out = out.replaceAll(after, before);
   return out;
 }
+/** D169 (0.3.0-beta.10): the reader it moved, once from 0.3.0-beta.9 (`TRUTH_ONLY_READER_VERSIONS`): the report model
+ *  lists apart the runs an item names that the runs list leaves out (`did.runs.named`), and says Good to know folded only
+ *  when it holds an item. The page's and the story's own versions did not move; their content moves with it: those runs
+ *  listed, an empty Good to know a heading, and the page's facts about the code review under that heading.
+ *  0.3.0-beta.10 moves each reader once: another change of beta.10 that moves a reader rides this same move. */
+export const RENDER_FIX_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/8', after: 'sonah.report-model/9' }),
+});
+/** D169: a report .md or page as 0.3.0-beta.9's readers wrote it, for a report whose runs list leaves out no run an
+ *  item names and whose page has no fact about the code review: an empty Good to know put back as its empty fold and
+ *  said folded on the count line, and the versions it names set back (`RENDER_FIX_READER_VERSIONS`). Text only, as
+ *  literals. */
+export function textBeforeRenderFix(text) {
+  let out = String(text)
+    .replaceAll('<section class="part tier" id="good-to-know"><h2>Good to know (0)</h2></section>',
+      '<details class="part tier fold-tier" id="good-to-know"><summary><h2>Good to know (0)</h2></summary></details>')
+    .replaceAll('\n### Good to know (0)\n', '\n<details><summary>Good to know (0)</summary>\n\n</details>\n')
+    .replaceAll('<a href="#good-to-know">Good to know 0</a>', '<a href="#good-to-know">Good to know 0 (folded)</a>')
+    .replace(/^(Must act \d+ · Must know \d+ · Good to know 0)( ·)/m, '$1 (folded)$2');
+  for (const { before, after } of Object.values(RENDER_FIX_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
 /** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
  *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
  *  applies it first. D113 (0.3.0-beta.5): it applies `profileBeforeSessionChange` first. */

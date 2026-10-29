@@ -28,9 +28,14 @@ const argv = process.argv.slice(2);
 // table and exits 2, like any other usage error.
 const cmd = argv[0];
 
-async function versionText() {
-  const version = typeof SONAH_VERSION === 'string' ? SONAH_VERSION
+/** This Sonah's version: the build's own when it carries one, else the package's. */
+async function plainVersion() {
+  return typeof SONAH_VERSION === 'string' ? SONAH_VERSION
     : JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../../../package.json', import.meta.url), 'utf8')).version;
+}
+
+async function versionText() {
+  const version = await plainVersion();
   const build = typeof SONAH_BUILD === 'string' ? SONAH_BUILD : '';
   return build ? `${version} (${build})` : version;
 }
@@ -65,12 +70,23 @@ if (cmd === 'help' || (cmd !== 'review' && (argv.includes('--help') || argv.incl
   process.exit(0);
 }
 
+// D171 (the owner, 2026-10-28): the update notice (update-check.js). Made here, the one place with the real clock and
+// the real request, and handed to `review` and `doctor` as an input (`updateNotice`), which start it (option A, the
+// owner, 2026-10-29): the review with its first call to the reviewer, doctor once its options are read, so neither
+// waits for it. Only when the command started it is the line written on stderr after the command's own output
+// (doctor's is a line of its own output), and only then does the entry wait for it. No other command checks
+// (update-check.js UPDATE_NOTICE_COMMANDS).
+const updates = await import('../src/update-check.js');
+const updateNotice = updates.updateNoticeApplies(argv)
+  ? updates.updateCheckWhenAsked({ installed: await plainVersion().catch(() => null), env: process.env }) : null;
+const withNotice = updateNotice ? { updateNotice } : {};
+
 if (cmd === 'review') {
   // D82 step 10: one review route, the session's. The combined code review (`--base`, `--head`, and `--github`/`--pr`
   // as a code target) is removed; `--github OWNER/REPO --pr N --post-comment` names only the PR a count-only comment
   // goes to.
   const { runSessionReviewCommand } = await import('../src/session-review-command.js');
-  process.exitCode = await runSessionReviewCommand(argv.slice(1));
+  process.exitCode = await runSessionReviewCommand(argv.slice(1), withNotice);
 } else if (cmd === 'sessions') {
   const { runSessionsCommand } = await import('../src/session-discovery.js');
   process.exitCode = await runSessionsCommand(argv.slice(1));
@@ -99,16 +115,25 @@ if (cmd === 'review') {
   process.exitCode = await runSkillCommand(argv.slice(1));
 } else if (cmd === 'doctor') {
   const { runDoctorCommand } = await import('../src/doctor.js');
-  process.exitCode = await runDoctorCommand(argv.slice(1));
+  // D171: doctor says the notice as one of its own lines (doctor.js), so it gets no stderr line.
+  process.exitCode = await runDoctorCommand(argv.slice(1), withNotice);
 } else if (cmd === 'feedback') {
   const { feedbackBundle } = await import('../src/feedback.js');
   const r = await feedbackBundle({ version: await versionText() });
   console.log(`  wrote ${r.file}
   setup facts and counts only · no session text or freeform reasons · inspect before sharing`);
-  process.exit(0);
+  process.exitCode = 0;
 } else {
   console.error(usage());
   process.exit(cmd === '--help' || cmd === '-h' ? 0 : 2);
+}
+if (updateNotice?.asked()) {
+  // Doctor said it in its own lines; the check has ended either way below.
+  if (cmd !== 'doctor') await updates.writeUpdateNotice(updateNotice, process.stderr);
+  else await updateNotice();
+  // D171 fix round: a host lookup of the check that has still not answered (a resolver that hangs; an abort cannot
+  // stop it) would keep the process alive past the 2-second limit, so the entry ends the process itself.
+  if (updates.lookupPending()) await updates.endOnceWritten();
 }
 }
 
@@ -127,7 +152,8 @@ function usage() {
     return [`  ${first}`, ...more.map((line) => `      ${line}`), `${' '.repeat(31)}${words}`].join('\n');
   };
   return ['usage:',
-    row('sonah review [--repo DIR] [--choose N]', 'review the latest session in this repository'),
+    // D172: inside Claude Code, a review given no path takes the session it runs in (sessionReviewUsage says it).
+    row('sonah review [--repo DIR] [--choose N]', 'review this Claude Code session, else the latest'),
     row('sonah review <session.jsonl>', 'review one recorded session'),
     row('sonah review --session ID [--background]', 'review the session with this id'),
     row('sonah review ... --dry-run', 'show what would be reviewed; no model call'),
@@ -145,6 +171,7 @@ function usage() {
     row('sonah skill remove', 'remove the skill that sonah skill add wrote'),
     row('sonah config', 'show your settings'),
     row('sonah config code-pass off', 'turn the code step off (on turns it on)'),
+    row('sonah config update-check off', 'turn the update check off (on turns it on)'),
     row('sonah feedback', 'setup facts and recording counts; no session text'),
     row('sonah slice <session.jsonl>', 'print the parsed recording as JSON, for debugging'),
     '',
@@ -158,6 +185,10 @@ function usage() {
     '  The code step: a review agent also reads your repository with read-only',
     '  tools and reviews the session\'s change (claude-cli only). It is on unless',
     '  you run sonah config code-pass off, or add --no-code-pass to one review.',
+    '  Once a day at most, with a review\'s first call to the reviewer and in',
+    '  sonah doctor, Sonah asks npm\'s registry for its latest version and says',
+    '  when a newer one is out. It never installs anything. sonah config',
+    '  update-check off, or SONAH_NO_UPDATE_CHECK=1, turns it off.',
     '  sonah review --help lists the review options.'].join('\n');
 }
 

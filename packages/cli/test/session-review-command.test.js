@@ -446,7 +446,7 @@ test('D69 f (g) an answer recorded with `sonah decision` is shown under its deci
   const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
   const { stdout } = await promisify(execFile)(process.execPath, [BIN, 'decision', 'change', hash, short, '--report', report,
     '--reason', 'Read the other file.'], { cwd: input.directory,
-    env: { PATH: '/usr/bin:/bin', HOME: input.home, SONAH_HOME: input.env.SONAH_HOME } });
+    env: { PATH: '/usr/bin:/bin', HOME: input.home, SONAH_HOME: input.env.SONAH_HOME, SONAH_NO_UPDATE_CHECK: '1' } });
   assert.equal(stdout, `recorded: change ${short}\n`);
   const after = await page('after.html');
   assert.match(after, /<p class="note answer"><span class="label">Your answer:<\/span> You asked to change it\. <span class="answer-reason">Read the other file\.<\/span><\/p>/);

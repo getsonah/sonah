@@ -38,7 +38,7 @@ async function refusedCli(args, { cwd, env }) {
 }
 
 const envOf = ({ home }, extra = {}) => ({ HOME: home, SONAH_HOME: join(home, '.sonah'), PATH: '/usr/bin:/bin',
-  ...extra });
+  SONAH_NO_UPDATE_CHECK: '1', ...extra });
 const refusedLines = (folder) => `${WORKING_FOLDER_WORDS.refused(folder)}\nFix: ${WORKING_FOLDER_WORDS.fix}\n`;
 
 test('a refused working folder: the review names it, says the system refused access, gives the fix, exits 2',

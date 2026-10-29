@@ -40,7 +40,8 @@ const result = (id, content) => ({ type: 'user', message: { role: 'user', conten
 /** The typed `/name` row, as 2.1.308 records a skill's command: the message element, then the name element. */
 const command = (name) => ({ type: 'user', origin: { kind: 'human' }, message: { role: 'user',
   content: `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>` } });
-/** The same command as 2.1.255 and later record it on an `isMeta` row: only the recorder's command elements. */
+/** An `isMeta` row of only the recorder's command elements, Sonah's name in it: a command the harness wrote, the
+ *  harness's since D170 (`meta_command`; M34 read it as the person's command). */
 const metaCommand = (name) => ({ type: 'user', isMeta: true, message: { role: 'user',
   content: `<command-name>/${name}</command-name>\n<command-message>${name}</command-message>\n<skill-format>true</skill-format>` } });
 const LINE = 'Sonah started a review of this session in the background. When it ends, Sonah opens /s/review.html.';
@@ -123,12 +124,19 @@ test('D142: by the recorded command name only: another command stays an ask, and
     assert.deepEqual(asks(typed.ledger).map(([, text]) => text), ['Fix the parser.', '/sonah please']);
   });
 
-test('D142: the isMeta form of the command (Claude Code 2.1.255 and later) is left out the same way', async () => {
-  const { ledger, read } = await slice(chain(ask('Fix the parser.'), said('Fixed.'), ...sonahTurn('sonah', metaCommand)));
-  assert.deepEqual(asks(ledger), [[1, 'Fix the parser.']]);
-  assert.deepEqual(said_(ledger), ['Fixed.']);
-  assert.equal(leftOut(read), 5);
-});
+// D170 (the owner, 2026-10-28, the broad form) changed this test deliberately. It read: "the isMeta form of the command
+// (Claude Code 2.1.255 and later) is left out the same way" (no ask, 5 rows left out). An isMeta command row is now the
+// harness's (`meta_command`): an isMeta command row is a command the harness wrote, and the person's typed `/sonah` is
+// the `origin: human` row above. So it is no ask and opens no Sonah turn, and the agent's words after it are read as the
+// turn's they are in.
+test('D142 and D170: an isMeta row of the command elements, Sonah\'s name too, is the harness\'s and opens no Sonah turn',
+  async () => {
+    const { ledger, read } = await slice(chain(ask('Fix the parser.'), said('Fixed.'), ...sonahTurn('sonah', metaCommand)));
+    assert.deepEqual(asks(ledger), [[1, 'Fix the parser.']]);
+    assert.deepEqual(said_(ledger), ['Fixed.', LINE]);
+    assert.equal(leftOut(read), 0);
+    assert.equal(ledger.capture.labels.human, 1);
+  });
 
 test('D142: from the frozen bytes: a recording that ends at the /sonah row leaves that row out, and nothing before it',
   async () => {

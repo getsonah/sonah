@@ -83,8 +83,9 @@ export function startsWithElement(text) {
 
 /**
  * M34 labels (C-02 "Slice-time labels"). The elements Claude Code writes a prompt command's invocation row as — its
- * name, its message, the arguments the human typed and (2.1.255 and later, where the row is `isMeta` and records no
- * arguments) its skill format. The recorder's own structured format, read as structure: a closed list, compared exactly.
+ * name, its message, the arguments the human typed and (2.1.255 and later, on the `isMeta` row of a command the harness
+ * wrote, which records no arguments; D170) its skill format. The recorder's own structured format, read as structure: a
+ * closed list, compared exactly.
  */
 export const RECORDER_COMMAND_ELEMENTS = Object.freeze(['command-name', 'command-message', 'command-args', 'skill-format']);
 

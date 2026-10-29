@@ -102,7 +102,9 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  Must act's heading counting its own; a decision that the first part keeps has its line at its place in the second
  *  (`trailAboveHtml`); an open group folds its decisions tagged Good to know under one counted line after its Must ones
  *  (`trail-more`); a change of approach's reading of why is a line of its own (`review-why`). Three style rules more,
- *  which every page carries. */
+ *  which every page carries. D171 (the owner, 2026-10-28; no move of this reader, as D169's): after the line that names
+ *  Sonah, the footer says that a newer Sonah is out when the report model has it (`footer.newer`); a page made with no
+ *  such fact is as before, byte for byte. */
 export const PAGE_VERSION = 'sonah.session-page/46';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
@@ -114,7 +116,8 @@ const [SYSTEM] = PAGE_THEMES;
  *  keep their summary only, then those of Must know and Must act, then the lists of what the agent did and the messages
  *  that hold no ask are halved until empty, then the lists of what Sonah could not check — each said where it happens
  *  (D97). Only the visible lines of the items and the open start of each message that holds an ask are never cut. The
- *  report model's display bounds are `REPORT_LIMITS`. */
+ *  footer's line that a newer Sonah is out (D171) is not weighed against `maxBytes`. The report model's display bounds
+ *  are `REPORT_LIMITS`. */
 export const PAGE_LIMITS = Object.freeze({ maxBytes: 600_000, quoteChars: REPORT_LIMITS.quoteChars,
   messageChars: REPORT_LIMITS.messageChars });
 
@@ -402,9 +405,12 @@ function tiersHtml(model, trim) {
   const open = (tier) => `<section class="part tier" id="${tier.replace(/_/g, '-')}"><h2>${esc(REPORT_SECTION_WORDS
     .tier(REPORT_TIER_WORDS[tier], model.countLine.counts[tier]))}</h2>${tier === act ? note(trim.items) : ''}`
     + `${model.tiers[tier].map((item) => itemHtml(item, trim.items)).join('')}${pointersHtml(model, tier)}</section>`;
-  const gtk = `<details class="part tier fold-tier" id="good-to-know"><summary><h2>${esc(REPORT_SECTION_WORDS
-    .tier(REPORT_TIER_WORDS[good], model.tiers[good].length))}</h2></summary>${note(trim.goodToKnow)}`
-    + `${model.tiers[good].map((item) => goodToKnowHtml(item, trim.goodToKnow)).join('')}</details>`;
+  // D169: Good to know with no item is its heading, as an empty Must act is, never an empty fold.
+  const gtk = model.tiers[good].length ? `<details class="part tier fold-tier" id="good-to-know"><summary><h2>`
+    + `${esc(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[good], model.tiers[good].length))}</h2></summary>`
+    + `${note(trim.goodToKnow)}${model.tiers[good].map((item) => goodToKnowHtml(item, trim.goodToKnow)).join('')}</details>`
+    : `<section class="part tier" id="good-to-know"><h2>${esc(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[good], 0))}</h2>`
+      + '</section>';
   return { must: open(act) + open(know), good: gtk, trail: trailHtml(model, trim) };
 }
 /** D163 (L1): a tier's pointers to the decisions of the second part tagged with it, under their heading: each the
@@ -513,15 +519,22 @@ function didHtml(model, factor) {
   // Runs.
   const runsShown = did.runs.shown.slice(0, cap(did.runs.shown.length, factor));
   const runsCut = did.runs.shown.length - runsShown.length;
-  const runLine = (run) => `<li id="run-${run.k}">${run.text ? `<code>${esc(run.text)}</code>` : run.tool
-    ? `<code>${esc(run.tool)}</code>` : ''}${run.outcome ? ` · ${esc(run.outcome)}` : ''}`
+  // D169: a run listed apart says its number first, as the report names it (the list numbers its entries by place).
+  const runLine = (run, numbered = false) => `<li id="run-${run.k}">${[numbered ? esc(REPORT_ITEM_WORDS.run(run.k)) : null,
+    run.text ? `<code>${esc(run.text)}</code>` : run.tool ? `<code>${esc(run.tool)}</code>` : null].filter(Boolean)
+    .join(' · ')}${run.outcome ? ` · ${esc(run.outcome)}` : ''}`
     + `${run.handling ? ` · ${esc(run.handling)}` : ''}${run.item ? ` <a href="#item-${run.item}">→ item ${run.item}</a>` : ''}`
     + `${seenHtml(run.seen)}</li>`;
+  // D169: the runs that another part names and the list leaves out, after it under their sentence (the .md's label when
+  // the list shows none), whole under the size trim: an item that the page shows names each.
+  const named = did.runs.named.length ? `<p class="note">${esc(runsShown.length ? REPORT_DID_WORDS.runsNamedApart
+    : REPORT_DID_WORDS.runsNamed)}</p><ul class="rows">${did.runs.named.map((run) => runLine(run, true)).join('')}</ul>` : '';
   const runs = `<h3 class="sub-h">${esc(REPORT_SECTION_WORDS.runs)}</h3>`
-    + (did.runs.total ? `<ol class="rows runs">${runsShown.map(runLine).join('')}</ol>` : `<p class="note">${esc(REPORT_DID_WORDS.noRuns)}</p>`)
+    + (did.runs.total ? `<ol class="rows runs">${runsShown.map((run) => runLine(run)).join('')}</ol>` : `<p class="note">${esc(REPORT_DID_WORDS.noRuns)}</p>`)
+    + named
     + (did.runs.quietExit0 ? `<p class="cut">${esc(REPORT_DID_WORDS.moreRuns(did.runs.quietExit0))}</p>` : '')
-    + (did.runs.cut + runsCut ? `<p class="cut">${esc(REPORT_DID_WORDS.runsCut(runsShown.length, did.runs.cut + runsCut,
-      did.runs.cutParts.join(', ') || String(did.runs.cut + runsCut)))}</p>` : '')
+    + (did.runs.cut + runsCut ? `<p class="cut">${esc(REPORT_DID_WORDS.runsCut(runsShown.length + did.runs.named.length,
+      did.runs.cut + runsCut, did.runs.cutParts.join(', ') || String(did.runs.cut + runsCut)))}</p>` : '')
     + (did.runs.neverRan.length ? `<p class="note">${esc(REPORT_DID_WORDS.neverRan(did.runs.neverRan.join(', ')))}</p>` : '');
   // Claims.
   const claimsShown = did.claims.shown.slice(0, cap(did.claims.shown.length, factor));
@@ -563,11 +576,17 @@ function didHtml(model, factor) {
 function notCheckedHtml(model, factor) {
   const nc = model.notChecked;
   const note = factor < 1 ? `<p class="cut">${esc(REPORT_TRIM_WORDS.listsTrimmed)}</p>` : '';
-  const facts = nc.facts.slice(0, cap(nc.facts.length, factor));
+  // D169: a fact about the code review (its `group` 'code') is under that heading, with its lines and the withheld
+  // fold, as the .md has it (session-story.js `notCheckedSection`); the session review's under its own.
+  const factsOf = (group) => {
+    const all = nc.facts.filter((f) => (f.group === 'code') === (group === 'code'));
+    const shown = all.slice(0, cap(all.length, factor));
+    return (shown.length ? `<ul class="rows">${shown.map((f) => `<li>${partsHtml(f.parts)}</li>`).join('')}</ul>` : '')
+      + (all.length > shown.length ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS.rowsNotShown(all.length
+        - shown.length))}</p>` : '');
+  };
   const withheld = nc.withheld.slice(0, cap(nc.withheld.length, factor));
-  const factsHtml = facts.length ? `<ul class="rows">${facts.map((f) => `<li>${partsHtml(f.parts)}</li>`).join('')}</ul>` : '';
-  const code = nc.code.length ? `<h3 class="sub-h">${esc(REPORT_NOT_CHECKED_WORDS.codeReview)}</h3>`
-    + nc.code.map((line) => `<p class="note">${partsHtml(line)}</p>`).join('') : '';
+  const codeFacts = nc.facts.some((f) => f.group === 'code');
   const withheldHtml = nc.withheldTotal ? `<details class="fold"><summary>${esc(REPORT_SECTION_WORDS.withheld(nc.withheldTotal))}`
     + `</summary><ul class="rows">${withheld.map((w) => `<li>${w.what ? `<span class="label">${esc(w.what)}</span> ` : ''}`
       + `${partsHtml(w.words)}${w.outside ? ` · ${esc(w.outside)}` : ''}${w.why ? ` · ${esc(w.why)}` : ''}`
@@ -575,19 +594,24 @@ function notCheckedHtml(model, factor) {
         .checkSaid)}</span> ${partsHtml(w.check)}` : ''}</li>`).join('')}</ul>`
     + (nc.withheldTotal > withheld.length ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS.rowsNotShown(nc.withheldTotal
       - withheld.length))}</p>` : '') + '</details>' : '';
-  const cut = nc.facts.length - facts.length;
+  const code = nc.code.length || codeFacts || nc.withheldTotal ? `<h3 class="sub-h">${esc(REPORT_NOT_CHECKED_WORDS
+    .codeReview)}</h3>${nc.code.map((line) => `<p class="note">${partsHtml(line)}</p>`).join('')}${factsOf('code')}`
+    + withheldHtml : '';
   return `<details class="card-ui part fold-part" id="not-checked"><summary class="card-bar"><h2>`
     + `${esc(REPORT_SECTION_WORDS.notCheckedCounted(nc.total))}</h2></summary><div class="content">${note}`
     // D133 (R2): the first screen's lines about what Sonah could not check, word for word, first.
     + (nc.quiet.length ? `<ul class="rows quiet">${nc.quiet.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
     + `<h3 class="sub-h">${esc(REPORT_NOT_CHECKED_WORDS.sessionReview)}</h3><p class="note">${esc(nc.lead)}</p>`
-    + factsHtml + (cut ? `<p class="cut">${esc(REPORT_NOT_CHECKED_WORDS.rowsNotShown(cut))}</p>` : '')
-    + code + withheldHtml
+    + factsOf('session') + code
     + [...nc.unreadAsks, ...nc.unreadRows].map((line) => `<p class="note">${esc(line)}</p>`).join('')
     + '</div></details>';
 }
 
 // ---- the footer -----------------------------------------------------------------------------------------------------
+
+/** D171: the footer's line that a newer Sonah is out, or nothing. Its bytes are not counted against `maxBytes`
+ *  (`sessionPage`), so the page chooses what it leaves out as it would with no such line. */
+const newerHtml = (footer) => (footer.newer ? `<p>${esc(footer.newer)}</p>` : '');
 
 function footerHtml(model) {
   const { footer } = model;
@@ -598,8 +622,9 @@ function footerHtml(model) {
       + `<p>${esc(REPORT_FOOTER_WORDS.answerIntro)} ${esc(REPORT_FOOTER_WORDS.answerParts)}</p>`
       + `<p class="cmd"><code>${esc(REPORT_FOOTER_WORDS.answerCommand(footer.sessionHash))}</code></p>`
       + `<p>${esc(REPORT_FOOTER_WORDS.answerReport)}</p></details>` : '';
-  // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it.
-  return `<footer class="foot"><p class="gen">${esc(footer.provenance)}</p>`
+  // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it. D171: before it,
+  // the line that a newer Sonah is out, when the model has it (the CLI's update check knew one).
+  return `<footer class="foot"><p class="gen">${esc(footer.provenance)}</p>${newerHtml(footer)}`
     + (footer.usage ? `<p>${esc(footer.usage)}</p>` : '')
     + footer.legend.map((line) => `<p>${esc(line)}</p>`).join('')
     // D133 (R2): said once here, in the legend, for every message whose asks the page marks.
@@ -836,18 +861,22 @@ export function renderSessionPage(session, report, options = {}) {
   return sessionPage(session, report, options).html;
 }
 
-/** The page (`renderSessionPage`) and whether it kept every part: `{ html, whole }`, `whole` false when the page had to
- *  leave something out to fit `PAGE_LIMITS.maxBytes`. The CLI passes `whole` to the Markdown report it writes beside
- *  the page. Pure. */
+/** The page (`renderSessionPage`) and whether it needed no size trim: `{ html, whole }`, `whole` false when the page had
+ *  to leave something out to fit `PAGE_LIMITS.maxBytes`. Either way the page keeps the display limits of report-model.js
+ *  REPORT_LIMITS and counts what each list leaves out (D176). The CLI passes `whole` to the Markdown report it writes
+ *  beside the page. Pure. */
 export function sessionPage(session, report, options = {}) {
   const opts = plain(options) ? options : {};
   const model = reportModel(session, plain(report) ? report : {}, opts);
   const theme = PAGE_THEMES.includes(opts.theme) ? opts.theme : SYSTEM;
+  // D171 fix round: the line that a newer Sonah is out is not weighed, so the page leaves out what it would leave out
+  // without it, `whole` is the same, and the .md made with `whole` is too; the page may pass `maxBytes` by that line.
+  const unweighed = bytes(newerHtml(model.footer));
   let html = '';
   let whole = true;
   for (const trim of compositions()) {
     html = compose(model, theme, trim);
-    if (bytes(html) <= PAGE_LIMITS.maxBytes) break;
+    if (bytes(html) - unweighed <= PAGE_LIMITS.maxBytes) break;
     whole = false;
   }
   return { html, whole };

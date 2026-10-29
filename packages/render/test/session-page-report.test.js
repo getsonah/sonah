@@ -173,7 +173,7 @@ test('D97 (14): a page past its bound folds the evidence first, then cuts the li
   assert.ok(untrimmed.did.settled.length === 3001, 'the model keeps every row; the page trims what it shows');
   const html = renderSessionPage(session, report, repoFacts());
   assert.ok(Buffer.byteLength(html, 'utf8') <= PAGE_LIMITS.maxBytes);
-  // R2: the page says it left something out, so the .md beside it never says that the page holds every part.
+  // R2: the page says it left something out, so the .md beside it never says that Sonah did not shorten the page.
   assert.deepEqual([sessionPage(session, report, repoFacts()).html === html, sessionPage(session, report, repoFacts()).whole],
     [true, false]);
   const model = reportModel(session, report, repoFacts());

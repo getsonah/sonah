@@ -16,13 +16,17 @@ const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
 // The failure contract. The first audit found garbage input producing a raw stack trace and exit 0
 // — a failure reporting success, in a tool whose thesis is that silent false-negatives kill.
 async function run(...args) {
-  try { const r = await exec('node', [BIN, ...args]); return { code: 0, ...r }; }
+  // D171: no test reaches npm's registry: the update check is off in every run of the entry.
+  try {
+    const r = await exec('node', [BIN, ...args], { env: { ...process.env, SONAH_NO_UPDATE_CHECK: '1' } });
+    return { code: 0, ...r };
+  }
   catch (e) { return { code: e.code, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }; }
 }
 
 /** Same, but sealed: its own HOME, and a PATH with no `gh`, `claude` or `codex` on it. */
 async function runSealed(args, { home, cwd = home }) {
-  const options = { cwd, env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin' },
+  const options = { cwd, env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin', SONAH_NO_UPDATE_CHECK: '1' },
     timeout: 30_000, killSignal: 'SIGKILL' };
   try { const r = await exec(process.execPath, [BIN, ...args], options); return { code: 0, ...r }; }
   catch (e) { return { code: e.killed ? 'timeout' : e.code, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }; }
@@ -150,7 +154,8 @@ test('every retired legacy command is a usage error that runs nothing', async (t
 function runWithInput(args, input, { home }) {
   return new Promise((done) => {
     const child = spawn(process.execPath, [BIN, ...args], { cwd: home,
-      env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin' }, stdio: ['pipe', 'pipe', 'pipe'] });
+      env: { HOME: home, SONAH_HOME: home, PATH: '/usr/bin:/bin', SONAH_NO_UPDATE_CHECK: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = '', writeError = null;
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });

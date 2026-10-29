@@ -16,6 +16,7 @@ import { PROBE_REQUEST, probeOutcome } from './review-probe.js';
 import { CODE_PASS_DEFAULT, codePassSettingLine, readSettings, settingsPath } from './settings.js';
 import { commitLinkFacts, commitLinkStatus } from './agent-session-hook.js';
 import { skillDoctorLines } from './skill.js';
+import { UPDATE_NOTICE_WORDS } from './update-check.js';
 
 const execute = promisify(execFile);
 // Node's requirement is the package engines value; timeout bounds are Node's timer range.
@@ -214,16 +215,22 @@ export async function commitLinkLine({ cwd = process.cwd(), git } = {}) {
 }
 
 /** One explicit doctor invocation. With --no-probe, no model is created. Injected boundaries
- * let synthetic tests check every failure without using the user's providers or settings.
+ * let synthetic tests check every failure without using the user's providers or settings. D171: `updateNotice`, the
+ * CLI's update check (update-check.js `updateCheckWhenAsked`), started once the options are read, gives `{ installed,
+ * latest }` when a newer Sonah is known; none is given to a library call, which makes no request.
  */
 export async function doctor(options = {}, { env = process.env, home = env.HOME ?? homedir(),
   nodeVersion = process.versions.node, runCli = execute, createJudge = createReviewJudge,
-  adapters = detectAdapters, onProbe = () => {}, commitLink = commitLinkLine, cwd = process.cwd() } = {}) {
+  adapters = detectAdapters, onProbe = () => {}, commitLink = commitLinkLine, cwd = process.cwd(),
+  updateNotice = async () => null } = {}) {
   const selected = parseDoctorArgs([
     ...('probe' in options && !options.probe ? ['--no-probe'] : []),
     ...['backend', 'model', 'effort'].flatMap((key) => options[key] === undefined ? [] : [`--${key}`, options[key]]),
     ...(options.timeoutMs === undefined ? [] : ['--timeout', String(options.timeoutMs)]),
   ], env);
+  // D171 (option A, the owner, 2026-10-29): the update check starts once doctor's options are read (a usage error,
+  // refused above, never starts it), and runs beside doctor's own checks.
+  const newerAnswer = Promise.resolve().then(updateNotice).catch(() => null);
   const attention = [], lines = [];
   const version = cliVersionOf(nodeVersion);
   const node = { state: version && Number(version.split('.')[0]) >= MIN_NODE_MAJOR ? 'ok' : 'unsupported', version };
@@ -360,10 +367,15 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
     lines.push(link.line);
     if (link.attention) attention.push('commit_link');
   }
+  // D171 (the owner, 2026-10-28): a newer Sonah is said in one line, before the last; it never needs attention, since
+  // this Sonah still runs.
+  const newer = await newerAnswer;
+  if (newer) lines.push(UPDATE_NOTICE_WORDS.doctor(newer.latest, newer.installed));
   lines.push(attention.length ? `needs attention: ${attention.join(', ')}` : 'Local review setup checked.');
   return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth,
     login: login.fact, agentOptions, safeMode, codex, model, adapters: found, settings,
-    commitLink: link ? { state: link.state, route: link.route } : null } };
+    commitLink: link ? { state: link.state, route: link.route } : null,
+    newer: newer ? { installed: newer.installed, latest: newer.latest } : null } };
 }
 
 export async function runDoctorCommand(argv, { stdout = process.stdout, stderr = process.stderr, env = process.env,

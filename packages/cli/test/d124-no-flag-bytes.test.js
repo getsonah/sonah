@@ -26,7 +26,7 @@ import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
-import { textBeforeAgentPrompt, textBeforeTruthOnly } from '../../evidence/test/m33-integration-fixture.js';
+import { textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix } from '../../evidence/test/m33-integration-fixture.js';
 import { CODE_BRIEFS_ABSOLUTE, CODE_REVIEW_SYSTEM, CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_VERIFY_SYSTEM,
   CODE_BATCH_VERIFY_SYSTEM, CODE_ACCOUNT_SYSTEM } from '../../evidence/src/code-pass.js';
 
@@ -148,7 +148,8 @@ async function digestsOf(t, shape) {
   // the tree before D124 named, so a new version moves no digest. D144 (0.3.0-beta.7) rendered back first
   // (`textBeforeAgentPrompt`): each prompt for the agent's fold, and the readers' versions it moved. D152 (0.3.0-beta.9)
   // rendered back before that (`textBeforeTruthOnly`): the paragraph on how the code review works, and the model's
-  // version.
+  // version. D169 (0.3.0-beta.10) rendered back first of all (`textBeforeRenderFix`, before the order is put back,
+  // which reads Good to know's fold): an empty Good to know's fold and "(folded)", and the model's version.
   const before = (text) => textBeforeAgentPrompt(textBeforeTruthOnly(text)).replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
     .replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '')
     .replace(/<p>In this run, Sonah made [^<]*<\/p>/g, '').replace(/In this run, Sonah made [^\n]*  \n/g, '')
@@ -189,8 +190,8 @@ async function digestsOf(t, shape) {
   return { read: read.map(([, options]) => Object.keys(options).sort()),
     given: [JSON.stringify(report), ...requests].some((text) => text.includes('"given"')),
     requests: digest(named(requests.join('\n'))),
-    md: digest(named(before(mdOrder(unlocatedBack(await readFile(join(run, 'story.md'), 'utf8')))))),
-    page: digest(named(before(pageOrder(renderSessionPage(session, report, { folder: recorded }))))),
+    md: digest(named(before(mdOrder(textBeforeRenderFix(unlocatedBack(await readFile(join(run, 'story.md'), 'utf8'))))))),
+    page: digest(named(before(pageOrder(textBeforeRenderFix(renderSessionPage(session, report, { folder: recorded })))))),
     labels: calls.map((r) => r.label ?? null), absolute };
 }
 

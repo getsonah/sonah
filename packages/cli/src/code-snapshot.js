@@ -1257,8 +1257,13 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
     ...(place.given === true ? { given: true } : {}) }));
   const folderRecords = [...folders].map(([at, written]) => ({ at, written }))
     .sort((a, b) => b.written - a.written || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // D178: with a git base, `within`, the working directory's offset in its repository (posix, '' at its top folder;
+  // `gitTop` holds the working directory's real path inside it), so a reader can tell a file of the working folder from
+  // the same file of another place (evidence code-pass.js `changeRepeatsOf`). No request reads it.
+  const within = gitBase ? relative(gitBase.top, realRoot).split(sep).join('/') : null;
   const base = { ...(gitBase ? { kind: GIT_BASE, commit: gitBase.commit, how: gitBase.how, outside,
-    changedOutside, written } : { kind: RECORDED_EDITS_BASE, written }),
+    changedOutside, written, ...(within !== null && within !== '..' && !within.startsWith('../') && !isAbsolute(within)
+      ? { within } : {}) } : { kind: RECORDED_EDITS_BASE, written }),
     ...(placeRecords.length ? { places: placeRecords } : {}), ...(folderRecords.length ? { folders: folderRecords } : {}),
     ...(unresolved > 0 ? { unresolved } : {}), ...(literal.length ? { literal } : {}),
     // D124's review: the person gave the working folder's own repository with --code-repo (read by its own rule).

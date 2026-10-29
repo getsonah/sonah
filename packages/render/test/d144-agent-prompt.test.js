@@ -364,8 +364,9 @@ test('D144, D161: the snapshots are pinned by their sha256, so any move of them 
   // report.md dbf9597e…, the page 6bc6f150…). D167 (the .md counts the runs and keeps the lines of the runs another
   // part names) moved report.md alone (D163: report.md 77fc995f…); the page is D163's, byte for byte. Its review (an
   // item's Where keeps its run's line too, and the command as the CLI's usage says it) moved report.md once more
-  // (D167's first build: report.md 5016914a…).
+  // (D167's first build: report.md 5016914a…). D169 (0.3.0-beta.10: the report model's version, and on the page the
+  // code review's fact under its heading) moved both once more (eb9eab3f: report.md 242275cb…, the page f4d99d56…).
   const now = (name) => sha(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8'));
-  assert.equal(now('report.md'), '242275cbaee935f54ae0cf980b8d1fae4a104847399c393a6949c584116bc076');
-  assert.equal(now('session-page-report.html'), 'f4d99d56cb1ab9cf0db760cd8bab1aaa91b00645663f929ad9c8678284005642');
+  assert.equal(now('report.md'), 'b0d502c3f70c4de953a42b65af1232c8ec18ab319ffe970ad42f120e0d63c088');
+  assert.equal(now('session-page-report.html'), 'e28e20a6bdc018652a2677144a475cde9137e6c58d6c1dd073fc1f660efececd');
 });

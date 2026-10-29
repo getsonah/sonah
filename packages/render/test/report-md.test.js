@@ -409,7 +409,7 @@ test('D97: no pings — mentions, issues and bare commit hashes in recorded and 
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/8', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/9', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });
@@ -799,8 +799,8 @@ test('D97 (4): the shortening order — messages, then Good to know\'s evidence,
   assert.match(text, /- The agent said: “Done\.”/);
 });
 
-test('R2: a shortened report says the HTML page holds every part only when the same run wrote a whole page', () => {
-  // `--format md` (the default) writes no page: "The HTML page holds every part." pointed to a page that does not exist.
+test('R2: a shortened report says that Sonah did not shorten the HTML page only when the same run wrote a whole page', () => {
+  // `--format md` (the default) writes no page: the sentence would point to a page that does not exist.
   const b = sessionBuilder();
   const log = Array.from({ length: 3000 }, (_, i) => `line ${i} of a pasted log`).join('\n');
   b.ask('I1', `Fix the parser.\n${log}`);
@@ -813,13 +813,40 @@ test('R2: a shortened report says the HTML page holds every part only when the s
   assert.ok(mdOnly.includes(`${REPORT_TRIM_WORDS.mdShortened}\n\n`), 'shortened, and said');
   assert.equal(mdOnly.includes('HTML page'), false);
   assert.equal(renderReportMarkdown(session, report, { page: { whole: false } }).includes('HTML page'), false,
-    'a page that left something out does not hold every part');
+    'a page that Sonah shortened to its size is not said to be unshortened');
   const withPage = renderReportMarkdown(session, report, { page: { whole: true } });
   assert.ok(withPage.includes(`${REPORT_TRIM_WORDS.mdShortened} ${REPORT_TRIM_WORDS.pageWhole}\n\n`), withPage.slice(0, 400));
-  assert.equal(REPORT_TRIM_WORDS.pageWhole, 'The HTML page holds every part.');
-  // The page says whether it kept every part.
+  // D176: the words say what Sonah did to the page, never that the page holds every part (it keeps the display limits).
+  assert.equal(REPORT_TRIM_WORDS.pageWhole, 'Sonah did not shorten the HTML page.');
+  // The page says whether it needed a size trim.
   assert.deepEqual(Object.keys(sessionPage(session, report, {})), ['html', 'whole']);
   assert.equal(sessionPage(session, report, {}).whole, true);
+});
+
+test('D176: beside a whole page that caps its list of runs, a shortened .md says only that Sonah did not shorten the page', () => {
+  // A page with no size trim still keeps the display limits (REPORT_LIMITS: 40 runs, 50 claims) and counts the rest, so
+  // "The HTML page holds every part." was false of it.
+  const b = sessionBuilder();
+  const log = Array.from({ length: 3000 }, (_, i) => `line ${i} of a pasted log`).join('\n');
+  b.ask('I1', `Fix the parser.\n${log}`);
+  b.change('W1', 'src/parser.js', { after: 'export const parse = (t) => t.split("\\n").filter(Boolean);\n' });
+  const runs = REPORT_LIMITS.runs + 5;
+  for (let k = 0; k < runs; k++) b.run(`R${k}`, `npm test -- --grep "case ${k} of the parser"`, 'failed', `FAIL ${k}`);
+  b.say('F1', 'Done.', 'final');
+  const session = b.session();
+  const report = { windowResults: windowOf(session), sessionReview: 'complete', coverage: 'complete',
+    requirements: [{ text: 'fix', instruction: r('instruction', 'I1', 'Fix the parser.'), status: 'not-done',
+      shortfall: r('commentary', 'F1', 'Done.') }] };
+  const page = sessionPage(session, report, {});
+  assert.equal(page.whole, true, 'no size trim');
+  // The page caps its list of runs and counts the rest.
+  assert.equal([...page.html.matchAll(/<li id="run-\d+">/g)].length, REPORT_LIMITS.runs);
+  assert.ok(page.html.includes(escapeHtml(REPORT_DID_WORDS.runsCut(REPORT_LIMITS.runs, 5, '5 failed'))));
+  const text = renderReportMarkdown(session, report, { page: { whole: page.whole } });
+  assert.ok(bytes(text) <= REPORT_MD_LIMITS.maxBytes);
+  assert.ok(text.includes(`${REPORT_TRIM_WORDS.mdShortened} ${REPORT_TRIM_WORDS.pageWhole}\n\n`), text.slice(0, 400));
+  assert.equal(text.includes('holds every part'), false);
+  assert.equal(text.split(REPORT_TRIM_WORDS.pageWhole).length - 1, 1, 'said once');
 });
 
 test('D97: a decision with no words of the agent linked shows no line about its words; silence is never inferred', () => {

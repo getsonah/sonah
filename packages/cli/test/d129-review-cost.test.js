@@ -164,9 +164,9 @@ test('D129: the page and the .md say the cost right after the line that names So
     + 'tokens and 6 output tokens in 2 minutes. Your seven-day usage went from 20% to 21% of its limit.';
   const report = { windowResults: [], instrument: { usage } };
   const page = sessionPage(codeSession(), report, { sonahVersion: '0.9.0' }).html;
-  assert.ok(page.includes(`<p class="gen">Sonah 0.9.0 · sonah.report-model/8</p><p>${words}</p>`));
+  assert.ok(page.includes(`<p class="gen">Sonah 0.9.0 · sonah.report-model/9</p><p>${words}</p>`));
   const md = renderReportMarkdown(codeSession(), report, { sonahVersion: '0.9.0' });
-  assert.ok(md.includes(`Sonah 0.9.0 · sonah.report-model/8  \n${words}  \n`));
+  assert.ok(md.includes(`Sonah 0.9.0 · sonah.report-model/9  \n${words}  \n`));
   const none = { windowResults: [] };
   assert.doesNotMatch(sessionPage(codeSession(), none, { sonahVersion: '0.9.0' }).html, /In this run/);
   assert.doesNotMatch(renderReportMarkdown(codeSession(), none, { sonahVersion: '0.9.0' }), /In this run/);

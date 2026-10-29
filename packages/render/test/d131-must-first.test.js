@@ -77,11 +77,13 @@ function reviews() {
 const text = (html) => html.replace(/<[^>]*>/g, '').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<')
   .replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 /** The count line's numbers, from its text: each tier's count, (D161) the agent's decisions and their Must tags, and the
- *  prompt's parts. */
+ *  prompt's parts. D169: Good to know is said folded exactly when it holds an item. */
 function countLineOf(line) {
-  const m = /^Must act (\d+) · Must know (\d+) · Good to know (\d+) \(folded\)(?: · (\d+) decisions?(?: \(([^)]*)\))?)? · Your prompt: (.*)$/
+  const m = /^Must act (\d+) · Must know (\d+) · Good to know (\d+)( \(folded\))?(?: · (\d+) decisions?(?: \(([^)]*)\))?)? · Your prompt: (.*)$/
     .exec(line);
   assert.ok(m, line);
+  assert.equal(m[4] !== undefined, Number(m[3]) > 0, `folded iff it holds an item: ${line}`);
+  m.splice(4, 1);
   const tag = (word) => Number(new RegExp(`(\\d+) ${word}`).exec(m[5] ?? '')?.[1] ?? 0);
   return { act: Number(m[1]), know: Number(m[2]), good: Number(m[3]), decisions: Number(m[4] ?? 0),
     tagged: [tag('Must act'), tag('Must know')], parts: m[6] };
@@ -167,7 +169,8 @@ function mdNumbers(md) {
   const at = (re) => { const m = re.exec(md); assert.ok(m, String(re)); return m; };
   const actH = at(/^### Must act \((\d+)\)$/m), knowH = at(/^### Must know \((\d+)\)$/m);
   const promptH = at(/^(?:### |<details><summary>)(Your prompt \([^\n]*\))(?:<\/summary>)?$/m);
-  const goodH = at(/^<details><summary>Good to know \((\d+)\)<\/summary>$/m);
+  // D169: Good to know with no item is a heading, as Must act's; with one, its fold.
+  const goodH = at(/^(?:### |<details><summary>)Good to know \((\d+)\)(?:<\/summary>)?$/m);
   const didH = md.indexOf('<details><summary>What the agent did');
   // D161: the agent's decisions, after Good to know and before your prompt, when the report holds one.
   const trailH = /^### The agent's decisions, in order \((\d+)\)$/m.exec(md);

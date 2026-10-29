@@ -30,7 +30,7 @@ const BIN = fileURLToPath(new URL('../bin/sonah.js', import.meta.url));
 const PATH = '/usr/bin:/bin';
 
 async function run(args, { home, cwd }) {
-  const options = { cwd, env: { HOME: home, SONAH_HOME: home, PATH }, timeout: 20_000,
+  const options = { cwd, env: { HOME: home, SONAH_HOME: home, PATH, SONAH_NO_UPDATE_CHECK: '1' }, timeout: 20_000,
     killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 };
   try { const r = await exec(process.execPath, [BIN, ...args], options); return { code: 0, ...r }; }
   catch (e) { return { code: e.killed ? 'timeout' : e.code, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }; }

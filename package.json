@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.9",
+  "version": "0.3.0-beta.10",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
@@ -78,6 +78,7 @@
     "packages/cli/src/session-review.js",
     "packages/cli/src/settings.js",
     "packages/cli/src/skill.js",
+    "packages/cli/src/update-check.js",
     "packages/cli/src/workflow-agents.js",
     "packages/evidence/adapters/sonah-ledger.js",
     "packages/evidence/contracts/canonical.js",

@@ -155,7 +155,7 @@ test('D97 (9): with no --output the .md goes to stdout, and no gh line is printe
   assert.equal(run.out.includes('Sonah wrote the report'), false);
 });
 
-test('R2: a shortened .md says the HTML page holds every part only when the same run wrote the page', async (t) => {
+test('R2: a shortened .md says that Sonah did not shorten the HTML page only when the same run wrote it', async (t) => {
   // --format md is the default: no page is written, so the .md must not send the reader to one.
   const repo = await repository(t);
   const session = codeSession({ askTail: `\n\n${'Keep each line of the parser short and plain. '.repeat(2000)}` });
@@ -166,7 +166,7 @@ test('R2: a shortened .md says the HTML page holds every part only when the same
   assert.ok(md.includes(REPORT_TRIM_WORDS.mdShortened), 'the long message is shortened');
   assert.equal(md.includes(REPORT_TRIM_WORDS.pageWhole), false, 'no page was written');
   await assert.rejects(stat(join(repo.out, 'alone.html')));
-  // With --format html the same run writes the page, which keeps every part: the .md beside it says so.
+  // With --format html the same run writes the page, which needed no size trim: the .md beside it says so.
   const paged = await review(repo, ['--format', 'html', '--output', join(repo.out, 'paged.html')], { session });
   assert.equal(paged.code, 0, paged.err);
   assert.equal(paged.calls.length, 0, 'every answer reused');

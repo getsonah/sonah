@@ -137,7 +137,7 @@ async function project(t, fake = {}) {
   await writeFile(join(bin, 'claude'), FAKE(log, fake), { mode: 0o700 });
   const runEnv = { HOME: home, SONAH_HOME: join(dir, 'sonah-home'), CODEX_HOME: join(dir, 'codex'),
     SONAH_CLAUDE_PROJECTS: join(dir, 'claude-projects'), PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
-    LANG: 'C.UTF-8', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+    LANG: 'C.UTF-8', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', SONAH_NO_UPDATE_CHECK: '1' };
   return { dir, repo, recording, env: runEnv, log };
 }
 

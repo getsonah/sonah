@@ -36,7 +36,7 @@ import { statusUncovered } from '../evidence/src/status-fact.js';
 import { askSourceOf, actorOf, SESSION_ACTORS } from '../evidence/src/code-context.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen, findingConfirmed,
   premiseConfirms, premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
-  placesOf } from '../evidence/src/code-pass.js';
+  placesOf, changeRepeatsOf } from '../evidence/src/code-pass.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound, findingClaims, withheldWhy,
   codeNoFindingLine, codeStepWithheld, codeUnseenFiles, codeUnseenReadByChecks, codeQuestionsLine, codeBaseLine,
   codeHowLine, codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, CODE_REPORT_LIMITS,
@@ -132,8 +132,18 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  review's reading of why (`reviewWhy`).
  *  D167 (the owner, 2026-10-28; it rides /8 too): `did.runs.parts`, every run's result part counted, which the .md says
  *  in place of its list of runs; nothing else moves, and the page does not read it.
+ *  /9 (D169, 0.3.0-beta.10's one move of this reader): `did.runs.named`, the lines of the runs that an item names and
+ *  the list leaves out (past its first 40, or a quiet exit 0), in run order; `quietExit0`, `cut`, `cutParts` and
+ *  `cutRuns` count the runs not shown without them. The count line's Good to know is `folded` only when it holds an
+ *  item. D171 (the owner, 2026-10-28; it rides /9): `footer.newer`, the line that a newer Sonah is out, from the CLI's
+ *  `newerVersion` (its update check's answer), else null; the page says it, the .md does not. With no such option,
+ *  `newer` is null and every other field is as D169's /9 had it.
+ *  D180 (the owner, 2026-10-28; it rides /9): an ask's state `notCheckedOpenTurn`, a plain not-checked ask of the
+ *  message whose turn the read left open (`storyFacts` `openTurn`), with its status word, its count-line part and one
+ *  folded line; `prompt.counts` counts it. Every other ask is as /9, and so is every review whose read leaves no turn
+ *  open but for its key `prompt.counts.notCheckedOpenTurn` (0 where nothing moves).
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/8';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/9';
 
 /**
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
@@ -320,15 +330,21 @@ function typedSpans(texts) {
  * its review's finding 3): `messages` is the recorded spans of each of your messages that holds an ask, in order; the
  * title is the first words you typed outside any wrapper (`typedSpans`), from the first such message that has them;
  * when none has, the first message read as before. Structure cannot tell a paste's wrapper from a harness's, so the
- * words inside a wrapper are never the title.
+ * words inside a wrapper are never the title. D170: `messages` holds no reply (an answer to the agent's question, by
+ * its recorded link; `headerOf` leaves them out), so a session whose asks are all in replies has no title; `replies`
+ * is the recorded spans of the replies, read only for whether one has words typed outside a wrapper. D170 (its
+ * review): the first message is read as before only when no message, reply or not, has such words; when only a reply
+ * has them there is no title, never a wrapper's line in place of the person's words.
  */
-export function titleOf(messages) {
-  const all = list(messages).map((spans) => list(spans).filter((span) => typeof span === 'string')
-    .map((raw) => raw.replace(/\r\n?/g, '\n')));
-  for (const texts of all) {
-    const typed = typedSpans(texts);
+export function titleOf(messages, replies = []) {
+  const texts = (spans) => list(spans).filter((span) => typeof span === 'string')
+    .map((raw) => raw.replace(/\r\n?/g, '\n'));
+  const all = list(messages).map(texts);
+  for (const spans of all) {
+    const typed = typedSpans(spans);
     if (typed) return titleFrom(typed);
   }
+  if (list(replies).some((spans) => typedSpans(texts(spans)))) return null;
   return titleFrom(all[0] ?? []);
 }
 function titleFrom(texts) {
@@ -617,8 +633,10 @@ const [RECHECK_MOVED, RECHECK_REAFFIRMED] = RECHECK_OUTCOMES;
  *  Pure. */
 const reaffirmedShortfall = (row) => (plain(row) && plain(row.recheck) && row.recheck.outcome === RECHECK_REAFFIRMED
   && plain(row.recheck.earlier) && plain(row.recheck.earlier.shortfall) && plain(row.shortfall) ? row.shortfall : null);
-/** An ask's place on the count line (D93 split); its links read against the report (D110's review: `askRowKind`). */
-function askState(req, report) {
+/** An ask's place on the count line (D93 split); its links read against the report (D110's review: `askRowKind`).
+ *  D180: `openTurn` is true for an ask of the message whose turn the read left open (session-story.js `storyFacts`
+ *  `openTurn`): a plain not-checked ask of it is `notCheckedOpenTurn`, and every other state is as before. */
+function askState(req, report, openTurn = false) {
   const code = askRowKind(req, report) === 'asksCodeFinding';
   if (DONE_STATUSES.includes(req.status)) return code ? 'doneCode' : 'done';
   // D153: with the after-point re-check, an ask no later window settled or one reaffirmed (`unsettledAsk`), as a partly
@@ -626,15 +644,16 @@ function askState(req, report) {
   if (unsettledAsk(req.checked)) return laterChecked('requirements', req.checked) ? 'laterWork' : 'notCheckedLater';
   if (PARTLY_STATUSES.includes(req.status)) return 'partly';
   if (NOT_DONE_STATUSES.includes(req.status)) return 'notDone';
-  return code ? 'notCheckedCode' : 'notChecked';
+  return code ? 'notCheckedCode' : openTurn ? 'notCheckedOpenTurn' : 'notChecked';
 }
 const STATE_WORD = Object.freeze({ done: 'done', doneCode: 'done', partly: 'partly', notDone: 'notDone',
-  notChecked: 'notChecked', notCheckedCode: 'notChecked', notCheckedLater: 'notCheckedLater', laterWork: 'laterWork' });
+  notChecked: 'notChecked', notCheckedCode: 'notChecked', notCheckedLater: 'notCheckedLater', laterWork: 'laterWork',
+  notCheckedOpenTurn: 'notCheckedOpenTurn' });
 /** An ask's status word by its state (`askState`): the prompt table's and the page's mark of the ask, by one map. */
 export const askStatusWord = (state) => (Object.hasOwn(STATE_WORD, state) ? REPORT_PROMPT_WORDS.status[STATE_WORD[state]]
   : undefined);
 const PROMPT_PART_ORDER = Object.freeze(['done', 'doneCode', 'partly', 'notDone', 'laterWork', 'notCheckedLater', 'notChecked',
-  'notCheckedCode']);
+  'notCheckedOpenTurn', 'notCheckedCode']);
 
 /**
  * The report rows each requirement stands for: a checklist row is its own (`checked`); a legacy requirement, grouped
@@ -683,7 +702,8 @@ function promptAsks(session, report, facts) {
       || (a.first && b.first ? a.first.span - b.first.span || a.first.from - b.first.from : 0) || a.order - b.order);
     for (const { req, located } of own) {
       const rows = rowsOf.get(req) ?? [];
-      asks.push({ n: asks.length + 1, message: message.k, req, located, rows, state: askState(req, report),
+      asks.push({ n: asks.length + 1, message: message.k, req, located, rows,
+        state: askState(req, report, message.k === facts.openTurn),
         row: rows.length ? list(report.requirements)[rows[0]] : (plain(req.checked) ? req.checked : null) });
     }
   }
@@ -748,7 +768,8 @@ function promptAsks(session, report, facts) {
  *   paths the recording does not resolve), unconfirmed, none }`; `none` (D123): with no file, which sentence says so (one of
  *   REPORT_NO_FILES_KINDS), else null; `notInChange`: the code step's
  *   writes that are no file of its change, D109), `runs` (`{ shown: [{ k, text, tool, afterEdit, outcome, handling,
- *   item, failureIndex }], total, commands, others, quietExit0, cut, cutParts, parts, neverRan, cutRuns }`: `commands` the
+ *   item, failureIndex }], named, total, commands, others, quietExit0, cut, cutParts, parts, neverRan, cutRuns }`:
+ *   `named` (D169) the lines, as `shown`'s, of the runs an item names that `shown` leaves out; `commands` the
  *   runs that are commands, as the header counts them; `others` the calls of other tools a failure row answers for;
  *   `parts` (D167) every run's result part, counted, in the words and order of `cutParts`, which the .md says in place
  *   of the list), `claims` (`{ shown: [{ anchor,
@@ -762,8 +783,8 @@ function promptAsks(session, report, facts) {
  *   line D's `{ lead, phrases, more }` when it is said here, else null), `lead`, `code` (Part lists), `facts`
  *   (`[{ group, parts, cause }]`, `cause` true on a coverage cause), `withheld` (`[{ index, what, words, why,
  *   check }]`), `withheldTotal`, `unreadAsks`, `unreadRows` (sentences), `total`.
- * - `footer`: `provenance`, `usage` (D129: what the review cost, or null), `legend` (three sentences), `triageLegend`
- *   (or null), `share`, `sessionHash` (or null).
+ * - `footer`: `provenance`, `newer` (D171: the line that a newer Sonah is out, or null), `usage` (D129: what the review
+ *   cost, or null), `legend` (three sentences), `triageLegend` (or null), `share`, `sessionHash` (or null).
  * - `placement`: `{ rows, version }`, `rows` by `source:index` (`reportPlacement`).
  */
 export function reportModel(session, report, options = {}) {
@@ -1121,7 +1142,8 @@ function runsOf(ctx) {
   runs.sort((a, b) => a.at - b.at);
   runs.forEach((run, k) => { run.k = k + 1; });
   // The runs the Runs list shows, by the call each answers for: the ones it names (every run but a quiet exit 0), the
-  // first `REPORT_LIMITS.runs` of them. A run link points only to one of these.
+  // first `REPORT_LIMITS.runs` of them. A mark's link (`seenOf`) points only to one of these; an item may name any run,
+  // and D169 lists apart each it names that these leave out (`didOf`, `runsNamedOf`).
   const showable = runs.filter(showableRun);
   const shownByCall = new Map(showable.slice(0, REPORT_LIMITS.runs).filter((run) => run.event)
     .map((run) => [run.event.id, run]));
@@ -1598,6 +1620,14 @@ const locationOf = (ctx, { path, side = 'new', startLine = null, endLine = null,
     excerpt };
 };
 const sameRange = (a, b) => a.path === b.path && a.side === b.side && a.startLine === b.startLine && a.endLine === b.endLine;
+/** D179: the places a published finding names (`places`, evidence code-pass.js: each place's anchor, the lead's own
+ *  first), each in its shape (a path, a side, whole lines), one a path, in their order; none for a record without
+ *  them. Structure only. */
+const samePlacesOf = (f) => list(f?.places).filter((p) => plain(p) && typeof p.path === 'string' && p.path
+  && ['new', 'old'].includes(p.side) && Number.isSafeInteger(p.startLine) && Number.isSafeInteger(p.endLine)
+  && p.startLine >= 1 && p.endLine >= p.startLine)
+  .filter((p, at, all) => all.findIndex((q) => q.path === p.path) === at)
+  .map(({ path, side, startLine, endLine }) => ({ path, side, startLine, endLine }));
 const anchorOf = (anchor, text) => ({ anchor, text });
 
 /** Fills an item's visible and folded fields from its rows. */
@@ -1754,6 +1784,15 @@ function finishItem(ctx, item) {
       // D152: a confirmed finding tied to no written promise says so first, in fixed words.
       if (item.kind === 'code_finding_open') evidence(null, ONE(CODE_REPORT_WORDS.openFinding));
       if (finding || plain(f.anchor)) { const w = codeWhere(f); if (w) where.push(w); }
+      // D179: a finding that several places of the change hold byte for byte (its record's `places`, the writer's
+      // merge, evidence code-pass.js `samePlacesLeads`): each other place on the Where line (no excerpt), and one fixed
+      // sentence in the evidence fold that counts the places.
+      const copies = samePlacesOf(f);
+      if (finding && copies.length > 1) {
+        for (const place of copies) if (!where.some((w) => w.path && sameRange(w, place)))
+          where.push(locationOf(ctx, place));
+        evidence(null, ONE(REPORT_ITEM_WORDS.samePlaces(copies.length)));
+      }
       if (!where.length) for (const rc of list(f.receipts).filter(plain)) {
         if (typeof rc.path === 'string' && rc.path) { where.push(locationOf(ctx, { path: rc.path, side: rc.side ?? 'new',
           startLine: rc.startLine ?? null, endLine: rc.endLine ?? null })); break; }
@@ -2186,13 +2225,15 @@ function promptOf(ctx) {
     }
     if (['partly', 'notDone', 'notCheckedLater', 'laterWork'].includes(ask.state) && itemN !== null)
       lines.push(ONE(REPORT_ITEM_WORDS.seeItem(itemN)));
-    if (ask.state === 'notChecked' || ask.state === 'notCheckedCode') {
+    if (ask.state === 'notChecked' || ask.state === 'notCheckedCode' || ask.state === 'notCheckedOpenTurn') {
       // D101: a row the quote gate lowered says which test refused its quote (its cause), with code's numbers.
       const why = checked ? checklistReasonWords(checked, 'requirement') : null;
       const reason = why ? sentence(why) : null;
       const fact = checked ? list(checked.facts).find((x) => Object.hasOwn(CHECKLIST_REQUIREMENT_FACT_WORDS, x)) : null;
       if (reason) folded.push(ONE(reason));
       else if (fact) folded.push(ONE(CHECKLIST_REQUIREMENT_FACT_WORDS[fact]));
+      // D180: what Sonah found of the turn, after the session review's own reason.
+      if (ask.state === 'notCheckedOpenTurn') folded.push(ONE(REPORT_PROMPT_WORDS.openTurn));
       // D125 amended (the owner: "go for option 3"): after the session review's reason, the code review's verdict that
       // the ask holds in the code, where Sonah found each of its quotes (the entry's grounded receipts, each place once,
       // in its order) and that Sonah did not check it, as one line. The status stays "Not checked".
@@ -2412,9 +2453,14 @@ function didOf(ctx) {
       : NO_FILES_REPOSITORY;
   // Runs.
   const { runs, showable } = ctx.runs;
-  const quietExit0 = runs.filter((run) => !showable.includes(run));
   const shown = showable.slice(0, REPORT_LIMITS.runs);
-  const cut = showable.slice(REPORT_LIMITS.runs);
+  // D169: a run that another part names (`runsNamedOf`) and that the list does not show (past its first
+  // `REPORT_LIMITS.runs`, or a quiet exit 0) is listed apart (`named`), so every run the report names has its line; the
+  // runs not shown are counted without them.
+  const namedKs = runsNamedOf(ctx);
+  const named = runs.filter((run) => namedKs.has(run.k) && !shown.includes(run));
+  const quietExit0 = runs.filter((run) => !showable.includes(run) && !named.includes(run));
+  const cut = showable.slice(REPORT_LIMITS.runs).filter((run) => !named.includes(run));
   const runLine = (run) => {
     const outcomeWords = REPORT_OUTCOME_WORDS[run.outcome.class]?.[run.outcome.form];
     const handling = run.failure ? run.failure.row.handling : null;
@@ -2507,7 +2553,8 @@ function didOf(ctx) {
     files: { groups, grouped, total: files.length, shown: Math.min(files.length, shownFiles),
       more: Math.max(0, files.length - shownFiles), outside, unresolved, unconfirmed: facts.whole.unconfirmed.length,
       outsideSession, none },
-    runs: { shown: shown.map(runLine), total: runs.length, commands: runs.filter((run) => run.command).length,
+    runs: { shown: shown.map(runLine), named: named.map(runLine), total: runs.length,
+      commands: runs.filter((run) => run.command).length,
       others: runs.filter((run) => !run.command).length, quietExit0: quietExit0.length, cut: cut.length, cutParts,
       parts, neverRan, cutRuns: cut.map((run) => run.k) },
     claims: { shown: shownClaims.map(({ statusKey, ...c }) => c), total: claims.length,
@@ -2515,6 +2562,24 @@ function didOf(ctx) {
       notChecked: { claims: notCheckedOfSource('promises'), written: notCheckedOfSource('writtenClaims') } },
     leftOut, settled,
   };
+}
+/** D169: the runs that an item or its members name, by number: the target of a Where to a run (`anchorOf`) or of a
+ *  link to one (`LINK`), `run-<k>`, in the fields the readers show (`publicItem`). Structure only: the target, never
+ *  the words. */
+const RUN_TARGET = /^run-(\d+)$/;
+function runsNamedOf(ctx) {
+  const ks = new Set();
+  const visit = (value) => {
+    if (Array.isArray(value)) { for (const x of value) visit(x); return; }
+    if (!plain(value)) return;
+    for (const target of [value.anchor, value.href]) {
+      const run = typeof target === 'string' ? RUN_TARGET.exec(target) : null;
+      if (run) ks.add(Number(run[1]));
+    }
+    for (const x of Object.values(value)) if (x !== null && typeof x === 'object') visit(x);
+  };
+  for (const item of ctx.items) visit(publicItem(item));
+  return ks;
 }
 const RESULT_PART_ORDER = Object.freeze(['ran-exit-0', 'ran-completed', 'ran-failed', 'failed-or-refused', 'did-not-run',
   'no-terminal-status', 'stopped', 'no-result', 'end-unread', 'output-no-status']);
@@ -2576,11 +2641,16 @@ function incompleteSteps(ctx) {
 
 /** A record of `triageDropped` or `filesDropped` (code-pass/10) that is a note Sonah did not use: it names an entry by
  *  its index, its cause is not `where_ungrounded` (that entry was kept without its place), and it names no `field` (that
- *  entry was kept without that text field). By structure only. */
+ *  entry was kept without that text field). D179: nor is its cause `triage_key_repeated`: an earlier note names the same
+ *  item (or file), and that note stands. Each copy of a finding that several places hold, merged into it, brings its
+ *  own, and it failed no check. A note whose key the agent repeated in its own list is such a record too, and it did
+ *  fail the shape check; the record cannot tell the two apart (one cause, one shape), so neither is counted (D179,
+ *  judgment call 6). By structure only. */
 const WHERE_UNGROUNDED = TRIAGE_ERRORS.find((cause) => cause === 'where_ungrounded');
 const ITEM_WITHHELD = TRIAGE_ERRORS.find((cause) => cause === 'item_withheld');
+const KEY_REPEATED = TRIAGE_ERRORS.find((cause) => cause === 'triage_key_repeated');
 const notUsedNote = (record) => plain(record) && Number.isInteger(record.index) && record.index >= 0
-  && record.cause !== WHERE_UNGROUNDED && !Object.hasOwn(record, 'field');
+  && record.cause !== WHERE_UNGROUNDED && record.cause !== KEY_REPEATED && !Object.hasOwn(record, 'field');
 /** A record of a text field dropped alone from a triage entry Sonah kept (code-pass/10, as built). */
 const fieldDropped = (record) => plain(record) && Number.isInteger(record.index) && record.index >= 0
   && TRIAGE_TEXT_FIELDS.includes(record.field);
@@ -2729,12 +2799,15 @@ function headerOf(ctx, prompt) {
     title = { text, parts: [S(text)], quoted: false, cut: false };
   } else {
     // Read from the recorded spans themselves (never `storyFacts`' joined text, which holds Sonah's words); D132: of
-    // each message that holds an ask, in order.
+    // each message that holds an ask, in order. D170: never of a reply (`reply`, an answer to the agent's question, by
+    // its recorded link to that question): it answers the agent, so it does not say what the session was for. The
+    // replies go apart, read only for whether one holds words typed outside a wrapper (`titleOf`).
     const spansOf = (shown) => {
       const message = facts.asks.find((m) => m.k === shown.k);
       try { return message ? session.textSpansOf(message.event, 'text') : []; } catch { return []; }
     };
-    title = titleOf(prompt.messages.map(spansOf));
+    title = titleOf(prompt.messages.filter((shown) => shown.reply !== true).map(spansOf),
+      prompt.messages.filter((shown) => shown.reply === true).map(spansOf));
   }
   // B. The size line.
   const kind = REPORT_RECORDING_KINDS[Object.hasOwn(REPORT_RECORDING_KINDS, session?.adapter) && session.adapter !== 'other'
@@ -2902,7 +2975,13 @@ function changeSizeOf(ctx) {
       removedAtLeast: false })) : null;
   // D117: how many places hold the change's files (the one tally's places with a file).
   const places = source === CHANGE_FROM_TALLY ? list(ctx.change.places).filter((p) => p.total > 0).length || 1 : 1;
-  return REPORT_HEADER_WORDS.change(files.length, lines, places);
+  // D178: and, from the one tally, how many files that is with each repeat of another place's change counted once
+  // (code-pass.js `changeRepeatsOf`), only when the rule could compare every file that could repeat (its review: else
+  // `distinct` is null and the line says no more than before). The count, the lines and the Files section stay those of
+  // every file (D118 c).
+  const distinct = (source === CHANGE_FROM_TALLY ? changeRepeatsOf(codePass, ctx.change)?.distinct : null)
+    ?? files.length;
+  return REPORT_HEADER_WORDS.change(files.length, lines, places, distinct);
 }
 
 /** The commit fact (D97): the short HEAD when every counted file of the change is committed, else how
@@ -3085,7 +3164,9 @@ function countLineOf(ctx, tiers, prompt, decisions, pointers) {
   const tagged = (item) => (item.scope?.outsideSession === true && Array.isArray(item.label)
     ? [...item.label, S(' '), S(REPORT_COUNT_WORDS.outsideLabel)] : item.label);
   return {
-    tiers: REPORT_TIERS.map((tier) => ({ tier, words: REPORT_TIER_WORDS[tier], n: counts[tier], folded: tier === GOOD_TO_KNOW })),
+    // D169: Good to know is said folded only when the report folds it: it holds an item.
+    tiers: REPORT_TIERS.map((tier) => ({ tier, words: REPORT_TIER_WORDS[tier], n: counts[tier],
+      folded: tier === GOOD_TO_KNOW && counts[tier] > 0 })),
     prompt: ctx.asks.length ? REPORT_COUNT_WORDS.prompt(prompt.parts.join(', ')) : REPORT_COUNT_WORDS.noAsk,
     outside: away ? REPORT_COUNT_WORDS.outside(away) : null,
     // D153: present only on a report the after-point re-check took an item out of Must act on.
@@ -3112,8 +3193,13 @@ function footerOf(ctx, items) {
   const hash = typeof ctx.options.sessionHash === 'string' && /^[0-9a-f]{64}$/.test(ctx.options.sessionHash)
     ? ctx.options.sessionHash : null;
   const usage = usageOf(ctx.report, ctx.options.earlierRuns);
+  // D171: the CLI's fact that a newer Sonah is out (`newerVersion`, its update check's answer), said as it is given:
+  // the version is the CLI's to compare, and an option given no version gives no line.
+  const newer = typeof ctx.options.newerVersion === 'string' && /^[0-9A-Za-z.+-]{1,40}$/.test(ctx.options.newerVersion)
+    ? ctx.options.newerVersion : null;
   return { provenance: REPORT_FOOTER_WORDS.provenance(version ?? '', REPORT_MODEL_VERSION,
     facts.repo && validSha(facts.repo.head) ? facts.repo.head.slice(0, 7) : null).replace(/^Sonah {2}/, 'Sonah '),
+  newer: newer === null ? null : REPORT_FOOTER_WORDS.newer(newer),
   usage: usage === null ? null : usage.whole ? REPORT_FOOTER_WORDS.usageRuns(usage) : REPORT_FOOTER_WORDS.usage(usage),
   legend: [REPORT_FOOTER_WORDS.legend, REPORT_FOOTER_WORDS.legendCodeReview, REPORT_FOOTER_WORDS.legendSessionReview],
   triageLegend: triaged ? REPORT_FOOTER_WORDS.triageLegend : null, share: REPORT_FOOTER_WORDS.share, sessionHash: hash };
@@ -3186,7 +3272,8 @@ const REVIEW_USAGE_RECORD = 'sonah.review-usage/1';
 function placementOf(ctx, candidates, model) {
   const rows = {};
   const unreadAsks = [], unreadRows = [];
-  const shownRuns = new Set(model.did.runs.shown.map((run) => run.failureIndex).filter((x) => x !== null));
+  const shownRuns = new Set([...model.did.runs.shown, ...model.did.runs.named].map((run) => run.failureIndex)
+    .filter((x) => x !== null));
   const shownClaims = new Set(model.did.claims.shown.map((c) => rowKey(c.source, c.index)));
   const memberOf = new Map(ctx.items.flatMap((item) => item.members.map((member) => [member.primary, item])));
   const trail = new Set(ctx.items.filter((item) => item.trail).map((item) => item.n));
@@ -3423,7 +3510,7 @@ export function visibleWords(model) {
     REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_KNOW], model.countLine.counts[MUST_KNOW]),
     REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[GOOD_TO_KNOW], model.countLine.counts[GOOD_TO_KNOW]),
     REPORT_SECTION_WORDS.did, REPORT_SECTION_WORDS.notCheckedCounted(model.notChecked.total)];
-  const footer = [model.footer.provenance, model.footer.usage ?? '', ...model.footer.legend,
+  const footer = [model.footer.provenance, model.footer.newer ?? '', model.footer.usage ?? '', ...model.footer.legend,
     ...(model.prompt.messages.length ? [REPORT_PROMPT_WORDS.coverage] : []), model.footer.triageLegend ?? '',
     model.footer.share];
   return countWords([openText(model), ...items, ...headings, ...footer].join('\n'));

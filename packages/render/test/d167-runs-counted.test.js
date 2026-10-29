@@ -147,7 +147,8 @@ test('D167: on every fixture and shortening, the .md keeps the line of exactly t
     const model = reportModel(session, shape(session), repoFacts());
     const md = renderReportMarkdown(session, shape(session), repoFacts());
     for (const k of runRefs(model).anchor) {
-      const run = model.did.runs.shown.find((x) => x.k === k);
+      // D169: a run the list leaves out is among those listed apart.
+      const run = [...model.did.runs.shown, ...model.did.runs.named].find((x) => x.k === k);
       const at = md.indexOf(`Where: ${REPORT_ITEM_WORDS.run(k)}`);
       assert.ok(at > 0, `${name}: Where: run ${k}`);
       assert.ok(md.slice(md.lastIndexOf('<a name="item-', at), at).includes(run.text ?? run.tool), `${name}: run ${k}`);

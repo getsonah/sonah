@@ -39,7 +39,7 @@ from the session or the code, and code checks each quote. There is no score and 
 npm install -g getsonah
 sonah doctor                  # checks Node, your claude login and one tiny model request
 cd ~/code/your-project
-sonah review --format html --output ~/review.html     # reviews the newest session here, opens the page
+sonah review --format html --output ~/review.html     # reviews the newest session here, opens the page, writes ~/review.md
 ```
 
 To try it without installing, run `npx getsonah doctor`. To install from a checkout instead:
@@ -93,7 +93,8 @@ gh pr comment --body-file ~/review.md                 # post the .md on your bra
 ```
 
 The page and the .md hold the same report. The .md is for a pull request comment. Sonah prints the `gh` command and
-posts nothing itself.
+posts nothing itself. `~/` is your home folder, outside the project, so the next review does not read the report as
+part of the change. A path inside the project works when `.gitignore` holds it.
 
 After you commit and push your work, the report links each place in the code to GitHub. Did you run Sonah before you
 committed? Then commit, push, and run the same command with a new `--output` file. Sonah reuses its stored answers, so
@@ -125,9 +126,13 @@ lists the messages and exit codes.
 - **With the code review (on by default):** the session's change, the files it changed, and what the code review's
   read-only agents open. They read your repository, any other git repository where the session changed a file, and
   any that you give with `--code-repo`. Turn the code review off with `--no-code-pass`, or for every review with `sonah config code-pass off`.
-- **Nothing else leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics, no update check. It
-  asks GitHub only about a pull request you name with `--github`, and posts nothing to GitHub unless you ask and
-  confirm.
+- **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics.
+  Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's public registry
+  for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`) and tells you
+  when a newer Sonah is out. That request holds no session text, path, setting or id: npm sees the request itself, from
+  your IP address, as for any package download. Sonah never installs anything. Turn the check off with
+  `sonah config update-check off` or `SONAH_NO_UPDATE_CHECK=1`; it is off when `CI` is set. Sonah asks GitHub only about
+  a pull request you name with `--github`, and posts nothing to GitHub unless you ask and confirm.
 - **Sonah masks nothing.** The page and the .md show the session as the recording holds it, secrets included. Read the
   report before you share it.
 

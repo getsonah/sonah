@@ -719,6 +719,9 @@ export const HELPER_DELIVERY_GAP_NOTES = Object.freeze({
 const HELPER_END_UNREAD = Object.freeze(['helper_end_unread', 'helper_end_unchecked']);
 /** C-03 M33 P: the exact Codex names of a send_message action (slicer helper-deliveries.js `CODEX_SEND_NAMES`). */
 const CODEX_SEND_NAMES = Object.freeze(['send_message', 'collaboration.send_message']);
+/** C-03 D175: the exact Claude Code name of the action whose typed result records the helper it resumed (slicer
+ *  events.js, the `resume` launch). */
+const CLAUDE_SEND_NAMES = Object.freeze(['SendMessage']);
 /** Internal options of `sessionFromLedger` (never part of its public shape). */
 const LAUNCH_LAYOUT = Symbol('the launch layout: every helper at its delivery, only to read commentary ids');
 const CHILD_SESSIONS = Symbol('child sessions already adapted in this review');
@@ -1653,12 +1656,16 @@ export function sessionFromLedger(ledger, options = {}) {
    */
   const pieceArrivals = new Map();        // turn -> [{ piece, delegation, row, receipt, unproven, index }]
   const provenFollowups = new Set();      // follow-ups whose delivery a valid record proves (assignmentEffectProven)
+  // D175: the Claude SendMessage actions whose resume a VALID record proves (a resume segment): their later child
+  // history is attributed, so their `childFollowupUnresolved` gap is not declared; a rejected record keeps it.
+  const resumedSends = new Set();
   const piecesOf = new Map();             // child source -> its pieces, in segment order
   for (const [child, segments] of helperRecords) {
     const pieces = segments.map((segment, k) => ({ ...segment, child, k }));
     piecesOf.set(child, pieces);
     for (const piece of pieces) {
       if (piece.delegation?.kind === 'followup') provenFollowups.add(piece.delegation);
+      if (Object.hasOwn(piece.delivery, 'action') && piece.request !== null) resumedSends.add(piece.deliveryId);
       // Where it is placed: at its receipt; at the next report (queued); else (M33 P second repair) at the end of the
       // session's last request — a block with no row.
       const at = piece.receipt ?? piece.next ?? null;
@@ -1909,10 +1916,12 @@ export function sessionFromLedger(ledger, options = {}) {
     }
     const cuts = cutsOf.get(piece.child);
     const prefix = CHILD_PREFIX(transfer.childId);
-    // A piece another assignment delivered is that assignment's (C-06 part); a Claude helper's work after its own later
-    // request was delivered by no recorded parent event: it stays its hand-off's.
+    // A piece another assignment delivered is that assignment's (C-06 part), a Claude helper's resumed work (D175) its
+    // resuming SendMessage's; a Claude helper's work after its own later request was delivered by no recorded parent
+    // event: it stays its hand-off's.
     for (const event of child.events.slice(cuts[piece.k], cuts[piece.k + 1]))
-      emitChildEvent(event, prefix, transfer.childId, piece.k > 0 && piece.request === null ? piece.deliveryId : null);
+      emitChildEvent(event, prefix, transfer.childId, piece.k > 0 && !Object.hasOwn(piece.delivery, 'request')
+        ? piece.deliveryId : null);
   };
 
   for (const turn of turns) {
@@ -2542,7 +2551,7 @@ export function sessionFromLedger(ledger, options = {}) {
   if (launchLayout) return session;
   session.adapterGaps = adapterGaps(ledger, clippedSayings, { elidedAsks, cappedAsks, strippedAsks, elidedIds, cappedIds,
     strippedIds, queuedRead, unplacedHeard, labelGapIds: Object.fromEntries(LEDGER_POSITIONED_GAPS.map((gap) =>
-      [gap, labelGapAnchors(ledger, session, gap)])) }, delegationEventIds,
+      [gap, labelGapAnchors(ledger, session, gap)])), resumedSends }, delegationEventIds,
     [...transferred.values()], unrecordedWrites(events), withheldAsks, events, ids);
   // D150: the rows left unread, by kind, non-enumerable like the facts above (no reader of the session's
   // own fields changes); the coverage facts name them by kind.
@@ -2810,9 +2819,10 @@ function workflowRunRecords(ledger) {
  * deliveryTurn, deliveryRow, deliveryPos, delegation, arrival, receipt, shared, next, spawn, spawnId, unit, childId }`.
  * A record is valid only when it is exactly `{child, segments}`; `child` names one unit of `ledger.children` with a
  * ledger and no other record names it; its FIRST segment is delivered by the one linked hand-off of that child that is
- * not a follow-up (`{delegation: index}`), whose child identity is known; every LATER one by a linked follow-up of that
- * same child or a recorded Codex send_message action (`{action: {turn, seq}}`, its row recorded), and carries an
- * `arrival`; the arrivals (the first segment's when present, then every later one's) rows strictly after one another;
+ * not a follow-up (`{delegation: index}`), whose child identity is known; every LATER one (but a Claude helper's, below)
+ * by a linked follow-up of that same child or a recorded Codex send_message action (`{action: {turn, seq}}`, its row
+ * recorded), and carries an `arrival`; the arrivals (the first segment's when present, then every later one's) rows
+ * strictly after one another;
  * no delivery named twice; and each `receipt` (when present) a row recorded after its delivery's row, in a turn not
  * before the delivery's, its count of earlier actions within that turn's own and past a send action's own position.
  * M33 P repair: a LATER segment may instead record `shared` (exactly the report the segment before it was placed at:
@@ -2820,10 +2830,15 @@ function workflowRunRecords(ledger) {
  * a row; never with a `receipt`. Placements follow one another: a receipt or a `next` strictly after the report the
  * segment before was placed at, and none at all after a segment that found no report. M33 P second repair: a Codex
  * helper's segment may instead record `ambiguous: true` (no report tied to it: never beside a `receipt`, `shared` or
- * `next`, and every segment after one is ambiguous too); and a Claude helper's record may end with exactly `{delivery:
- * {request: <turn>}}` as its second segment — the helper's own later request, a turn its own recording records after an
- * earlier one — with nothing else. Anything else is not a record: that helper keeps the placement it had before M33 P
- * (its whole history behind its spawn).
+ * `next`, and every segment after one is ambiguous too). A Claude helper's record holds after its first segment D175's
+ * resume segments, each exactly `{delivery: {action: {turn, seq}}, request, receipt}` and no `arrival`: the action one
+ * recorded Claude SendMessage (`CLAUDE_SEND_NAMES`, its row recorded) named by no other segment of any record; `request`
+ * a turn its own recording records after an earlier one, and after the request of the segment before; `receipt` a row
+ * recorded after that action, past its own position, strictly after the report the segment before was placed at (so
+ * none after a first segment with no receipt). It may then end with exactly `{delivery: {request: <turn>}}` (M33 P
+ * second repair) — the helper's own later request, at a later turn than any resume segment's — with nothing else.
+ * Anything else is not a record: that helper keeps the placement it had before M33 P (its whole history behind its
+ * spawn).
  */
 function helperSegmentRecords(ledger, ids = ledgerEventIds(ledger)) {
   const out = new Map();
@@ -2858,7 +2873,53 @@ function helperSegmentRecords(ledger, ids = ledgerEventIds(ledger)) {
     let placedAt;                  // the report the segment before was placed at (null: it found none)
     let ambiguousFrom = false;     // M33 P second repair: once a segment is `ambiguous`, every later one is
     let requested = false;         // M33 P second repair: a Claude helper's later request ends its record
+    let resumed = 0;               // D175: the Claude resume segments so far (after the first segment)
+    let lastRequest = null;        // D175: the helper's own turn the segment before was delivered at
+    const resumedActs = new Set(); // D175: the resuming actions this record names
+    const childTurns = ['instructions', 'ask', 'ledger', 'sayings', 'commentary', 'marks']
+      .flatMap((field) => (Array.isArray(unit.ledger?.[field]) ? unit.ledger[field] : [])).map((item) => item?.turn)
+      .filter((turn) => countOf(turn));
+    // A helper's own later turn: recorded by its recording, after one before it, after the one the segment before took.
+    const laterTurn = (request) => countOf(request, 1) && childTurns.includes(request)
+      && childTurns.some((turn) => turn < request) && (lastRequest === null || request > lastRequest);
+    // A report row recorded after `delivery` (its row, its turn, its count of earlier actions), or null.
+    const reportAt = (value, delivery) => {
+      const at = receiptRow(value);
+      const from = at ? acts.filter((act) => act.turn < at.turn).length : 0;
+      const until = at ? from + acts.filter((act) => act.turn === at.turn).length : 0;
+      return !at || at.turn < delivery.deliveryTurn || !rowAfterRow(at, delivery.deliveryRow)
+        || at.beforeEvent < from || at.beforeEvent > until
+        || (delivery.deliveryPos !== null && at.beforeEvent <= delivery.deliveryPos) ? null : at;
+    };
     for (const [k, segment] of record.segments.entries()) {
+      // D175: a Claude helper's later request that a typed resume delivered — exactly `{delivery: {action: {turn, seq}},
+      // request, receipt}`, after its first segment and the resume segments before it: the action one recorded
+      // SendMessage of this ledger (`CLAUDE_SEND_NAMES`, its row recorded) named by no other segment, `request` a later
+      // turn of the helper's own recording than the one before it, `receipt` a row recorded after that action and
+      // strictly after the report the segment before was placed at (so none after a first segment with no receipt, or
+      // after the bare `{delivery: {request}}`, which is placed at none). Anything else is no record.
+      if (k > 0 && spawn.adapter === 'claude' && object(segment) && Object.hasOwn(segment, 'request')) {
+        const action = exactly(segment, ['delivery', 'request', 'receipt']) && exactly(segment.delivery, ['action'])
+          && exactly(segment.delivery.action, ['turn', 'seq']) && countOf(segment.delivery.action.turn)
+          && countOf(segment.delivery.action.seq) ? segment.delivery.action : null;
+        const found = action ? acts.filter((act) => act.turn === action.turn && act.seq === action.seq) : [];
+        const locator = found.length === 1 ? sourceLocatorOf(found[0]) : null;
+        const key = action ? `a:${action.turn}:${action.seq}` : null;
+        if (!locator || !CLAUDE_SEND_NAMES.includes(found[0].tool) || !laterTurn(segment.request)
+          || delivered.has(key) || resumedActs.has(key)) { valid = false; break; }
+        const { turn, seq } = action;
+        const delivery = { deliveryId: ids.actAt(turn, seq), deliveryTurn: turn,
+          deliveryRow: { source: locator.stream, record: locator.record }, deliveryPos: position(turn, seq) };
+        const receipt = reportAt(segment.receipt, delivery);
+        if (!receipt || !placedAt || !rowAfterRow(receipt, placedAt)) { valid = false; break; }
+        segments.push({ delivery: { action: { turn, seq } }, ...delivery, delegation: null, arrival: null, receipt,
+          shared: null, next: null, ambiguous: false, request: segment.request, spawn, spawnId, unit, childId });
+        resumedActs.add(key);
+        resumed++;
+        lastRequest = segment.request;
+        placedAt = receipt;
+        continue;
+      }
       if (!object(segment) || !Object.hasOwn(segment, 'delivery') || requested
         || Object.keys(segment).some((key) => !['delivery', 'arrival', 'receipt', 'shared', 'next', 'ambiguous'].includes(key))
         || Object.hasOwn(segment, 'receipt') && Object.hasOwn(segment, 'shared')
@@ -2871,16 +2932,12 @@ function helperSegmentRecords(ledger, ids = ledgerEventIds(ledger)) {
         || ambiguousFrom && segment.ambiguous !== true) { valid = false; break; }
       if (segment.ambiguous === true) ambiguousFrom = true;
       let delivery = null;
-      if (k === 1 && spawn.adapter === 'claude' && exactly(segment.delivery, ['request'])) {
+      if (k === 1 + resumed && spawn.adapter === 'claude' && exactly(segment.delivery, ['request'])) {
         // M33 P second repair: a Claude helper's own later request (a turn of its own recording after its first): the
-        // rest of its history, received by no recorded receipt. Only that delivery key, after its one first segment.
+        // rest of its history, received by no recorded receipt. Only that delivery key, after its one first segment
+        // (D175: and the resume segments after it, at a later turn than theirs).
         const request = segment.delivery.request;
-        const turnsOf = (ledgerOf) => ['instructions', 'ask', 'ledger', 'sayings', 'commentary', 'marks']
-          .flatMap((field) => (Array.isArray(ledgerOf?.[field]) ? ledgerOf[field] : [])).map((item) => item?.turn)
-          .filter((turn) => countOf(turn));
-        const childTurns = turnsOf(unit.ledger);
-        if (!(Object.keys(segment).length === 1 && countOf(request, 1) && childTurns.includes(request)
-          && childTurns.some((turn) => turn < request))) { valid = false; break; }
+        if (!(Object.keys(segment).length === 1 && laterTurn(request))) { valid = false; break; }
         requested = true;
         segments.push({ delivery: { request }, deliveryId: spawnId, deliveryTurn: spawn.turn,
           deliveryRow: { source: spawn.source, record: spawn.record }, deliveryPos: null, delegation: null, request,
@@ -2912,14 +2969,7 @@ function helperSegmentRecords(ledger, ids = ledgerEventIds(ledger)) {
         || (arrival && last && !rowAfterRow(arrival, last))) { valid = false; break; }
       if (arrival) last = arrival;
       // A report row recorded after this delivery (a receipt, a shared report or the next one), or null.
-      const reportRow = (field) => {
-        const at = receiptRow(segment[field]);
-        const from = at ? acts.filter((act) => act.turn < at.turn).length : 0;
-        const until = at ? from + acts.filter((act) => act.turn === at.turn).length : 0;
-        return !at || at.turn < delivery.deliveryTurn || !rowAfterRow(at, delivery.deliveryRow)
-          || at.beforeEvent < from || at.beforeEvent > until
-          || (delivery.deliveryPos !== null && at.beforeEvent <= delivery.deliveryPos) ? null : at;
-      };
+      const reportRow = (field) => reportAt(segment[field], delivery);
       const [receipt, shared, next] = ['receipt', 'shared', 'next'].map((field) => (Object.hasOwn(segment, field)
         ? reportRow(field) : null));
       if (['receipt', 'shared', 'next'].some((field, i) => Object.hasOwn(segment, field) && [receipt, shared, next][i] === null)
@@ -2934,7 +2984,7 @@ function helperSegmentRecords(ledger, ids = ledgerEventIds(ledger)) {
         spawn, spawnId, unit, childId });
     }
     if (!valid) continue;
-    for (const segment of segments) delivered.add(segment.request !== null ? `r:${record.child}:${segment.request}`
+    for (const segment of segments) delivered.add(Object.hasOwn(segment.delivery, 'request') ? `r:${record.child}:${segment.request}`
       : segment.delegation ? `d:${segment.delivery.delegation}` : `a:${segment.delivery.action.turn}:${segment.delivery.action.seq}`);
     out.set(record.child, segments);
   }
@@ -3048,7 +3098,8 @@ function helperDeliveryGaps(ledger, delegationEventIds, ids = ledgerEventIds(led
 }
 
 function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, strippedAsks = 0, elidedIds = [], cappedIds = [],
-  strippedIds = [], queuedRead = 0, unplacedHeard = 0, labelGapIds = {} } = {}, delegationEventIds = new Map(),
+  strippedIds = [], queuedRead = 0, unplacedHeard = 0, labelGapIds = {}, resumedSends = new Set() } = {},
+  delegationEventIds = new Map(),
   transfers = [], unrecorded = { count: 0, shell: 0, eventIds: [], writes: [] }, withheldAsks = [], events = [],
   ids = ledgerEventIds(ledger)) {
   const gaps = [];
@@ -3397,7 +3448,8 @@ function adapterGaps(ledger, clippedSayings, { elidedAsks = 0, cappedAsks = 0, s
     gaps.push({ code: 'incomplete_inventory', channel, scope: 'session', count, ...(located ? { eventIds: [...ids] } : {}),
       note });
   }
-  const unresolvedChildFollowups = flagged('childFollowupUnresolved');
+  // D175: a SendMessage a valid resume segment names has attributed later child history (sessionFromLedger).
+  const unresolvedChildFollowups = flagged('childFollowupUnresolved').filter((id) => !resumedSends.has(id));
   if (unresolvedChildFollowups.length) gaps.push({ code: 'incomplete_inventory', channel: 'children',
     scope: 'session', count: unresolvedChildFollowups.length, eventIds: unresolvedChildFollowups,
     note: 'a child follow-up was sent without attributable subsequent child history' });

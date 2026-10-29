@@ -46,7 +46,10 @@ async function home(t, { configDir = false, sonah = true } = {}) {
   const bin = join(dir, 'bin');
   await mkdir(bin);
   if (sonah) { await writeFile(join(bin, 'sonah'), '#!/bin/sh\n'); await chmod(join(bin, 'sonah'), 0o755); }
-  const env = { HOME: dir, PATH: `${bin}:/usr/bin:/bin`, ...(configDir ? { CLAUDE_CONFIG_DIR: claude } : {}) };
+  // D171: SONAH_NO_UPDATE_CHECK, so no run here could reach npm's registry (since D171's option A, `skill` never
+  // checks; the switch stays, as every test that runs the entry sets it).
+  const env = { HOME: dir, PATH: `${bin}:/usr/bin:/bin`, SONAH_NO_UPDATE_CHECK: '1',
+    ...(configDir ? { CLAUDE_CONFIG_DIR: claude } : {}) };
   const file = join(claude, 'skills', SKILL_NAME, 'SKILL.md');
   const run = async (argv, extra = {}) => {
     const out = streams();

@@ -16,7 +16,7 @@ node --test packages/cli/test/install.test.js     # one file
 ```
 
 The full suite must pass before a pull request is opened, and continuous integration runs it on Linux and macOS. It
-has about 3,900 tests, run in parallel: several minutes on a recent laptop, more on a busy machine.
+has about 4,900 tests, run in parallel: several minutes on a recent laptop, more on a busy machine.
 
 - No test calls a model or needs a login: the review tests use stand-in reviewers and synthetic sessions. Keep it that
   way.

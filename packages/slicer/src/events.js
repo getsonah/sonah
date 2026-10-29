@@ -734,6 +734,15 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   const reports = [];
   // M33 P (W2 minor P4): each typed TaskOutput completion and the row where the parent received it.
   const taskOutputReceipts = [];
+  // D175: each typed resume of a launched Claude helper (a SendMessage whose one result records `resumedAgentId`), with
+  // the row of the one final notification that names its call and that agentId (its receipt), when one settled.
+  const resumes = [];
+  // D175 fix round: each row on which a task notification reached this recording's agent as a message of its own — a
+  // `user` row the labeller labelled a task notification (records.js `claudeLabeller`; not a `queued_command` attachment,
+  // which joins a request in progress; not a copy read in another recording of the lineage) — `{turn, source, record}`.
+  // In a helper's own recording it is a task of its own waking it after a reply, within the same turn: its work in that
+  // turn may go on after its parent received that reply.
+  const wakes = [];
 
   // tool_use_id -> index in `events`, so the following user record can attach its result.
   const pending = new Map();
@@ -767,6 +776,9 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
   const notificationLaunches = new Map();
   // C-02 M33 D: a Claude Edit call's recorded input, by call key, for its sidecar's exact repeat.
   const claudeEditInputs = new Map();
+  // D175: a Claude SendMessage's call id, row and recorded message (a string, else null), by call key, for the resume its
+  // one typed result may record (`resumes` below).
+  const sendCalls = new Map();
   // M34 labels review (F5): each ledger action's count of the task notifications linked to it (by event index).
   const notified = new Map();
   // D99 (F1 guard): the row of each Claude command's own result, by event index — `{source, record, uuid}` — where a
@@ -788,6 +800,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     // names no call recorded before it (counted with every label, index.js), and none when it carries no call id.
     // A row copied from another recording of the lineage was read there: neither counts again.
     const part = copy ? undefined : partsOf(rec).find((entry) => entry.basis === LABEL_BASIS.taskNotification);
+    if (part && row?.type === 'user') wakes.push({ turn: at.turn, source: at.source, record: at.record });
     const key = part?.links && Object.hasOwn(part.links, 'notifies') ? resultKey(part.links.notifies) : null;
     if (key !== null) {
       if (!knownCallIds.has(key)) instructionCapture.notificationUnmatched++;
@@ -802,7 +815,9 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     if (launch && launch.taskId === notice.taskId) {
       launch.statuses.add(notice.status);
       // M33 P: a background Agent's launch keeps its earliest joined row the same way.
-      if ((launch.kind === 'workflow' || launch.kind === 'agent') && launch.receipt === undefined) launch.receipt = at;
+      // D175: and a typed resume (a SendMessage that resumed a launched helper) likewise.
+      if ((launch.kind === 'workflow' || launch.kind === 'agent' || launch.kind === 'resume') && launch.receipt === undefined)
+        launch.receipt = at;
     } else if (launch) launch.conflict = true;
   };
   /**
@@ -1251,6 +1266,19 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
           && taskId(launched.workflowTaskId) && !unattributedAsyncWorkflow)
           notificationLaunches.set(key, { index: idx, taskId: launched.workflowTaskId, kind: 'workflow',
             statuses: new Set(), conflict: false, at: rowAt(rec, recordIndex), version: d?.version });
+        // D175 (beta.9 known issue 3): a Claude SendMessage that RESUMED a launched helper — its one result, no error,
+        // whose single-block typed sidecar records `success: true` and the helper's `resumedAgentId` (and
+        // `revivedAgentId` only as the same id). A later typed notification naming this call's id and that agentId is
+        // where the parent received the resumed work (the C-02 M33 D join, as for a launch). Side channel only. The one
+        // block is the sidecar's own rule (records.js `toolResultsOf` gives a row of several results none); an interrupted
+        // or outcome-unknown result resumes nothing (a command's outcome conflict is never set on a SendMessage).
+        else if (claudeRecord && launched.tool === 'SendMessage' && sendCalls.has(key)
+          && res.isError !== true && plain(res.raw) && res.raw.success === true
+          && taskId(res.raw.resumedAgentId)
+          && (!own(res.raw, 'revivedAgentId') || res.raw.revivedAgentId === res.raw.resumedAgentId)
+          && launched.interrupted !== true && launched.outcomeUnknown !== true)
+          notificationLaunches.set(key, { index: idx, taskId: res.raw.resumedAgentId, kind: 'resume',
+            statuses: new Set(), conflict: false, send: sendCalls.get(key) });
         settled.set(key, { index: idx, before, adapter: rec.adapter ?? 'claude',
           fingerprint: resultFingerprint(res, d, id, events[idx].genericTool === true) });
         pending.delete(key);
@@ -1390,6 +1418,14 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
         if ((rec.adapter === 'claude' || rec.adapter == null) && use.name === 'Edit' && !spec.generic)
           claudeEditInputs.set(key, use.input);
         else claudeEditInputs.delete(key);
+        // D175: a Claude SendMessage, for the resume its one typed result may record — whether or not its input is of
+        // the known typed shape (Claude Code records `recipient_kind` beside it in later versions, a generic action):
+        // the resume is the result's typed identity. The message is kept in memory only, in the delivery side channel
+        // the loader asks for and drops (as a Codex token is).
+        if ((rec.adapter === 'claude' || rec.adapter == null) && ev.tool === 'SendMessage')
+          sendCalls.set(key, { callId: use.id, source: rec.source ?? 0, record: rec.line ?? recordIndex + 1,
+            message: plain(use.input) && string(use.input.message) ? use.input.message : null });
+        else sendCalls.delete(key);
         // OWNER DECISION B: the question texts the call recorded, which its answer sidecar must repeat exactly, and
         // (release fix 3c) whether each lets the human choose several options.
         if ((rec.adapter === 'claude' || rec.adapter == null) && use.name === 'AskUserQuestion' && !spec.generic)
@@ -1451,6 +1487,18 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     // M33 P repair (W2 minor P4, as for a Workflow): or a typed TaskOutput completion of its own agentId recorded after
     // its launch, when no notification status joined it or it was recorded before the settling notification; the
     // EARLIEST recorded completed receipt wins. A stopped, conflicting or doubled status receives nothing.
+    // D175: a resume is received by exactly one agreeing final status of the notifications naming its call and its
+    // agentId (never by a TaskOutput poll: a poll of that agentId does not say which of its turns it answers). Every
+    // registered resume is kept, a receipt only where one settled. Side channel only (`deliveries.resumes`).
+    if (launch.kind === 'resume') {
+      const [status] = launch.statuses;
+      const ev = events[launch.index];
+      resumes.push({ callId: launch.send.callId, agentId: launch.taskId, turn: ev.turn, seq: ev.seq,
+        source: launch.send.source, record: launch.send.record, message: launch.send.message,
+        ...(!launch.conflict && launch.statuses.size === 1 && HELPER_RECEIPT_STATUSES.includes(status)
+          && launch.receipt ? { receipt: { ...launch.receipt } } : {}) });
+      continue;
+    }
     if (launch.kind === 'agent') {
       if (launch.conflict || launch.agent.conflict) continue;
       const polled = taskOutputReceipt(launch.taskId, launch.at);
@@ -1555,7 +1603,10 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     // nor a receipt, declared by the loader.
     unknown: [...handOffCalls.values()].filter((call) => call.mode === 'unknown' && !call.conflict)
       .map((call) => ({ callId: call.callId, source: call.source, record: call.record, turn: call.turn })),
-    sends, arrivals, reports },
+    sends, arrivals, reports,
+    // D175: each typed resume of a launched Claude helper, its message in memory only; and (fix round) each row on which
+    // a task notification reached this recording's agent as a message of its own.
+    resumes, wakes },
     claim: { finalMessage: lastAssistantText },
     sayings: [...sayings].map(([t, { text, identity }]) => ({ turn: t, text, identity })),
     commentary,
@@ -2266,10 +2317,23 @@ function shellWrites(cmd, cwd) {
   }
   // Newlines separate commands exactly like `;` — the live scratch-repo session used multiline
   // bash, and the cd context was lost at the split.
-  const lines = (t) => t.split(/\s*(?:&&|\|\||;|\n)\s*/).map((piece) => ({ text: piece }));
-  const parts = lexed ? lexed.parts.flatMap((p) => (p.tokens ? [p] : lines(p.text))) : lines(text);
+  // The same split as before, each piece with its offset in the command (`from`), so a scripted write is placed by the
+  // directory in effect where it stands (`dirAt` below).
+  const lines = (t, from = 0) => {
+    const out = [];
+    let at = 0;
+    for (const m of t.matchAll(/\s*(?:&&|\|\||;|\n)\s*/g)) {
+      out.push({ text: t.slice(at, m.index), from: from + at });
+      at = m.index + m[0].length;
+    }
+    out.push({ text: t.slice(at), from: from + at });
+    return out;
+  };
+  const parts = lexed ? lexed.parts.flatMap((p) => (p.tokens ? [p] : lines(p.text, p.from))) : lines(text);
+  const placedAt = [];   // { from, dir }: the directory each part ran in, in source order
   for (const part of parts) {
     const t = part.text;
+    placedAt.push({ from: part.from, dir });
     // `cd "$D"`, `cd "$D/sub"`, `cd /abs`, `cd rel` — the $VAR/suffix compound was the last live
     // escape (one scratch write per session stayed internal behind it).
     const cdVar = t.match(/^\s*cd\s+"?\$\{?([A-Za-z_]\w*)\}?([^\s"';|&]*)"?\s*$/);
@@ -2334,14 +2398,24 @@ function shellWrites(cmd, cwd) {
     { re: /\bwriteFile(?:Sync)?\(\s*(['"])([^'"\n]+)\1/g, lit: 2, how: 'script writeFile' },
     { re: /\bwrite_text\(/g, skip: true },
   ];
+  // A script runs in the directory its command ran in: a relative path it writes is resolved against the `cd` before
+  // that command, exactly as the shell forms above resolve theirs (`dir`), never against the session's cwd when a `cd`
+  // moved it. The directory at a script's offset is the one of the last part that starts at or before it.
+  const dirAt = (offset) => {
+    let best = null;
+    for (const p of placedAt) if (typeof p.from === 'number' && p.from <= offset && (!best || p.from >= best.from)) best = p;
+    return best ? best.dir : '';
+  };
   for (const f of scriptForms) {
     if (f.skip) continue;
     for (const m of text.matchAll(f.re)) {
       const raw = f.lit ? m[f.lit] : strVars.get(m[f.var]);
       if (!raw || !SOURCE_EXT.test(raw)) continue;
-      const rel = relative(raw, cwd);
+      const at = raw.startsWith('/') ? '' : dirAt(m.index);
+      const abs = at ? posix.normalize(`${at}/${raw}`) : '';
+      const rel = abs ? shellSpelling(raw, abs, cwd) : relative(raw, cwd);
       writes.set(rel, (writes.get(rel) ?? 0) + 1);
-      if (!found.has(rel)) found.set(rel, { how: f.how, abs: raw.startsWith('/') ? raw : null });
+      if (!found.has(rel)) found.set(rel, { how: f.how, abs: raw.startsWith('/') ? raw : abs || null });
     }
   }
   // A heredoc's body is the path's state only when the heredoc is the one write this command
@@ -2807,11 +2881,12 @@ function lexShell(src) {
         const nl = s.indexOf('\n', i);
         const stop = nl < 0 ? s.length : nl;
         const line = s.slice(i, stop);
+        const lineFrom = i;
         i = nl < 0 ? s.length : nl + 1;
         const bare = h.strip ? line.replace(/^\t+/, '') : line;
         if (bare === h.delim) { h.terminated = true; break; }
         kept.push(nl < 0 ? bare : `${bare}\n`);
-        parts.push({ text: line });
+        parts.push({ text: line, from: lineFrom });
       }
       if (h.terminated) h.body = kept.join('');
       cuts.push([from, i]);
@@ -2909,7 +2984,8 @@ function lexShell(src) {
     const end = (at, sep = null) => {
       flush();
       if (part && !outer && part.tokens.length)
-        parts.push({ text: textOf(part.start, at), tokens: part.tokens, heredocs: part.heredocs, sep });
+        parts.push({ text: textOf(part.start, at), tokens: part.tokens, heredocs: part.heredocs, sep,
+          from: part.start });
       part = null;
     };
     while (i < s.length) {

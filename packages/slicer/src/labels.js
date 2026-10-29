@@ -92,9 +92,13 @@ export const LABEL_BASIS = Object.freeze({
   askAnswer: 'ask_answer',
   /** A tool result the recorder typed `toolDenialKind: user-rejected`, in a session a human submitted to. */
   userRejected: 'user_rejected',
-  /** A prompt command's invocation row: `origin: human`, or (2.1.255 and later) `isMeta` whose text is only the
-   *  recorder's own command elements. */
-  promptCommand: 'prompt_command',
+  /** D170 (the owner, 2026-10-28; it replaces M34's `prompt_command`): an `isMeta` row whose text is only the
+   *  recorder's own command elements (harness-context.js `recorderCommand`). The recorder marks it as its own: a
+   *  command the harness wrote, such as the skill Claude Code loads beside the person's prompt (2.1.255 and later write
+   *  it with `turnCompanion: true`). Harness: no ask, no `command` marker, no `command_args_unrecorded` gap. A prompt
+   *  command the person typed is a row the person's by its `origin: human` (`origin_human`) or, with no origin, by its
+   *  typed `promptSource` (`prompt_source_human`), with the `command` marker. */
+  metaCommand: 'meta_command',
   /** `isMeta` — the recorder marks the row as the harness's own. */
   recorderMeta: 'recorder_meta',
   /** `sourceToolUseID` — a row a tool call produced (a skill's expansion). */

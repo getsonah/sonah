@@ -242,7 +242,27 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // accuses. + [0, 0, 4].
   // D167, the .md's runs counted: 3 other in (the count of the runs in the header's result parts, the label over the
   // lines of the runs another part names, and where the list of runs is). None states an absence. + [0, 0, 3].
-  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 512, 482]);
+  // D169, the runs another part names that the page's list leaves out: 1 sonah in (the page's label over them, what
+  // Sonah's list left out). It states no absence. + [0, 1, 0].
+  // D171, the update notice: 3 sonah in (the update check off by the settings file, off by the environment, and off
+  // because Sonah could not read the settings file: what Sonah does not ask, and what it could not read); 4 other in
+  // (the check on, the line on stderr, its line in sonah doctor, the page's footer line). None states an absence.
+  // + [0, 3, 4].
+  // D172, the session a review run inside Claude Code takes: 1 other in (the line that says the review took the session
+  // it runs in, and how to choose another); the usage read again with its opening lines (other). + [0, 0, 1].
+  // D173, the background start names the .md: its two lines read again with it, in their class (sonah). + [0, 0, 0].
+  // D176, the shortened .md beside a whole page: its sentence read again with new words, other to sonah (what Sonah did
+  // not do to its own page, which the page's own `whole` proves; it no longer says that the page holds every part).
+  // None states an absence. + [0, 1, -1].
+  // D177, the request copies Sonah did not read: their sentence read again with new words, in its class (sonah). None
+  // states an absence. + [0, 0, 0].
+  // D178, the size line's repeats counted once: the change's count read again with the count of its files with each
+  // repeat of another place's change counted once, in its class (other: a count). + [0, 0, 0].
+  // D179, one finding that several places hold byte for byte: 1 other in (the evidence fold's count of the places that
+  // Sonah read the same bytes of the file in: a count and a fact Sonah's record holds). It states no absence. + [0, 0, 1].
+  // D180, a not-checked ask of a turn the read left open: 3 sonah in (its status, its count-line part and its folded
+  // line: what the session review did not read). None states an absence. + [0, 3, 0].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 520, 487]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);

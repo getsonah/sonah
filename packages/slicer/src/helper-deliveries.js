@@ -91,14 +91,76 @@ export const HELPER_DELIVERY_REASONS = Object.freeze({
  * first request's (its lowest turn when no request is recorded). Anything unreadable counts as no turn.
  */
 export function laterRequestTurn(ledger) {
-  const turnsOf = (fields) => fields.flatMap((field) => (Array.isArray(ledger?.[field]) ? ledger[field] : []))
-    .map((item) => item?.turn).filter((turn) => Number.isSafeInteger(turn) && turn >= 0);
+  const later = laterTurnsOf(ledger);
+  return later.length ? later[0].turn : null;
+}
+
+/**
+ * D175. Every turn a helper's own adapted recording records after its first request's (the turns `laterRequestTurn`
+ * reads, the lowest first), each `{turn, texts}`: the texts of that turn's own requests (a child's `instructions`, or
+ * `ask`), in recorded order — none when the turn records no request text.
+ */
+export function laterTurnsOf(ledger) {
+  const items = (fields) => fields.flatMap((field) => (Array.isArray(ledger?.[field]) ? ledger[field] : []));
+  const turnsOf = (fields) => items(fields).map((item) => item?.turn).filter((turn) => Number.isSafeInteger(turn) && turn >= 0);
   const all = turnsOf(['instructions', 'ask', 'ledger', 'sayings', 'commentary', 'marks']);
   const requests = turnsOf(['instructions', 'ask']);
-  if (!all.length) return null;
+  if (!all.length) return [];
   const first = Math.min(...(requests.length ? requests : all));
-  const later = all.filter((turn) => turn > first);
-  return later.length ? Math.min(...later) : null;
+  return [...new Set(all.filter((turn) => turn > first))].sort((a, b) => a - b)
+    .map((turn) => ({ turn, texts: items(['instructions', 'ask']).filter((item) => item?.turn === turn
+      && typeof item.text === 'string').map((item) => item.text) }));
+}
+
+/**
+ * D175 (beta.9 known issue 3; the M33 P receipt rule applied to a Claude resume). Which of a resumed Claude helper's
+ * later turns the parent's typed resumes delivered, and where it received the work of each, by exact recorded identity
+ * only (pure). Inputs, all of ONE helper:
+ *   turns   — its own later turns (`laterTurnsOf`), in order;
+ *   resumes — the parent's typed resumes of its agentId (events.js: a SendMessage whose one result records `success:
+ *             true` and `resumedAgentId`), each `{turn, seq, source, record, message, receipt?}`, `receipt` the row of the
+ *             one final notification naming that call and that agentId;
+ *   first   — the receipt of its first segment (its hand-off's), or null;
+ *   woken   — the turns of its own recording in which a task notification reached it as a message of its own (events.js
+ *             `wakes`: a `user` row so labelled): a task of its own woke it after a reply, so its work in that turn may go
+ *             on after the parent received that reply.
+ * A resume DELIVERED a turn when its message is a non-empty string that no other resume of this helper sent, found
+ * verbatim in the request texts of exactly one later turn. The later turns are walked in order: turn k is PROVEN when
+ * the k-th resume (in recorded order) delivered it, the turn is not woken, and the resume has a receipt recorded after
+ * its own row and strictly after the receipt the segment before was placed at. The first turn not proven ends the walk:
+ * it and every turn after it are the helper's work after its own later request, received by no recorded receipt
+ * (`unproven`, the `continued` loss), as before. With no first receipt nothing is proven: a later placement never stands
+ * before an earlier one's.
+ * Returns `{ proven: [{turn, action: {turn, seq}, receipt}], unproven: turn | null }`.
+ */
+export function planClaudeResumes({ turns = [], resumes = [], first = null, woken = [] } = {}) {
+  const later = Array.isArray(turns) ? turns.filter((t) => Number.isSafeInteger(t?.turn)) : [];
+  const wokenTurns = new Set(Array.isArray(woken) ? woken : []);
+  const unprovenFrom = (k) => ({ proven: proven.slice(0, k), unproven: k < later.length ? later[k].turn : null });
+  const proven = [];
+  const sent = (Array.isArray(resumes) ? resumes : []).filter((resume) => plain(resume) && count(resume.turn)
+    && count(resume.seq) && count(resume.source) && count(resume.record, 1))
+    .sort((a, b) => a.source - b.source || a.record - b.record);
+  const times = new Map();
+  for (const resume of sent) if (typeof resume.message === 'string') times.set(resume.message, (times.get(resume.message) ?? 0) + 1);
+  // The one later turn each resume delivered, or null.
+  const deliveredTurn = (resume) => {
+    if (typeof resume.message !== 'string' || !resume.message || times.get(resume.message) !== 1) return null;
+    const found = later.filter((t) => Array.isArray(t.texts) && t.texts.some((text) => typeof text === 'string'
+      && text.includes(resume.message)));
+    return found.length === 1 ? found[0].turn : null;
+  };
+  let placedAt = helperRow(first);
+  for (let k = 0; k < later.length; k++) {
+    const resume = sent[k];
+    const receipt = resume ? helperRow(resume.receipt) : null;
+    if (!placedAt || !resume || wokenTurns.has(later[k].turn) || deliveredTurn(resume) !== later[k].turn || !receipt
+      || !rowAfter(receipt, { source: resume.source, record: resume.record }) || !rowAfter(receipt, placedAt))
+      return unprovenFrom(k);
+    proven.push({ turn: later[k].turn, action: { turn: resume.turn, seq: resume.seq }, receipt });
+    placedAt = receipt;
+  }
+  return unprovenFrom(later.length);
 }
 
 const count = (value, least = 0) => Number.isSafeInteger(value) && value >= least;

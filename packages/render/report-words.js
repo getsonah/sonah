@@ -30,9 +30,13 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   // report's list), the count the coverage line says. Never "changed" by the recording: with git the change runs from the
   // start commit to the files as they are now, so it can hold work done before or after the session.
   // D117: with files in more than one place (the working folder's repository, another repository, a folder in none),
-  // how many places hold them.
-  change: (n, counts = null, places = 1) => `a change of ${plural(n, 'file')}${places > 1 ? ` in ${places} repositories `
-    + 'or folders' : ''}${counts ? `, ${counts}` : ''}`,
+  // how many places hold them. D178: and, when some of them repeat the same change of another place (evidence
+  // code-pass.js `changeRepeatsOf`), how many files that is with each repeat counted once (`distinct`, fewer than `n`;
+  // the model passes it only when the rule could compare every file that could repeat, so "each" is true).
+  // The count and the lines stay those of every file, as the Files section and the coverage line count them.
+  change: (n, counts = null, places = 1, distinct = n) => `a change of ${plural(n, 'file')}${Number.isSafeInteger(distinct)
+    && distinct >= 0 && distinct < n ? ` (${distinct} with each repeat counted once)` : ''}${places > 1
+    ? ` in ${places} repositories or folders` : ''}${counts ? `, ${counts}` : ''}`,
   commands: (n) => plural(n, 'command'),
   commit: (short) => `commit ${short}`,
   notCommitted: (n) => `${plural(n, 'changed file')} ${verb(n, 'differs', 'differ')} from the last commit.`,
@@ -164,6 +168,10 @@ export const REPORT_PROMPT_PARTS = Object.freeze({
   // round) one a later window reaffirmed.
   notCheckedLater: (n) => `${n} not checked after later work`,
   laterWork: (n) => `${n} followed by later work`,
+  // D180: a not-checked ask of the message whose turn the read left open (report-model.js `askState`): a command that
+  // the agent called after that message has no result in what the session review read. Said as what Sonah found, never
+  // why, so it stays true of a review the agent started in that turn and of a recording cut short by a crash.
+  notCheckedOpenTurn: (n) => `${n} not checked with a command result not read`,
 });
 
 /** The section headings and fold summaries. */
@@ -236,6 +244,9 @@ export const REPORT_ITEM_WORDS = Object.freeze({
   noLinkUncommitted: 'This file differs from the last commit, so Sonah gives no link.',
   unchangedLines: (n) => `Sonah does not show ${plural(n, 'more line')} here.`,
   morePlaces: (n) => `${plural(n, 'more place')}`,
+  // D179: a finding of the code review that several places of the change (worktrees, clones) hold byte for byte, one
+  // item with each place on its Where line: how many places, said in its evidence fold.
+  samePlaces: (n) => `Sonah read the same bytes of this file in ${n} repositories or folders.`,
   onGitHub: 'on GitHub',
   // D112 (one point, one item): the line before an item's members.
   members: (n) => `This item holds ${plural(n, 'more point')}.`,
@@ -376,7 +387,8 @@ export const REPORT_LEVEL_WORDS = Object.freeze({ high: 'high', medium: 'medium'
 /** Your prompt, marked up (D97). */
 export const REPORT_PROMPT_WORDS = Object.freeze({
   status: Object.freeze({ done: 'Done', partly: 'Partly done', notDone: 'Not done', notChecked: 'Not checked',
-    notCheckedLater: 'Not checked after later work', laterWork: 'Later work followed' }),
+    notCheckedLater: 'Not checked after later work', laterWork: 'Later work followed',
+    notCheckedOpenTurn: 'Not checked: command result not read' }),
   coverage: 'Sonah checked only the marked parts of your message.',
   // D100: what the session review cited, never that only the agent says so. D115: "Sonah found no recorded result or
   // change for it" named a search that Sonah never ran (the recording held the results); the words now say only what
@@ -390,6 +402,12 @@ export const REPORT_PROMPT_WORDS = Object.freeze({
   codeHolds: (n) => `The code review found that it holds in the code (Sonah found ${n === 1 ? 'its quote'
     : 'its quotes'} word for word at`,
   codeHoldsUnchecked: 'Sonah did not check whether it holds.',
+  // D180: the folded line of a `notCheckedOpenTurn` ask (`storyFacts` `openTurn`): what the windows hold, never that
+  // the turn was still going or that a review of Sonah's ran in it (a crash cuts a recording the same way). Its fix
+  // round: "a command ... has no result" says that one command has none, as code proves, not that none of the message's
+  // has one; and "after this message", not "for this message", since the message is the last of yours recorded before
+  // the command (a prompt you queued, or your answer, can be that message while the command serves an earlier one).
+  openTurn: 'A command that the agent called after this message has no result in what the session review read.',
   withheldFinding: (why) => `Sonah withheld a finding of the code review about this ask: ${why}.`,
   withheldSee: 'See the section What Sonah could not check.',
   codeQuestion: (n) => `The code review asks you about this ask.${n === null ? '' : ` See item ${n}.`}`,
@@ -456,6 +474,10 @@ export const REPORT_DID_WORDS = Object.freeze({
   runsCounted: (n, parts) => `${plural(n, 'run')}${parts ? `: ${parts}` : ''}.`,
   runsNamed: 'The runs that other parts of this report name:',
   runsOnPage: 'The list of runs is on the HTML page of this review, which sonah review --format html --output FILE writes.',
+  // D169: on the page, after its list, the runs that another part names and the list leaves out (past its first 40, or
+  // a command that exited with code 0 before the last edit), so every run the page names has its line; with no run in
+  // the list above, the page heads them with `runsNamed`, as the .md does.
+  runsNamedApart: 'The list above leaves out these runs, which other parts of this report name:',
   // D100: what Sonah found, never that no command ran or that the recording holds none.
   neverRan: (paths) => `Sonah found no command that ran after the last edit of: ${paths}.`,
   noRuns: 'Sonah found no command in the recording.',
@@ -645,8 +667,10 @@ export const REPORT_TRIM_WORDS = Object.freeze({
   messagesTrimmed: 'To keep this page within its size, Sonah shows only the start of your long messages.',
   mdShortened: 'Sonah shortened this report to fit a GitHub comment.',
   mdStillLong: 'Sonah shortened this report. It is still too long for one GitHub comment.',
-  /** Said after either, only when the same run wrote the HTML page and the page itself kept every part (R2). */
-  pageWhole: 'The HTML page holds every part.',
+  /** Said after either, only when the same run wrote the HTML page and the page needed no size trim (R2; D176: the
+   *  `whole` of session-page.js `sessionPage`). The page keeps the same display limits (report-model.js REPORT_LIMITS)
+   *  and counts what each list leaves out, so the words never say that it holds every part. */
+  pageWhole: 'Sonah did not shorten the HTML page.',
 });
 
 /** D129 (C7): each usage limit the `claude` CLI reports (cli review-judge.js RATE_LIMIT_WINDOWS), in the footer's words. */
@@ -673,6 +697,9 @@ export const REPORT_FOOTER_WORDS = Object.freeze({
   triageLegend: 'The code review wrote the impact and action lines. Sonah checked their form, not their meaning.',
   youMeans: 'In this report, “you” means the person who ran the agent.',
   share: 'Read this report before you share it.',
+  /** D171: the CLI's update check knows a newer Sonah (the page only; the command is cli update-check.js
+   *  UPDATE_COMMAND). */
+  newer: (latest) => `Sonah ${latest} is out. Update with npm install -g getsonah@latest.`,
   answerIntro: 'A command records your answer to an item on this computer only. Run it with accept, change or '
     + 'clarify.',
   answerParts: 'Use the id of the item as ROW_ID, and the report of this review as REPORT.',
@@ -819,6 +846,7 @@ export const STYLE_KINDS = Object.freeze({
   'REPORT_ITEM_WORDS.quoteMissing': 'notice', 'REPORT_ITEM_WORDS.seeItem': 'notice',
   'REPORT_ITEM_WORDS.noFinding': 'notice', 'REPORT_ITEM_WORDS.noFindingRest': 'notice',
   'REPORT_ITEM_WORDS.noLinkUncommitted': 'notice', 'REPORT_ITEM_WORDS.members': 'notice',
+  'REPORT_ITEM_WORDS.samePlaces': 'notice',
   'REPORT_ITEM_WORDS.unchangedLines': 'notice',
   'REPORT_ITEM_WORDS.checkedAgainst': 'notice',
   'REPORT_ITEM_WORDS.asked': 'fragment', 'REPORT_ITEM_WORDS.claimsList': 'fragment', 'REPORT_ITEM_WORDS.run': 'fragment',
@@ -865,7 +893,8 @@ const each = (path, table, args) => Object.fromEntries(Object.entries(table).fla
 /** The arguments each function entry is rendered with for the linter: one and many. */
 export const STYLE_FIXTURES = Object.freeze({
   'REPORT_HEADER_WORDS.filesChanged': [[1, '+3 −1'], [4, '+30 −12']], 'REPORT_HEADER_WORDS.commands': [[1], [5]],
-  'REPORT_HEADER_WORDS.change': [[1, '+3 −1'], [110, null], [23, null, 3], [4, '+30 −12', 2]],
+  'REPORT_HEADER_WORDS.change': [[1, '+3 −1'], [110, null], [23, null, 3], [4, '+30 −12', 2],
+    [104, '+3570 −962', 2, 58]],
   'REPORT_HEADER_WORDS.commit': [['1a2b3c4']], 'REPORT_HEADER_WORDS.notCommitted': [[1], [3]],
   'REPORT_HEADER_WORDS.runsAfterEdit': [[1], [3]], 'REPORT_HEADER_WORDS.results': [['2 exited with code 0, 1 failed']],
   'REPORT_HEADER_WORDS.refusedAfterEdit': [[1], [3]],
@@ -895,6 +924,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_ITEM_WORDS.checkedAgainst': [[1], [3, ['AGENTS.md']]], 'REPORT_ITEM_WORDS.referredFrom': [['AGENTS.md']],
   'REPORT_ITEM_WORDS.asked': [[3]], 'REPORT_ITEM_WORDS.run': [[2]], 'REPORT_ITEM_WORDS.item': [[4]], 'REPORT_ITEM_WORDS.seeItem': [[4]], 'REPORT_ITEM_WORDS.unchangedLines': [[1], [4]],
   'REPORT_ITEM_WORDS.morePlaces': [[2], [5]], 'REPORT_ITEM_WORDS.members': [[1], [3]],
+  'REPORT_ITEM_WORDS.samePlaces': [[2], [4]],
   'REPORT_WHAT_WORDS.ask_not_done': [[2]], 'REPORT_WHAT_WORDS.ask_partly_done': [[2]],
   'REPORT_WHAT_WORDS.ask_not_checked_after_later_work': [[2]],
   'REPORT_WHAT_WORDS.written_not_checked_after_later_work': [['README.md']],
@@ -965,6 +995,7 @@ export const STYLE_FIXTURES = Object.freeze({
       bytes: 50 }]],
   'REPORT_FOOTER_WORDS.provenance': [['1.0.0', 'sonah.report-model/2', '1a2b3c4'], ['1.0.0', 'sonah.report-model/2', null]],
   'REPORT_FOOTER_WORDS.answerCommand': [['0'.repeat(64)]],
+  'REPORT_FOOTER_WORDS.newer': [['0.3.0-beta.10']],
   'REPORT_FOOTER_WORDS.usage': [[{ calls: 41, codeCalls: 12, inputTokens: 3_112_640, outputTokens: 52_100,
     wallMs: 412_000, windows: [{ name: 'five_hour', first: 3, last: 22 }, { name: 'seven_day', first: 16, last: 25 },
       { name: 'seven_day_overage_included', first: 1, last: 2 }, { name: 'other', first: 40, last: 41 }] }],

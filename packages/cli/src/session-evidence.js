@@ -17,7 +17,7 @@ import { keptIdentities, locateWorkflowRun, readEarlierSessionRows, readWorkflow
 import { WORKFLOW_RUN_NOTES, WORKFLOW_LIMITS, WORKFLOW_AGENT_KIND, WORKFLOW_AGENT_LINKED, agentFileName,
   copiedCallProven, earlierReceipts, planWorkflowRun, plainWorkflowName, runReceipt, runRecord, workflowCallRoles,
   workflowLaunched } from '../../slicer/src/workflow-runs.js';
-import { HELPER_DELIVERY_REASONS, planHelperSegments, helperRow, laterRequestTurn }
+import { HELPER_DELIVERY_REASONS, planHelperSegments, helperRow, laterRequestTurn, laterTurnsOf, planClaudeResumes }
   from '../../slicer/src/helper-deliveries.js';
 import { IDENTITY_SUBS, validIdentity } from '../../slicer/src/event-identity.js';
 import { censusEntryOrder } from '../../slicer/src/recorder-census.js';
@@ -28,6 +28,9 @@ import { continuedLineage } from './continued-recordings.js';
  * delivery join only — never on a ledger, so no token is ever stored, hashed or printed.
  */
 const arrivalsOf = new WeakMap();
+/** D175 fix round: each node's turns in which a task notification reached its agent as a message of its own (the
+ *  slicer's `wakes`), kept in memory for its parent's resume join only. */
+const wakeTurnsOf = new WeakMap();
 const CANONICAL_TASK = /^\/root\/[a-z0-9_]+(?:\/[a-z0-9_]+)*$/;
 
 /**
@@ -41,7 +44,13 @@ const CANONICAL_TASK = /^\/root\/[a-z0-9_]+(?:\/[a-z0-9_]+)*$/;
  *     M33 P second repair: whether it ran in the background is what its own result recorded (the slicer's launch stub
  *     test), never its input alone; and an agent whose own recording records a request after its first (the parent
  *     continued it: a SendMessage, a resume) is cut at that request of its own: its history before it is received at
- *     that receipt, the rest (`{delivery: {request: turn}}`) by no recorded receipt — declared (`continued`). L2
+ *     that receipt, the rest (`{delivery: {request: turn}}`) by no recorded receipt — declared (`continued`). D175:
+ *     each later request a typed resume delivered (a SendMessage of the parent whose one result names the agentId it
+ *     resumed, its message verbatim in that request) is a segment of its own, `{delivery: {action: {turn, seq}},
+ *     request: turn, receipt}`, received at the one final notification naming that call and that agentId
+ *     (`planClaudeResumes`), unless a task of the agent's own woke it in that turn (its own recording holds a `user` row
+ *     labelled a task notification there); only the work from the first later request not so proven has no receipt
+ *     (`continued`). L2
  *    : a hand-off whose one result recorded no typed launch status has no receipt, and
  *     that is declared (`launchUnknown`);
  *   - a linked Codex spawn: its history cut at each arrival whose token equals exactly one send of this recording,
@@ -61,16 +70,23 @@ function helperPlacement({ deliveries, links, children }) {
     // own, so it is cut there and placed by none; the work before it is received at the hand-off's receipt.
     const unit = children.find((child) => child.source === delegation.link.source);
     const later = laterRequestTurn(unit?.ledger);
-    if (later !== null) claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.continued });
     const own = (entry) => entry?.source === delegation.source && entry.record === delegation.record
       && entry.callId === delegation.callId;
     const launches = list(deliveries.agents).filter(own);
     const calls = list(deliveries.calls).filter(own);
+    const receipt = launches.length === 1 && !calls.length && launches[0].agentId === delegation.childId
+      ? helperRow(launches[0].receipt) : calls.length === 1 && !launches.length ? helperRow(calls[0].receipt) : null;
+    // D175: the later requests the parent's typed resumes of this agentId delivered, each received at its own
+    // notification; only the work from the first later request not so proven has no recorded receipt. A turn a task of
+    // the agent's own woke (a `user` notification row of its own recording) is not proven.
+    const resumed = later === null ? { proven: [], unproven: null } : planClaudeResumes({ turns: laterTurnsOf(unit?.ledger),
+      resumes: list(deliveries.resumes).filter((resume) => typeof delegation.childId === 'string'
+        && resume?.agentId === delegation.childId), first: receipt, woken: wakeTurnsOf.get(unit?.ledger) ?? [] });
+    if (resumed.unproven !== null)
+      claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.continued });
     // L2: its one result recorded no typed launch status: no receipt, and the loss is declared on its hand-off.
     if (list(deliveries.unknown).some(own))
       claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.launchUnknown });
-    const receipt = launches.length === 1 && !calls.length && launches[0].agentId === delegation.childId
-      ? helperRow(launches[0].receipt) : calls.length === 1 && !launches.length ? helperRow(calls[0].receipt) : null;
     // D99 (F1 guard): a background run with no receipt whose end the slicer could not read (`endUnread`): the loss is
     // declared as that, on its hand-off, and the adapter never says the parent recorded no receipt of it.
     // Review of A1b: `endUnchecked` where no later mention of it is established.
@@ -79,7 +95,9 @@ function helperPlacement({ deliveries, links, children }) {
     else if (receipt === null && launches.length === 1 && !calls.length && launches[0].endUnchecked === true)
       claudeLosses.push({ delivery: { delegation: index }, reason: HELPER_DELIVERY_REASONS.endUnchecked });
     segments.push({ child: delegation.link.source, segments: [{ delivery: { delegation: index },
-      ...(receipt ? { receipt } : {}) }, ...(later !== null ? [{ delivery: { request: later } }] : [])] });
+      ...(receipt ? { receipt } : {}) },
+    ...resumed.proven.map((piece) => ({ delivery: { action: piece.action }, request: piece.turn, receipt: piece.receipt })),
+    ...(resumed.unproven !== null ? [{ delivery: { request: resumed.unproven } }] : [])] });
   }
   const helpers = [];
   for (const [index, delegation] of links.entries()) {
@@ -373,6 +391,7 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
       delete act.claudeLocator;
     }
     arrivalsOf.set(ledger, Array.isArray(deliveries?.arrivals) ? deliveries.arrivals : []);
+    wakeTurnsOf.set(ledger, (Array.isArray(deliveries?.wakes) ? deliveries.wakes : []).map((wake) => wake?.turn));
     if (children.length) {
       ledger.children = children;
       const unresolved = links.some(d => d.status === 'unresolved');

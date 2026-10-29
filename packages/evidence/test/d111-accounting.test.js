@@ -871,9 +871,11 @@ test('D111 second review: in every combination of an entry\'s end and a publishe
     const bullets = [...(c.calls ?? []), ...(counted ? [W.unaccounted.ask.person(1)] : [])].map((line) => `${line}.`);
     assert.deepEqual(story, [`#### ${REPORT_NOT_CHECKED_WORDS.codeReview}`, ...paragraphs,
       ...(bullets.length ? [bullets.map((line) => `- ${line}`).join('\n')] : []), ...nc.unreadAsks, ...nc.unreadRows], why);
-    // The page's code section, whole: the same paragraphs; its facts list the same lines.
+    // The page's code section, whole: the same paragraphs, then (D169) the same list under the same heading, as the
+    // story has it (the page writes a line after each list entry).
     assert.equal(pageCode, `<h3 class="sub-h">${escapeHtml(REPORT_NOT_CHECKED_WORDS.codeReview)}</h3>${paragraphs
-      .map((line) => `<p class="note">${escapeHtml(line)}</p>`).join('')}${[...nc.unreadAsks, ...nc.unreadRows]
+      .map((line) => `<p class="note">${escapeHtml(line)}</p>`).join('')}${bullets.length ? `<ul class="rows">${bullets
+      .map((line) => `<li>${escapeHtml(line)}</li>\n`).join('')}</ul>` : ''}${[...nc.unreadAsks, ...nc.unreadRows]
       .map((line) => `<p class="note">${escapeHtml(line)}</p>`).join('')}`, why);
     for (const line of bullets) assert.ok(page.includes(`<li>${escapeHtml(line)}</li>`), `${why}: ${line}`);
     assert.equal(page.includes(escapeHtml(W.unaccounted.ask.person(1))), counted, why);

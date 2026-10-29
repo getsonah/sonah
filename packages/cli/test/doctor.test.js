@@ -44,7 +44,8 @@ test('adapters: an empty machine reports zeros, never throws', async () => {
 test('doctor CLI: an absent Claude CLI needs attention, and doctor is in the usage text', async () => {
   const h = await home();
   const ledgerHome = await scratchDir('dev led ');
-  const env = { HOME: h, SONAH_HOME: ledgerHome, PATH: '/usr/bin:/bin', SONAH_CODEX_BIN: join(h, 'absent-codex') };
+  const env = { HOME: h, SONAH_HOME: ledgerHome, PATH: '/usr/bin:/bin', SONAH_CODEX_BIN: join(h, 'absent-codex'),
+    SONAH_NO_UPDATE_CHECK: '1' };
   delete env.ANTHROPIC_API_KEY;
   // W3d-8: doctor reads Claude's settings from its own env; the runner's must not redirect it.
   delete env.CLAUDE_CONFIG_DIR; delete env.SONAH_CLAUDE_PROJECTS;

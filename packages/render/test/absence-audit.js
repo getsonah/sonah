@@ -595,8 +595,10 @@ export const READ_CENSUS = Object.freeze({
     'COVERAGE_SENTENCE.statements_capped': ['sonah', '168973cba840cd37'],
     'COVERAGE_SENTENCE.bodies_capped': ['sonah', '536a8442593c092c'],
     'COVERAGE_SENTENCE.unsupported_message': ['sonah', 'a6890f3301ddfeaa'],
-    // D150: the rows Sonah left unread, said by kind as what Sonah could not match or did not read.
-    'COVERAGE_SENTENCE.request_copies_unread': ['sonah', 'a350a82639c29aca'],
+    // D150: the rows Sonah left unread, said by kind as what Sonah did not read. D177: the copies read again with new
+    // words (what the recorder sent the agent, which Sonah did not read, and where it reads your messages), still sonah;
+    // its review read them again with no cause (a copy of a form the reader does not list is never compared).
+    'COVERAGE_SENTENCE.request_copies_unread': ['sonah', '40d1ced711a1892f'],
     'COVERAGE_SENTENCE.hook_outputs_unread': ['sonah', '33bc6fe9607fca69'],
     'COVERAGE_SENTENCE.edited_files_unread': ['sonah', 'd91bf25a6fcc75d5'],
     'COVERAGE_SENTENCE.unrecorded_body': ['sonah', '1c9c79fa33fb48e1'],
@@ -1014,6 +1016,9 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_DID_WORDS.runsCounted': ['other', '16a935b9d1df38fa'],
     'REPORT_DID_WORDS.runsNamed': ['other', 'daf1386e77db8a19'],
     'REPORT_DID_WORDS.runsOnPage': ['other', 'b1e105d919c71216'],
+    // D169 (read 2026-10-28): the page's label over the runs that another part names and its own list leaves out. It
+    // says what Sonah's list left out, as runsCut does, never that the recording lacks a run: sonah.
+    'REPORT_DID_WORDS.runsNamedApart': ['sonah', 'abc0fafbda7332c7'],
     'REPORT_DID_WORDS.neverRan': ['sonah', '1e682f44d8d1c319'],
     'REPORT_DID_WORDS.noRuns': ['sonah', 'a174cb3323a8a49d'],
     'REPORT_DID_WORDS.uncoveredExit': ['other', '3509f6a5551dbb39'],
@@ -1060,6 +1065,8 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_FOOTER_WORDS.answerParts': ['other', 'c681158a1d865db6'],
     'REPORT_FOOTER_WORDS.answerReport': ['other', 'b210fe8609f5d5d8'],
     'REPORT_FOOTER_WORDS.answerCommand': ['other', '313e31623bbe4e33'],
+    // D171 (read 2026-10-28): the page's line that a newer Sonah is out, and the command that updates it (other).
+    'REPORT_FOOTER_WORDS.newer': ['other', '462c372fdbb4ebc7'],
     // D129 (C7): what the review cost, from its run record: Sonah's own calls ("no model calls" is a fact about Sonah's
     // run, counted by its usage record, never about the recording), and the usage limits in the footer's words.
     'REPORT_FOOTER_WORDS.usage': ['sonah', '553686bfb5517f32'],
@@ -1081,7 +1088,8 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_GAP_WORDS.limit_unattributed': ['sonah', '525513dbdf6d6ecd'],
     'REPORT_HEADER_WORDS.review': ['other', '276c2dd1e99366ec'],
     'REPORT_HEADER_WORDS.filesChanged': ['other', '657c0f89019732e2'],
-    'REPORT_HEADER_WORDS.change': ['other', '32ebc86c88a4a71a'],
+    // D178: read again with how many files that is with each repeat of another place's change counted once (a count).
+    'REPORT_HEADER_WORDS.change': ['other', 'ea014a7f3fcda7c3'],
     'REPORT_HEADER_WORDS.commands': ['other', '4253b50ef4d9cc73'],
     'REPORT_HEADER_WORDS.commit': ['other', '6c5161927a41e54e'],
     'REPORT_HEADER_WORDS.notCommitted': ['other', '35568bed5a8d89aa'],
@@ -1159,6 +1167,8 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_ITEM_WORDS.noLinkUncommitted': ['sonah', 'a69fceca719be350'],
     'REPORT_ITEM_WORDS.unchangedLines': ['sonah', 'b270ebb63e8a9dbc'],
     'REPORT_ITEM_WORDS.morePlaces': ['other', '064c73c4dd412777'],
+    // D179: how many places of the change hold a finding's file byte for byte, as Sonah read it (a count, a fact).
+    'REPORT_ITEM_WORDS.samePlaces': ['other', 'f5655d5e418fe883'],
     'REPORT_ITEM_WORDS.onGitHub': ['other', 'b7f78ab602e84290'],
     'REPORT_ITEM_WORDS.members': ['other', '2ea1a7d0a31ccaaa'],
     'REPORT_KIND_LABELS.ask': ['other', '1e08e48ff6d99916'],
@@ -1284,12 +1294,16 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_PROMPT_PARTS.notCheckedLater': ['sonah', '1ba3a2628401e1c3'],
     // D153's fix round: asks a later window reaffirmed: that later work followed them (other).
     'REPORT_PROMPT_PARTS.laterWork': ['other', '080d962a87dbe30e'],
+    // D180: the not-checked asks of a turn the read left open: what the session review did not read (sonah).
+    'REPORT_PROMPT_PARTS.notCheckedOpenTurn': ['sonah', '4ac9753fbd24b6ea'],
     'REPORT_PROMPT_WORDS.status.done': ['other', '11a6767d5674c7e4'],
     'REPORT_PROMPT_WORDS.status.partly': ['absence', '1afdeec8fabc72c3'],
     'REPORT_PROMPT_WORDS.status.notDone': ['absence', '0df2acbef651ceda'],
     'REPORT_PROMPT_WORDS.status.notChecked': ['sonah', 'd16948e73a680090'],
     'REPORT_PROMPT_WORDS.status.notCheckedLater': ['sonah', '36db7b9521fa7a2e'],
     'REPORT_PROMPT_WORDS.status.laterWork': ['other', '92660a30f74058bf'],
+    // D180: the status of such an ask: what the session review did not read (sonah).
+    'REPORT_PROMPT_WORDS.status.notCheckedOpenTurn': ['sonah', '45019a7e093e8bfb'],
     'REPORT_PROMPT_WORDS.coverage': ['sonah', '2151906bf476a859'],
     // D115: read again, what the session review cited as doing the ask (sonah, registered on its row). Its earlier words
     // ("Sonah found no recorded result or change for it") named a search that Sonah never ran.
@@ -1300,6 +1314,11 @@ export const READ_CENSUS = Object.freeze({
     // (sonah: Sonah's own record, no check of the verdict runs).
     'REPORT_PROMPT_WORDS.codeHolds': ['other', 'c666899fa59bdfe9'],
     'REPORT_PROMPT_WORDS.codeHoldsUnchecked': ['sonah', '8fc2770b054f1365'],
+    // D180: the folded line of such an ask: a command the agent called after the message has no result in what the
+    // session review read (sonah, Sonah's own record of the windows). It says nothing of what the recording holds, so it
+    // needs no proof. Its fix round read it again (was c917919d6d6e3db6): one command, not every command, and "after
+    // this message", not "for this message".
+    'REPORT_PROMPT_WORDS.openTurn': ['sonah', '6a6cfe23f235acef'],
     'REPORT_PROMPT_WORDS.withheldFinding': ['sonah', 'c1cb83eb1266c1ba'],
     'REPORT_PROMPT_WORDS.withheldSee': ['other', '2fde8352b52959d6'],
     'REPORT_PROMPT_WORDS.codeQuestion': ['other', '21c63dd35a8687e8'],
@@ -1393,7 +1412,7 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_TRIM_WORDS.messagesTrimmed': ['sonah', '8d265dd69fcbab02'],
     'REPORT_TRIM_WORDS.mdShortened': ['sonah', '51473847a92e75c1'],
     'REPORT_TRIM_WORDS.mdStillLong': ['sonah', 'dd09492ee344206d'],
-    'REPORT_TRIM_WORDS.pageWhole': ['other', '0ed9fef7d55dc8d8'],
+    'REPORT_TRIM_WORDS.pageWhole': ['sonah', '5b0acffebca5f813'],
     'REPORT_TYPE_WORDS.fix': ['other', '21f1595b614ffc31'],
     'REPORT_TYPE_WORDS.decide': ['other', '30fddb9fe4315e8f'],
     'REPORT_TYPE_WORDS.read': ['other', '9b9a8d05a7ec353b'],
@@ -1589,6 +1608,24 @@ export const READ_CENSUS = Object.freeze({
     'DOCTOR_CLAUDE_WORDS.safeMode.refused': ['sonah', '99cde1adfb0c9db0'],
     'DOCTOR_CLAUDE_WORDS.safeMode.notChecked': ['sonah', 'ebf05357a5e7bef8'],
   }),
+  // D171 (read 2026-10-28): the update check's setting in `sonah config`. On: what the check does, once a day at most,
+  // and how to change it (other). Off by the file, by the environment, or because Sonah could not read the settings
+  // file: what Sonah does not ask, and what it could not read (sonah). None states an absence. Read again in the fix
+  // round (2026-10-28): the same words, their fixtures naming the check's own file (update-check-setting.json). Read
+  // again for D171's option A (2026-10-29): On also says where the check runs, with a review's first call to the
+  // reviewer and in sonah doctor (other); was 7207f40864ac40a1.
+  'packages/cli/src/settings.js': Object.freeze({
+    'UPDATE_CHECK_SETTING_WORDS.on': ['other', '418883e9b1ff220b'],
+    'UPDATE_CHECK_SETTING_WORDS.off': ['sonah', 'b2eecbea7f9a0d22'],
+    'UPDATE_CHECK_SETTING_WORDS.offBy': ['sonah', '11b6fceb0f839631'],
+    'UPDATE_CHECK_SETTING_WORDS.invalid': ['sonah', '671e076c66567f1a'],
+  }),
+  // D171 (read 2026-10-28): the notice on stderr and its line in `sonah doctor`: that a newer Sonah is out, the
+  // version you have, and the command that updates it (other).
+  'packages/cli/src/update-check.js': Object.freeze({
+    'UPDATE_NOTICE_WORDS.line': ['other', '5cbdc76e7d5a6932'],
+    'UPDATE_NOTICE_WORDS.doctor': ['other', '62ac77cf03d3cfea'],
+  }),
   'packages/cli/src/session-review-command.js': Object.freeze({
     'ANSWER_REUSE_WORDS.session': ['other', '85e45abc60f5de21'],
     'ANSWER_REUSE_WORDS.code': ['other', '79cb4d6d285c6efe'],
@@ -1680,11 +1717,16 @@ export const READ_CENSUS = Object.freeze({
     // D142: the one line of a review by session id: what Sonah got and did (`missing`, `started`, `failed`), and the
     // recordings that a session id names (`matches`).
     'SESSION_ID_WORDS.missing': ['sonah', '389b29bae7a11edf'],
-    'SESSION_ID_WORDS.started': ['sonah', '1d80adab880c4a47'],
-    // D142's review: the start line with --no-open, which never says that Sonah opens the page.
-    'SESSION_ID_WORDS.startedNoOpen': ['sonah', '9e91273c0fde0858'],
+    // D173 (read 2026-10-28): the start line names the .md beside the page too, in its class; was 1d80adab880c4a47.
+    'SESSION_ID_WORDS.started': ['sonah', 'ced05632e6f2e945'],
+    // D142's review: the start line with --no-open, which never says that Sonah opens the page. D173: it names the .md
+    // too, in its class; was 9e91273c0fde0858.
+    'SESSION_ID_WORDS.startedNoOpen': ['sonah', 'b7c15296883f24a2'],
     'SESSION_ID_WORDS.failed': ['sonah', 'f314cfc99f81fea7'],
     'SESSION_ID_WORDS.matches': ['other', '46d7b76edc4886b1'],
+    // D172 (read 2026-10-28): the line after the recording's when the review took the Claude Code session it runs in:
+    // what Sonah reviews, and how to choose another. A positive fact and an instruction.
+    'SESSION_ID_WORDS.own': ['other', '67ad7a754ec36a9e'],
     'RUN_STATE_WORDS.complete': ['other', 'eebbf6457e46a7f6'],
     'RUN_STATE_WORDS.incomplete': ['sonah', '85554bb9dd4b57d6'],
     'RUN_STATE_WORDS.failed': ['sonah', '5d28a90f4498a814'],
@@ -1727,7 +1769,10 @@ export const READ_CENSUS = Object.freeze({
     'SAVED_COMMENT_WORDS.lead': ['sonah', '40e27d1e02b0ba78'],
     'WORKING_FOLDER_WORDS.refused': ['sonah', '203fe4812ee00326'],
     'WORKING_FOLDER_WORDS.fix': ['other', '7a49f66e9d8a61f7'],
-    'sessionReviewUsage': ['other', 'fa2c83253fa72038'],
+    // D172 (read 2026-10-28): the usage's opening lines say that with no path the review takes the session it runs in
+    // (from inside Claude Code), else the latest one of the repository; was fa2c83253fa72038. Read again for D171's
+    // option A (2026-10-29): --dry-run's help back to "send nothing", the D172 text again (was 54ed26823fbcd0c1).
+    'sessionReviewUsage': ['other', '0fb660514b7e2b55'],
     // D155 (read 2026-10-26): the window line's count of the decisions left out because their second check did not run.
     'WINDOW_LINE_WORDS.rechecksUnexecuted': ['sonah', 'b5bd26647c019d59'],
   }),

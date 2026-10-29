@@ -21,7 +21,7 @@ import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
 import { modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview, textBeforeAgentPrompt,
-  textBeforeTruthOnly }
+  textBeforeTruthOnly, textBeforeRenderFix }
   from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, RUN, SID, SLUG, TEXT, linkedRun, mkdir, rm, scratch, writeTree } from './m33-w-workflow-fixture.js';
 import { W2_TEXT, captureReceivedCases, receivedLaterRows, resumedRows, verifierBeforeFixRows }
@@ -490,6 +490,10 @@ const MOVED_BY_TWO_PARTS = Object.freeze({
 const MOVED_BY_RUNS_COUNTED = Object.freeze({
   back: Object.freeze({ story: 'b0833e4c13c989a2fd641542baff50fda5f6b0eec57bc31dbc9af8d222a7ab25' }),
   now: Object.freeze({ story: '1e8ba63d6a8efae3e7cfae0801a078702d878c56d85e60a703ab2d268bcf9423' }) });
+/** D169 (0.3.0-beta.10): the story once more, as the code renders it: the report model's version in its footer, and an
+ *  empty Good to know a heading, not said folded. Rendered back (`textBeforeRenderFix`), D167's, byte for byte. No
+ *  event, gap, request, label, window or window failure moved. */
+const MOVED_BY_RENDER_FIX = Object.freeze({ story: 'af7ad975ac29fc42f91041058cdc499a9ec3a8ffcf2ea6b5c0da7f0a0cc98090' });
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
     windowNarrative, fixtureJudge, renderStory: renderReportMarkdown };
@@ -512,10 +516,11 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   // D152: and once more (MOVED_BY_TRUTH_ONLY), by the model's version alone.
   // D161: and once more (MOVED_BY_TWO_PARTS), which nothing renders back: so the capture rendered back carries it too.
   // D167: and once more (MOVED_BY_RUNS_COUNTED), the same way.
+  // D169: and once more (MOVED_BY_RENDER_FIX); rendered back (`textBeforeRenderFix`, first).
   const asksFixes = beta6.map((c) => ({ ...c, ...MOVED_BY_AGENT_PROMPT, ...MOVED_BY_TRUTH_ONLY, ...MOVED_BY_TWO_PARTS.now,
-    ...MOVED_BY_RUNS_COUNTED.now }));
+    ...MOVED_BY_RUNS_COUNTED.now, ...MOVED_BY_RENDER_FIX }));
   assert.deepEqual(await captureReceivedCases({ ...modules, renderStory: (session, report) => textBeforeAgentPrompt(
-    textBeforeTruthOnly(renderReportMarkdown(session, report))) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
+    textBeforeTruthOnly(textBeforeRenderFix(renderReportMarkdown(session, report)))) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
     ...MOVED_BY_FIX_REVIEW })), 'as 0.3.0-beta.6 rendered them');
   // W1 B: moved once more (MOVED_BY_W1); rendered back (`modulesBeforeW1`), the asks fixes', byte for byte.
   // D88: the story moved once more (MOVED_BY_JUDGMENT_FIRST), in every capture: nothing renders a story back; and D90

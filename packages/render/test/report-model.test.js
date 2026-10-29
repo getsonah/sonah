@@ -393,7 +393,8 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     // D109 (its review): the code step's counts are the change's, never what the recording changed.
     'Claude Code recording · a change of 1 file, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
-    'Must act 2 · Must know 0 · Good to know 0 (folded) · Your prompt: 4 done, 1 partly done, 1 not checked',
+    // D169: an empty Good to know is not said folded.
+    'Must act 2 · Must know 0 · Good to know 0 · Your prompt: 4 done, 1 partly done, 1 not checked',
     'Must act: fix the Retry-After unit · ask 2',
     'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
     'Done Add rate limiting to the public API. Partly done 100 requests per minute per API key. Done Return 429 with a '
@@ -415,8 +416,9 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
   // more than the partly done ask; D115: the header names what the session review cited, three words more, and the
   // ask's line says only that, two words fewer). D131 (R1, B12): Must act comes before your prompt, so the first screen is
   // the header and the count line (7 + 14 + 15 + 19 + 24 + 9) and the first item (8 + 19 + 8 + 5): 128 words, 115 fewer.
-  // D133 (R2): the header's "Sonah did not check" line (19 words) is folded: 109.
-  assert.equal(firstScreenWords(model), 109);
+  // D133 (R2): the header's "Sonah did not check" line (19 words) is folded: 109. D169: an empty Good to know is not
+  // said folded, one word fewer on the count line (23): 108.
+  assert.equal(firstScreenWords(model), 108);
   assert.equal(firstScreenExcerptLines(model), 1);
   // The bug carries the code review's impact and action, and one excerpt of at most 8 lines.
   assert.equal(model.tiers.must_act[0].where[0].excerpt.lines.length, 1);
@@ -660,7 +662,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/8 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/9 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
