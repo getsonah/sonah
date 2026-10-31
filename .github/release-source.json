@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/3",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "a690d8339a97bc03958d8d5767c453fd8d11148e",
+  "sourceHead": "d167473a41ed10ef483d52524ed50b709c3871ee",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -699,8 +699,8 @@
     },
     {
       "path": "packages/cli/test/d171-update-check.test.js",
-      "sha256": "164971cd5d0c20394e1287b2082c8cf440da2a139db2d1514895917ca3b47fe3",
-      "bytes": 92374,
+      "sha256": "ef2b04c53868293116b9a34ce1e3f71c8bda143fab628775e10b8fe6c5997f9a",
+      "bytes": 93116,
       "mode": 420
     },
     {

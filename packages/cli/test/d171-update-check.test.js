@@ -1262,11 +1262,11 @@ fs.writeFileSync(${JSON.stringify(done)}, '');`)]);
   }
 });
 
-test('a claim that a stopped command left days ago, found by checks started together: one request, nothing left',
+test('a claim that a stopped command left days ago, found by checks started together: one request at most, nothing left',
   async (t) => {
     // D171 fix round. Each check finds the claim not fresh and renames it over the cache; one rename moves it, and the
-    // others, whose rename finds it gone, make no request. 8 checks in one process (one clock), then 4 processes with
-    // the real clock started at one instant; 3 rounds each.
+    // others, whose rename finds it gone, make no request. 8 checks in one process (one clock): exactly one request.
+    // Then 4 processes with the real clock started at one instant: at most one, and the day's check kept. 3 rounds each.
     const setup = async (box, at) => {
       const old = { checkedAt: at - 3 * DAY, latest: null };
       await mkdir(box.env.SONAH_HOME, { recursive: true, mode: 0o700 });
@@ -1296,8 +1296,15 @@ await M.checkForUpdate({ installed: '0.3.0-beta.9', env: { SONAH_HOME: ${JSON.st
   fetch: async () => { appendFileSync(${JSON.stringify(log)}, 'request\\n'); return '{"latest":"0.3.0-beta.10"}'; } });`;
       const runs = await Promise.all(Array.from({ length: 4 }, () => child(code)));
       assert.deepEqual(runs.map((run) => run.code), [0, 0, 0, 0], `processes, round ${round}`);
-      assert.equal((await logged(log)).length, 1, `processes, round ${round}: one request`);
-      assert.equal((await readUpdateCache({ env: box.env })).latest, '0.3.0-beta.10');
+      // Never two requests. With real processes one may land a new claim at the stale claim's name just before another
+      // renames it, and the rename then keeps that claim's day with no request (claimUpdateCheck's own comment: it "can
+      // ... leave that day with no request"); the public CI's macOS runner met that order once. Either way the day's
+      // check is kept, so no command asks again that day.
+      const requests = (await logged(log)).length;
+      assert.ok(requests <= 1, `processes, round ${round}: at most one request, not ${requests}`);
+      const kept = await readUpdateCache({ env: box.env });
+      assert.equal(kept.latest, requests === 1 ? '0.3.0-beta.10' : null, `processes, round ${round}: the answer kept`);
+      assert.ok(Date.now() - kept.checkedAt < DAY, `processes, round ${round}: the day's check is kept`);
       assert.deepEqual(await readdir(box.env.SONAH_HOME), [UPDATE_CHECK_FILE], `processes, round ${round}`);
     }
   });
