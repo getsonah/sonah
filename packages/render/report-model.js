@@ -24,22 +24,22 @@ import { honestStatuses, resultOutcome, actionOutcome, DECISION_COLUMNS, REQUIRE
   CONTRADICTION_ROLES, OWN_WRITTEN_SOURCE, REPORT_TIERS, REPORT_ITEM_KINDS, TRIAGE_LEVELS, PART_REASONS,
   windowRecordComplete, TRIAGE_ERRORS, STOPPED_OUTCOME_FORMS, PROVED_NO_END_FORM, NO_RESULT_OUTCOME_FORM,
   REPORT_GROUP_TIES, REPORT_TIER_SOURCES, CODE_ACCOUNT_ASK_SOURCES, CODE_NOT_REVIEWED_REASONS,
-  AGENT_PROMPT_NONE_REASONS, RECHECK_OUTCOMES, PUBLIC_STATUSES } from '../evidence/src/ledger.js';
+  AGENT_PROMPT_NONE_REASONS, RECHECK_OUTCOMES, PUBLIC_STATUSES, GROUNDING_CAUSES } from '../evidence/src/ledger.js';
 import { boundTier, itemKindOf, PERMISSION_DENIALS, kindBounds, unsettledAsk, unsettledRow, laterChecked,
   UNTIED_TIER_RULE } from '../evidence/src/triage.js';
 import { askRowKind, derivedColumn, askCodeNotes, listedPromises, coverageCauses, uncappedCauses, COVERAGE_SENTENCE,
-  UNCAPPED_CAUSES_SAID_WHOLE, checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, CHECKLIST_CLAIM_REASON_WORDS, askCodeHoldsNote }
+  UNCAPPED_CAUSES_SAID_WHOLE, checklistReasonWords, CHECKLIST_REQUIREMENT_FACT_WORDS, askCodeHoldsNote }
   from '../evidence/src/review.js';
-import { seenInPartOf, SEEN_IN_PART_SOURCES } from '../evidence/src/seen-in-part.js';
 import { requirementRowId, failureRowId } from '../evidence/src/checklist.js';
 import { statusUncovered } from '../evidence/src/status-fact.js';
 import { askSourceOf, actorOf, SESSION_ACTORS } from '../evidence/src/code-context.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen, findingConfirmed,
   premiseConfirms, premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
   placesOf, changeRepeatsOf } from '../evidence/src/code-pass.js';
+import { sessionCallsFact } from '../evidence/src/run-review.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound, findingClaims, withheldWhy,
   codeNoFindingLine, codeStepWithheld, codeUnseenFiles, codeUnseenReadByChecks, codeQuestionsLine, codeBaseLine,
-  codeHowLine, codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, CODE_REPORT_LIMITS,
+  codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, CODE_REPORT_LIMITS,
   codePlaceLines, codeWritesLines }
   from '../evidence/src/code-report.js';
 import { storyFacts, visible, oneLine, clip, lineWord, durationWord, failedCommandText, disclosedEdit, locateQuote,
@@ -49,8 +49,8 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
   REPORT_CONTRADICTION_SOURCES, REPORT_DISCLOSURE_WORDS, REPORT_KIND_LABELS, REPORT_TIER_WHY, REPORT_KIND_WORDS,
   REPORT_LEVEL_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_OUTCOME_WORDS, REPORT_NOT_CHECKED_WORDS,
   REPORT_FOOTER_WORDS, REPORT_ANSWER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS,
-  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_SEEN_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS,
-  REPORT_RECHECK_PARTS, REPORT_TRAIL_WORDS } from './report-words.js';
+  REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS,
+  REPORT_RECHECK_PARTS, REPORT_TRAIL_WORDS, REPORT_ASK_TAGS, REPORT_DECISION_TAGS } from './report-words.js';
 
 /** The report model's version: reported in the page's generator meta and the footer. /2 (D101, owner decision
  *  2026-10-17): an ask's line for why it is not checked reads the cause of the test that refused its quote
@@ -142,10 +142,41 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  message whose turn the read left open (`storyFacts` `openTurn`), with its status word, its count-line part and one
  *  folded line; `prompt.counts` counts it. Every other ask is as /9, and so is every review whose read leaves no turn
  *  open but for its key `prompt.counts.notCheckedOpenTurn` (0 where nothing moves).
+ *  /10 (0.3.0-beta.11's one move of this reader). D182: the paragraph on how the code review works (code-report.js
+ *  `how` and `howTied`, through `codeHowLine`) names no folder that the code review could open. D183: a review whose
+ *  session review's calls did not answer says why, when one cause holds. The header gives the cause after "did not finish"
+ *  (`reviewIncomplete`, evidence run-review.js SESSION_CALLS_CAUSES); when every window failed, the count line, the
+ *  empty prompt and `did.empty` (the words of an empty list of claims, decisions not to act and decisions you settled)
+ *  say what Sonah cannot tell, never what it found; the messages with no ask that only failed windows hold are
+ *  `prompt.unreachedMessages` (absent with none); and the footer says this run's calls asked again (`retried`) and sums
+ *  the tokens and each limit over the runs that reported them. D184 rides it (the facts' `listed`,
+ *  `did.claims.notChecked` `claimsAt` and `writtenAt`, the fold's `resultsAfterEdit`), and so does D185 (an ask done
+ *  only in part's shortfall labelled by its role, and its check's line). D189 (that check line's label,
+ *  REPORT_ITEM_WORDS.checkReview), D190 (the causes `key_missing` and `some_key_missing` in the header) and D191 (an
+ *  open code finding's `openFindingCannotTell` beside a failed window) ride it too, and move only a review with an
+ *  ask done only in part or a failed window. A review that none of D183 to D185 moves (no
+ *  failed window, no call asked again, no run without tokens or a limit, every not-checked claim listed, no results line
+ *  in the fold, no ask done only in part) was as /9, byte for byte, before D193, but the version, D182's paragraph,
+ *  `did.empty` (the words /9 said), `claimsAt`, `writtenAt` and a fact's `listed`. D193 to D202 ride /10 too, at the
+ *  merge into 0.3.0-beta.11, and move every review: D194 adds the one list of decisions (`decisions.groups` with their
+ *  `shown` and `more`), the tiers' pointers to it (`pointers`) and the quote that leads an item's head; D197 adds a
+ *  run's result class (`part`); D199 drops D182's paragraph (no reader prints how the code review works), D104's seen-in-part marks
+ *  (`seen` is []), the tier's why line and the footer's notes, and adds `facets`, `did.runs.partKeys` and
+ *  `did.claims.counts`; D200 adds the asks' and items' `tags`, `did.runs.partCounts`, the grouped gaps
+ *  (`gapsOfMessages`) and the Runs list's attention first (`ctx.runs.listed`); D201 adds a Verify item's run, the end
+ *  of a failed run's output and the session review's explanation as evidence lines, and cuts reasoning at
+ *  `REPORT_LIMITS.reasonChars`; D202 adds an ask's `details` (what does a done ask, how the session review read your
+ *  words), a message's `before` (the end of the agent's message recorded last before it), a decision's recorded actions
+ *  as evidence lines, an untied question's tag, a decision entry's `afterAsk`, the legend's four lines more, and says a
+ *  gap's message numbers as spans (no `gapMessages` bound); D204 adds a failed run's whole command (or its start) and a
+ *  decision's statement from its quote on as evidence lines, names a decision's action by its recorded tool, adds the
+ *  legend's lines of the two tags where the review has them, names the part "Your asks", and cuts a quote by its
+ *  recorded characters.
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/9';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/10';
 
 /**
+ * D202: a decision's recorded actions, 5, then counted (`actions`).
  * Every display bound the report keeps (D97), frozen literals: a quote 120 characters; an ask's prefix in a
  * list line 12 words; a message shown open up to 300 characters; a code excerpt 8 lines of 160 characters, one an item;
  * a permalink's range 8 lines; 3 places an item; 40 runs, 50 claims and 200 files shown, then counted; 3 Must act
@@ -154,10 +185,12 @@ export const REPORT_MODEL_VERSION = 'sonah.report-model/9';
  * prompt is folded after Must act and Must know, its count in the fold's summary.
  * A row a bound cuts is still placed: its list counts it.
  */
-export const REPORT_LIMITS = Object.freeze({ quoteChars: 120, askPrefixWords: 12, messageChars: 300, excerptLines: 8,
+export const REPORT_LIMITS = Object.freeze({ askLinks: 10, actions: 5, reasonChars: 1200, outputLines: 6,
+  wholeCommandChars: 1200, statementChars: 600,
+  outputLineChars: 160, quoteChars: 120, askPrefixWords: 12, messageChars: 300, excerptLines: 8,
   excerptLineChars: 160, permalinkLines: 8, where: 3, runs: 40, claims: 50, files: 200, mustActLabels: 3, titleChars: 80,
   questionChars: TRACE_LIMITS.questionChars, commandChars: 80, wordsChars: 160, notCheckedPhrases: 4, closingLines: 200, withheld: 100,
-  unreadIds: 20, labelWords: 6, folderChars: 300, openAsks: 30, groupAsks: 5 });
+  unreadIds: 20, labelWords: 6, folderChars: 300, openAsks: 30 });
 
 /**
  * D131 (R1, B12; the owner: "Must act comes first"): whether Must act and Must know come before your prompt on every
@@ -235,10 +268,25 @@ const C = (text) => part(text, { by: CODE_REVIEW });
 const CODE = (text) => part(text, { code: true });
 const LINK = (text, href) => part(text, { href });
 const ONE = (text) => [S(text)];
+/** D194: whether an item leads with its quote: it has a verbatim quote, and its what line holds Sonah's words alone (no
+ *  reviewer's words, no quote, no code, no link), so the quote is the one specific thing it names. By structure. */
+const leadsWithQuote = (what, quote) => plain(quote) && quote.quote === true && Array.isArray(what) && what.length > 0
+  && what.every((p) => p.by === 'sonah' && !p.quote && !p.code && !p.href);
 
 /** A list cut to `n` entries (R17): all of it when at most one entry would be cut (a lone hidden entry is shown, never
  *  counted as "and 1 more"), else its first `n` and how many it leaves out. */
 const cutTo = (rows, n) => (rows.length <= n + 1 ? { shown: rows, more: 0 } : { shown: rows.slice(0, n), more: rows.length - n });
+/** D202: ascending whole numbers as spans: a run of three or more in a row as `[first, last]`, any other a number. */
+const numberSpans = (ns) => {
+  const out = [];
+  for (let i = 0; i < ns.length;) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++;
+    if (j - i >= 2) out.push([ns[i], ns[j]]); else out.push(...ns.slice(i, j + 1));
+    i = j + 1;
+  }
+  return out;
+};
 /** The review's own words (or a recorded text) on one line, clipped. */
 const words = (text, n = REPORT_LIMITS.wordsChars) => clip(oneLine(text ?? ''), n);
 const capital = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
@@ -249,12 +297,14 @@ function grounds(session, receipt) {
   if (!plain(receipt) || typeof receipt.quote !== 'string' || !receipt.quote) return false;
   try { return verifyReceipt(session, receipt).ok === true; } catch { return false; }
 }
-/** A verbatim quote as the report shows it: on one line, at most `quoteChars`, the cut said outside the marks. */
+/** A verbatim quote as the report shows it: on one line, at most `quoteChars` recorded characters, the cut said outside
+ *  the marks. D204's review: the cut counts the recorded characters and `visible` marks the kept ones after (as D202's
+ *  `spanQuotesEnd`), so a cut never falls inside the mark of an invisible character. */
 function quoted(text) {
-  const full = visible(text).replace(/\n/g, ' ');
-  const points = [...full];
+  const points = [...String(text ?? '').replace(/\r\n?/g, '\n')];
   const cut = points.length > REPORT_LIMITS.quoteChars;
-  return part(cut ? points.slice(0, REPORT_LIMITS.quoteChars - 1).join('') : full, { quote: true, cut });
+  return part(visible((cut ? points.slice(0, REPORT_LIMITS.quoteChars - 1) : points).join('')).replace(/\n/g, ' '),
+    { quote: true, cut });
 }
 /** A grounded receipt's quote part, or null when it does not ground in this session. A quote of the agent's action
  *  drops a leading `cd <dir> &&` (where a command ran, not what it did), unless that is all of it. */
@@ -272,18 +322,45 @@ const JOIN = ' … ';
  * outside the last mark. No span, no part: Sonah never quotes its own words.
  */
 function spanQuotes(spans, chars = REPORT_LIMITS.quoteChars) {
+  // D204's review: the cut counts the recorded characters, and `visible` marks the kept ones after (as D202's
+  // `spanQuotesEnd`), so a cut never falls inside the mark of an invisible character.
   const texts = list(spans).filter((span) => typeof span === 'string' && span !== '')
-    .map((span) => [...visible(span).replace(/\n/g, ' ')]);
+    .map((span) => [...span.replace(/\r\n?/g, '\n')]);
+  const shown = (points) => visible(points.join('')).replace(/\n/g, ' ');
   const out = [];
   let room = chars;
   for (const [i, points] of texts.entries()) {
     if (i > 0) out.push(S(JOIN));
     if (points.length > room || (points.length === room && i < texts.length - 1)) {
-      out.push(part(points.slice(0, Math.max(1, Math.min(points.length, room) - 1)).join(''), { quote: true, cut: true }));
+      out.push(part(shown(points.slice(0, Math.max(1, Math.min(points.length, room) - 1))), { quote: true, cut: true }));
       break;
     }
-    out.push(part(points.join(''), { quote: true }));
+    out.push(part(shown(points), { quote: true }));
     room -= points.length;
+  }
+  return out;
+}
+/** D202's review: recorded text spans as parts, as `spanQuotes`, but their last `chars` characters: a cut at the start,
+ *  said by Sonah's "…" before the first mark. No span, no part. */
+function spanQuotesEnd(spans, chars = REPORT_LIMITS.quoteChars) {
+  // Its second review: the cut counts the recorded characters; `visible` marks the kept ones after, so a cut never falls
+  // inside the mark of an invisible character.
+  const texts = list(spans).filter((span) => typeof span === 'string' && span !== '').map((span) => [...span]);
+  const shown = (points) => visible(points.join('')).replace(/\n/g, ' ');
+  const out = [];
+  let room = chars;
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const points = texts[i];
+    // A span that fills the room with spans before it, or passes it, keeps its last `room - 1` characters (at least
+    // one); `room` is at least 1 here, since a span that fits leaves room.
+    if (points.length > room || (points.length === room && i > 0)) {
+      out.unshift(part(shown(points.slice(-Math.max(1, room - 1))), { quote: true }));
+      out.unshift(S('…'));
+      return out;
+    }
+    out.unshift(part(shown(points), { quote: true }));
+    room -= points.length;
+    if (i > 0) out.unshift(S(JOIN));
   }
   return out;
 }
@@ -740,7 +817,9 @@ function promptAsks(session, report, facts) {
  * - `prompt`: `asks` (`[{ n, message, state, status, words (Parts), quoted, located, item, lines (Part lists),
  *   codeMade, rowId, folded (D133: Part lists, the row's own fold) }]`), `messages` (`[{ k, reply, segments, chars,
  *   cutAt, attached, pasted, asks, attachedAsks, unlocated }]`: each message that holds an ask; `cutAt` the characters shown open, or null), `emptyMessages`
- *   (`[{ k, segments, chars, pasted }]`: the messages that hold none), `counts` (by state), `parts` (the count words);
+ *   (`[{ k, segments, chars, pasted }]`: the messages that hold none), D183: `unreachedMessages` (the same shape: those of
+ *   them that no answer of the session review could have read, every window failed or every window that holds the
+ *   message failed; absent with none), `counts` (by state), `parts` (the count words);
  *   D127 (B10d): `compactions` (`[{ n, afterMessage, dropped, before, words }]`, only when the session holds one: each
  *   compaction of the agent's context that the recorder typed, after your message `afterMessage`, 0 before any), and
  *   (N1) on an ask, `compaction`: the first compaction recorded after its message (absent when none came after it).
@@ -752,8 +831,9 @@ function promptAsks(session, report, facts) {
  *   for an item to verify, one Part list per premise of its check that Sonah could not check, in the check's words; else
  *   null), impact, action, label (Parts or null), where (`[{ path, side, startLine, endLine, url, noLink, excerpt }]` or `[{ anchor, text }]`; an excerpt is
  *   `{ lines: [{ n, text, changed }], more }`), whereMore (the places past `REPORT_LIMITS.where` not shown, counted), scope: { asks, notAsked, askedUnknown, preExisting }, related: { items,
- *   asks }, evidence (`[{ label, parts }]`, folded; D144: the line of an ask done only in part that quotes its
- *   shortfall also has `roleLabel`, the label its quote has by its receipt's role), why (its tier's sentence), rowId,
+ *   asks }, evidence (`[{ label, parts }]`, folded; D185: the line that quotes an ask's shortfall is labelled by its
+ *   receipt's role, and an ask done only in part has its check's reason, in the session review's words, when one
+ *   upheld check holds it; D189: under "Its check, in the session review's words:"), why (its tier's sentence), rowId,
  *   answer ({ words, reason } or null), rows ([{ source, index }], the primary row first), agentPrompt (D144: on an item that leads in Must act, the
  *   prompt for the agent `{ lines }`, each line a Part list (`agentPromptOf`, shown as `agentPromptText`), or null; null
  *   on every other item; a member has none), agentPromptNone (D144: why an item that leads in Must act has no prompt, a
@@ -774,17 +854,22 @@ function promptAsks(session, report, facts) {
  *   `parts` (D167) every run's result part, counted, in the words and order of `cutParts`, which the .md says in place
  *   of the list), `claims` (`{ shown: [{ anchor,
  *   source, index, status, item, quote, path, confirmedBy, why }], total, more, closing: { rows: [{ k, parts }],
- *   total }, notChecked: { claims, written } }`: every row's own status and words, `item` the item that holds it or a
+ *   total }, notChecked: { claims, written, claimsAt, writtenAt } }`: every row's own status and words, `item` the item
+ *   that holds it or a
  *   code finding's that follows from it), `leftOut` (`[{ item, quote }]`: a decision not to act, by the agent's words that ground),
  *   `settled` (`[{ index, parts, youSaid, youSaidLabel,
- *   rowId }]`).
- * - `notChecked`: `quiet` (D133: the first screen's lines said here, word for word, first, and not counted in `total`),
+ *   rowId }]`), D183: `empty` (`{ claims, leftOut, settled }`: what each of those three lists says when it is empty: what
+ *   Sonah found, or, when every window of the session review failed, that Sonah cannot tell).
+ * - `notChecked`: `quiet` (D133: the first screen's lines said here, word for word, first, and not counted in `total`;
+ *   D184: but the results line, said here as `resultsAfterEdit` because no sentence before it says which runs it covers),
  *   `didNotCheck` (D133: header
  *   line D's `{ lead, phrases, more }` when it is said here, else null), `lead`, `code` (Part lists), `facts`
- *   (`[{ group, parts, cause }]`, `cause` true on a coverage cause), `withheld` (`[{ index, what, words, why,
+ *   (`[{ group, parts, cause, listed }]`, `cause` true on a coverage cause; D184: `listed` `{ kind, n, at }` on the facts
+ *   that the claims list holds what Sonah did not check, which each reader says again of its own rows,
+ *   `listedThereParts`), `withheld` (`[{ index, what, words, why,
  *   check }]`), `withheldTotal`, `unreadAsks`, `unreadRows` (sentences), `total`.
  * - `footer`: `provenance`, `newer` (D171: the line that a newer Sonah is out, or null), `usage` (D129: what the review
- *   cost, or null), `legend` (three sentences), `triageLegend` (or null), `share`, `sessionHash` (or null).
+ *   cost, or null), `legend` (its sentences; D202: seven), `sessionHash` (or null).
  * - `placement`: `{ rows, version }`, `rows` by `source:index` (`reportPlacement`).
  */
 export function reportModel(session, report, options = {}) {
@@ -803,6 +888,8 @@ export function reportModel(session, report, options = {}) {
   const ctx = { session, report: r, options: opts, facts, honest, codePass, codeRan, change,
     events: list(session?.events), orderOf: new Map(list(session?.events).map((e, i) => [e?.id, i])),
     answers: answersOf(opts.decisionReviews), noLinks: new Set() };
+  // D183: what the session review's calls did, from its window records (structure only).
+  ctx.calls = sessionCallsOf(r);
   ctx.asks = promptAsks(session, r, facts);
   ctx.askOfRow = new Map(ctx.asks.flatMap((ask) => ask.rows.map((index) => [index, ask])));
   ctx.triage = triageOf(r);
@@ -826,6 +913,8 @@ export function reportModel(session, report, options = {}) {
     item.agentPromptNone = made.none;
   }
   const prompt = promptOf(ctx);
+  // D202's review: the runs an ask's evidence names are named runs (D169), as an item's are.
+  ctx.promptAsks = prompt.asks;
   const did = didOf(ctx);
   ctx.did = did;
   const { quiet: headerQuiet, folded: didNotCheck, ...header } = headerOf(ctx, prompt);
@@ -840,7 +929,8 @@ export function reportModel(session, report, options = {}) {
   // D163 (L1): the first part points to each decision of the second tagged Must act or Must know.
   const pointers = pointersOf(decisions);
   const { quiet: countQuiet, ...countLine } = countLineOf(ctx, tiers, prompt, decisions, pointers);
-  // D133 (R2): the first screen's lines about what Sonah could not check, each word for word, first in that fold.
+  // D133 (R2): the first screen's lines about what Sonah could not check, each word for word, first in that fold (D184:
+  // the results line in its own frame, `resultsAfterEdit`).
   const notChecked = { ...notCheckedOf(ctx, [...headerQuiet, ...countQuiet]), didNotCheck };
   const footer = footerOf(ctx, items);
   const model = { version: REPORT_MODEL_VERSION, header, countLine, prompt, tiers, pointers, decisions, did, notChecked,
@@ -853,6 +943,7 @@ export function reportModel(session, report, options = {}) {
  *  the item), `own` (its lead's own tier) and `members` (`publicMember`, in the order they joined). */
 const publicItem = (item) => ({ n: item.n, kind: item.kind, type: item.type, tier: { ...item.tier }, own: { ...item.own },
   what: item.what, quote: item.quote, quoteLabel: item.quoteLabel, quoteMissing: item.quoteMissing,
+  leadQuote: item.leadQuote, facets: item.facets, tags: item.tags,
   agentSaid: item.agentSaid, agentSaidLabel: item.agentSaidLabel, reviewWhy: item.reviewWhy,
   restsOutside: item.restsOutside, impact: item.impact,
   action: item.action, label: item.label, where: item.where,
@@ -865,6 +956,7 @@ const publicItem = (item) => ({ n: item.n, kind: item.kind, type: item.type, tie
  *  rows. */
 const publicMember = (member) => ({ kind: member.kind, type: member.type, tie: member.tie, tier: { ...member.tier },
   folded: member.foldedMember === true, what: member.what, quote: member.quote, quoteLabel: member.quoteLabel,
+  leadQuote: member.leadQuote,
   quoteMissing: member.quoteMissing, agentSaid: member.agentSaid, agentSaidLabel: member.agentSaidLabel,
   reviewWhy: member.reviewWhy,
   impact: member.impact, action: member.action, where: member.where, whereMore: member.whereMore,
@@ -879,8 +971,8 @@ const PW = REPORT_AGENT_PROMPT_WORDS;
  * D144: the prompt's label, in your voice, for each label that an item gives a quote (REPORT_ITEM_WORDS), by the key
  * of its words in REPORT_AGENT_PROMPT_WORDS: the label of your words becomes "I …", the agent's "You …", and a label
  * that names neither keeps its sense (a recorded result, the change, code written, a helper, what does part of an ask).
- * Closed: a label not here, and no project instruction file's (`projectFileOf`), has no words in the prompt. What is
- * missing from an ask is no label here: its quote is labelled by its role (`roleLabel`).
+ * Closed: a label not here, and no project instruction file's (`projectFileOf`), has no words in the prompt. D185: an
+ * ask's shortfall is labelled by its role on the item itself, so its label is one of these.
  */
 export const AGENT_PROMPT_LABELS = Object.freeze({
   [REPORT_ITEM_WORDS.youSaid]: 'iSaid', [REPORT_ITEM_WORDS.agentSaid]: 'youSaid',
@@ -951,8 +1043,8 @@ export function agentPromptLabelOf(item, part) {
   const kind = Object.hasOwn(AGENT_PROMPT_KINDS, item.kind) ? AGENT_PROMPT_KINDS[item.kind] : null;
   if (part === item.quote) return item.quoteLabel ? promptLabel(item.quoteLabel) : kind?.lead ? PW[kind.lead] : null;
   const line = quoteEvidence(item).find((e) => e.parts[0] === part);
-  // A line whose label says what its quote shows, not whose words it is (what is missing from an ask), by its role.
-  return line ? promptLabel(line.roleLabel ?? line.label) : null;
+  // D185: every such line is labelled by whose words or what record its quote is (an ask's shortfall by its role).
+  return line ? promptLabel(line.label) : null;
 }
 /**
  * D144: the prompt for the agent of one item, from its own fields alone: `{ prompt, none }`, `prompt`
@@ -1127,7 +1219,11 @@ function runsOf(ctx) {
     let raw = '';
     try { raw = session.textSpansOf(event, 'command').join(' '); } catch { raw = ''; }
     runs.push({ event, at: i, command: event.operation === 'command', text: event.operation === 'command'
-      ? failedCommandText(raw, REPORT_LIMITS.commandChars) : null, tool: typeof event.tool === 'string' ? event.tool : null,
+      ? failedCommandText(raw, REPORT_LIMITS.commandChars) : null,
+      whole: event.operation === 'command' ? failedCommandText(raw, REPORT_LIMITS.wholeCommandChars) : null,
+      wholeCut: event.operation === 'command'
+        && [...(failedCommandText(raw, Infinity) ?? '')].length > REPORT_LIMITS.wholeCommandChars,
+      tool: typeof event.tool === 'string' ? event.tool : null,
     outcome, uncovered, failure, afterEdit: lastEdit >= 0 && i > lastEdit });
   });
   // A failure row whose call the recording does not hold is still placed: a run of its own, by its result.
@@ -1145,41 +1241,27 @@ function runsOf(ctx) {
   // first `REPORT_LIMITS.runs` of them. A mark's link (`seenOf`) points only to one of these; an item may name any run,
   // and D169 lists apart each it names that these leave out (`didOf`, `runsNamedOf`).
   const showable = runs.filter(showableRun);
-  const shownByCall = new Map(showable.slice(0, REPORT_LIMITS.runs).filter((run) => run.event)
-    .map((run) => [run.event.id, run]));
-  return { runs, lastEdit, showable, shownByCall };
+  // D200 (the owner, 2026-10-31, on real sessions: a list of 40 of 1,610 runs held 5 of its 38 failures): past the
+  // list's bound, the runs whose result a reader must see come first (`ATTENTION_PARTS`, by result class, or a failure
+  // row), then the rest, until the bound; the list keeps the recording's order.
+  const attention = showable.filter((run) => run.failure || ATTENTION_PARTS.includes(partOf(run.outcome)));
+  const first = new Set(attention);
+  const picked = new Set([...attention, ...showable.filter((run) => !first.has(run))].slice(0, REPORT_LIMITS.runs));
+  const listed = showable.filter((run) => picked.has(run));
+  const shownByCall = new Map(listed.filter((run) => run.event).map((run) => [run.event.id, run]));
+  return { runs, lastEdit, showable, listed, shownByCall };
 }
+/** D200: the result classes a reader must see in the Runs list, before any other past its bound. */
+const ATTENTION_PARTS = Object.freeze(['ran-failed', 'failed-or-refused', 'did-not-run', 'no-terminal-status', 'stopped',
+  'end-unread']);
 /** A run the Runs list names: any but one that exited 0, with a status that covers it, before the last edit, and
  *  answered for by no failure row. */
 const showableRun = (run) => run.outcome.class !== 'ran-exit-0' || run.uncovered || run.afterEdit || run.failure;
 
 // ---- the shown-in-part mark (D104) ---------------------------------------------------------------------------------
-
-/**
- * D104 (F5 part 4): the mark of rows, as lines of parts: one line for each recorded result any of `refs` cites that
- * Sonah first showed the session review only in part (the row's `seenInPart`, read by `seenInPartOf`), in recorded
- * order, each result once. A line names the result's place — the run that produced it, linked, when the Runs list shows
- * that run; else its event in the recording, counted from 1 — and what Sonah left out (`REPORT_SEEN_WORDS.cut`). It
- * claims nothing of what those lines hold, nor of what they would settle. `refs`: `[{ source, row }]`, read only for the
- * session review's own sets (SEEN_IN_PART_SOURCES: a mark is code's, written there alone; the code step's rows carry
- * none). Structure only.
- */
-function seenOf(ctx, refs) {
-  const byEvent = new Map();
-  for (const ref of refs) {
-    if (!SEEN_IN_PART_SOURCES.includes(ref.source)) continue;
-    for (const seen of seenInPartOf(ref.row)) if (!byEvent.has(seen.eventId)) byEvent.set(seen.eventId, seen);
-  }
-  const order = (seen) => ctx.orderOf.get(seen.eventId) ?? seen.sequence ?? Infinity;
-  return [...byEvent.values()].sort((a, b) => order(a) - order(b)).map((seen) => {
-    const event = ctx.session?.event?.(seen.eventId) ?? null;
-    const run = typeof event?.invocation === 'string' ? ctx.runs.shownByCall.get(event.invocation) ?? null : null;
-    const at = ctx.orderOf.get(seen.eventId) ?? seen.sequence;
-    const place = run ? LINK(REPORT_SEEN_WORDS.ofRun(run.k), `run-${run.k}`)
-      : S(Number.isSafeInteger(at) ? REPORT_SEEN_WORDS.atEvent(at + 1) : REPORT_SEEN_WORDS.aResult);
-    return [S(`${REPORT_SEEN_WORDS.lead} `), place, S('. '), S(REPORT_SEEN_WORDS.cut(seen))];
-  });
-}
+// D199 (the owner, 2026-10-30, "All of them"): no reader says beside a row that Sonah first showed the session review a
+// result only in part; What Sonah could not check says so for the session, as a coverage cause (review.js
+// COVERAGE_SENTENCE).
 
 // ---- the candidates: every row's item kind or list ---------------------------------------------------------------------
 
@@ -1325,6 +1407,8 @@ function placeItems(ctx, candidates) {
   for (const item of items) {
     if (!Object.hasOwn(UNTIED_TIER_RULE.ceilings, item.kind) || checkedQuestion(item.primary.row)) continue;
     item.tier = bounds(item.primary, item.triage, false, true);
+    // D202's review: the structural fact itself, for the item's tag, whether or not the bound moved its tier.
+    item.untied = true;
   }
   // Tied (D96 amended, R6): a published finding of the code review follows from this row, or one of its questions
   // concerns it where code checked that tie (D116's review: `questionTiedTo`, the rule of every pointer the report
@@ -1629,6 +1713,64 @@ const samePlacesOf = (f) => list(f?.places).filter((p) => plain(p) && typeof p.p
   .filter((p, at, all) => all.findIndex((q) => q.path === p.path) === at)
   .map(({ path, side, startLine, endLine }) => ({ path, side, startLine, endLine }));
 const anchorOf = (anchor, text) => ({ anchor, text });
+/** D201, D202: the run whose recorded result a receipt quotes, by the call that result answers (recorder structure); only
+ *  for a receipt whose quote grounds in this render, as every quote the report shows. Else null. */
+function runOfResult(ctx, receipt) {
+  if (!grounds(ctx.session, receipt)) return null;
+  const result = typeof receipt.eventId === 'string' ? ctx.session?.event?.(receipt.eventId) ?? null : null;
+  const call = typeof result?.invocation === 'string' ? result.invocation : null;
+  return call ? ctx.runs.runs.find((r) => r.event?.id === call) ?? null : null;
+}
+/** D204: a grounded receipt's recorded text from its quote on, in the span that holds the quote, to `statementChars`
+ *  (the cut said outside the marks), when that span goes on past the quote as the page shows it; else null. Structure
+ *  only: the quote's place in the recording, never its words. */
+function fromQuoteOn(session, receipt) {
+  if (!grounds(session, receipt)) return null;
+  let spans = [];
+  try { spans = session.textSpansOf(session.event(receipt.eventId), 'text'); } catch { spans = []; }
+  const span = spans.find((x) => typeof x === 'string' && x.includes(receipt.quote));
+  if (!span) return null;
+  const on = span.slice(span.indexOf(receipt.quote)).replace(/\s+$/, '');
+  // Recorded characters on both sides, as `quoted` and `spanQuotes` count them.
+  const shown = [...receipt.quote].length;
+  return [...on].length > Math.min(shown, REPORT_LIMITS.quoteChars) ? spanQuotes([on], REPORT_LIMITS.statementChars)
+    : null;
+}
+/** A run as a line's parts: its number, linked, and its command. */
+const runParts = (run) => [LINK(REPORT_ITEM_WORDS.run(run.k), `run-${run.k}`),
+  ...(run.text ? [S(' '), CODE(clip(run.text, REPORT_LIMITS.commandChars))] : [])];
+/** Who said a quote is read from the recording: a statement a helper's own session recorded is the helper's
+ *  (`helperSaid`); any other keeps `label`. Items and asks alike (D202's review). */
+const speakerLabel = (session, receipt, label) => (plain(receipt) && receipt.role === 'commentary'
+  && typeof session?.event?.(receipt.eventId)?.childId === 'string' ? REPORT_ITEM_WORDS.helperSaid : label);
+
+/** D185: the window records whose challenge runs hold the checks of the session review's rows (run-review.js writes
+ *  each on a window record: the first check, the re-check of a status, and the vote of a window that disagreed). */
+const ASK_CHECK_RECORDS = Object.freeze(['challenge', 'restatusChallenge', 'windowVoteChallenge']);
+const sameAskReceipt = (a, b) => (a == null && b == null) || (plain(a) && plain(b) && a.eventId === b.eventId
+  && a.role === b.role && a.quote === b.quote);
+/**
+ * D185: the reason the session review's check gave for a published ask row's status, in its words: of the one result,
+ * across every window's challenge runs (ASK_CHECK_RECORDS), of type `requirement` that held (`survived`), whose
+ * candidate has the row's status and the row's instruction, deliverable and shortfall (each its event, role and quote,
+ * byte for byte), the explanation of its first valid vote that did not refute it, in pass order. Null when no such
+ * result, or more than one, holds, or its vote gave none. Structure and provenance only: which record, which row; the
+ * words are the session review's and are never read.
+ */
+function askCheckWords(report, row) {
+  const upheld = list(report?.windowResults).filter(plain)
+    .flatMap((w) => ASK_CHECK_RECORDS.flatMap((field) => list(plain(w[field]) ? w[field].results : null)))
+    .filter((res) => plain(res) && res.type === 'requirement' && res.survived === true && plain(res.candidate)
+      && res.candidate.status === row.status
+      && ['instruction', 'deliverable', 'shortfall'].every((k) => sameAskReceipt(res.candidate[k], row[k])));
+  if (upheld.length !== 1) return null;
+  const votes = list(upheld[0].votes).filter(plain).map((v, at) => ({ v, at }))
+    .sort((a, b) => (Number.isSafeInteger(a.v.pass) ? a.v.pass : Infinity) - (Number.isSafeInteger(b.v.pass) ? b.v.pass
+      : Infinity) || a.at - b.at);
+  const vote = votes.map(({ v }) => v).find((v) => v.valid === true && v.verdict === 'not-refuted'
+    && typeof v.explanation === 'string' && v.explanation.trim() !== '');
+  return vote ? vote.explanation : null;
+}
 
 /** Fills an item's visible and folded fields from its rows. */
 function finishItem(ctx, item) {
@@ -1637,9 +1779,7 @@ function finishItem(ctx, item) {
   const entry = item.triage;
   const ev = [];
   const evidence = (label, parts) => ev.push({ label, parts });
-  // Who said a quote is read from the recording: a statement a helper's own session recorded is the helper's.
-  const speaker = (receipt, label) => (plain(receipt) && receipt.role === 'commentary'
-    && typeof session?.event?.(receipt.eventId)?.childId === 'string' ? REPORT_ITEM_WORDS.helperSaid : label);
+  const speaker = (receipt, label) => speakerLabel(session, receipt, label);
   const quote = (label, receipt) => { const q = quoteOf(session, receipt); if (q) evidence(speaker(receipt, label), [q]);
     return q; };
   // Whose words a quote is, by its receipt's role: one rule for every item whose quote line shows a receipt's quote —
@@ -1654,6 +1794,11 @@ function finishItem(ctx, item) {
       : receipt.role === 'observation' ? REPORT_ITEM_WORDS.recordedResult
         : receipt.role === 'action' ? REPORT_ITEM_WORDS.agentDid : REPORT_ITEM_WORDS.changeShows);
   let what = [], quoteLine = null, quoteLabel = null, quoteMissing = false, agentSaid = null, agentSaidLabel = null;
+  // D199: a decision's or a change of approach's two sides as Parts, for a reader that shows them as columns: what it is
+  // about (or the approach left) and what the agent chose (or took up). Null for any other kind.
+  let facets = null;
+  // D200: why Sonah could not check whether you asked for a decision, when its row says (a closed column reason).
+  let decisionTag = null;
   let where = [], rowId = null, reviewWhy = null;
   const label = { text: null, parts: null, numbered: false };
   const ask = item.primary.ask ?? null;
@@ -1666,7 +1811,40 @@ function finishItem(ctx, item) {
   };
   const sessionFile = (receipt) => (plain(receipt) && ['code', 'action'].includes(receipt.role)
     ? eventPaths(session, receipt.eventId).slice(0, 1).map((path) => locationOf(ctx, { path })) : []);
-  const askNotes = (askRow) => tiedAskNotes(ctx, askCodeNotes(ctx.report, askRow), askRow).map((note) => {
+  // D201 (the owner, 2026-10-31: "for evidence, show more details for verify cases, at least where in the code"): the run
+  // whose recorded result a receipt quotes, by the call its result answers (recorder structure), as a place and as a line
+  // that names it, linked, with its command.
+  const resultRun = (receipt) => {
+    const run = runOfResult(ctx, receipt);
+    // Once a run, however many of the item's quotes its result gives.
+    if (!run || where.some((w) => w.anchor === `run-${run.k}`)) return;
+    where.push(anchorOf(`run-${run.k}`, REPORT_ITEM_WORDS.run(run.k)));
+    evidence(REPORT_ITEM_WORDS.fromRun, runParts(run));
+  };
+  // D201: the last lines of a result's recorded output, each word for word (cut at its end outside the code), lines never
+  // joined across two recorded spans.
+  const outputEnd = (eventId) => {
+    let spans = [];
+    try { spans = typeof eventId === 'string' ? session.textSpansOf(session.event(eventId), 'output') : []; } catch { spans = []; }
+    const lines = spans.flatMap((span) => visible(span).split('\n')).map((line) => line.replace(/\s+$/, ''))
+      .filter((line) => line.trim());
+    lines.slice(-REPORT_LIMITS.outputLines).forEach((line, at) => {
+      const points = [...line];
+      const cut = points.length > REPORT_LIMITS.outputLineChars;
+      evidence(at === 0 ? REPORT_ITEM_WORDS.outputEnd : null, [CODE(cut ? points.slice(0, REPORT_LIMITS.outputLineChars - 1)
+        .join('') : line), ...(cut ? [S('…')] : [])]);
+    });
+  };
+  // D201: the session review's own words for the finding (its `explanation`: often the claim as the session review
+  // states it, sometimes with what contradicts it), to the bound.
+  const reviewFound = (f) => {
+    if (typeof f?.explanation === 'string' && f.explanation.trim())
+      evidence(REPORT_ITEM_WORDS.reviewSaid, [R(words(f.explanation, REPORT_LIMITS.reasonChars))]);
+  };
+  // D199 (the owner, 2026-10-30: "Remove too many disclaimers present with everything", "All of them"): no note that a
+  // finding was withheld or could not be checked in full beside an item; What Sonah could not check keeps those.
+  const askNotes = (askRow) => tiedAskNotes(ctx, askCodeNotes(ctx.report, askRow), askRow)
+    .filter((note) => !['withheld_finding', 'unconfirmed_finding'].includes(note.link)).map((note) => {
     const subject = typeof note.subject === 'string' && note.subject ? [S(' '), C(words(note.subject))] : [];
     return { label: null, parts: [S(sentence(note.words)), ...subject] };
   });
@@ -1687,18 +1865,18 @@ function finishItem(ctx, item) {
   // code. A report made before it keeps the words of the gate of its day.
   const checkEvidence = (f) => {
     const explanation = plain(f.check) && typeof f.check.explanation === 'string' && f.check.explanation.trim()
-      ? [S(' '), C(words(f.check.explanation, 300))] : [];
+      ? [S(' '), C(words(f.check.explanation, REPORT_LIMITS.reasonChars))] : [];
     if (!premiseRuled(ctx.report?.codePass) || !plain(f.check)) {
       if (explanation.length) evidence(REPORT_ITEM_WORDS.check, [S(CODE_REPORT_WORDS.checkHolds), ...explanation]);
       return;
     }
-    evidence(REPORT_ITEM_WORDS.check, [S(findingConfirmed(f.check) ? CODE_REPORT_WORDS.checkConfirmed
-      : CODE_REPORT_WORDS.checkUnconfirmed), ...explanation]);
+    // D199: what the check found (confirmed: its label's sentence; else only the check's own words), and each premise
+    // with its quotes, with no sentence of where Sonah could or could not check it.
+    if (findingConfirmed(f.check)) evidence(REPORT_ITEM_WORDS.check, [S(CODE_REPORT_WORDS.checkConfirmed), ...explanation]);
+    else if (explanation.length) evidence(REPORT_ITEM_WORDS.check, explanation.slice(1));
     for (const p of list(f.check.premises).filter((x) => plain(x) && typeof x.premise === 'string' && x.premise.trim())) {
-      // A premise that cannot confirm is said as one Sonah could not check, whatever source it names.
       const confirms = premiseConfirms(p);
-      evidence(REPORT_ITEM_WORDS.restsOn, [C(words(p.premise, TRACE_LIMITS.premiseChars)), S(' '),
-        S(CODE_REPORT_WORDS.premiseSources[confirms ? p.source : 'outside'])]);
+      evidence(REPORT_ITEM_WORDS.restsOn, [C(words(p.premise, TRACE_LIMITS.premiseChars))]);
       for (const r of list(p.receipts).filter(plain)) codeQuote(r);
       if (!confirms) restsOutside.push([C(words(p.premise, TRACE_LIMITS.premiseChars))]);
     }
@@ -1709,7 +1887,7 @@ function finishItem(ctx, item) {
   const traceEvidence = (f) => {
     for (const step of list(f.trace).filter(plain)) {
       const parts = [];
-      if (typeof step.step === 'string' && step.step.trim()) parts.push(C(words(step.step, 300)));
+      if (typeof step.step === 'string' && step.step.trim()) parts.push(C(words(step.step, REPORT_LIMITS.reasonChars)));
       const fromSession = step.source === 'session' || step.side === 'session';
       const recorded = fromSession ? quoteOf(session, step) : null;
       if (recorded) parts.push(S(' '), recorded);
@@ -1735,16 +1913,18 @@ function finishItem(ctx, item) {
         where.push(...sessionFile(checked.deliverable));
       }
       if (checked) {
-        const label = item.kind === 'ask_partly_done' ? REPORT_ITEM_WORDS.whatMissing : shortfallLabel(checked.shortfall);
-        if (!quote(label, checked.shortfall)) evidence(null, ONE(item.kind === 'ask_partly_done'
+        // D185 (0.3.0-beta.11): the shortfall's quote is recorded text that shows a part not met (the agent's words, a
+        // helper's, a result, the change: review-agent.js and challenge.js give the field that contract), never the
+        // missing part itself. So it is labelled by its receipt's role, for an ask done only in part as for one not
+        // done (D144 gave that label to the prompt for the agent alone, `roleLabel`; the readers said "What is
+        // missing:").
+        if (!quote(shortfallLabel(checked.shortfall), checked.shortfall)) evidence(null, ONE(item.kind === 'ask_partly_done'
           ? REPORT_ITEM_WORDS.noFindingRest : REPORT_ITEM_WORDS.noFinding));
-        // D144: the quote under "What is missing:" is recorded text that shows the shortfall (the agent's words, a
-        // result, the change), never the missing part itself: its line also carries the label it has by its receipt's
-        // role (`roleLabel`), as an ask not done labels it. The readers show `label`; the prompt for the agent says
-        // `roleLabel`.
-        else if (item.kind === 'ask_partly_done') ev.at(-1).roleLabel = speaker(checked.shortfall,
-          shortfallLabel(checked.shortfall));
         where.push(...sessionFile(checked.shortfall));
+        // D185: for an ask done only in part, the reason its check gave, in the session review's words (`askCheckWords`).
+        // D189: under a label that names the session review as its source (`checkReview`), never the code review's.
+        const why = item.kind === 'ask_partly_done' ? askCheckWords(ctx.report, checked) : null;
+        if (why !== null) evidence(REPORT_ITEM_WORDS.checkReview, [R(words(why, REPORT_LIMITS.reasonChars))]);
         ev.push(...askNotes(checked));
       }
       rowId = checked ? requirementRowId(checked) : null;
@@ -1781,8 +1961,11 @@ function finishItem(ctx, item) {
     case 'code_finding_legacy': case 'code_finding_unconfirmed': case 'code_finding_open': {
       const f = row;
       what = [typeof f.title === 'string' && f.title.trim() ? C(words(f.title)) : S(REPORT_WHAT_WORDS.noTitle)];
-      // D152: a confirmed finding tied to no written promise says so first, in fixed words.
-      if (item.kind === 'code_finding_open') evidence(null, ONE(CODE_REPORT_WORDS.openFinding));
+      // D152: a confirmed finding tied to no written promise says so first, in fixed words. D191: when a window of the
+      // session review failed (its first call failed or was not sent: the windows' closed codes, `ctx.calls`), the code
+      // review had none of that window's asks and claims to tie it to, so the words say what Sonah cannot tell.
+      if (item.kind === 'code_finding_open') evidence(null, ONE(ctx.calls.failed > 0 ? CODE_REPORT_WORDS.openFindingCannotTell
+        : CODE_REPORT_WORDS.openFinding));
       if (finding || plain(f.anchor)) { const w = codeWhere(f); if (w) where.push(w); }
       // D179: a finding that several places of the change hold byte for byte (its record's `places`, the writer's
       // merge, evidence code-pass.js `samePlacesLeads`): each other place on the Where line (no excerpt), and one fixed
@@ -1832,8 +2015,12 @@ function finishItem(ctx, item) {
       const claimRow = item.folded.find((c) => c.source === 'promises');
       if (claimRow) where.push(anchorOf(`claim-${claimRow.index + 1}`, REPORT_ITEM_WORDS.claimsList));
       const against = list(f.receipts).find((x) => plain(x) && x.role === CONTRADICTION_ROLES[source] && x !== said);
+      // A corrected claim's later result says what holds now; the session review's first words stand only on a claim
+      // still contradicted.
+      if (item.kind === 'claim_contradicted') reviewFound(f);
       quote(contradictionWords(session, source, against), against);
       where.push(...sessionFile(against));
+      resultRun(against);
       // D153: a later window's correction, its result.
       if (item.kind === 'claim_corrected' && plain(f.correctedBy)) quote(REPORT_ITEM_WORDS.laterResult,
         f.correctedBy.observation);
@@ -1857,7 +2044,9 @@ function finishItem(ctx, item) {
       const claimRow = item.folded.find((c) => c.source === 'promises');
       if (claimRow) where.push(anchorOf(`claim-${claimRow.index + 1}`, REPORT_ITEM_WORDS.claimsList));
       const against = list(f.receipts).find((x) => plain(x) && x.role === CONTRADICTION_ROLES[source] && x !== said);
+      // D153's frame: what the session review cited before the later work; its words for the claim are not said apart.
       quote(REPORT_ITEM_WORDS.beforeLaterWork, against);
+      resultRun(against);
       if (later) quote(REPORT_ITEM_WORDS.fromLaterWork, later);
       where.push(...sessionFile(against));
       rowId = typeof f.id === 'string' ? f.id : null;
@@ -1914,8 +2103,10 @@ function finishItem(ctx, item) {
       quoteLine = quoteOf(session, w.stated);
       quoteMissing = !quoteLine;
       if (path) where.push(locationOf(ctx, { path }));
-      for (const rc of list(w.receipts).filter((x) => plain(x) && !sameReceipt(x, w.stated)))
+      for (const rc of list(w.receipts).filter((x) => plain(x) && !sameReceipt(x, w.stated))) {
         quote(rc.role === 'observation' ? REPORT_ITEM_WORDS.recordedResult : REPORT_ITEM_WORDS.codeWritten, rc);
+        if (rc.role === 'observation') resultRun(rc);
+      }
       if (item.kind === 'written_corrected' && plain(w.correctedBy)) quote(REPORT_ITEM_WORDS.laterWrite, w.correctedBy);
       rowId = typeof w.id === 'string' ? w.id : null;
       label.text = item.kind === 'written_contradicted' && path ? REPORT_KIND_LABELS.written(fileName(path)) : null;
@@ -1938,8 +2129,16 @@ function finishItem(ctx, item) {
       what.push(S(' '), S(REPORT_WHAT_WORDS.failureTail));
       quoteLine = run?.text ? CODE(run.text) : null;
       if (run) where.push(anchorOf(`run-${run.k}`, REPORT_ITEM_WORDS.run(run.k)));
+      // D204 (the coordinator's review: the failing part of a long command sat past the 80-character cut): the whole
+      // command, to `REPORT_LIMITS.wholeCommandChars`, when the head line cuts it. Its review: a command past that bound
+      // too is its start, and says so.
+      if (run?.whole && run.whole !== run.text) {
+        evidence(run.wholeCut ? REPORT_ITEM_WORDS.commandStart : REPORT_ITEM_WORDS.wholeCommand, [CODE(run.whole)]);
+      }
       const outcomeWords = REPORT_OUTCOME_WORDS[outcome.class]?.[outcome.form];
       if (outcomeWords) evidence(null, ONE(capital(outcomeWords(exitOf(session, run?.event), kind ?? ''))));
+      // The end of the output only of a call that ran: one that failed, or was stopped before it finished.
+      if (['ran-failed', 'stopped'].includes(partOf(outcome))) outputEnd(f.eventId);
       quote(REPORT_ITEM_WORDS.turnEnded, f.response);
       rowId = failureRowId(f);
       label.text = REPORT_KIND_LABELS.failure;
@@ -1953,14 +2152,17 @@ function finishItem(ctx, item) {
       // negation to the session review's words, however it words them ("not to act on Leaving X alone" read backwards).
       const about = typeof d.dimension === 'string' && d.dimension.trim() ? d.dimension : null;
       const chosen = typeof d.chosen === 'string' && d.chosen.trim() ? R(words(d.chosen)) : S('…');
-      if (about !== null && item.kind === 'decision_not_acting') {
-        what = [S(`${REPORT_WHAT_WORDS.notActingAbout} `), R(words(about)), S(`. ${REPORT_WHAT_WORDS.notActingDecision} `),
-          chosen, S('.')];
+      // D194 (the owner, 2026-10-30: headlines lead with the specific thing): with a dimension, what it is about and
+      // what the agent chose first, then the fixed sentence of what kind of decision it is, a sentence of its own.
+      facets = { about: about === null ? null : [R(words(about))], chosen: [chosen] };
+      if (about !== null) {
+        what = [R(words(about)), S(': '), chosen, S('. '), S(item.kind === 'decision_not_acting'
+          ? REPORT_WHAT_WORDS.notActingTail : item.kind === 'decision_chose' ? REPORT_WHAT_WORDS.choseHowTail
+            : REPORT_WHAT_WORDS.decidedTail)];
       } else {
-        const lead = about === null ? (item.kind === 'decision_not_acting' ? REPORT_WHAT_WORDS.notActing
-          : item.kind === 'decision_chose' ? REPORT_WHAT_WORDS.choseHow : REPORT_WHAT_WORDS.decided)
-          : item.kind === 'decision_chose' ? REPORT_WHAT_WORDS.choseHowOn : REPORT_WHAT_WORDS.decidedOn;
-        what = [S(`${lead} `), ...(about === null ? [] : [R(words(about)), S(': ')]), chosen, S('.')];
+        const lead = item.kind === 'decision_not_acting' ? REPORT_WHAT_WORDS.notActing
+          : item.kind === 'decision_chose' ? REPORT_WHAT_WORDS.choseHow : REPORT_WHAT_WORDS.decided;
+        what = [S(`${lead} `), chosen, S('.')];
       }
       const asked = d.constrainedBy?.instruction;
       if (item.kind === 'decision_chose') {
@@ -1970,9 +2172,44 @@ function finishItem(ctx, item) {
       // The agent's own words only: a statement that is a recorded result is never shown as what the agent said.
       agentSaid = d.stated?.role === 'commentary' ? quoteOf(session, d.stated) : null;
       if (agentSaid && speaker(d.stated, null)) agentSaidLabel = REPORT_ITEM_WORDS.helperSaid;
+      // D204 (the coordinator's review: a decision's quote stopped before the reason its own recorded sentence gives): the
+      // recorded statement from the quote on, word for word, to `REPORT_LIMITS.statementChars`, when it goes on past the
+      // quote shown. Structure only: where the quote sits in its recorded span.
+      if (agentSaid) {
+        const on = fromQuoteOn(session, d.stated);
+        if (on) evidence(REPORT_ITEM_WORDS.fromQuoteOn, on);
+      }
       // A value is code written only on the written side of its write; an action's value is what the agent did.
       if (d.valueReceipt?.role === 'action') quote(REPORT_ITEM_WORDS.agentDid, d.valueReceipt);
       else if (onWrittenSide(session, d.valueReceipt)) quote(REPORT_ITEM_WORDS.codeWritten, d.valueReceipt);
+      // D202 (the owner, 2026-10-31: "Decisions: their actions"; the follow-up review found a quarter of one session's
+      // decisions showing only their heading): the calls its row cites as its actions, in the recorded order, one a line:
+      // a run by its number and command, any other call by the tool name the recorder wrote (`recorded.tool`; D204, the
+      // coordinator's review: never the slicer's kind of call, which read as a tool name) and the first file it names
+      // (its review: a read is never told from a write by the file alone), a line said once for the calls it stands
+      // for. A call with no recorded tool name has no line. Past the bound (R17's `cutTo`), the actions the lines left out are counted (its second
+      // review: actions, never lines).
+      const ids = [...new Set(list(d.actions).filter((id) => typeof id === 'string' && ctx.orderOf.has(id)))]
+        .sort((a, b) => ctx.orderOf.get(a) - ctx.orderOf.get(b));
+      const lineOf = (id) => {
+        const run = ctx.runs.runs.find((r) => r.event?.id === id);
+        if (run) return runParts(run);
+        const named = session?.event?.(id)?.recorded?.tool;
+        const tool = typeof named === 'string' && named ? named : null;
+        const path = eventPaths(session, id)[0] ?? null;
+        return tool ? [CODE(tool), ...(path ? [S(' '), CODE(path)] : [])] : null;
+      };
+      const byLine = new Map();
+      for (const id of ids) {
+        const parts = lineOf(id);
+        if (!parts) continue;
+        const key = parts.map((p) => p.text).join('');
+        if (byLine.has(key)) byLine.get(key).n++; else byLine.set(key, { parts, n: 1 });
+      }
+      const actsCut = cutTo([...byLine.values()], REPORT_LIMITS.actions);
+      actsCut.shown.forEach((line, at) => evidence(at === 0 ? REPORT_ITEM_WORDS.actions : null, line.parts));
+      const shownActions = actsCut.shown.reduce((n, line) => n + line.n, 0);
+      if (ids.length > shownActions && actsCut.shown.length) evidence(null, ONE(REPORT_ITEM_WORDS.moreActions(ids.length - shownActions)));
       if (item.kind === 'decision_unasked' && plain(d.instructionReview)) {
         const checks = list(d.instructionReview.checks).filter(plain);
         const fileOf = (c) => (c.instruction?.role === PROJECT_INSTRUCTIONS_ROLE
@@ -1982,9 +2219,10 @@ function finishItem(ctx, item) {
         const messages = checks.filter((c) => !fileOf(c)).length;
         if (checks.length) evidence(null, ONE(REPORT_ITEM_WORDS.checkedAgainst(messages, files)));
       }
+      // D199: no sentence of why Sonah could not check whether you asked; D200: its short tag, the sentence its title.
       if (item.kind === 'decision_whether_asked') {
         const reason = list(d.reasons).find((x) => Object.hasOwn(REPORT_COLUMN_REASON_WORDS, x));
-        if (reason) evidence(null, ONE(REPORT_COLUMN_REASON_WORDS[reason]));
+        if (reason) decisionTag = { key: reason, words: REPORT_COLUMN_REASON_WORDS[reason] };
       }
       const triageWhere = entry?.where && codeReceiptFound(ctx.report, entry.where) ? entry.where : null;
       if (triageWhere) where.push(locationOf(ctx, { path: triageWhere.path, side: triageWhere.side ?? 'new',
@@ -2001,6 +2239,8 @@ function finishItem(ctx, item) {
     }
     case 'pivot': {
       const p = row;
+      facets = typeof p.abandoned === 'string' && typeof p.adopted === 'string'
+        ? { about: [R(words(p.abandoned))], chosen: [R(words(p.adopted))] } : null;
       what = typeof p.abandoned === 'string' && typeof p.adopted === 'string'
         ? [S(`${REPORT_WHAT_WORDS.pivotFrom} `), R(words(p.abandoned)), S(` ${REPORT_WHAT_WORDS.pivotTo} `),
           R(words(p.adopted)), S('.')] : ONE(REPORT_WHAT_WORDS.pivotUnnamed);
@@ -2048,7 +2288,7 @@ function finishItem(ctx, item) {
         else if (tied.ask !== null) where.push(anchorOf(`ask-${tied.ask}`, REPORT_ITEM_WORDS.asked(tied.ask)));
       }
       if (plain(q.check) && typeof q.check.explanation === 'string' && q.check.explanation.trim())
-        evidence(REPORT_ITEM_WORDS.check, [C(words(q.check.explanation, 300))]);
+        evidence(REPORT_ITEM_WORDS.check, [C(words(q.check.explanation, REPORT_LIMITS.reasonChars))]);
       rowId = typeof q.id === 'string' ? q.id : null;
       label.text = REPORT_KIND_LABELS.question;
       break;
@@ -2059,7 +2299,6 @@ function finishItem(ctx, item) {
       quoteLine = quoteOf(session, p.stated);
       quoteMissing = !quoteLine;
       where.push(anchorOf(`claim-${item.primary.index + 1}`, REPORT_ITEM_WORDS.claimsList));
-      if (Object.hasOwn(CHECKLIST_CLAIM_REASON_WORDS, p.reason)) evidence(null, ONE(sentence(CHECKLIST_CLAIM_REASON_WORDS[p.reason])));
       if (item.kind === 'claim_incomplete') for (const id of list(p.restsOn).filter((x) => typeof x === 'string').slice(0, 5)) {
         const run = ctx.runs.runs.find((x) => x.event?.id === id);
         if (run) evidence(null, [LINK(REPORT_ITEM_WORDS.run(run.k), `run-${run.k}`)]);
@@ -2072,9 +2311,8 @@ function finishItem(ctx, item) {
   // A row's code check, when the code contradicts it.
   const checkLine = codeCheckLine(ctx.report, row);
   if (checkLine && !item.primary.source.startsWith('codePass.')) evidence(null, ONE(checkLine));
-  // D104: the mark of every row the item holds (its own, then those folded into it), one line a result.
-  for (const parts of seenOf(ctx, [item.primary, ...item.folded].map((c) => ({ source: c.source, row: c.row }))))
-    evidence(REPORT_SEEN_WORDS.label, parts);
+  // D104's mark that a result was seen only in part is no longer said beside an item (D199); What Sonah could not check
+  // counts those results.
   // The first ask a code finding names, for its item's evidence; a decision's related rows.
   item.related = relatedOf(ctx, item);
   // The triage `where`, when the code review named a different range than the item's first location.
@@ -2105,6 +2343,14 @@ function finishItem(ctx, item) {
   const tierWords = REPORT_TIER_WORDS[item.tier.final];
   const holding = item.memberOf ?? item;
   const own = item.tier.from === FROM_MEMBER ? null : item.tier;
+  // D199: no reader shows `why` any more; the two facts it held go on as evidence lines: a call the item cites was
+  // refused, and the item of this review that concerns it.
+  if (own?.bound === 'refused_call_ceiling') evidence(null, ONE(REPORT_ITEM_WORDS.refusedCall));
+  if (own && own.proposed === null && item.tied && item.tiedBy.memberOf !== holding
+    && Number.isSafeInteger(item.tiedBy.n ?? item.tiedBy.memberOf?.n)) {
+    const tiedN = item.tiedBy.n ?? item.tiedBy.memberOf?.n;
+    evidence(null, [LINK(REPORT_ITEM_WORDS.concernedBy(tiedN), `item-${tiedN}`)]);
+  }
   const whyText = own === null ? REPORT_TIER_WHY.held(REPORT_KIND_WORDS[item.setter.kind], tierWords)
     : own.bound === 'refused_call_ceiling' ? REPORT_TIER_WHY.refused
       // D161: a question with no checked tie, at most Good to know, whatever was proposed.
@@ -2124,7 +2370,20 @@ function finishItem(ctx, item) {
   const answer = rowId ? ctx.answers.get(rowId) ?? null : null;
   Object.assign(item, {
     what: Object.freeze({ template: item.kind, parts: what }),
+    facets: facets ? Object.freeze(facets) : null,
+    // D200 (the owner: "bring back the precision markers as short tags"): what Sonah could not check of the item, each a
+    // key of REPORT_DECISION_TAGS with the sentence it stands for: whether you asked (its column reason, else that Sonah
+    // could not check it), and a quote Sonah did not find.
+    tags: Object.freeze([...(decisionTag ? [decisionTag] : item.scope?.askedUnknown && !item.scope?.notAsked
+      ? [{ key: 'askedUnknown', words: REPORT_ITEM_WORDS.askedUnknown }] : []),
+    ...(quoteMissing && !quoteLine ? [{ key: 'quoteMissing', words: REPORT_ITEM_WORDS.quoteMissing }] : []),
+    // D202 (the follow-up review: such questions had lost their only mark with D199's tier sentence): a question of the code review that
+    // Sonah could not tie to an item or an ask (D161's rule, `placeItems`), whether or not that bound moved its tier.
+    ...(item.untied === true ? [{ key: 'untied', words: REPORT_ITEM_WORDS.untied }] : [])]),
     quote: quoteLine, quoteLabel, quoteMissing: quoteMissing && !quoteLine,
+    // D194: an item whose what line is Sonah's fixed words alone leads with its verbatim quote: the readers show the
+    // quote (its label first) as the head and the what line under it.
+    leadQuote: leadsWithQuote(what, quoteLine),
     // The agent's own words, when the session review linked a quote of them that grounds here; else no line at all. A
     // missing quote says only that none was linked, never that the agent was silent.
     agentSaid,
@@ -2208,11 +2467,52 @@ function promptOf(ctx) {
   };
   // D127 (B10d): each compaction of the agent's context that the recorder typed, in session order.
   const compactions = compactionsOf(ctx);
+  // D202 (the owner, 2026-10-31: "Short replies: context"): the agent's message recorded last before each of your
+  // messages and after the one before it, by its place in the recording and its recorder kind (a statement of the
+  // agent's own, `commentary`, never a helper's), never by its words; the end of its recorded spans quoted, to
+  // `messageChars` (what a reply answers comes last). Its review: none for an answer to the agent's question (`reply`:
+  // the question is a call, not a statement) or a message you queued while the agent worked (the recorder's `queued`
+  // marker: you may not have seen the statement when you wrote it).
+  const beforeOf = new Map();
+  facts.asks.forEach((m, at) => {
+    const from = at > 0 && Number.isSafeInteger(facts.asks[at - 1].at) ? facts.asks[at - 1].at : -1;
+    if (!Number.isSafeInteger(m.at) || m.reply === true || list(m.event?.markers).includes('queued')) return;
+    for (let i = m.at - 1; i > from; i--) {
+      const e = ctx.events[i];
+      if (e?.kind !== 'commentary' || (typeof e.childId === 'string' && e.childId)) continue;
+      let spans = [];
+      try { spans = session.textSpansOf(e, 'text'); } catch { spans = []; }
+      // Its second review: a statement of white space alone is no statement (structure: no character to show).
+      if (!spans.some((span) => typeof span === 'string' && span.trim())) continue;
+      const parts = spanQuotesEnd(spans.map((span, at) => (at === spans.length - 1 ? span.replace(/\s+$/, '') : span)),
+        REPORT_LIMITS.messageChars);
+      if (parts.length) beforeOf.set(m.k, parts);
+      break;
+    }
+  });
   const askLines = ctx.asks.map((ask) => {
     const req = ask.req;
     const checked = plain(req.checked) ? req.checked : null;
     const itemN = ctx.itemOfRow.get(rowKey('requirements', ask.rows[0] ?? -1)) ?? null;
     const lines = [];
+    // D202 (the owner: "Done asks: what does it", "Short replies: context"): the row's evidence, one click under it.
+    // What the session review cited as doing a done ask (its quote when it grounds, then the run its result came from or
+    // the file of the change or action), and how the session review read your words when the row quotes them (its row's
+    // own text). The agent's message before yours is the message's (`before`).
+    const details = [];
+    const deliverable = (ask.state === 'done' || ask.state === 'doneCode') && checked ? checked.deliverable : null;
+    const does = quoteOf(session, deliverable);
+    if (does) {
+      // Its review: a helper's statement is the helper's (`speakerLabel`), as on an item.
+      details.push({ label: speakerLabel(session, deliverable, REPORT_ITEM_WORDS.whatDoes), parts: [does] });
+      const run = deliverable.role === 'observation' ? runOfResult(ctx, deliverable) : null;
+      const path = ['code', 'action'].includes(deliverable.role) ? eventPaths(session, deliverable.eventId)[0] ?? null : null;
+      if (run) details.push({ label: REPORT_ITEM_WORDS.fromRun, parts: runParts(run) });
+      else if (path) details.push({ label: REPORT_ITEM_WORDS.where, parts: [CODE(path)] });
+    }
+    if (req.quoted === true && checked?.codeMade !== true && typeof req.wording === 'string' && oneLine(req.wording)
+      && oneLine(req.wording) !== oneLine(req.text ?? ''))
+      details.push({ label: REPORT_PROMPT_WORDS.readAs, parts: [R(words(req.wording, REPORT_LIMITS.reasonChars))] });
     // D133 (R2): the row's own evidence fold: what the session review cited as doing a done ask when that is only the
     // agent's words, and why an ask is not checked. The status stays open beside the ask; these lines are folded.
     const folded = [];
@@ -2250,36 +2550,64 @@ function promptOf(ctx) {
     }
     const askCheck = codeCheckLine(report, checked);
     if (askCheck) lines.push(ONE(askCheck));
-    // D104: the mark of the ask's rows (its checklist row, or the rows an earlier report's ask stands for).
-    const askRows = [...new Set([...ask.rows.map((index) => list(report.requirements)[index]), checked].filter(plain))];
-    lines.push(...seenOf(ctx, askRows.map((row) => ({ source: 'requirements', row }))));
+    // D200 (the owner, 2026-10-31: "bring back the precision markers as short tags"): what keeps the ask's status from
+    // reading as more than Sonah checked, each a key of REPORT_ASK_TAGS with the sentence it stands for (`words`, or
+    // null): a done ask whose row cites only the agent's words; why a not-checked ask is not checked (a quote the quote
+    // gate refused, its reason, or the fact code added); a finding of the code review on it that Sonah withheld.
+    const tags = [];
+    if ((ask.state === 'done' || ask.state === 'doneCode') && citesOnlyAgentWords(checked))
+      tags.push({ key: 'agentOnly', words: REPORT_PROMPT_WORDS.agentOnly });
+    if (['notChecked', 'notCheckedCode', 'notCheckedOpenTurn'].includes(ask.state) && checked) {
+      const why = checklistReasonWords(checked, 'requirement');
+      // A quote the gate searched for and did not find (`not_found`) is said by the row's reason; any other cause of the
+      // gate, which ran no search, by `quote`.
+      const key = GROUNDING_CAUSES.includes(checked.cause) && checked.cause !== 'not_found' ? 'quote' : checked.reason;
+      const fact = list(checked.facts).find((x) => Object.hasOwn(CHECKLIST_REQUIREMENT_FACT_WORDS, x));
+      if (why && Object.hasOwn(REPORT_ASK_TAGS, key)) tags.push({ key, words: sentence(why) });
+      else if (fact && Object.hasOwn(REPORT_ASK_TAGS, fact)) tags.push({ key: fact, words: CHECKLIST_REQUIREMENT_FACT_WORDS[fact] });
+      // D125's verdict that the ask holds in the code is the code review's, which Sonah did not check.
+      if (askCodeHoldsNote(checked, report)) tags.push({ key: 'codeHoldsUnchecked', words: REPORT_PROMPT_WORDS.codeHoldsUnchecked });
+    }
+    const withheld = checked ? askCodeNotes(report, checked).find((note) => note.link === 'withheld_finding') : null;
+    if (withheld) {
+      const w = list(report.codePass?.withheld)[withheld.withheld];
+      const why = w ? withheldWhy(w) : null;
+      tags.push({ key: 'withheld', words: why ? REPORT_NOT_CHECKED_WORDS.withheldWhy(why) : null });
+    }
+    // D199: no seen-in-part mark (D104), no line that a finding was withheld or could not be checked in full, beside an
+    // ask; What Sonah could not check keeps them.
     for (const note of notes) {
-      if (note.link === 'withheld_finding') {
-        const w = list(report.codePass?.withheld)[note.withheld];
-        const why = w ? withheldWhy(w) : null;
-        lines.push([S(why ? REPORT_PROMPT_WORDS.withheldFinding(why) : `${REPORT_PROMPT_WORDS.withheldFinding('').slice(0, -3)}.`),
-          S(' '), LINK(REPORT_PROMPT_WORDS.withheldSee, 'not-checked')]);
-      } else if (note.link === 'question_concerns') {
+      if (note.link === 'question_concerns') {
         lines.push(ONE(REPORT_PROMPT_WORDS.codeQuestion(questionItem(note.question)?.n ?? null)));
       } else if (note.link === 'unconfirmed_finding') {
-        // D110: a finding Sonah could not confirm never moves the ask: a line beside it, naming its item to verify.
-        lines.push(ONE(REPORT_PROMPT_WORDS.unconfirmedFinding(findingItem(note.unconfirmed.id, 'codePass.unconfirmed')?.n
-          ?? null)));
+        // D199's review (D87: what the code step tied to an ask is never hidden behind its status): the item to verify
+        // that a finding on the ask became, named, with no sentence of what Sonah could not check of it.
+        const n = findingItem(note.unconfirmed.id, 'codePass.unconfirmed')?.n ?? null;
+        if (n !== null && n !== itemN) lines.push(ONE(REPORT_ITEM_WORDS.seeItem(n)));
       }
     }
-    // Sonah's own row for a message no row cited (`codeMade`) has no words of anyone's: only its status and reason.
-    const askText = checked?.codeMade === true ? [] : req.quoted ? [quoted(req.text)] : [R(words(req.text))];
+    // Sonah's own row for a message no row cited (`codeMade`) has no words of the session review's. D199's review: its
+    // words are the start of the message it stands for, word for word from the recording (its reason is no longer shown).
+    const own = checked?.codeMade === true ? facts.asks.find((m) => m.k === ask.message) : null;
+    let ownSpans = [];
+    if (own) try { ownSpans = session.textSpansOf(own.event, 'text'); } catch { ownSpans = []; }
+    const askText = checked?.codeMade === true ? (ownSpans.length ? [quoted(ownSpans[0])] : [])
+      : req.quoted ? [quoted(req.text)] : [R(words(req.text))];
     // D127 (N1): the first compaction recorded after the ask's message, or null when none came after it.
     const at = facts.asks.find((m) => m.k === ask.message)?.at;
     const compaction = Number.isSafeInteger(at) ? compactions.find((c) => c.at > at)?.n ?? null : null;
     return { n: ask.n, message: ask.message, state: ask.state, status: askStatusWord(ask.state),
-      words: askText, quoted: req.quoted === true, located: ask.located.length > 0, item: itemN, lines, folded,
+      words: askText, quoted: req.quoted === true || (checked?.codeMade === true && askText.length > 0), tags, located: ask.located.length > 0, item: itemN, lines, folded, details,
       codeMade: checked?.codeMade === true,
       rowId: checked ? requirementRowId(checked) : null, ...(compaction !== null ? { compaction } : {}) };
   });
   // The messages that hold an ask, each cut at its asks' located spans; the others counted.
   const messages = [];
   const empty = [];
+  // D183: a message with no ask that no answer of the session review could have read (every window failed, or every
+  // window that holds the message's own event failed) is one Sonah cannot tell holds no ask: listed apart
+  // (`ctx.calls.unreached`).
+  const unreached = [];
   for (const message of facts.asks) {
     const own = ctx.asks.filter((ask) => ask.message === message.k);
     const pasted = plain(message.pasted) && (message.pasted.images || message.pasted.others)
@@ -2291,7 +2619,8 @@ function promptOf(ctx) {
     if (!own.length) {
       const segments = spans.length ? spans.flatMap((text, s) => [...(s > 0 ? [{ text: JOIN, join: true }] : []), { text }])
         : [{ text: REPORT_PROMPT_WORDS.withheldMessage, sonah: true }];
-      empty.push({ k: message.k, segments, chars: [...segments.map((x) => x.text).join('')].length, pasted });
+      (ctx.calls.unreached(message.event?.id) ? unreached : empty).push({ k: message.k, segments,
+        chars: [...segments.map((x) => x.text).join('')].length, pasted });
       continue;
     }
     const marks = [];
@@ -2320,16 +2649,20 @@ function promptOf(ctx) {
     if (!spans.length) segments.push({ text: REPORT_PROMPT_WORDS.withheldMessage, sonah: true });
     for (const [n, m] of overlaps) askLines[n - 1].lines.unshift(ONE(REPORT_PROMPT_WORDS.overlaps(m)));
     const total = [...segments.map((x) => x.text).join('')].length;
-    messages.push({ k: message.k, reply: message.reply === true, segments, chars: total,
+    messages.push({ k: message.k, reply: message.reply === true, segments, chars: total, before: beforeOf.get(message.k) ?? null,
       cutAt: total > REPORT_LIMITS.messageChars ? REPORT_LIMITS.messageChars : null,
       attached: message.attachments.length, pasted,
       asks: own.map((ask) => ask.n),
       // An ask whose words are in a file you attached to the message (its own event), and one Sonah could not find.
       attachedAsks: own.filter((ask) => ask.req.ask !== message.event.id).map((ask) => ask.n),
-      unlocated: own.filter((ask) => !ask.located.length && ask.req.ask === message.event.id).map((ask) => ask.n) });
+      // D199's review: Sonah's own row for the message (`codeMade`) shows the message's start as its words, which are the
+      // message's own: never listed as words Sonah could not find in it.
+      unlocated: own.filter((ask) => !ask.located.length && ask.req.ask === message.event.id
+        && ask.req.checked?.codeMade !== true).map((ask) => ask.n) });
   }
   const counts = Object.fromEntries(PROMPT_PART_ORDER.map((state) => [state, ctx.asks.filter((ask) => ask.state === state).length]));
-  return { asks: askLines, messages, emptyMessages: empty, counts,
+  return { asks: askLines, messages, emptyMessages: empty, ...(unreached.length ? { unreachedMessages: unreached } : {}),
+    counts,
     parts: PROMPT_PART_ORDER.filter((state) => counts[state] > 0).map((state) => REPORT_PROMPT_PARTS[state](counts[state])),
     // D131 (R1): a long session's prompt (more than `openAsks` asks) is folded, its count in the fold's summary.
     ...(askLines.length > REPORT_LIMITS.openAsks ? { folded: true } : {}),
@@ -2452,15 +2785,15 @@ function didOf(ctx) {
     : ctx.codeRan && typeof codePass?.base?.kind === 'string' && codePass.base.kind !== 'git' ? NO_FILES_FOLDER
       : NO_FILES_REPOSITORY;
   // Runs.
-  const { runs, showable } = ctx.runs;
-  const shown = showable.slice(0, REPORT_LIMITS.runs);
+  const { runs, showable, listed } = ctx.runs;
+  const shown = listed;
   // D169: a run that another part names (`runsNamedOf`) and that the list does not show (past its first
   // `REPORT_LIMITS.runs`, or a quiet exit 0) is listed apart (`named`), so every run the report names has its line; the
   // runs not shown are counted without them.
   const namedKs = runsNamedOf(ctx);
   const named = runs.filter((run) => namedKs.has(run.k) && !shown.includes(run));
   const quietExit0 = runs.filter((run) => !showable.includes(run) && !named.includes(run));
-  const cut = showable.slice(REPORT_LIMITS.runs).filter((run) => !named.includes(run));
+  const cut = showable.filter((run) => !listed.includes(run) && !named.includes(run));
   const runLine = (run) => {
     const outcomeWords = REPORT_OUTCOME_WORDS[run.outcome.class]?.[run.outcome.form];
     const handling = run.failure ? run.failure.row.handling : null;
@@ -2471,8 +2804,13 @@ function didOf(ctx) {
       handling: handling && Object.hasOwn(REPORT_DID_WORDS.handling, handling) ? REPORT_DID_WORDS.handling[handling]
         : handling ? REPORT_DID_WORDS.handling[FAILURE_NOT_CHECKED] : null,
       item: itemN, failureIndex: run.failure?.index ?? null,
-      // D104: the mark of its failure row, the one row a run shows.
-      seen: run.failure ? seenOf(ctx, [{ source: 'failures', row: run.failure.row }]) : [] };
+      // D196 (D197's): the result class its outcome is counted under (`partOf`), for a reader to mark by structure.
+      part: partOf(run.outcome),
+      // D200: whether another part names it, and whether its result is one a reader must see, for a reader that cuts
+      // the list to fit (it keeps these first).
+      named: namedKs.has(run.k), attention: Boolean(run.failure) || ATTENTION_PARTS.includes(partOf(run.outcome)),
+      // D199: no seen-in-part mark beside a run (D104's); What Sonah could not check counts those results.
+      seen: [] };
   };
   const partsOf = (some) => RESULT_PART_ORDER.map((cls) => [cls, some.filter((run) => partOf(run.outcome) === cls).length])
     .filter(([, n]) => n > 0).map(([cls, n]) => REPORT_RESULT_PARTS[cls](n));
@@ -2480,6 +2818,10 @@ function didOf(ctx) {
   // D167 (the owner, 2026-10-28): every run's part, the same classes and words as the cut runs' (and the header's), for
   // the .md, which counts the runs in place of listing them (session-story.js `didSection`); the page lists them.
   const parts = partsOf(runs);
+  // D199: each of `parts`' result classes, in the same order, for a reader that marks the parts by class.
+  const partKeys = RESULT_PART_ORDER.filter((cls) => runs.some((run) => partOf(run.outcome) === cls));
+  // D200: each of those classes' count, for a reader that says them as short labels (REPORT_RUN_CHIPS).
+  const partCounts = partKeys.map((cls) => runs.filter((run) => partOf(run.outcome) === cls).length);
   // Files no command ran after.
   const neverRan = neverRanPaths(ctx);
   // Claims: every promise and written statement, in session order.
@@ -2517,10 +2859,10 @@ function didOf(ctx) {
       confirmedBy: status === 'checked' ? quoteOf(session, list(row.receipts).find((x) => plain(x)
         && x.role === 'observation')) : null,
       // Why a claim kept with its weakest status is not checked (S6, owner decision D71 b), in the closed reason's words.
-      why: status === 'notChecked' && source === 'promises' && Object.hasOwn(CHECKLIST_CLAIM_REASON_WORDS, row.reason)
-        ? sentence(CHECKLIST_CLAIM_REASON_WORDS[row.reason]) : null,
+      // D199: no reason beside a claim Sonah did not check, and no seen-in-part mark.
+      why: null,
       // D104: the mark of the claim's row.
-      seen: seenOf(ctx, [{ source, row }]) };
+      seen: [] };
   });
   const shownClaims = claims.slice(0, REPORT_LIMITS.claims);
   // What Sonah did not check, counted from this list's own statuses: the header and What Sonah could not check say
@@ -2529,6 +2871,10 @@ function didOf(ctx) {
   const UNCHECKED_STATUSES = ['notChecked', 'incomplete'];
   const notCheckedOfSource = (source) => claims.filter((c) => c.source === source
     && UNCHECKED_STATUSES.includes(c.statusKey)).length;
+  // D184: and where the list shows them: the positions in the shown list of the unchecked rows of each source, so a
+  // sentence that says the list holds them counts only the rows it holds (`listedThereParts`).
+  const listedAt = (source) => shownClaims.flatMap((c, i) => (c.source === source
+    && UNCHECKED_STATUSES.includes(c.statusKey) ? [i] : []));
   // Closing lines no claim covers.
   const closing = closingLinesOf(ctx);
   // What the agent said it did not do: only the agent's own words, a decision not to act whose quote grounds. A row
@@ -2548,7 +2894,7 @@ function didOf(ctx) {
       youSaidLabel: yourLabel(session, d.constrainedBy?.instruction, REPORT_ITEM_WORDS.youSaid),
       rowId: typeof d.id === 'string' ? d.id : null,
       // D104: the mark of the decision.
-      seen: seenOf(ctx, [{ source: 'decisions', row: d }]) }));
+      seen: [] }));
   return {
     files: { groups, grouped, total: files.length, shown: Math.min(files.length, shownFiles),
       more: Math.max(0, files.length - shownFiles), outside, unresolved, unconfirmed: facts.whole.unconfirmed.length,
@@ -2556,11 +2902,20 @@ function didOf(ctx) {
     runs: { shown: shown.map(runLine), named: named.map(runLine), total: runs.length,
       commands: runs.filter((run) => run.command).length,
       others: runs.filter((run) => !run.command).length, quietExit0: quietExit0.length, cut: cut.length, cutParts,
-      parts, neverRan, cutRuns: cut.map((run) => run.k) },
+      parts, partKeys, partCounts, neverRan, cutRuns: cut.map((run) => run.k) },
+    // D199: `counts`, every claim by its status key (`REPORT_DID_WORDS.claimStatus`), the shown and the cut alike.
     claims: { shown: shownClaims.map(({ statusKey, ...c }) => c), total: claims.length,
+      counts: Object.fromEntries(Object.keys(REPORT_DID_WORDS.claimStatus).map((key) => [key,
+        claims.filter((c) => c.statusKey === key).length]).filter(([, n]) => n > 0)),
       more: claims.length - shownClaims.length, closing,
-      notChecked: { claims: notCheckedOfSource('promises'), written: notCheckedOfSource('writtenClaims') } },
+      notChecked: { claims: notCheckedOfSource('promises'), written: notCheckedOfSource('writtenClaims'),
+        claimsAt: listedAt('promises'), writtenAt: listedAt('writtenClaims') } },
     leftOut, settled,
+    // D183: what an empty list of claims, of decisions not to act or of decisions you settled says: what Sonah found,
+    // or, when every window of the session review failed (none could have found any), that Sonah cannot tell.
+    empty: ctx.calls.all ? { claims: REPORT_DID_WORDS.cannotTell, leftOut: REPORT_DID_WORDS.cannotTell,
+      settled: REPORT_DID_WORDS.cannotTell } : { claims: REPORT_DID_WORDS.noClaims, leftOut: REPORT_DID_WORDS.noLeftOut,
+      settled: REPORT_DID_WORDS.noSettled },
   };
 }
 /** D169: the runs that an item or its members name, by number: the target of a Where to a run (`anchorOf`) or of a
@@ -2579,6 +2934,7 @@ function runsNamedOf(ctx) {
     for (const x of Object.values(value)) if (x !== null && typeof x === 'object') visit(x);
   };
   for (const item of ctx.items) visit(publicItem(item));
+  for (const ask of list(ctx.promptAsks)) visit(ask.details);
   return ks;
 }
 const RESULT_PART_ORDER = Object.freeze(['ran-exit-0', 'ran-completed', 'ran-failed', 'failed-or-refused', 'did-not-run',
@@ -2633,6 +2989,29 @@ function closingLinesOf(ctx) {
 
 // ---- what Sonah could not check (D97) ----------------------------------------------------------------------
 
+/**
+ * D183: what the session review's calls did, from its window records (evidence run-review.js `sessionCallsFact`: each
+ * window's closed failure code, by membership), with `unreached(eventId)`: true when no answer of the session review
+ * could have found anything at that event: every window failed, or windows hold the event and every one of them failed.
+ * An event that no window holds, in a review where some window answered, is as it is in a review with no failed window
+ * (a message the review did not read is no message a failed call left unread). Structure only: which window records
+ * hold which event ids, and which failed.
+ */
+function sessionCallsOf(report) {
+  const records = list(report.windowResults);
+  const fact = sessionCallsFact(records);
+  const holders = new Map();
+  if (fact.failed) records.forEach((w, at) => {
+    for (const id of new Set(list(plain(w) ? w.eventIds : null))) {
+      if (typeof id !== 'string') continue;
+      if (!holders.has(id)) holders.set(id, []);
+      holders.get(id).push(at);
+    }
+  });
+  return { ...fact, unreached: (id) => fact.all || (fact.failed > 0 && holders.has(id)
+    && holders.get(id).every((at) => fact.failedAt[at])) };
+}
+
 /** The steps (your messages) any of whose review windows is incomplete. */
 function incompleteSteps(ctx) {
   const records = list(ctx.honest.windowResults);
@@ -2662,7 +3041,8 @@ function notCheckedOf(ctx, quiet = []) {
   // 1. The session review.
   const notReviewed = new Set(incompleteSteps(ctx).map((step) => step.request).filter((k) => k !== null));
   const complete = honest.sessionReview === 'complete';
-  const lead = complete ? REPORT_NOT_CHECKED_WORDS.complete : REPORT_NOT_CHECKED_WORDS.incomplete;
+  // D199: no lead sentence when the session review read every message.
+  const lead = complete ? null : REPORT_NOT_CHECKED_WORDS.incomplete;
   if (notReviewed.size) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.messagesNotReviewed(notReviewed.size)));
   const causes = honest.coverage === 'complete' ? [] : coverageCauses(honest).map(([cause, counts]) => {
     if (cause !== 'windows_incomplete') return [cause, counts];
@@ -2682,8 +3062,16 @@ function notCheckedOf(ctx, quiet = []) {
   for (const [cause, counts] of uncappedCauses(honest)) fact('session', ONE(sentence(COVERAGE_SENTENCE[cause](counts))),
     UNCAPPED_CAUSES_SAID_WHOLE.includes(cause) ? { cause: true } : {});
   const gaps = gapsByMessage(ctx);
-  for (const [k, reasons] of gaps.byAsk) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.gapsOfMessage(k,
-    reasons.map((reason) => REPORT_GAP_WORDS[reason]).join(', and '))));
+  // D200 (on real sessions, 64 of 87 facts were one line a message): the messages with the same gaps, one line, their
+  // numbers in order (D202: every number, a run of three or more as its first and last, `numberSpans`).
+  const byWords = new Map();
+  for (const [k, reasons] of gaps.byAsk) {
+    const words = reasons.map((reason) => REPORT_GAP_WORDS[reason]).join(', and ');
+    byWords.set(words, [...(byWords.get(words) ?? []), k]);
+  }
+  // D202: every number, a run of three or more in a row as its first and last (`numberSpans`).
+  for (const [words, ks] of byWords) fact('session', ONE(ks.length === 1 ? REPORT_NOT_CHECKED_WORDS.gapsOfMessage(ks[0], words)
+    : REPORT_NOT_CHECKED_WORDS.gapsOfMessages(numberSpans(ks), words)));
   if (gaps.untied.length) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.gapsUntied(gaps.untied
     .map((reason) => REPORT_GAP_WORDS[reason]).join(', and '))));
   if (facts.encryptedBriefs) fact('session', ONE(REPORT_NOT_CHECKED_WORDS.encryptedBriefs(facts.encryptedBriefs)));
@@ -2696,18 +3084,29 @@ function notCheckedOf(ctx, quiet = []) {
   // The asks and claims Sonah did not check are listed in your prompt and under what the agent did: counted here.
   const asksNotChecked = ctx.asks.filter((ask) => ask.req.status === NOT_CHECKED).length;
   // The same counts, in the same terms, as header line D: claims, then statements that the agent wrote into files.
-  const { claims: claimsNotChecked, written: writtenNotChecked } = ctx.did.claims.notChecked;
+  const { claims: claimsNotChecked, written: writtenNotChecked, claimsAt, writtenAt } = ctx.did.claims.notChecked;
   if (asksNotChecked) fact('session', [LINK(REPORT_NOT_CHECKED_WORDS.asksThere(asksNotChecked), 'prompt')]);
-  if (claimsNotChecked) fact('session', [LINK(REPORT_NOT_CHECKED_WORDS.claimsThere(claimsNotChecked), 'did')]);
-  if (writtenNotChecked) fact('session', [LINK(REPORT_NOT_CHECKED_WORDS.writtenThere(writtenNotChecked), 'did')]);
+  // D199's review: the done asks for which the session review cited only the agent's words, each named and linked to its
+  // row (the header's count, by the same predicate), since no row says it any more.
+  const agentOnlyAsks = ctx.asks.filter((ask) => DONE_STATUSES.includes(ask.req.status) && citesOnlyAgentWords(ask.req.checked))
+    .map((ask) => ask.n);
+  if (agentOnlyAsks.length) {
+    const cut = cutTo(agentOnlyAsks, REPORT_LIMITS.askLinks);
+    fact('session', [S(`${REPORT_NOT_CHECKED_WORDS.agentOnlyAsks(agentOnlyAsks.length)} `),
+      ...cut.shown.flatMap((n, at) => [...(at ? [S(', ')] : []), LINK(REPORT_PROMPT_WORDS.askLine(n), `ask-${n}`)]),
+      S(cut.more ? ` ${REPORT_COUNT_WORDS.more(cut.more)}.` : '.')]);
+  }
+  // D184: each says how many of them the list under What the agent did holds (`listed`: the model's list here; each
+  // reader says it again of the rows it shows, `listedThereParts`).
+  const rows = ctx.did.claims.shown.length;
+  for (const listed of [{ kind: NOT_CHECKED_LISTS[0], n: claimsNotChecked, at: claimsAt },
+    { kind: NOT_CHECKED_LISTS[1], n: writtenNotChecked, at: writtenAt }]) if (listed.n) fact('session',
+    listedThereParts(listed, rows), { listed });
   // 3. The code step.
   const code = [];
   if (codePass) {
-    // D109 (its review): how the code review works, only where the record shows that it read what Sonah sent it.
-    const how = codeHowLine(codePass);
-    if (how) code.push(ONE(how));
-    // D110: how code computes the label, beside `how`, for a report whose code step used the premise contract.
-    if (how && premiseRuled(codePass)) code.push(ONE(CODE_REPORT_WORDS.howConfirm));
+    // D199 (the owner, 2026-10-30, "All of them"): no paragraph on how the code review works (D109's `how`, D182's words)
+    // or how its check labels a finding (D110's `howConfirm`); what follows is what the records show.
     // D109: what the records show of the open questions' checks, and where the change runs from.
     const questionsLine = codeQuestionsLine(codePass);
     if (questionsLine) code.push(ONE(questionsLine));
@@ -2745,7 +3144,7 @@ function notCheckedOf(ctx, quiet = []) {
       words: typeof w.text === 'string' && w.text.trim() ? [C(words(w.text, 300))] : ONE(REPORT_NOT_CHECKED_WORDS.withheldNoText),
       why: why ? REPORT_NOT_CHECKED_WORDS.withheldWhy(why) : null,
       check: plain(w.check) && typeof w.check.explanation === 'string' && w.check.explanation.trim()
-        ? [C(words(w.check.explanation, 300))] : null };
+        ? [C(words(w.check.explanation, REPORT_LIMITS.reasonChars))] : null };
   });
   // 4. The code step's triage notes that failed Sonah's checks: one record an entry Sonah did not use, the records with an
   //    entry's index and a cause other than `where_ungrounded` (D96; ledger.js TRIAGE_ERRORS). A list that is absent or
@@ -2766,6 +3165,22 @@ function notCheckedOf(ctx, quiet = []) {
     // D133's review: the heading counts what it counted before; the moved lines (`quiet`) are shown uncounted (line D
     // restates the facts below, and the sentence after "Sonah found nothing" is no fact).
     total: facts_.length + withheld.length + (unread.asks.length ? 1 : 0) + (unread.rows.length ? 1 : 0) };
+}
+
+/** D184: the kinds of row a fact of What Sonah could not check says the claims list holds (`listed.kind`): the claims,
+ *  and the statements that the agent wrote into files. */
+export const NOT_CHECKED_LISTS = Object.freeze(['claims', 'written']);
+/**
+ * D184: the parts of the fact that the claims under What the agent did list the rows of its kind that Sonah did not
+ * check (`listed`: `{ kind, n, at }`, the count and their positions in the model's list), said of a list that shows its
+ * first `rows` rows: "list them" when it shows all `n`, "list m of them" when it shows some, "do not list them" when it
+ * shows none. The model says it of its own list; the page of the rows its size trim keeps; the .md of none when it counts
+ * its claims in place of listing them. Counts and positions only. Pure.
+ */
+export function listedThereParts(listed, rows) {
+  const m = list(listed?.at).filter((i) => Number.isSafeInteger(i) && i < rows).length;
+  const say = listed?.kind === NOT_CHECKED_LISTS[1] ? REPORT_NOT_CHECKED_WORDS.writtenThere : REPORT_NOT_CHECKED_WORDS.claimsThere;
+  return [LINK(say(listed.n, Math.min(m, listed.n)), 'did')];
 }
 
 /** The gaps of the session by message (D69 f): each part reason but a finding under the message whose turn it is. */
@@ -2831,7 +3246,8 @@ function headerOf(ctx, prompt) {
   const refused = after.filter((run) => run.outcome.class === 'did-not-run').length;
   const runs = [];
   // D133 (R2): the header's quiet lines, each said word for word as the first screen said it, in the fold What Sonah could
-  // not check (`notCheckedOf`'s `quiet`), in the order the first screen said them.
+  // not check (`notCheckedOf`'s `quiet`), in the order the first screen said them. D184: but the results line, which the
+  // fold says in its own frame (`resultsAfterEdit`, the same parts): there no sentence before it says which runs it is.
   const quiet = [];
   if (ran.length) {
     runs.push(REPORT_HEADER_WORDS.runsAfterEdit(ran.length));
@@ -2843,13 +3259,21 @@ function headerOf(ctx, prompt) {
     const read = parts.filter(([cls]) => RESULT_READ_PARTS.includes(cls));
     const words = (some) => REPORT_HEADER_WORDS.results(some.map(([cls, n]) => REPORT_RESULT_PARTS[cls](n)).join(', '));
     if (open.length) runs.push(words(open));
-    if (read.length) quiet.push(words(read));
+    // D184: in the fold the line has no "After its last edit" sentence before it, so its own words say what it covers.
+    if (read.length) quiet.push(REPORT_HEADER_WORDS.resultsAfterEdit(read.map(([cls, n]) => REPORT_RESULT_PARTS[cls](n))
+      .join(', ')));
   } else if (!unclear && ctx.runs.lastEdit >= 0) runs.push(REPORT_HEADER_WORDS.noRunAfterEdit);
   if (unclear) runs.push(REPORT_HEADER_WORDS.unclearAfterEdit(unclear));
   if (refused) runs.push(REPORT_HEADER_WORDS.refusedAfterEdit(refused));
   // D. Sonah did not check.
   const notChecked = [];
-  if (ctx.honest.sessionReview !== 'complete') notChecked.push(REPORT_HEADER_WORDS.reviewIncomplete);
+  if (ctx.honest.sessionReview !== 'complete') {
+    notChecked.push(REPORT_HEADER_WORDS.reviewIncomplete);
+    // D183: and why, when the failed windows' calls say it in one closed cause (evidence run-review.js
+    // SESSION_CALLS_CAUSES): none answered, some did not, or none was sent; D190: or every one, or some, failed for a
+    // missing API key.
+    if (ctx.calls.cause !== null) notChecked.push(REPORT_HEADER_WORDS.calls[ctx.calls.cause]);
+  }
   const asksNotChecked = ctx.asks.filter((ask) => ask.req.status === NOT_CHECKED).length;
   const agentOnly = ctx.asks.filter((ask) => DONE_STATUSES.includes(ask.req.status)
     && citesOnlyAgentWords(ask.req.checked)).length;
@@ -2884,18 +3308,10 @@ function headerOf(ctx, prompt) {
     ? clip(oneLine(options.folder), REPORT_LIMITS.folderChars) : null;
   const noCode = notReviewed === null ? null : { reason: notReviewed,
     words: CODE_REPORT_WORDS.notReviewed(CODE_REPORT_WORDS.notReviewedReasons[notReviewed]), folder,
-    impact: ctx.codeRan ? null : REPORT_HEADER_WORDS.noCodeImpact };
-  // F. Why the report has no code links, when that holds for the whole repository: said once, here (D97). A commit not
-  // on GitHub is said by the side that lacks its links, naming only those (a place on the other side keeps its link);
-  // when both sides lack them through one commit, the report has no code link at all, and one sentence says so.
-  const facts_ = linkFacts(options);
-  const head = ctx.noLinks.has('unpushed:new') && validSha(facts_.repo?.head) ? facts_.repo.head : null;
-  const start = ctx.noLinks.has('unpushed:old') && validSha(facts_.repo?.start) ? facts_.repo.start : null;
-  const short = (sha) => sha.slice(0, 7);
-  const noLinks = [...(ctx.noLinks.has('remote') ? [REPORT_HEADER_WORDS.noGitHubRemote] : []),
-    ...(head && head === start ? [REPORT_HEADER_WORDS.notOnGitHub.both(short(head))]
-      : [...(head ? [REPORT_HEADER_WORDS.notOnGitHub.new(short(head))] : []),
-        ...(start ? [REPORT_HEADER_WORDS.notOnGitHub.old(short(start))] : [])])];
+    impact: null };
+  // F. D199 (the owner, 2026-10-30, "All of them"): no note on why the report has no code links (D97 said it once here:
+  // no GitHub remote, or a commit not pushed); a place with no link shows its path.
+  const noLinks = [];
   // G. D126 (N0) and D127 (B10d): a session that opens on a compaction says, beside the title, how many recordings Sonah
   // read it from, or that Sonah did not read the part before it (`session.continued`, the adapter's).
   const continued = plain(session?.continued) ? session.continued : null;
@@ -3072,7 +3488,7 @@ function recheckLineOf(ctx, items) {
  * in `trailOrder`), as the readers see them (`shown`): `{ total, tagged, groups }`. `tagged` counts them by the tier each
  * keeps as its tag (`tier.final`). Each group is the decisions taken after one message of yours that holds an ask and
  * before the next such message, by their recorded position (`momentOf`): `{ key, message, asks, words, askLines,
- * asksMore, count, tagged, open, items }`, `asks` the message's ask numbers, `askLines` the first `groupAsks` of them
+ * asksMore, count, tagged, open, items }`, `asks` the message's ask numbers, `askLines` the first of them (D194: none now)
  * (`{ n, state, status, words }`, the prompt's own), `count` the group's count words, `open` true when it holds an item
  * tagged Must act or Must know. The decisions taken before your first such message are one group (`before`); with no
  * such message, every placed decision is one group (`all`); those Sonah could not place in the session order one more,
@@ -3084,11 +3500,15 @@ function recheckLineOf(ctx, items) {
  * entries in order (`{ n, above: false, tier, item }`, or `{ n, above: true, tier, type, what, scope }`); `shown` the
  * entries a reader shows in it, `more` those it folds under one counted line (`moreWords`): in a group open by default,
  * the entries tagged Good to know, after the Must ones; in a closed group, none (it shows every entry when opened).
- * Pure.
+ * D194 (the owner, 2026-10-30: "show decisions as one flat list in session order, each row naming the ask it follows"):
+ * one group (`all`), never one a message: its entries in the session order, those Sonah could not place last, each
+ * with `after` (the words of the asks of the last message of yours that holds an ask before it, `before your first
+ * ask`, `not placed in the session order`, or null with no such message); `shown` the entries tagged Must act or Must
+ * know, `more` those tagged Good to know (`moreWords` counts them, `allTagged`'s words when none is shown). The group's
+ * ask lines are gone: your prompt holds the asks. Pure.
  */
 function trailOf(ctx, items, listed, shown, prompt) {
   const byN = new Map(shown.map((item) => [item.n, item]));
-  const promptAsk = new Map(prompt.asks.map((a) => [a.n, a]));
   const tally = (list_) => Object.fromEntries(REPORT_TIERS.map((tier) => [tier, list_.filter((item) => item.tier
     === tier).length]));
   const messages = list(ctx.facts.asks).map((m) => ({ k: m.k, at: ctx.orderOf.get(m.event?.id) ?? null,
@@ -3101,38 +3521,31 @@ function trailOf(ctx, items, listed, shown, prompt) {
     return above.has(item) ? { n: one.n, above: true, tier: one.tier.final, type: one.type, what: one.what,
       scope: one.scope } : { n: one.n, above: false, tier: one.tier.final, item: one };
   };
-  const groups = new Map();
-  for (const item of [...items, ...listed].sort(byMoment)) {
-    const after = item.moment === null ? null : messages.filter((m) => m.at <= item.moment).at(-1) ?? null;
-    // Its review: with no message of yours that holds an ask (placed in the session), no decision is "before your first
-    // ask": they are one group in the session order (`all`).
-    const key = item.moment === null ? 'unplaced' : !messages.length ? 'all' : after === null ? 'before'
-      : `message:${after.k}`;
-    if (!groups.has(key)) {
-      const asks = after ? after.asks : [];
-      const cut = cutTo(asks, REPORT_LIMITS.groupAsks);
-      groups.set(key, { key, message: after ? after.k : null, asks: [...asks],
-        words: after ? REPORT_TRAIL_WORDS.afterAsks(asks[0], asks.at(-1)) : key === 'before'
-          ? REPORT_TRAIL_WORDS.beforeAsks : key === 'all' ? REPORT_TRAIL_WORDS.inOrder : REPORT_TRAIL_WORDS.unplaced,
-        askLines: cut.shown.map((n) => promptAsk.get(n)).filter(Boolean).map((a) => ({ n: a.n, state: a.state,
-          status: a.status, words: a.words })), asksMore: cut.more, items: [], entries: [] });
-    }
-    const entry = entryOf(item);
-    groups.get(key).entries.push(entry);
-    if (!entry.above) groups.get(key).items.push(entry.item);
-  }
-  const out = [...groups.values()].map((g) => {
-    const tagged = tally(g.entries);
-    const open = tagged[MUST_ACT] + tagged[MUST_KNOW] > 0;
-    // D163 (L5): in an open group, the entries tagged Good to know fold under one counted line after the Must ones.
-    const more = open ? g.entries.filter((e) => !MUST_TIERS.includes(e.tier)) : [];
-    return { ...g, count: REPORT_COUNT_WORDS.decisions(g.entries.length, tagged[MUST_ACT], tagged[MUST_KNOW]), tagged,
-      open, shown: open ? g.entries.filter((e) => MUST_TIERS.includes(e.tier)) : g.entries, more,
-      moreWords: more.length ? REPORT_TRAIL_WORDS.moreTagged(more.length, REPORT_TIER_WORDS[GOOD_TO_KNOW])
-        : null };
+  // D194 (the owner, 2026-10-30): one list in the session order, no group a message; each entry says which of your
+  // messages it follows (`after`: the first and last ask of the last message that holds an ask before it), or that it
+  // comes before your first ask, or that Sonah could not place it. The asks themselves are your prompt's, never repeated.
+  const entries = [...items, ...listed].sort(byMoment).map((item) => {
+    const prior = item.moment === null ? null : messages.filter((m) => m.at <= item.moment).at(-1) ?? null;
+    // D199: a decision Sonah could not place says nothing of it (it comes last).
+    const after = item.moment === null ? null : prior
+      ? REPORT_TRAIL_WORDS.afterRow(prior.asks[0], prior.asks.at(-1)) : messages.length ? REPORT_TRAIL_WORDS.beforeRow : null;
+    // D202 (the follow-up review: "after ask N" was plain text, so many asks were linked from nowhere): the ask that
+    // `after` names first, for a link.
+    return { ...entryOf(item), after, afterAsk: item.moment !== null && prior ? prior.asks[0] : null };
   });
-  const entries = out.flatMap((g) => g.entries);
-  return { total: entries.length, tagged: tally(entries), groups: out };
+  if (!entries.length) return { total: 0, tagged: tally([]), groups: [] };
+  // The entries tagged Must act or Must know first-hand, in order; those tagged Good to know folded under one counted
+  // line, in order.
+  const shownEntries = entries.filter((e) => MUST_TIERS.includes(e.tier));
+  const more = entries.filter((e) => !MUST_TIERS.includes(e.tier));
+  const tagged = tally(entries);
+  const out = [{ key: 'all', message: null, asks: [], words: REPORT_TRAIL_WORDS.inOrder, askLines: [], asksMore: 0,
+    entries, items: entries.filter((e) => !e.above).map((e) => e.item), tagged, open: true, shown: shownEntries, more,
+    count: REPORT_COUNT_WORDS.decisions(entries.length, tagged[MUST_ACT], tagged[MUST_KNOW]),
+    moreWords: !more.length ? null : shownEntries.length
+      ? REPORT_TRAIL_WORDS.moreTagged(more.length, REPORT_TIER_WORDS[GOOD_TO_KNOW])
+      : REPORT_TRAIL_WORDS.allTagged(more.length, REPORT_TIER_WORDS[GOOD_TO_KNOW]) }];
+  return { total: entries.length, tagged, groups: out };
 }
 
 /**
@@ -3167,7 +3580,9 @@ function countLineOf(ctx, tiers, prompt, decisions, pointers) {
     // D169: Good to know is said folded only when the report folds it: it holds an item.
     tiers: REPORT_TIERS.map((tier) => ({ tier, words: REPORT_TIER_WORDS[tier], n: counts[tier],
       folded: tier === GOOD_TO_KNOW && counts[tier] > 0 })),
-    prompt: ctx.asks.length ? REPORT_COUNT_WORDS.prompt(prompt.parts.join(', ')) : REPORT_COUNT_WORDS.noAsk,
+    // D183: with every window of the session review failed, no ask can have been found: Sonah cannot tell.
+    prompt: ctx.asks.length ? REPORT_COUNT_WORDS.prompt(prompt.parts.join(', '))
+      : ctx.calls.all ? REPORT_COUNT_WORDS.promptCannotTell : REPORT_COUNT_WORDS.noAsk,
     outside: away ? REPORT_COUNT_WORDS.outside(away) : null,
     // D153: present only on a report the after-point re-check took an item out of Must act on.
     ...(ctx.recheckLine ? { recheck: ctx.recheckLine } : {}),
@@ -3176,7 +3591,9 @@ function countLineOf(ctx, tiers, prompt, decisions, pointers) {
       words: REPORT_COUNT_WORDS.decisions(decisions.total, decisions.tagged[MUST_ACT], decisions.tagged[MUST_KNOW]) } : null,
     labels: cutTo(mustAct, REPORT_LIMITS.mustActLabels).shown.map((item) => ({ n: item.n, parts: tagged(item) })),
     more: cutTo(mustAct, REPORT_LIMITS.mustActLabels).more,
-    empty: noMust ? REPORT_COUNT_WORDS.emptyTiers : null,
+    // D183: and nothing can have been found for them: Sonah cannot tell. Its fix round: no sentence of what the code
+    // review found follows (a code review that gave no usable answer is no review that found nothing).
+    empty: !noMust ? null : !ctx.calls.all ? REPORT_COUNT_WORDS.emptyTiers : REPORT_COUNT_WORDS.cannotTellTiers,
     // D133 (R2): the sentence after it, said in the fold What Sonah could not check.
     quiet: noMust ? [REPORT_COUNT_WORDS.notCorrect] : [],
     counts,
@@ -3201,8 +3618,16 @@ function footerOf(ctx, items) {
     facts.repo && validSha(facts.repo.head) ? facts.repo.head.slice(0, 7) : null).replace(/^Sonah {2}/, 'Sonah '),
   newer: newer === null ? null : REPORT_FOOTER_WORDS.newer(newer),
   usage: usage === null ? null : usage.whole ? REPORT_FOOTER_WORDS.usageRuns(usage) : REPORT_FOOTER_WORDS.usage(usage),
-  legend: [REPORT_FOOTER_WORDS.legend, REPORT_FOOTER_WORDS.legendCodeReview, REPORT_FOOTER_WORDS.legendSessionReview],
-  triageLegend: triaged ? REPORT_FOOTER_WORDS.triageLegend : null, share: REPORT_FOOTER_WORDS.share, sessionHash: hash };
+  // D202: and what the types, the short tags and a ? in a line count mean (the row tags and the bar: the page's own).
+  // D204 (the coordinator's review: the .md showed the two tags with no sentence): and, where the review has them, what
+  // the code review's lines' tag and the untied question's tag say.
+  legend: [REPORT_FOOTER_WORDS.legend, REPORT_FOOTER_WORDS.legendCodeReview, REPORT_FOOTER_WORDS.legendSessionReview,
+    REPORT_FOOTER_WORDS.legendTypes, REPORT_FOOTER_WORDS.legendTypesMore, REPORT_FOOTER_WORDS.legendTags,
+    ...(triaged ? [REPORT_FOOTER_WORDS.legendFormTag] : []),
+    ...(items.some((item) => item.untied === true) ? [REPORT_FOOTER_WORDS.legendUntiedTag] : []),
+    REPORT_FOOTER_WORDS.legendCounts],
+  // D199: no triage legend and no advice to read before you share.
+  sessionHash: hash };
 }
 
 /** D129 (C7): what the review cost, from its run record (`report.instrument.usage`, cli review-budget.js
@@ -3216,27 +3641,62 @@ function footerOf(ctx, items) {
  *  each usage limit every such run read, by the sum of each run's rise (left out when one run's last reading is below
  *  its first: a reset). A run with no call (a replay) adds nothing; with no earlier run that made a call, or an earlier
  *  record that cannot be read, this run's own. The list cost (`costUsd`) only when FOOTER_LIST_COST is true and every
- *  call reported one. */
+ *  call reported one.
+ *  D183 (0.3.0-beta.11; D155 QF4): over several runs, the tokens are summed over the runs that reported them for every
+ *  call (`tokenRuns` of them; null when none did), and each usage limit over the runs that read it (`runs` on each
+ *  window, left out when one of them reset), so one run whose calls all failed no longer takes the others' sums away.
+ *  And `retried`: how many of this run's calls it asked again after they failed (`retriedOf`), or null. */
 function usageOf(report, earlier = []) {
   const own = usageRecordOf(report?.instrument?.usage);
   if (own === null) return null;
   const before = list(earlier).map(usageRecordOf);
   const shown = (usd) => (FOOTER_LIST_COST && usd !== null ? Math.round(usd * 100) / 100 : null);
+  const retried = retriedOf(report, own);
   // D132's review (finding 4): a run counts when it made a model call; a replay of stored answers made none and adds
   // nothing. With no earlier run that made a call (or one record that cannot be read), the run's own sentence.
   if (!before.length || before.some((run) => run === null) || before.every((run) => run.calls === 0)) {
     const { costUsd, rise, ...one } = own;
-    return { ...one, runs: 1, costUsd: shown(costUsd) };
+    return { ...one, runs: 1, costUsd: shown(costUsd), retried };
   }
   const calling = [...before, own].filter((run) => run.calls > 0);
-  const total = (key) => (calling.every((run) => run[key] !== null) ? calling.reduce((n, run) => n + run[key], 0) : null);
-  // Every run that made calls must have read the limit, and no run's reading may fall (a reset).
-  const names = calling[0].windows.map((w) => w.name).filter((name) => calling.every((run) => run.rise.has(name)
-    && run.rise.get(name) >= 0));
+  const sum = (runs, key) => runs.reduce((n, run) => n + run[key], 0);
+  const total = (key) => (calling.every((run) => run[key] !== null) ? sum(calling, key) : null);
+  // D183: the runs that reported tokens for every call (both counts); the time and the calls stay every run's.
+  const reported = calling.filter((run) => run.inputTokens !== null && run.outputTokens !== null);
+  // D183: each limit any run read, in the order the runs read them, summed over the runs that read it; none of them
+  // may have reset (its last reading below its first).
+  const names = [...new Set(calling.flatMap((run) => run.windows.map((w) => w.name)))]
+    .filter((name) => calling.every((run) => !run.rise.has(name) || run.rise.get(name) >= 0));
   return { runs: calling.length, calls: total('calls'), codeCalls: calling.some((run) => run.codeCalls !== null)
-    ? calling.reduce((n, run) => n + (run.codeCalls ?? 0), 0) : null, inputTokens: total('inputTokens'),
-  outputTokens: total('outputTokens'), wallMs: total('wallMs'), costUsd: shown(total('costUsd')),
-  windows: names.map((name) => ({ name, rise: calling.reduce((n, run) => n + run.rise.get(name), 0) })), whole: true };
+    ? calling.reduce((n, run) => n + (run.codeCalls ?? 0), 0) : null,
+  inputTokens: reported.length ? sum(reported, 'inputTokens') : null,
+  outputTokens: reported.length ? sum(reported, 'outputTokens') : null, tokenRuns: reported.length,
+  wallMs: total('wallMs'), costUsd: shown(total('costUsd')),
+  windows: names.map((name) => {
+    const read = calling.filter((run) => run.rise.has(name));
+    return { name, rise: read.reduce((n, run) => n + run.rise.get(name), 0), runs: read.length };
+  }), retried, whole: true };
+}
+/**
+ * D183: how many of this run's calls it asked again after they failed, from its own two records: its tries (the usage
+ * record's `calls`: cli review-budget.js counts one for each try, inside the answer store) less its requests (the
+ * answers records' `calls`: cli answer-cache.js `memoizeJudge` counts one for each request sent live, the session
+ * review's in `instrument.answers` and the code step's in `codePass.answers`), part by part. Null unless both records are
+ * there and neither part has fewer tries than requests. A request too large to send reaches neither record (each caller
+ * checks it against the request bound before the answer store), and a budget stop (`--max-calls`, `--max-input-bytes`,
+ * `--stop-at-utilization`) pauses the run, which saves no report. Null for 0. Counts only.
+ */
+function retriedOf(report, own) {
+  const n = (value) => Number.isSafeInteger(value) && value >= 0;
+  const answers = report?.instrument?.answers;
+  const code = plain(report?.codePass) ? report.codePass.answers : undefined;
+  const codeTries = own.codeCalls ?? 0;
+  if (!plain(answers) || !n(answers.calls)) return null;
+  if ((codeTries > 0 || code !== undefined) && (!plain(code) || !n(code.calls))) return null;
+  const codeRequests = plain(code) ? code.calls : 0;
+  if (own.calls - codeTries < answers.calls || codeTries < codeRequests) return null;
+  const retried = own.calls - answers.calls - codeRequests;
+  return retried > 0 ? retried : null;
 }
 /** One usage record read as counts (D129), or null: `calls`, `codeCalls`, `inputTokens`, `outputTokens`, `wallMs`,
  *  `windows` (whole percentages), `rise` (each window's last minus first, by name) and `costUsd` (null unless every call
@@ -3353,9 +3813,16 @@ const partsText = (parts) => list(parts).map((p) => (p.quote ? `“${p.text}”$
 const countWords = (text) => String(text).split(/\s+/).filter(Boolean).length;
 
 /** The lines of an item or a member (D112) under its head: quote, impact, the agent's words, action. */
+/** D194: the parts of an item's or a member's head after its type word: its quote (its label first) when it leads with
+ *  its quote (`leadQuote`), else what it is. And the line under the head: what it is, when the quote leads; else null.
+ *  Every reader reads both. */
+export const headParts = (item) => (item.leadQuote
+  ? [...(item.quoteLabel ? [S(`${item.quoteLabel} `)] : []), item.quote] : item.what.parts);
+export const kindLineParts = (item) => (item.leadQuote ? item.what.parts : null);
 function bodyLines(item) {
   const lines = [];
-  if (item.quote) lines.push(`${item.quoteLabel ? `${item.quoteLabel} ` : ''}${partsText([item.quote])}`);
+  if (item.leadQuote) lines.push(partsText(item.what.parts));
+  else if (item.quote) lines.push(`${item.quoteLabel ? `${item.quoteLabel} ` : ''}${partsText([item.quote])}`);
   for (const parts of list(item.restsOutside)) lines.push(`${REPORT_ITEM_WORDS.restsOutside} ${partsText(parts)}`);
   if (item.impact) lines.push(`${REPORT_ITEM_WORDS.impact} ${partsText(item.impact)}`);
   if (item.agentSaid) lines.push(`${item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid} ${partsText([item.agentSaid])}`);
@@ -3376,13 +3843,15 @@ export const scopeMarker = (scope) => (scope?.notAsked ? ` ${REPORT_ITEM_WORDS.n
 export const foldNotes = (item) => [...(!item.quote && item.quoteMissing ? [REPORT_ITEM_WORDS.quoteMissing] : []),
   ...(item.scope?.askedUnknown && !item.scope?.notAsked ? [REPORT_ITEM_WORDS.askedUnknown] : [])];
 /** A member's head (D112): its type word, what it is, and its own tier word. */
-export const memberHeadText = (member) => `${REPORT_TYPE_WORDS[member.type]}: ${partsText(member.what.parts)} · `
+export const memberHeadText = (member) => `${REPORT_TYPE_WORDS[member.type]}: ${partsText(headParts(member))} · `
   + `${REPORT_TIER_WORDS[member.tier.final]}`;
 /** The text of an item's visible lines (D97), as a reader sees them. D112: then the line that counts its members, and
  *  each member's head; an open member's lines too (a folded member shows its head alone). */
 export function itemVisibleText(item) {
   const lines = [];
-  lines.push(`${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(item.what.parts)}${scopeMarker(item.scope)}`);
+  // D200: and its tags (REPORT_DECISION_TAGS), as the .md's head says them.
+  lines.push(`${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(headParts(item))}${scopeMarker(item.scope)}`
+    + list(item.tags).map((t) => ` · ${REPORT_DECISION_TAGS[t.key]}`).join(''));
   lines.push(...bodyLines(item));
   const where = placeWords(item);
   const marker = item.scope.asks.length && !item.where.some((w) => w.anchor === `ask-${item.scope.asks[0]}`)
@@ -3446,10 +3915,10 @@ function promptOpenText(model) {
     }
     lines.push(shown.join(''));
   }
-  // D133 (R2): a row's folded lines show as its fold's summary alone.
-  for (const ask of prompt.asks.filter((a) => a.lines.length || a.folded.length || !a.located))
-    lines.push([REPORT_PROMPT_WORDS.askLine(ask.n), ask.status, ...ask.lines.map(partsText),
-      ...(ask.folded.length ? [REPORT_ITEM_WORDS.evidence] : [])].join(' · '));
+  // D199: no reader shows an ask's folded lines (D133's row fold), so they are no words of the first screen.
+  for (const ask of prompt.asks.filter((a) => a.lines.length || list(a.tags).length || !a.located))
+    lines.push([REPORT_PROMPT_WORDS.askLine(ask.n), ask.status, ...list(ask.tags).map((t) => REPORT_ASK_TAGS[t.key]),
+      ...ask.lines.map(partsText)].join(' · '));
   return lines.join('\n');
 }
 /** The visible words of the first screen (D97): the header, the count line, your prompt when it comes before the
@@ -3476,23 +3945,25 @@ function firstMustOf(model) {
 }
 /** D161: the line of one item of the agent's decisions, as a reader sees it with its detail folded: its number, type
  *  word, what it is, its marker, the ask its instruction ties it to, and its tag. */
-export const trailLineText = (item) => `${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(item.what.parts)}`
+export const trailLineText = (item) => `${item.n} ${REPORT_TYPE_WORDS[item.type]}: ${partsText(headParts(item))}`
   + `${scopeMarker(item.scope)}${item.scope.asks.length ? ` · ${REPORT_ITEM_WORDS.asked(item.scope.asks[0])}` : ''}`
   + ` · ${REPORT_TIER_WORDS[item.tier.final]}`;
+/** D194: an entry's line with the asks it follows, as the readers show it. */
+const withAfter = (line, entry) => (entry.after ? line.replace(/ · ([^·]+)$/, ` · ${entry.after} · $1`) : line);
 /** D163: the line of a decision that the first part shows, at its place in the second: its type word, what it is, its
  *  marker, where the first part shows it, and its tag (no number of its own). */
 export const trailAboveText = (entry) => `${REPORT_TYPE_WORDS[entry.type]}: ${partsText(entry.what.parts)}`
-  + `${scopeMarker(entry.scope)} · ${REPORT_TRAIL_WORDS.shownAbove(entry.n)} · ${REPORT_TIER_WORDS[entry.tier]}`;
+  + `${scopeMarker(entry.scope)}${entry.after ? ` · ${entry.after}` : ''} · ${REPORT_TRAIL_WORDS.shownAbove(entry.n)}`
+  + ` · ${REPORT_TIER_WORDS[entry.tier]}`;
 /** D163: one entry of a group of the second part, as a reader sees its line. */
-export const trailEntryText = (entry) => (entry.above ? trailAboveText(entry) : trailLineText(entry.item));
+export const trailEntryText = (entry) => (entry.above ? trailAboveText(entry) : withAfter(trailLineText(entry.item), entry));
 /** D163 (L1): a pointer of the first part to a decision of the second: the decision's number, type word, what it is,
  *  its marker and its ask, as the second part shows them. */
 export const pointerLineText = (p) => `${p.n} ${REPORT_TYPE_WORDS[p.type]}: ${partsText(p.what.parts)}`
   + `${scopeMarker(p.scope)}${p.scope.asks.length ? ` · ${REPORT_ITEM_WORDS.asked(p.scope.asks[0])}` : ''}`;
-/** D163 (L1): the lines of a tier's pointers, its heading first; none with no pointer. */
+/** D163 (L1), D194: a tier's pointers as the readers show them: one line that counts them; none with no pointer. */
 export const pointerLinesText = (model, tier) => (list(model.pointers?.[tier]).length
-  ? [REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS[tier], model.pointers[tier].length),
-    ...model.pointers[tier].map(pointerLineText)] : []);
+  ? [REPORT_TRAIL_WORDS.taggedThere(REPORT_TIER_WORDS[tier], model.pointers[tier].length)] : []);
 /** D161: a group's summary line: whose message it follows, then its count. */
 export const trailGroupText = (group) => `${group.words} · ${group.count}`;
 /** Every word a reader sees with every fold closed: sections 1 to 3, Must act and Must know whole, and the headings
@@ -3503,15 +3974,14 @@ export function visibleWords(model) {
   const trail = list(model.decisions?.groups);
   const items = [...model.tiers[MUST_ACT].map(itemVisibleText), ...pointerLinesText(model, MUST_ACT),
     ...model.tiers[MUST_KNOW].map(itemVisibleText), ...pointerLinesText(model, MUST_KNOW)];
-  if (trail.length) items.push(REPORT_TRAIL_WORDS.heading(model.decisions.total), ...trail.flatMap((g) => [trailGroupText(g),
-    ...(g.open ? [...g.askLines.map((a) => [REPORT_PROMPT_WORDS.askLine(a.n), a.status, partsText(a.words)].join(' · ')),
-      ...g.shown.map(trailEntryText), ...(g.moreWords ? [g.moreWords] : [])] : [])]));
+  // D194: one list: its Must entries and the line that counts the rest.
+  if (trail.length) items.push(REPORT_TRAIL_WORDS.heading(model.decisions.total), ...trail.flatMap((g) => [
+    ...g.shown.map(trailEntryText), ...(g.moreWords ? [g.moreWords] : [])]));
   const headings = [REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_ACT], model.countLine.counts[MUST_ACT]),
     REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[MUST_KNOW], model.countLine.counts[MUST_KNOW]),
     REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[GOOD_TO_KNOW], model.countLine.counts[GOOD_TO_KNOW]),
     REPORT_SECTION_WORDS.did, REPORT_SECTION_WORDS.notCheckedCounted(model.notChecked.total)];
   const footer = [model.footer.provenance, model.footer.newer ?? '', model.footer.usage ?? '', ...model.footer.legend,
-    ...(model.prompt.messages.length ? [REPORT_PROMPT_WORDS.coverage] : []), model.footer.triageLegend ?? '',
-    model.footer.share];
+  ];
   return countWords([openText(model), ...items, ...headings, ...footer].join('\n'));
 }

@@ -3,7 +3,10 @@
 // not confirm is an item to verify — never in a confirmed (Fix) item, never withheld — and it names each premise that
 // Sonah could not check, in the check's own words, on a visible line; the page, the .md and the prompt table never say
 // that a second or independent reviewer checked a finding. The label is computed again from each stored check, so a
-// record whose premises no longer confirm a finding shows it as one to verify, wherever the writer put it.
+// record whose premises no longer confirm a finding shows it as one to verify, wherever the writer put it. D199 (the
+// owner, 2026-10-30, "All of them"): a premise's evidence line is the premise alone (no sentence of where its evidence
+// is), an item to verify's check line is its check's own words, the ask shows no line of an item to verify, and no
+// reader says how code computes the label.
 //
 // Synthetic reports (evidence/test/report-triage-fixture.js, (a) before the premise contract and (g) under it): no
 // recording, no model, no network. Nothing prints.
@@ -23,6 +26,19 @@ const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => parts.map((p) => (p.quote ? `“${p.text}”${p.cut ? '…' : ''}` : p.text)).join('');
 const modelOf = (make, options = {}) => { const session = triageSession(); return reportModel(session, make(session), options); };
 const W = reportWords.REPORT_ITEM_WORDS;
+// D199: the words were removed; as literals. D110's sentence for a check that its label does not confirm, the sentences
+// of where a premise's evidence is (repository, language, outside), how code computes the label, and the ask's line of
+// a finding to verify (its lead, before " See item N.").
+const OLD_UNCONFIRMED = 'It found the same problem. Sonah could not check all of its premises in the repository or the '
+  + 'language.';
+const OLD_PREMISE_SOURCES = Object.freeze(['Its check quotes lines of the repository for it. Sonah found each quote there '
+  + 'word for word.', 'Its check names documented behaviour of the language for it.',
+  'Sonah could not check it in the repository or the language.']);
+const OLD_HOW_CONFIRM = 'Sonah asks the check of each finding for the premises that the finding rests on. Sonah calls a '
+  + 'finding checked only when its check quotes repository lines or names documented language behaviour for each '
+  + 'premise. Sonah must also find each quote word for word. A finding is an item to verify when its check finds the '
+  + 'problem but names anything else for a premise.';
+const OLD_ASK_LEAD = 'The code review found a problem here. Sonah could not check all of its premises';
 /** Every string a word table holds, its functions rendered with a few arguments. */
 function stringsOf(value, out = []) {
   if (typeof value === 'string') out.push(value);
@@ -44,14 +60,15 @@ test('D110: a finding to verify is a Verify item, Good to know by default, never
   assert.equal(item.rowId, UNCONFIRMED_ID);
   // Its visible line: each premise that Sonah could not check, in its check's words, byte for byte.
   assert.deepEqual(item.restsOutside.map((parts) => [textOf(parts), parts[0].by]), [[OUTSIDE_PREMISE, 'code-review']]);
-  // Its evidence: its check found the same problem, Sonah could not check every premise; each premise beside where its
-  // evidence is, and the receipt of the one in the repository as code.
+  // Its evidence: its check's own words; each premise, in its check's words, and the receipt of the one in the repository
+  // as code. D199: no sentence that Sonah could not check every premise, or of where a premise's evidence is.
   const evidence = item.evidence.map((e) => [e.label, textOf(e.parts)]);
-  assert.ok(evidence.some(([label, text]) => label === W.check && text.startsWith(CODE_REPORT_WORDS.checkUnconfirmed)));
-  assert.ok(evidence.some(([label, text]) => label === W.restsOn
-    && text === `${OUTSIDE_PREMISE} ${CODE_REPORT_WORDS.premiseSources.outside}`));
-  assert.ok(evidence.some(([label, text]) => label === W.restsOn
-    && text.endsWith(CODE_REPORT_WORDS.premiseSources.repository)));
+  assert.ok(evidence.some(([label, text]) => label === W.check
+    && text === 'SYNTHETIC the call is awaited, and nothing here times it out.'), JSON.stringify(evidence));
+  assert.deepEqual(evidence.filter(([label]) => label === W.restsOn).map(([, text]) => text),
+    ['SYNTHETIC line 5 awaits the call with the timeout passed in.', OUTSIDE_PREMISE]);
+  for (const words of [OLD_UNCONFIRMED, ...OLD_PREMISE_SOURCES])
+    assert.ok(!evidence.some(([, text]) => text.includes(words)), words);
   assert.ok(evidence.some(([label, text]) => label === W.codeNow && text.includes('return await call({ timeoutMs });')));
   // It is never in a confirmed group: no Fix item holds its row, and no confirmed finding is it.
   assert.ok(items.filter((x) => x.type === 'fix').every((x) => !x.rows.some((r) => r.source === 'codePass.unconfirmed')));
@@ -66,34 +83,46 @@ test('D110: the page and the .md show the item to verify with its premise, and e
   const model = reportModel(session, report, {});
   const item = itemsOf(model).find((x) => x.kind === 'code_finding_unconfirmed');
   const esc = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  assert.ok(html.includes(`<strong class="type">${reportWords.REPORT_TYPE_WORDS.verify}:</strong> <em class="by-code-review">`
+  assert.ok(html.includes(`<strong class="type ty-verify">${reportWords.REPORT_TYPE_WORDS.verify}</strong> <em class="by-code-review">`
     + 'A call that hangs is never retried</em>'), 'a Verify item on the page');
-  assert.ok(html.includes(`<span class="label">${esc(W.restsOutside)}</span> <em class="by-code-review">${esc(OUTSIDE_PREMISE)}`
+  assert.ok(html.includes(`<span class="label">${esc(W.restsOutside)}</span> <span class="v"><em class="by-code-review">${esc(OUTSIDE_PREMISE)}`
     + '</em>'), 'its premise on a visible line');
   // Good to know, so folded: its head is its fold's summary.
   assert.ok(md.includes(`<a name="item-${item.n}"></a>${item.n} ${reportWords.REPORT_TYPE_WORDS.verify}: <em>A call that `
     + 'hangs is never retried</em>'));
   assert.ok(md.includes(`${W.restsOutside} *${OUTSIDE_PREMISE}*`), 'its premise on a visible line of the .md');
-  // Each confirmed finding: the label code computed, and its premise in the repository; the bug's language premise.
+  // Each confirmed finding: the label code computed, and its premise in the repository; the bug's language premise, in
+  // its check's words alone (D199).
   const bug = itemsOf(model).find((x) => textOf(x.what.parts) === 'Retry-After is sent in milliseconds, not seconds');
   const lines = bug.evidence.map((e) => [e.label, textOf(e.parts)]);
   assert.ok(lines.some(([label, text]) => label === W.check && text.startsWith(CODE_REPORT_WORDS.checkConfirmed)));
   assert.ok(lines.some(([label, text]) => label === W.restsOn
-    && text.endsWith(CODE_REPORT_WORDS.premiseSources.language)));
+    && text === 'SYNTHETIC in JavaScript, a number set as a header value is sent as its decimal digits.'));
   assert.equal(bug.restsOutside, null);
-  // How code computes the label, said once under the premise contract; never before it.
+  // D199: how code computes the label is said by no reader, under the premise contract or before it; and no premise
+  // line says where its evidence is.
   const how = (m) => m.notChecked.code.map(textOf);
-  assert.ok(how(model).includes(CODE_REPORT_WORDS.howConfirm));
-  assert.ok(!how(modelOf(triageReport)).includes(CODE_REPORT_WORDS.howConfirm));
+  assert.ok(!how(model).includes(OLD_HOW_CONFIRM));
+  assert.ok(!how(modelOf(triageReport)).includes(OLD_HOW_CONFIRM));
+  for (const words of [OLD_HOW_CONFIRM, OLD_UNCONFIRMED, ...OLD_PREMISE_SOURCES]) {
+    assert.equal(html.includes(esc(words).replace(/'/g, '&#39;')), false, words);
+    assert.equal(md.includes(words), false, words);
+  }
 });
 
-test('D110: the ask a finding to verify follows from keeps its status, and its line names the item to verify', () => {
-  const model = modelOf(premiseReport);
+test('D110: the ask a finding to verify follows from keeps its status (D199: and no line of it names the item to verify, on any reader)', () => {
+  const session = triageSession();
+  const report = premiseReport(session);
+  const model = reportModel(session, report, {});
   const item = itemsOf(model).find((x) => x.kind === 'code_finding_unconfirmed');
   const ask = model.prompt.asks.find((a) => a.n === ROWS.askAdd + 1);
   assert.equal(ask.state, 'done');
-  assert.ok(ask.lines.map(textOf).includes(reportWords.REPORT_PROMPT_WORDS.unconfirmedFinding(item.n)), JSON.stringify(
-    ask.lines.map(textOf)));
+  // D199 (the owner, 2026-10-30, "All of them"): no line beside the ask says that a finding of it could not be checked
+  // in full; the item to verify names the ask in its scope.
+  const line = `${OLD_ASK_LEAD}. See item ${item.n}.`;
+  assert.ok(!ask.lines.map(textOf).includes(line), JSON.stringify(ask.lines.map(textOf)));
+  for (const text of [renderSessionPage(session, report, {}), renderReportMarkdown(session, report, {})])
+    assert.equal(text.includes(OLD_ASK_LEAD), false, OLD_ASK_LEAD);
   assert.deepEqual(item.scope.asks, [ROWS.askAdd + 1]);
 });
 
@@ -112,16 +141,16 @@ test('D110: the label is computed again from each stored check — a finding to 
   const b = reportModel(session, stripped, {});
   const verify = itemsOf(b).filter((x) => x.kind === 'code_finding_unconfirmed').map((x) => textOf(x.what.parts));
   assert.deepEqual(verify.sort(), ['A call that hangs is never retried', 'Retry-After is sent in milliseconds, not seconds']);
-  // The premise that lost its receipts is said as one Sonah could not check, whatever source it names: on its visible
-  // line, and in its evidence with the words of a premise that cannot confirm, never its named source's.
+  // The premise that lost its receipts is said as one Sonah could not check, whatever source it names, on its visible
+  // line. D199: in its evidence each premise is its check's words alone, never its named source's sentence.
   const bug = itemsOf(b).find((x) => textOf(x.what.parts) === 'Retry-After is sent in milliseconds, not seconds');
   assert.equal(bug.restsOutside.length, 1);
   assert.match(textOf(bug.restsOutside[0]), /^SYNTHETIC the traced lines show it/);
   const rests = bug.evidence.filter((e) => e.label === W.restsOn).map((e) => textOf(e.parts));
-  assert.deepEqual(rests.map((text) => text.startsWith('SYNTHETIC the traced lines show it')
-    ? text.endsWith(CODE_REPORT_WORDS.premiseSources.outside) : text.endsWith(CODE_REPORT_WORDS.premiseSources.language)),
-  [true, true], JSON.stringify(rests));
-  assert.ok(!rests.some((text) => text.endsWith(CODE_REPORT_WORDS.premiseSources.repository)));
+  assert.deepEqual(rests, [`SYNTHETIC the traced lines show it: ${textOf(bug.what.parts)}`,
+    'SYNTHETIC in JavaScript, a number set as a header value is sent as its decimal digits.'], JSON.stringify(rests));
+  for (const words of OLD_PREMISE_SOURCES)
+    assert.ok(!rests.some((text) => text.includes(words)), words);
   // A language premise that cannot confirm (a receipt no longer in its span) reads as one Sonah could not check too.
   const lang = premiseReport(session);
   lang.codePass = { ...lang.codePass, findings: lang.codePass.findings.map((f, at) => (at === 0 ? { ...f, check: {
@@ -129,8 +158,10 @@ test('D110: the label is computed again from each stored check — a finding to 
       span: 'something else' }] } : p)) } } : f)) };
   const langBug = itemsOf(reportModel(session, lang, {})).find((x) => textOf(x.what.parts) === textOf(bug.what.parts));
   assert.equal(langBug.kind, 'code_finding_unconfirmed');
-  assert.ok(langBug.evidence.some((e) => e.label === W.restsOn && textOf(e.parts).startsWith('SYNTHETIC in JavaScript')
-    && textOf(e.parts).endsWith(CODE_REPORT_WORDS.premiseSources.outside)));
+  assert.ok(langBug.restsOutside.some((parts) => textOf(parts).startsWith('SYNTHETIC in JavaScript')),
+    JSON.stringify(langBug.restsOutside));
+  assert.ok(langBug.evidence.some((e) => e.label === W.restsOn
+    && textOf(e.parts) === 'SYNTHETIC in JavaScript, a number set as a header value is sent as its decimal digits.'));
 });
 
 test('D110 (review): an item to verify shows each premise receipt as code under its premise, its visible premise line in its first-screen text, and its ties to the did list and to related items', () => {
@@ -149,9 +180,9 @@ test('D110 (review): an item to verify shows each premise receipt as code under 
   const items = itemsOf(model);
   const item = items.find((x) => x.kind === 'code_finding_unconfirmed');
   const evidence = item.evidence.map((e) => [e.label, textOf(e.parts)]);
-  // The receipt of its repository premise, as code, right after that premise.
+  // The receipt of its repository premise, as code, right after that premise (D199: the premise in its check's words).
   const at = evidence.findIndex(([label, text]) => label === W.restsOn
-    && text.endsWith(CODE_REPORT_WORDS.premiseSources.repository));
+    && text === 'SYNTHETIC line 5 awaits the call with the timeout passed in.');
   assert.ok(at >= 0, JSON.stringify(evidence));
   assert.deepEqual(evidence[at + 1], [W.codeNow, `src/retry.js:8 ${own.quote}`]);
   assert.equal(evidence.filter(([label, text]) => label === W.codeNow && text.includes(own.quote)).length, 1,
@@ -187,8 +218,7 @@ test('D110 (review): a stored check that neither confirms nor is to verify is sh
     // The ask it follows from shows no line of an item to verify, and keeps its status.
     const ask = model.prompt.asks.find((a) => a.n === ROWS.askAdd + 1);
     assert.equal(ask.state, 'done', name);
-    assert.ok(!ask.lines.map(textOf).some((line) => line.startsWith(reportWords.REPORT_PROMPT_WORDS.unconfirmedFinding(null)
-      .split('.')[0])), name);
+    assert.ok(!ask.lines.map(textOf).some((line) => line.startsWith(OLD_ASK_LEAD.split('.')[0])), name);
     for (const text of [renderSessionPage(session, report, {}), renderReportMarkdown(session, report, {})])
       assert.ok(!text.includes(f.title), name);
   }
@@ -284,21 +314,17 @@ test('D110 (review): where a premise\'s evidence is, is said as what its check q
   // Code checks only that each quote is literally in the repository and that each source is a token of the closed
   // list; whether a line shows its premise, and whether a behaviour is documented, are the check's to say. So every
   // sentence of the premise words that names the repository or the language has the check as the one that quotes or
-  // names.
-  const C = CODE_REPORT_WORDS;
-  const sentences = [C.checkConfirmed, C.howConfirm, C.premiseSources.repository, C.premiseSources.language]
-    .flatMap((text) => text.split(/(?<=\.) /));
+  // names. D199: of those sentences only a confirmed check's line is printed any more (how code computes the label and
+  // where a premise's evidence is are gone with their words).
+  const sentences = CODE_REPORT_WORDS.checkConfirmed.split(/(?<=\.) /);
   const naming = sentences.filter((s) => /repository|language/.test(s));
-  assert.equal(naming.length, 4, JSON.stringify(sentences));
+  assert.equal(naming.length, 1, JSON.stringify(sentences));
   for (const s of naming) assert.match(s, /\b(its check|it) (quotes|names)\b/i, s);
   // No word of any table says that lines or the language settle a premise, or that lines show it.
   const tables = [CODE_REPORT_WORDS, ASK_CODE_WORDS, ...Object.values(reportWords).filter((v) => v !== null
     && typeof v === 'object')];
   for (const text of tables.flatMap((t) => stringsOf(t)))
     assert.doesNotMatch(text, /\bsettles? (each|every|all|the|its) premises?\b|\blines of the repository show\b/i, text);
-  // The ask's line says "here", as a checked finding's does: the finding names the ask only as what it follows from.
-  const P = reportWords.REPORT_PROMPT_WORDS;
-  assert.ok(P.unconfirmedFinding(null).startsWith(P.codeFinding(null)), P.unconfirmedFinding(null));
 });
 
 test('D110: with no finding published as checked, the line says how many are items to verify', () => {

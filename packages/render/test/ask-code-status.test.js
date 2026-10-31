@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage } from '../session-page.js';
 import { reportModel, reportItems } from '../report-model.js';
-import { REPORT_PROMPT_WORDS } from '../report-words.js';
+import { REPORT_PROMPT_WORDS, REPORT_ASK_TAGS, REPORT_ITEM_WORDS } from '../report-words.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { ATTENTION_ROWS, ATTENTION_WORDS, ASK_CODE_WORDS, askRowKind, askCodeNotes, attentionSummary, checklistRowCounts,
   escapeSource } from '../../evidence/src/review.js';
@@ -81,7 +81,16 @@ const unlinked = (r) => ({ ...r, requirements: r.requirements.map(({ codeLinks: 
 const pageOf = (r) => renderSessionPage(session(), r);
 const modelOf = (r) => reportModel(session(), r, {});
 /** The page's line for ask `n` under your prompt, as text. */
-const askLineOf = (page, n) => { const m = new RegExp(`<li(?: id="ask-${n}")?>ask ${n} · [\\s\\S]*?</li>`).exec(page);
+// D198: a checklist row also says the ask's words, a quote after its status; read apart here. D199: the row is columns
+// (its number, its status tag, your words, its lines), their separators kept in the text.
+// D200 (review round): a tag's sentence is a `.tip` span a pointer or focus shows (the title before); the line drops it,
+// as it dropped the title, so the line is the row's open text.
+const askLineOf = (page, n) => { const m = new RegExp(`<li(?: id="ask-${n}")?(?: class="ask-row")?><span class="ak">ask ${n}`
+  + '</span>[\\s\\S]*?</li>').exec(page
+  .replace(/<span class="sep"> · <\/span><span class="aw"><q class="said">[^<]*<\/q>…?<\/span>/g, '')
+  .replace(/ <span class="tip">[^<]*<\/span>/g, '')
+  // D202: the row's evidence fold is not its line.
+  .replace(/<div class="ad acts">[\s\S]*?<\/details><\/div>/g, ''));
   return m ? m[0].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"') : ''; };
 const itemNumberOf = (model, title) => reportItems(model)
   .find((item) => item.what.parts.some((p) => p.text === title))?.n ?? null;
@@ -123,7 +132,7 @@ test('one counting on every reader: the CLI, the PR comment and the report model
   assert.ok(ATTENTION_ROWS.indexOf('asksCodeFinding') === ATTENTION_ROWS.indexOf('asksNotDone') + 1);
   // D97: the terminal prints the report model's count line, with the same split (D93).
   const [cli] = countLines(modelOf(r));
-  assert.ok(cli.endsWith('Your prompt: 2 done, 1 done with a code finding, 1 not checked, 1 not checked with a code finding'),
+  assert.ok(cli.endsWith('Your asks: 2 done, 1 done with a code finding, 1 not checked, 1 not checked with a code finding'),
     cli);
   const { summary } = publicCommentText({ ...r, ...honestStatuses(r) });
   assert.ok(plainComment(summary).includes(ATTENTION_WORDS.asksCodeFinding(2)));
@@ -144,14 +153,24 @@ test('the page: a done ask a finding bears on keeps its status word, and its lin
   // D100: the words of an ask that rests only on the agent's words name what the session review cited (an apostrophe,
   // escaped on the page).
   const agentOnly = REPORT_PROMPT_WORDS.agentOnly.replaceAll("'", '&#39;');
-  // D133 (R2): what the session review cited is in the row's own fold, after its open lines.
-  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${REPORT_PROMPT_WORDS.codeFinding(notMet)} · Evidence${agentOnly}`);
-  assert.match(page, new RegExp(`<mark class="ask s-doneCode" id="ask-1"><span class="tag">Done</span>`));
+  // D199: what the session review cited, D133's row fold, is on no row of the page; the model keeps it in `folded`.
+  // D200: its short tag is back on the row, the sentence only as the tag's title, never a visible line. D200 (review
+  // round): the tag carries no title; its sentence is its `.tip`, shown on hover and focus, the tag focusable.
+  const tag = REPORT_ASK_TAGS.agentOnly.replaceAll("'", '&#39;');
+  assert.equal(askLineOf(page, 1), `ask 1 · Done · ${tag} · ${REPORT_PROMPT_WORDS.codeFinding(notMet)}`);
+  assert.deepEqual(model.prompt.asks[0].folded.map((line) => line.map((p) => p.text).join('')),
+    [REPORT_PROMPT_WORDS.agentOnly]);
+  assert.deepEqual(model.prompt.asks[0].tags, [{ key: 'agentOnly', words: REPORT_PROMPT_WORDS.agentOnly }]);
+  const titled = page.split(`<span class="why soft" tabindex="0">${tag} <span class="tip">${agentOnly}</span></span>`)
+    .length - 1;
+  assert.ok(titled > 0 && page.split(agentOnly).length - 1 === titled, 'the sentence only as a tag\'s tip');
+  assert.doesNotMatch(page, /<details class="row-evidence">/);
+  assert.match(page, new RegExp(`<mark class="ask s-doneCode"(?: id="ask-1")?><small>Done</small>`));
   // A not-checked ask whose words a finding's trace quotes: its status as it was, and the line.
   assert.ok(askLineOf(page, 3).startsWith('ask 3 · Not checked · '));
   assert.ok(askLineOf(page, 3).endsWith(REPORT_PROMPT_WORDS.codeFinding(weak)));
   // The question about request 3's ask: a line, linked to the question's item, never a count.
-  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${REPORT_PROMPT_WORDS.codeQuestion(question)} · Evidence${agentOnly}`);
+  assert.equal(askLineOf(page, 5), `ask 5 · Done · ${tag} · ${REPORT_PROMPT_WORDS.codeQuestion(question)}`);
   // Without the links (an earlier build's report) no ask has such a line.
   const before = pageOf(unlinked(joined()));
   assert.equal(before.includes(REPORT_PROMPT_WORDS.codeFinding(notMet)), false);
@@ -161,7 +180,7 @@ test('the page: a done ask a finding bears on keeps its status word, and its lin
 test('a not-checked ask an earlier code step marked shown in the code is folded, and no reader says the code shows it', () => {
   const page = pageOf(joined());
   // D97: every ask is in your prompt, by its status; the one an earlier code step marked shown in the code is not checked.
-  assert.match(page, /<mark class="ask s-notChecked" id="ask-4"><span class="tag">Not checked<\/span>/);
+  assert.match(page, /<mark class="ask s-notChecked"(?: id="ask-4")?><small>Not checked<\/small>/);
   assert.doesNotMatch(page, /the code at review time shows it|shown in (?:the )?code/i);
   // The report .md places it the same way, and says nothing of the code showing it.
   const story = renderReportMarkdown(session(), joined());
@@ -173,9 +192,13 @@ test('the report .md: the line beside the ask; its status stays the session revi
   // D97: the prompt table keeps the session review's status and says what the code review found, by the item's number.
   const story = renderReportMarkdown(session(), joined());
   const model = modelOf(joined());
-  // D133 (R2): what the session review cited is in the row's own fold, after the line.
-  assert.ok(story.includes(`\n| Done | “${escapeSource(A1)}” | ${REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, NOT_MET))} `
-    + `<details><summary>Evidence</summary>${REPORT_PROMPT_WORDS.agentOnly}</details> |`), story);
+  // D199: the line alone; what the session review cited (D133's row fold) is on no row of the .md. D200: its short tag
+  // first, then the line.
+  assert.ok(story.includes(`\n| Done | “${escapeSource(A1)}” | ${REPORT_ASK_TAGS.agentOnly}. `
+    + `${REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, NOT_MET))} |`), story);
+  // D202: the row's evidence, what the session review cited as doing it, in the fold under the table.
+  assert.ok(story.includes(`\n- ask 1 · ${REPORT_ITEM_WORDS.whatDoes} “`), story);
+  assert.equal(story.includes(REPORT_PROMPT_WORDS.agentOnly), false);
   assert.ok(story.includes(`\n| Not checked | “${escapeSource(A3)}” |`));
   assert.ok(story.includes(REPORT_PROMPT_WORDS.codeFinding(itemNumberOf(model, WEAK))));
 });

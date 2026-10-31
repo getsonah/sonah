@@ -43,12 +43,12 @@ import { DISCLOSURE_REASONS, REQUIREMENT_STATUSES, LEGACY_REQUIREMENT_STATUSES, 
 import { escapeSource } from '../evidence/src/review.js';
 import { CODE_REPORT_WORDS } from '../evidence/src/code-report.js';
 import { INTER_AGENT_GAP_NOTES } from '../evidence/adapters/sonah-ledger.js';
-import { reportModel, REPORT_LIMITS, scopeMarker, foldNotes, folderNameOf, promptAfterTiers, agentPromptText }
-  from './report-model.js';
+import { reportModel, REPORT_LIMITS, scopeMarker, folderNameOf, promptAfterTiers, agentPromptText,
+  listedThereParts, headParts, kindLineParts } from './report-model.js';
 import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
   REPORT_ITEM_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_TRIM_WORDS,
-  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_SEEN_WORDS, REPORT_AGENT_PROMPT_WORDS, REPORT_TRAIL_WORDS }
-  from './report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_KIND_WORDS, REPORT_AGENT_PROMPT_WORDS, REPORT_TRAIL_WORDS,
+  API_KEY_VARIABLE, REPORT_ASK_TAGS, REPORT_DECISION_TAGS } from './report-words.js';
 
 /** The Markdown report's layout version. /32 (D97, owner decisions 2026-10-16): the story is now the report .md — the
  *  report model rendered for a pull request comment, in the page's order and with its counts: the header, the count
@@ -101,8 +101,20 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  unlike the page, the Runs part counts the runs by their results (the model's `runs.parts`), keeps the line of each
  *  run that another part of the same .md names by number (its review: an item's Where too, as that .md prints them),
  *  and says where the list is when the page lists a run that the .md does not; no shortening step cuts the count
- *  (`runsMd`). */
-export const STORY_VERSION = 'sonah.session-story/41';
+ *  (`runsMd`). /42 (0.3.0-beta.11, one move from 0.3.0-beta.10's /41). D194 (the owner, 2026-10-30): the agent's
+ *  decisions are one list in the session order, each line saying which of your asks it follows (`after`), the ones
+ *  tagged Must act or Must know first-hand and the rest in one counted fold, with no fold a message and no list of asks
+ *  in it; a tier's pointers to them are one line that counts them and links to the list (`<a name="decisions">`); and
+ *  an item whose what line is Sonah's fixed words alone leads with its quote, its label first, the what line under it
+ *  (report-model.js `headParts`, `kindLineParts`). A decision says what it is about and what the agent chose first.
+ *  The shortening step for the pointers' lines is gone: one line each is never shortened. D199 to D204 ride /42 too, at
+ *  the merge into 0.3.0-beta.11: D199 drops the notes beside the findings; D200 adds the short tags (an ask's in its
+ *  note, an item's after its head) and the coverage line under the asks table; D201 a Verify item's run, a failed run's
+ *  last output lines and the session review's own words; D202 the fold of the asks' evidence under the table, the
+ *  agent's last words in a message's fold, a decision's recorded actions, the two new tags and the legend's lines; D204
+ *  "Your asks" as the part's name, a failed run's whole command, a decision's statement from its quote on, and the two
+ *  tags' legend lines. */
+export const STORY_VERSION = 'sonah.session-story/42';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */
@@ -861,8 +873,9 @@ export const REPORT_MD_LIMITS = Object.freeze({ maxBytes: 60_000, askWords: 12, 
  *  shortened to counts. */
 export const REPORT_MD_WORDS = Object.freeze({
   status: 'Status', asked: 'You asked', note: "Sonah's note",
+  // D200: under the table, once (nothing in a message below is marked: the table names what Sonah checked), and, when the
+  // table is shortened, the asks name it.
   coverage: 'Sonah checked only the parts of your prompt that the table above lists.',
-  // D131's review: when the table does not show every ask (a shortened report keeps the asks that are not done).
   coverageAsks: 'Sonah checked only the parts of your prompt that its asks name.',
   wholeMessage: (n) => `Your whole message (${n} ${n === 1 ? 'word' : 'words'})`,
   messageStart: (n) => `The start of your message (${n} ${n === 1 ? 'word' : 'words'} in all)`,
@@ -872,7 +885,8 @@ export const REPORT_MD_WORDS = Object.freeze({
 });
 /** How the style linter (packages/render/test/style-lint.js) reads this file's word table. */
 export const STYLE_KINDS = Object.freeze({ REPORT_MD_WORDS: 'heading', 'REPORT_MD_WORDS.kindCount': 'fragment',
-  'REPORT_MD_WORDS.coverage': 'notice', 'REPORT_MD_WORDS.coverageAsks': 'notice' });
+  'REPORT_MD_WORDS.coverage': 'notice', 'REPORT_MD_WORDS.coverageAsks': 'notice',
+});
 /** The arguments each function of the table is rendered with for the linter: one and many. */
 export const STYLE_FIXTURES = Object.freeze({ 'REPORT_MD_WORDS.wholeMessage': [[1], [42]],
   'REPORT_MD_WORDS.messageStart': [[1], [42]], 'REPORT_MD_WORDS.messagesNotShown': [[1], [42]],
@@ -916,6 +930,9 @@ const PATHS_SLOT = '\uE000';
  *  sentence is escaped with a slot where the names go, and the code spans are put in the slot. */
 const mdOwnNaming = (sentence, paths) => mdOwn(sentence(PATHS_SLOT)).split(PATHS_SLOT)
   .join(list(paths).map(codeSpan).join(', '));
+/** D190 (its close check): Sonah's own words as Markdown text, the variable they name (`API_KEY_VARIABLE`) a code span,
+ *  so no escape changes the name that you type. */
+const mdOwnCode = (text) => mdOwnNaming((slot) => text.split(API_KEY_VARIABLE).join(slot), [API_KEY_VARIABLE]);
 /** A span of code a recorded or review-written text marks the Markdown way: one backtick, then at least one character
  *  that is not a space, with no backtick or line break, then one backtick, with no backtick on either side. */
 const BACKTICK_SPAN = /(?<!`)`([^`\n]*[^`\s][^`\n]*)`(?!`)/g;
@@ -1046,7 +1063,7 @@ function headerBlocks(model) {
   const notChecked = [...header.reviewIncomplete];
   if (header.didNotCheck) notChecked.push(`${header.didNotCheck.lead} ${header.didNotCheck.phrases.join(' · ')}`
     + `${header.didNotCheck.more ? ` ${header.didNotCheck.more}` : ''}`);
-  if (notChecked.length) lines.push(mdOwn(notChecked.join(' ')));
+  if (notChecked.length) lines.push(mdOwnCode(notChecked.join(' ')));
   blocks.push(lines.join(BR));
   const tiers = countLine.tiers.map((t) => `${REPORT_COUNT_WORDS.tier(t.words, t.n)}${t.folded
     ? ` ${REPORT_COUNT_WORDS.folded}` : ''}`).join(' · ');
@@ -1092,19 +1109,16 @@ function promptSection(model, trim, notice) {
   // counts (the heading) and the table the rows of the asks that are not done (every row but `done`), and each says how
   // many it does not show; your messages, which you hold, are counted, not shown.
   const kept = trim.askRows ? prompt.asks.filter((ask) => ask.state !== 'done') : prompt.asks;
-  if (!prompt.asks.length) blocks.push(mdOwn(REPORT_COUNT_WORDS.noAsk));
+  // D183: an empty prompt in the count line's words (Sonah found no ask, or cannot tell: report-model.js).
+  if (!prompt.asks.length) blocks.push(mdOwn(model.countLine.prompt));
   else {
     const row = (ask) => {
       const message = prompt.messages.find((m) => m.asks.includes(ask.n));
-      // D133 (R2): a row's folded lines (the model's `folded`) in its own evidence fold, after its open notes; and (its
-      // review) that Sonah could not find the ask's words in your message, which the page says once for the message,
-      // first in that fold, never on each open row.
-      const inFold = [...(message?.unlocated.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.unlocated)] : []),
-        ...ask.folded.map(partsMd)];
-      const folded = inFold.length ? [`<details><summary>${escHtml(REPORT_ITEM_WORDS.evidence)}</summary>`
-        + `${inFold.join(' ')}</details>`] : [];
-      const notes = [...(message?.attachedAsks.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.fromAttached)] : []),
-        ...ask.lines.map(partsMd), ...folded];
+      // D199 (the owner, 2026-10-30, "All of them"): no fold of what Sonah could not check of the ask (D133's row fold);
+      // What Sonah could not check counts those asks.
+      // D200: the ask's short tags first (REPORT_ASK_TAGS), then its lines.
+      const notes = [...list(ask.tags).map((t) => `${mdOwn(REPORT_ASK_TAGS[t.key])}.`),
+        ...(message?.attachedAsks.includes(ask.n) ? [mdOwn(REPORT_PROMPT_WORDS.fromAttached)] : []), ...ask.lines.map(partsMd)];
       return `| ${cell(mdOwn(ask.status))} | ${cell(askWordsMd(ask))} | ${cell(notes.join(' '))} |`;
     };
     const head = [`| ${mdOwn(REPORT_MD_WORDS.status)} | ${mdOwn(REPORT_MD_WORDS.asked)} | ${mdOwn(REPORT_MD_WORDS.note)} |`,
@@ -1124,9 +1138,14 @@ function promptSection(model, trim, notice) {
     }
     if (kept.length < prompt.asks.length) blocks.push(mdOwn(REPORT_NOT_CHECKED_WORDS.rowsNotShown(prompt.asks.length
       - kept.length)));
-    // Nothing in a message below is marked: the table names what Sonah checked, once; (D131's review) a table that
-    // does not show every ask says it by the asks, which the heading counts.
+    // D200: under the table, once, what Sonah checked: the table's asks, or (shortened) the asks' parts.
     blocks.push(mdOwn(kept.length === prompt.asks.length ? REPORT_MD_WORDS.coverage : REPORT_MD_WORDS.coverageAsks));
+    // D202 (the owner, 2026-10-31: "Done asks: what does it", "Short replies: context"): the rows' evidence (the page's
+    // row folds), one fold under the table, an ask a line; left out with the decisions' evidence.
+    const evidenced = trim.trailEvidence ? [] : kept.filter((ask) => list(ask.details).length);
+    if (evidenced.length) blocks.push(fold(escHtml(REPORT_ITEM_WORDS.evidence), [evidenced
+      .map((ask) => `- ${mdOwn(REPORT_PROMPT_WORDS.askLine(ask.n))} · ${ask.details.map((e) => `${mdOwn(e.label)} `
+        + `${partsMd(e.parts)}`).join(' · ')}`).join('\n')]));
   }
   // D127 (B10d): each compaction at its place among your messages: before the first message recorded after it.
   const compactions = Array.isArray(prompt.compactions) ? prompt.compactions : [];
@@ -1139,14 +1158,23 @@ function promptSection(model, trim, notice) {
     // A message cut to its start says so in its fold's summary, which keeps the whole message's count.
     const summary = (trim.messages && longMessage(m) ? REPORT_MD_WORDS.messageStart : REPORT_MD_WORDS.wholeMessage)(
       wordCount(m));
-    blocks.push(fold(escHtml(summary), [messageBlock(m, trim.messages)]));
+    // D202: the agent's message recorded last before yours, in the message's fold, before it.
+    const before = m.before && !trim.trailEvidence ? `${mdOwn(REPORT_PROMPT_WORDS.agentBefore)} ${partsMd(m.before)}` : null;
+    blocks.push(fold(escHtml(summary), [before, messageBlock(m, trim.messages)]));
   }
   while (next < compactions.length) blocks.push(mdOwn(compactions[next++].words));
-  const messages = prompt.messages.length + prompt.emptyMessages.length;
+  // D183: the messages with no ask that no answer of the session review could have read, in a fold of their own.
+  const unreached = Array.isArray(prompt.unreachedMessages) ? prompt.unreachedMessages : [];
+  const messages = prompt.messages.length + prompt.emptyMessages.length + unreached.length;
+  const noAskFold = (all, summary) => fold(escHtml(summary), all.flatMap((m) => [messageBlock(m, trim.messages),
+    m.pasted ? mdOwn(m.pasted) : null]));
   if (trim.askRows && messages) blocks.push(mdOwn(REPORT_MD_WORDS.messagesNotShown(messages)));
-  else if (prompt.emptyMessages.length) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.noAskMessages(prompt.emptyMessages.length)),
-    prompt.emptyMessages.flatMap((m) => [messageBlock(m, trim.messages), m.pasted ? mdOwn(m.pasted) : null])));
-  const shortened = (trim.messages && [...prompt.messages, ...prompt.emptyMessages].some(longMessage))
+  else {
+    if (prompt.emptyMessages.length) blocks.push(noAskFold(prompt.emptyMessages,
+      REPORT_SECTION_WORDS.noAskMessages(prompt.emptyMessages.length)));
+    if (unreached.length) blocks.push(noAskFold(unreached, REPORT_SECTION_WORDS.unreachedMessages(unreached.length)));
+  }
+  const shortened = (trim.messages && [...prompt.messages, ...prompt.emptyMessages, ...unreached].some(longMessage))
     || (trim.askRows && (kept.length < prompt.asks.length || messages > 0));
   return { text: folded ? [...(notice ? [mdOwn(notice)] : []), fold(escHtml(heading), blocks)].join('\n\n')
     : blocks.join('\n\n'), shortened };
@@ -1161,47 +1189,50 @@ function whereMd(item) {
     ? [mdOwn(REPORT_ITEM_WORDS.asked(asks[0]))] : [];
   return places.length || marker.length ? `${mdOwn(REPORT_ITEM_WORDS.where)} ${[...places, ...marker].join(' · ')}` : null;
 }
-function evidenceFold(item, trimmed, keepNotes = true) {
-  // D133 (R2): what Sonah could not check of the item, first in its fold (`foldNotes`); kept when the fold of a Must act
-  // or Must know item is shortened (`keepNotes`), as it was kept on the item's visible lines before. Good to know, a
-  // fold itself and the first evidence that the .md cuts, keeps no shortened fold (where D131 meets D133). D131 (R1):
-  // an evidence fold is printed only with something in it, never empty; the report says once that it was shortened.
-  const notes = foldNotes(item).map((t) => `- ${mdOwn(t)}`);
-  const summary = escHtml(`${REPORT_ITEM_WORDS.evidence} · ${REPORT_ITEM_WORDS.why(REPORT_TIER_WORDS[item.tier.final])}`);
-  if (trimmed) return keepNotes && notes.length ? fold(summary, [notes.join('\n')]) : null;
-  const lines = [...notes, ...item.evidence.map((e) => `- ${e.label ? `${mdOwn(e.label)} ` : ''}${partsMd(e.parts)}`)];
-  for (const reason of new Set(item.where.map((w) => w.noLink).filter(Boolean))) lines.push(`- ${mdOwn(reason)}`);
-  lines.push(`- ${mdOwn(item.why)}`);
+function evidenceFold(item, trimmed) {
+  // D131 (R1): an evidence fold is printed only with something in it, never empty; the report says once that it was
+  // shortened. D199 (the owner, 2026-10-30, "All of them"): "Evidence", with no tier's reason and no note of what Sonah could not
+  // verify; a shortened fold is left out whole.
+  const summary = escHtml(REPORT_ITEM_WORDS.evidence);
+  if (trimmed) return null;
+  const lines = item.evidence.map((e) => `- ${e.label ? `${mdOwn(e.label)} ` : ''}${partsMd(e.parts)}`);
   if (item.rowId) lines.push(`- ${mdOwn(REPORT_ITEM_WORDS.rowId)} ${codeSpan(shortId(item.rowId))}`);
   // Your earlier answer is your own words, escaped, and never in a recorded quote's quotation marks.
   if (item.answer) lines.push(`- ${mdOwn(REPORT_ITEM_WORDS.yourAnswer)} ${mdOwn(item.answer.words)} ${mdText(item.answer.reason)}`);
-  return fold(summary, [lines.join('\n')]);
+  return lines.length ? fold(summary, [lines.join('\n')]) : null;
 }
 /** The head of an item: its number, its type word first (S10), what it is, and whether you asked for it. */
 const itemHead = (item, render) => {
   // D113 amended: the model's one marker (`scopeMarker`), an item outside the evaluated session's among them.
   const scope = scopeMarker(item.scope);
-  return render === 'html' ? `${item.n} ${escHtml(REPORT_TYPE_WORDS[item.type])}: ${partsHtml(item.what.parts)}${escHtml(scope)}`
-    : `**${item.n} ${mdOwn(REPORT_TYPE_WORDS[item.type])}:** ${partsMd(item.what.parts)}${mdOwn(scope)}`;
+  // D194: its quote leads when the model says so (`headParts`). D200: then its short tags (REPORT_DECISION_TAGS).
+  const tags = list(item.tags).map((t) => ` · ${REPORT_DECISION_TAGS[t.key]}`).join('');
+  return render === 'html' ? `${item.n} ${escHtml(REPORT_TYPE_WORDS[item.type])}: ${partsHtml(headParts(item))}${escHtml(scope)}`
+    + escHtml(tags) : `**${item.n} ${mdOwn(REPORT_TYPE_WORDS[item.type])}:** ${partsMd(headParts(item))}${mdOwn(scope)}${mdOwn(tags)}`;
 };
 /** D144: the prompt for the agent of an item that leads in Must act, folded: the note on its voice, then the
  *  prompt as a fence (`fenced`: longer than any run of backticks in it, so no line of it closes the fence; GitHub shows a
  *  copy button on it, and nothing in it pings or links). */
-const agentPromptMd = (prompt) => fold(escHtml(REPORT_AGENT_PROMPT_WORDS.fold), [mdOwn(REPORT_AGENT_PROMPT_WORDS.voice),
+// D199: no note on the prompt's voice; the fenced block has GitHub's own copy button.
+const agentPromptMd = (prompt) => fold(escHtml(REPORT_AGENT_PROMPT_WORDS.fold), [
   fenced({ lines: agentPromptText(prompt).split('\n').map((text) => ({ text })), more: 0 })]);
 /** An item or a member's lines (D97, D112) after `lines` (its head, when shown): each permalink on its own line, the
  *  excerpt as a fence when its place has no permalink, then (D144) the prompt for the agent of an item that has one,
  *  unless the report is shortened past it (`agentPrompts` false), then its evidence, folded. */
-function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = true, agentPrompts = false } = {}) {
-  if (item.quote) lines.push(`${item.quoteLabel ? `${mdOwn(item.quoteLabel)} ` : ''}${partMd(item.quote)}`);
+function entryMd(item, lines, { evidence = false, excerpts = false, agentPrompts = false } = {}) {
+  // D194: what it is under a head that its quote leads; else its quote under the head.
+  const kind = kindLineParts(item);
+  if (kind) lines.push(partsMd(kind));
+  else if (item.quote) lines.push(`${item.quoteLabel ? `${mdOwn(item.quoteLabel)} ` : ''}${partMd(item.quote)}`);
   // D110: each premise of an item to verify that Sonah could not check, in its check's words.
   for (const parts of Array.isArray(item.restsOutside) ? item.restsOutside : [])
     lines.push(`${mdOwn(REPORT_ITEM_WORDS.restsOutside)} ${partsMd(parts)}`);
-  if (item.impact) lines.push(`${mdOwn(REPORT_ITEM_WORDS.impact)} ${partsMd(item.impact)}`);
+  // D202 (the owner, 2026-10-31: "Form, not meaning"): the code review's impact and action lines with their tag.
+  if (item.impact) lines.push(`${mdOwn(REPORT_ITEM_WORDS.impact)} ${partsMd(item.impact)} · ${mdOwn(REPORT_ITEM_WORDS.formTag)}`);
   if (item.agentSaid) lines.push(`${mdOwn(item.agentSaidLabel ?? REPORT_ITEM_WORDS.agentSaid)} ${partMd(item.agentSaid)}`);
   // D163: a change of approach's reason in the session review's words, on its own line, after the agent's own.
   if (item.reviewWhy) lines.push(`${mdOwn(REPORT_ITEM_WORDS.reviewWhy)} ${partsMd(item.reviewWhy)}`);
-  if (item.action) lines.push(`${mdOwn(REPORT_ITEM_WORDS.action)} ${partsMd(item.action)}`);
+  if (item.action) lines.push(`${mdOwn(REPORT_ITEM_WORDS.action)} ${partsMd(item.action)} · ${mdOwn(REPORT_ITEM_WORDS.formTag)}`);
   const where = whereMd(item);
   if (where) lines.push(where);
   const blocks = [lines.join(BR)];
@@ -1210,27 +1241,26 @@ function entryMd(item, lines, { evidence = false, excerpts = false, keepNotes = 
   const fence = !first?.url && first?.excerpt?.lines?.length ? first.excerpt : null;
   if (fence && !excerpts) blocks.push(fenced(fence));
   if (agentPrompts && item.agentPrompt) blocks.push(agentPromptMd(item.agentPrompt));
-  blocks.push(evidenceFold(item, evidence, keepNotes));
+  blocks.push(evidenceFold(item, evidence));
   return { text: blocks.filter(Boolean).join('\n\n'), fenced: fence !== null };
 }
 /** An item (D97): its visible lines in order (with its head unless the fold's summary shows it), then (D112) the line
  *  that counts its members and each member: its type word, what it is and its own tier word, then its lines, inside a
  *  fold when the report model folds it. */
-function itemMd(item, { head = true, evidence = false, excerpts = false, keepNotes = true, agentPrompts = false } = {}) {
+function itemMd(item, { head = true, evidence = false, excerpts = false, agentPrompts = false } = {}) {
   // D144: the prompt is the item's own (a member has none).
   const own = entryMd(item, head ? [`<a name="item-${item.n}"></a>${itemHead(item, 'md')}`] : [], { evidence, excerpts,
-    keepNotes, agentPrompts });
+    agentPrompts });
   const members = list(item.members);
   if (!members.length) return own;
   const blocks = [own.text, mdOwn(REPORT_ITEM_WORDS.members(members.length))];
   let fencedAny = own.fenced;
   for (const m of members) {
     const tier = REPORT_TIER_WORDS[m.tier.final];
-    const one = m.folded ? entryMd(m, [], { evidence, excerpts, keepNotes })
-      : entryMd(m, [`**${mdOwn(REPORT_TYPE_WORDS[m.type])}:** ${partsMd(m.what.parts)} · ${mdOwn(tier)}`], { evidence, excerpts,
-        keepNotes });
+    const one = m.folded ? entryMd(m, [], { evidence, excerpts })
+      : entryMd(m, [`**${mdOwn(REPORT_TYPE_WORDS[m.type])}:** ${partsMd(headParts(m))} · ${mdOwn(tier)}`], { evidence, excerpts });
     fencedAny = fencedAny || one.fenced;
-    blocks.push(m.folded ? fold(`${escHtml(REPORT_TYPE_WORDS[m.type])}: ${partsHtml(m.what.parts)} · ${escHtml(tier)}`,
+    blocks.push(m.folded ? fold(`${escHtml(REPORT_TYPE_WORDS[m.type])}: ${partsHtml(headParts(m))} · ${escHtml(tier)}`,
       [one.text]) : one.text);
   }
   return { text: blocks.join('\n\n'), fenced: fencedAny };
@@ -1244,12 +1274,11 @@ function tierSection(model, tier, trim, notice, agentPrompts = true) {
   const rendered = items.map((item) => itemMd(item, { evidence, excerpts: trim.excerpts,
     agentPrompts: agentPrompts && !trim.actPrompts }));
   // D163: the heading counts as the count line does (Must act with its pointers); after the tier's own items come its
-  // pointers to the decisions of the second part tagged with it, each kept (`pointerLines`: by its number alone).
+  // pointers to the decisions of the second part tagged with it: one line (D194), linked to that part.
   const blocks = [`### ${mdOwn(REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS[tier], model.countLine.counts[tier]))}`,
-    notice ? mdOwn(notice) : null, ...rendered.map((r) => r.text), pointersMd(model, tier, trim.pointerLines)];
+    notice ? mdOwn(notice) : null, ...rendered.map((r) => r.text), pointersMd(model, tier)];
   const shortened = (items.length > 0 && (evidence || (trim.excerpts && rendered.some((r) => r.fenced))
-    || (agentPrompts && trim.actPrompts && items.some((item) => item.agentPrompt))))
-    || (trim.pointerLines && list(model.pointers?.[tier]).length > 0);
+    || (agentPrompts && trim.actPrompts && items.some((item) => item.agentPrompt))));
   return { text: blocks.filter(Boolean).join('\n\n'), shortened };
 }
 
@@ -1267,7 +1296,7 @@ function goodToKnowSection(model, trim, notice) {
   }
   const rendered = items.map((item) => {
     const where = item.where.slice(0, 1).map((w) => (w.anchor ? escHtml(w.text) : `<code>${escHtml(placeText(w))}</code>`));
-    const one = itemMd(item, { head: false, evidence: trim.gtkEvidence, excerpts: trim.excerpts, keepNotes: false });
+    const one = itemMd(item, { head: false, evidence: trim.gtkEvidence, excerpts: trim.excerpts });
     // D131 (R1): an item with nothing left to fold (no visible line, its evidence shortened) is its head alone, never
     // an empty fold.
     if (!one.text) return { fenced: false, text: `<a name="item-${item.n}"></a>${itemHead(item, 'md')}`
@@ -1297,10 +1326,9 @@ function goodToKnowSection(model, trim, notice) {
 function trailSection(model, trim, notice, agentPrompts = true) {
   const decisions = model.decisions;
   if (!decisions?.total) return { text: '', shortened: false };
-  const blocks = [`### ${mdOwn(REPORT_TRAIL_WORDS.heading(decisions.total))}`, notice ? mdOwn(notice) : null];
-  const openFold = (summaryHtml, inner, open) => `<details${open ? ' open' : ''}><summary>${summaryHtml}</summary>\n\n`
-    + `${inner.filter(Boolean).join('\n\n')}${inner.some(Boolean) ? '\n\n' : ''}</details>`;
-  const must = (item) => item.tier.final === 'must_act' || item.tier.final === 'must_know';
+  // D194: an anchor the first part's pointer lines link to.
+  const blocks = [`<a name="decisions"></a>\n\n### ${mdOwn(REPORT_TRAIL_WORDS.heading(decisions.total))}`,
+    notice ? mdOwn(notice) : null];
   const mustEntry = (e) => e.tier === 'must_act' || e.tier === 'must_know';
   const evidenceCut = (item) => (item.tier.final === 'must_act' ? trim.actEvidence : item.tier.final === 'must_know'
     ? trim.knowEvidence : trim.trailEvidence);
@@ -1308,44 +1336,37 @@ function trailSection(model, trim, notice, agentPrompts = true) {
   let fenced = false, shortened = false;
   const trailEntry = (e) => {
     if (e.above) return `**${mdOwn(REPORT_TYPE_WORDS[e.type])}:** ${partsMd(e.what.parts)}`
-      + `${mdOwn(scopeMarker(e.scope))} · [${mdOwn(REPORT_TRAIL_WORDS.shownAbove(e.n))}](#item-${e.n})`
-      + ` · ${mdOwn(REPORT_TIER_WORDS[e.tier])}`;
+      + `${mdOwn(scopeMarker(e.scope))}${e.after ? ` · ${mdOwn(e.after)}` : ''}`
+      + ` · [${mdOwn(REPORT_TRAIL_WORDS.shownAbove(e.n))}](#item-${e.n}) · ${mdOwn(REPORT_TIER_WORDS[e.tier])}`;
     const { item } = e;
-    const one = itemMd(item, { head: false, evidence: evidenceCut(item), excerpts: trim.excerpts, keepNotes: must(item),
+    const one = itemMd(item, { head: false, evidence: evidenceCut(item), excerpts: trim.excerpts,
       agentPrompts: prompts(item) && !trim.actPrompts });
     fenced = fenced || one.fenced;
     if (evidenceCut(item) || (prompts(item) && trim.actPrompts && item.agentPrompt)) shortened = true;
     const head = `<a name="item-${item.n}"></a>${itemHead(item, 'html')}${item.scope.asks.length
-      ? ` · ${escHtml(REPORT_ITEM_WORDS.asked(item.scope.asks[0]))}` : ''} · ${escHtml(REPORT_TIER_WORDS[item.tier.final])}`;
+      ? ` · ${escHtml(REPORT_ITEM_WORDS.asked(item.scope.asks[0]))}` : ''}${e.after ? ` · ${escHtml(e.after)}` : ''}`
+      + ` · ${escHtml(REPORT_TIER_WORDS[item.tier.final])}`;
     return one.text ? fold(head, [one.text]) : head;
   };
+  // D194: one list in the session order, no fold a message: the Must entries, then one fold of those tagged Good to know.
   for (const g of decisions.groups) {
-    const summary = `${escHtml(g.words)} · ${escHtml(g.count)}`;
-    const asks = [...g.askLines.map((a) => `- ${mdOwn(REPORT_PROMPT_WORDS.askLine(a.n))} · ${mdOwn(a.status)} · `
-      + `${partsMd(a.words)}`), ...(g.asksMore ? [`- ${mdOwn(REPORT_TRAIL_WORDS.moreAsks(g.asksMore))}`] : [])];
     const shown = trim.trailCounts ? g.shown.filter(mustEntry) : g.shown;
     const more = trim.trailCounts ? [] : g.more;
     const hidden = g.entries.length - shown.length - more.length;
     if (hidden) shortened = true;
-    blocks.push(openFold(summary, [asks.join('\n'), ...shown.map(trailEntry),
-      more.length ? fold(escHtml(g.moreWords), more.map(trailEntry)) : null,
-      hidden ? mdOwn(REPORT_TRAIL_WORDS.goodToKnowNotShown(hidden)) : null], g.open));
+    blocks.push(...shown.map(trailEntry), more.length ? fold(escHtml(g.moreWords), more.map(trailEntry)) : null,
+      hidden ? mdOwn(REPORT_TRAIL_WORDS.goodToKnowNotShown(hidden)) : null);
   }
   return { text: blocks.filter(Boolean).join('\n\n'), shortened: shortened || (trim.excerpts && fenced) };
 }
 
-/** D163 (L1): a tier's pointers to the decisions of the second part tagged with it, under their heading: each the
- *  decision's number, type word and what it is, linked to its line there, then its marker and its ask. Null with none.
- *  Shortened (`numbers`) only after Good to know is counts (`pointerLines`): each pointer then keeps its number and its
- *  link alone, on one line, since the decision's own line in the second part, kept as Must, says the rest. */
-function pointersMd(model, tier, numbers = false) {
+/** D163 (L1), D194: a tier's pointers to the decisions of the second part tagged with it: one line that counts them and
+ *  links to that part. Null with none. Never shortened. */
+function pointersMd(model, tier) {
   const pointers = list(model.pointers?.[tier]);
-  if (!pointers.length) return null;
-  const ask = (p) => (p.scope.asks.length ? ` · ${mdOwn(REPORT_ITEM_WORDS.asked(p.scope.asks[0]))}` : '');
-  const line = (p) => `- [${p.n} ${mdOwn(REPORT_TYPE_WORDS[p.type])}: ${partsMd(p.what.parts)}](#item-${p.n})`
-    + `${mdOwn(scopeMarker(p.scope))}${ask(p)}`;
-  return `#### ${mdOwn(REPORT_TRAIL_WORDS.taggedHere(REPORT_TIER_WORDS[tier], pointers.length))}\n\n`
-    + (numbers ? pointers.map((p) => `[${p.n}](#item-${p.n})`).join(' · ') : pointers.map(line).join('\n'));
+  // D194: one line, its count, linked to the decisions, which list each one once.
+  return pointers.length ? `[${mdOwn(REPORT_TRAIL_WORDS.taggedThere(REPORT_TIER_WORDS[tier], pointers.length))}](#decisions)`
+    : null;
 }
 
 const cap = (n) => Math.min(n, REPORT_LIMITS.files);
@@ -1353,9 +1374,6 @@ const cap = (n) => Math.min(n, REPORT_LIMITS.files);
  *  REPORT_NO_FILES_KINDS); the page reads it too. */
 export const noFilesWords = (did) => (did.files.none === 'unseen' ? REPORT_DID_WORDS.noSeenFiles
   : did.files.none === 'folder' ? REPORT_DID_WORDS.noFilesHere : REPORT_DID_WORDS.noFiles);
-/** D104: a row's shown-in-part mark in a list (`seen`: lines of parts), each line after the row's own, under its label. */
-const seenMd = (seen) => list(seen).map((line, k) => ` · ${k === 0 ? `${mdOwn(REPORT_SEEN_WORDS.label)} ` : ''}`
-  + partsMd(line)).join('');
 /**
  * D167 (the owner, 2026-10-28: "the .md (PR comment) keeps the counts of what the agent did and points to the page for
  * the full runs list; the page keeps everything"): the .md's Runs part. The runs and their results counted in the
@@ -1382,7 +1400,7 @@ function runsMd(model, trim, named) {
   if (kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsNamed), kept.map((run) => `- ${mdOwn(REPORT_ITEM_WORDS.run(run.k))}`
     + `${run.text ? ` · ${codeSpan(run.text)}` : run.tool ? ` · ${codeSpan(run.tool)}` : ''}`
     + `${run.outcome ? ` · ${mdOwn(run.outcome)}` : ''}${run.handling ? ` · ${mdOwn(run.handling)}` : ''}`
-    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}${seenMd(run.seen)}`).join('\n'));
+    + `${run.item ? ` → ${mdOwn(REPORT_ITEM_WORDS.item(run.item))}` : ''}`).join('\n'));
   if (listed.length > kept.length) blocks.push(mdOwn(REPORT_DID_WORDS.runsOnPage));
   return blocks;
 }
@@ -1400,14 +1418,13 @@ function didSection(model, trim, notice, named = null) {
   if (trim.didCounts) {
     blocks.push(sub(REPORT_SECTION_WORDS.files), did.files.total ? counted(did.files.total) : mdOwn(noFilesWords(did)),
       sub(REPORT_SECTION_WORDS.runs), ...runsMd(model, trim, named),
-      sub(REPORT_SECTION_WORDS.claims), did.claims.total ? counted(did.claims.total) : mdOwn(REPORT_DID_WORDS.noClaims),
-      sub(REPORT_SECTION_WORDS.leftOut), did.leftOut.length ? counted(did.leftOut.length) : mdOwn(REPORT_DID_WORDS.noLeftOut),
-      sub(REPORT_SECTION_WORDS.settled), did.settled.length ? counted(did.settled.length) : mdOwn(REPORT_DID_WORDS.noSettled));
+      sub(REPORT_SECTION_WORDS.claims), did.claims.total ? counted(did.claims.total) : mdOwn(did.empty.claims),
+      sub(REPORT_SECTION_WORDS.leftOut), did.leftOut.length ? counted(did.leftOut.length) : mdOwn(did.empty.leftOut),
+      sub(REPORT_SECTION_WORDS.settled), did.settled.length ? counted(did.settled.length) : mdOwn(did.empty.settled));
     return { text: fold(summary, blocks), shortened: rows > 0 };
   }
   // Files, by the ask each serves when the code review grouped them.
   blocks.push(sub(REPORT_SECTION_WORDS.files));
-  if (did.files.grouped) blocks.push(mdOwn(REPORT_DID_WORDS.filesByAsk));
   let room = cap(did.files.total), shownFiles = 0;
   // A file's counts sit mid-line, so their leading `+` opens no list: escaped as inline text only.
   const fileLine = (f) => `- ${codeSpan(f.path)}${f.type ? ` · ${mdOwn(f.type)}` : ''}${f.counts
@@ -1442,13 +1459,13 @@ function didSection(model, trim, notice, named = null) {
   blocks.push(sub(REPORT_SECTION_WORDS.runs), ...runsMd(model, trim, named));
   // Claims.
   blocks.push(sub(REPORT_SECTION_WORDS.claims));
-  if (!did.claims.total) blocks.push(mdOwn(REPORT_DID_WORDS.noClaims));
+  // D183: an empty list in the model's words (`did.empty`).
+  if (!did.claims.total) blocks.push(mdOwn(did.empty.claims));
   else blocks.push(did.claims.shown.map((c) => `- ${c.status ? mdOwn(c.status) : ''}`
     + `${c.item ? `${c.status ? ' ' : ''}→ ${mdOwn(REPORT_ITEM_WORDS.item(c.item))}` : ''}`
     + ` ${c.quote ? partMd(c.quote) : mdOwn(REPORT_ITEM_WORDS.quoteMissing)}`
     + `${c.confirmedBy ? ` · ${mdOwn(REPORT_ITEM_WORDS.recordedResult)} ${partMd(c.confirmedBy)}` : ''}`
-    + `${c.why ? ` · ${mdOwn(c.why)}` : ''}${c.path ? ` · ${mdOwnNaming(REPORT_DID_WORDS.written, [c.path])}` : ''}`
-    + seenMd(c.seen)).join('\n'));
+    + `${c.why ? ` · ${mdOwn(c.why)}` : ''}${c.path ? ` · ${mdOwnNaming(REPORT_DID_WORDS.written, [c.path])}` : ''}`).join('\n'));
   if (did.claims.more > 0) blocks.push(mdOwn(REPORT_DID_WORDS.moreClaims(did.claims.more)));
   if (did.claims.closing.total) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.closingLines(did.claims.closing.total)), [
     did.claims.closing.rows.map((l) => `- ${partsMd(l.parts)}`).join('\n'),
@@ -1456,11 +1473,11 @@ function didSection(model, trim, notice, named = null) {
   // What the agent said it did not do; the decisions you settled.
   blocks.push(sub(REPORT_SECTION_WORDS.leftOut));
   blocks.push(did.leftOut.length ? did.leftOut.map((x) => `- ${partMd(x.quote)} → ${mdOwn(REPORT_ITEM_WORDS.item(x.item))}`)
-    .join('\n') : mdOwn(REPORT_DID_WORDS.noLeftOut));
+    .join('\n') : mdOwn(did.empty.leftOut));
   blocks.push(sub(REPORT_SECTION_WORDS.settled));
   blocks.push(did.settled.length ? did.settled.map((x) => `- ${partsMd(x.parts)}${x.youSaid
-    ? ` · ${mdOwn(x.youSaidLabel ?? REPORT_ITEM_WORDS.youSaid)} ${partMd(x.youSaid)}` : ''}${seenMd(x.seen)}`).join('\n')
-    : mdOwn(REPORT_DID_WORDS.noSettled));
+    ? ` · ${mdOwn(x.youSaidLabel ?? REPORT_ITEM_WORDS.youSaid)} ${partMd(x.youSaid)}` : ''}`).join('\n')
+    : mdOwn(did.empty.settled));
   return { text: fold(summary, blocks), shortened: false };
 }
 
@@ -1474,13 +1491,21 @@ function notCheckedSection(model, trim, notice) {
   const session = nc.facts.filter((f) => f.group !== 'code' && !(trim.notCheckedCounts && f.cause === true));
   const causes = trim.notCheckedCounts ? nc.facts.filter((f) => f.group !== 'code' && f.cause === true) : [];
   const code = nc.facts.filter((f) => f.group === 'code');
+  // D184: a fact that the claims list holds the rows Sonah did not check says so of the rows this .md lists there: none
+  // when its shortening counts the claims in place of listing them (`didCounts`).
+  const rows = trim.didCounts ? 0 : model.did.claims.shown.length;
+  const partsOf = (f) => (f.listed ? listedThereParts(f.listed, rows) : f.parts);
   const listed = (facts) => (facts.length ? (trim.notCheckedCounts ? counted(facts.length)
-    : facts.map((f) => `- ${partsMd(f.parts)}`).join('\n')) : null);
+    : facts.map((f) => `- ${partsMd(partsOf(f))}`).join('\n')) : null);
   // D133 (R2): the first screen's lines about what Sonah could not check, word for word, first; never shortened, as they
   // were never shortened on the first screen.
   if (nc.quiet.length) blocks.push(nc.quiet.map((t) => `- ${mdOwn(t)}`).join('\n'));
-  blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.sessionReview)}`, mdOwn(nc.lead),
-    causes.length ? causes.map((f) => `- ${partsMd(f.parts)}`).join('\n') : null, listed(session));
+  // D199: the session review's part holds its lead, its facts and what Sonah could not read of it (as the page's card);
+  // with none of them, no heading.
+  const unread = [...nc.unreadAsks, ...nc.unreadRows].map(mdOwn);
+  if (nc.lead || causes.length || session.length || unread.length)
+    blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.sessionReview)}`, nc.lead ? mdOwn(nc.lead) : null,
+      causes.length ? causes.map((f) => `- ${partsMd(f.parts)}`).join('\n') : null, listed(session), ...unread);
   if (nc.code.length || code.length || nc.withheldTotal) {
     blocks.push(`#### ${mdOwn(REPORT_NOT_CHECKED_WORDS.codeReview)}`, ...nc.code.map(partsMd), listed(code));
     if (nc.withheldTotal) blocks.push(fold(escHtml(REPORT_SECTION_WORDS.withheld(nc.withheldTotal)), trim.notCheckedCounts
@@ -1489,7 +1514,6 @@ function notCheckedSection(model, trim, notice) {
         + `${w.why ? ` · ${mdOwn(w.why)}` : ''}${w.check ? ` · ${mdOwn(REPORT_NOT_CHECKED_WORDS.checkSaid)} `
         + `${partsMd(w.check)}` : ''}`).join('\n'), counted(nc.withheldTotal - nc.withheld.length)]));
   }
-  blocks.push(...[...nc.unreadAsks, ...nc.unreadRows].map(mdOwn));
   const shortened = trim.notCheckedCounts && (nc.facts.length + nc.withheldTotal) > 0;
   return { text: fold(summary, blocks), shortened };
 }
@@ -1499,8 +1523,9 @@ function footerBlocks(model) {
   // Sonah it is, and the CLI does not give the .md that fact.
   const { footer } = model;
   // D129 (C7): what the review cost, after the line that names Sonah, when the run record holds it.
-  return ['---', [footer.provenance, footer.usage, ...footer.legend, footer.triageLegend, REPORT_FOOTER_WORDS.youMeans,
-    footer.share].filter(Boolean).map(mdOwn).join(BR)];
+  // D199: no line on what "you" means and no advice to read before you share.
+  return ['---', [footer.provenance, footer.usage, ...footer.legend].filter(Boolean)
+    .map(mdOwn).join(BR)];
 }
 
 /**
@@ -1514,8 +1539,8 @@ function footerBlocks(model) {
  * the part cuts the line; no step cuts a list of runs, since the .md lists none); then those of what Sonah could not check;
  * then the code excerpts give way to their place (`path:line`, on the
  * Where line); then (D161) the agent's decisions become their groups' lines with their counts; then Good to know
- * becomes counts by kind; then (D163) the first part's pointers to the decisions tagged Must act or Must know keep their
- * numbers and links alone; then (D144) the prompts for the agent of Must act are left out:
+ * becomes counts by kind (D194: the first part's pointers to the decisions tagged Must act or Must know are one line
+ * each, never shortened); then (D144) the prompts for the agent of Must act are left out:
  * each is made from its item's evidence, so it goes before that evidence; last of all (D131's review), the evidence
  * folds of Must know are left out, then those of Must act: they are the verbatim proof. The header, the count line, the prompt's counts and its rows of asks not done, and the visible lines
  * of Must act and Must know are never shortened (D161: in both parts: a decision tagged Must act or Must know keeps its
@@ -1523,7 +1548,7 @@ function footerBlocks(model) {
  * fold with nothing in it), and the report says once that it was shortened.
  */
 const MD_TRIM_STEPS = Object.freeze(['messages', 'trailEvidence', 'gtkEvidence', 'askRows', 'didCounts',
-  'notCheckedCounts', 'excerpts', 'trailCounts', 'gtkCounts', 'pointerLines', 'actPrompts', 'knowEvidence',
+  'notCheckedCounts', 'excerpts', 'trailCounts', 'gtkCounts', 'actPrompts', 'knowEvidence',
   'actEvidence']);
 function* mdCompositions() {
   let trim = Object.fromEntries(MD_TRIM_STEPS.map((step) => [step, false]));

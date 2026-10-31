@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel, reportItems } from '../report-model.js';
 import { renderReportMarkdown } from '../session-story.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { countLines } from '../../cli/src/report-output.js';
 import { REPORT_WHAT_WORDS, REPORT_PROMPT_WORDS, REPORT_PROMPT_PARTS, REPORT_COUNT_WORDS, REPORT_RECHECK_PARTS,
   REPORT_ITEM_WORDS, REPORT_KIND_LABELS, REPORT_KIND_WORDS, REPORT_DID_WORDS, REPORT_CONTRADICTION_SOURCES,
@@ -24,6 +24,10 @@ import { itemKindOf } from '../../evidence/src/triage.js';
 import { lintText } from './style-lint.js';
 import { recheckRenderSession, recheckUnsettledReport, recontradictedReport, recontradictedSession }
   from './d153-recheck-render-fixture.js';
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(renderSessionPageRaw(...args));
 
 const itemsOf = (model) => reportItems(model);
 const textOf = (parts) => (parts ?? []).map((p) => p.text).join('');

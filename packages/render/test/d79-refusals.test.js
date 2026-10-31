@@ -8,11 +8,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReportMarkdown, storyFacts, REFUSED_DENIALS } from '../session-story.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { reportModel } from '../report-model.js';
 import { RECORDED_FACTS } from '../../redact/index.js';
 import { STOPPED_DENIALS } from '../../evidence/src/ledger.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(renderSessionPageRaw(...args));
 
 const text = (b, key, value) => {
   b.blobs[key] = value;
@@ -126,9 +130,10 @@ test('D79 page: a refused command is listed as did not run, counted apart from t
   // The header counts the commands after the last edit by their class: a refusal is no failure.
   assert.ok(t.includes('After its last edit, the agent ran 2 commands. Results: 1 exited with code 0, 1 failed. The '
     + 'recording shows 1 command after the agent\'s last edit as refused before it ran.'), around(t, 'After its last edit'));
-  // The runs: each by its recorded words and its outcome in fixed words.
-  assert.match(html, /<li id="run-1"><code>rm -rf build<\/code> · did not run: refused<\/li>/);
-  assert.match(html, /<li id="run-2"><code>npm test<\/code> · failed, exit code 1<\/li>/);
+  // The runs: each by its recorded words and its outcome in fixed words. D200 (review round): each row's marker is its
+  // run's number (`value`).
+  assert.match(html, /<li id="run-1" value="1"><code>rm -rf build<\/code> · did not run: refused<\/li>/);
+  assert.match(html, /<li id="run-2" value="2"><code>npm test<\/code> · failed, exit code 1<\/li>/);
   assert.doesNotMatch(html, /<code>rm -rf build<\/code> · failed/);
   // A stopped call is neither failed nor refused.
   for (const kind of stoppedKinds) {

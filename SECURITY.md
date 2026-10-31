@@ -28,10 +28,10 @@ shows it, and check it for secrets first.
 ## What counts
 
 Anything that can make Sonah send, store or show what it should not: a file sent outside what
-[docs/PRIVACY.md](docs/PRIVACY.md) describes (such as a code-step agent reading outside your repository), review files
-readable by other users, a PR comment that carries a quote, a path or a file's text, or a network request beyond those
-PRIVACY.md lists. Also a recording or a repository that makes Sonah, or the reviewer or agents it starts, run code,
-write files, read outside what PRIVACY.md describes, or reach the network (see below).
+[docs/PRIVACY.md](docs/PRIVACY.md) describes, review files readable by other users, a PR comment that carries a quote, a
+path or a file's text, or a network request beyond those PRIVACY.md lists. Also a recording or a repository that makes
+Sonah, or the reviewer or agents it starts, run code, write files, read outside what PRIVACY.md describes, or reach the
+network (see below).
 
 Masking is not a security boundary: Sonah masks nothing, by design. A secret from your session shown on the page, in
 the Markdown or on the terminal is the session as recorded, not a vulnerability; protect those files as you protect
@@ -53,7 +53,9 @@ files of the repository, and any of them can carry text written to steer the rev
   that holds a file of the change (its top folder) and, when the change is reviewed in parts, Sonah's copy of the
   changed files as they were at the start commit; a call that uses any other tool fails and is not used. The Codex
   reviewer runs read-only with its tools and web search off. Every quote the reviewer or an agent gives is checked by
-  code against the recording or the file it names. The page runs no script, loads nothing from the network and escapes
-  every text it shows.
+  code against the recording or the file it names. The page loads nothing from the network and escapes every text it
+  shows. Its one script copies a prompt for the agent and takes an in-page link to its place, with an entry in the
+  browser's history for Back; it reads only the page, the address's `#` part and its own entries, and loads and
+  sends nothing. The page's policy allows that script alone, by its hash.
 
 A recording or a repository that gets past any of this is a vulnerability: please report it as above.

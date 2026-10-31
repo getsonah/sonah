@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage } from '../session-page.js';
 import { reportModel } from '../report-model.js';
-import { REPORT_PROMPT_WORDS } from '../report-words.js';
+import { REPORT_PROMPT_WORDS, REPORT_ASK_TAGS } from '../report-words.js';
 import { renderReportMarkdown, storyFacts } from '../session-story.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
@@ -102,8 +102,10 @@ test('D79: a message with an attached file is one request and one step; the file
   const story = renderReportMarkdown(session, report);
   assert.equal(story.split('<details><summary>Your whole message').length - 1, 2, 'the file is no message of its own');
   assert.ok(story.includes(REPORT_PROMPT_WORDS.attached(1)));
-  // A balanced single-backtick span of your words is a code span (session-story.js `backtickPieces`).
-  assert.ok(story.includes(`| Not checked | “An invalid \`limit\` is a 400.” | ${REPORT_PROMPT_WORDS.fromAttached} `), story);
+  // A balanced single-backtick span of your words is a code span (session-story.js `backtickPieces`). D200: the reason's
+  // short tag first.
+  assert.ok(story.includes(`| Not checked | “An invalid \`limit\` is a 400.” | ${REPORT_ASK_TAGS.deliverable_ungrounded}. `
+    + `${REPORT_PROMPT_WORDS.fromAttached} `), story);
   assert.equal(story.includes('Pagination spec.'), false, 'the file itself is not shown');
 
   // The page (D97): one message holds the file, said by count; the ask in the file listed under it, in your words.
@@ -111,7 +113,7 @@ test('D79: a message with an attached file is one request and one step; the file
   const model = reportModel(session, report, {});
   assert.deepEqual(model.prompt.messages.map((m) => [m.k, m.attached, m.attachedAsks]), [[1, 1, [2]], [2, 0, []]]);
   // D131: your prompt follows Must act and Must know, and comes before Good to know. D133 (R2): no coverage sentence
-  // under the message (said once, in the legend).
+  // under the message (said once, in the legend; D200: once, first in the fold of your messages).
   const prompt = textOf(html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"')));
   assert.ok(prompt.includes(`${REPORT_PROMPT_WORDS.attached(1)} `
     + `${REPORT_PROMPT_WORDS.fromAttached} ask 2 · Not checked · `

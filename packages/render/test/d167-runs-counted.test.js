@@ -9,8 +9,8 @@ import assert from 'node:assert/strict';
 import { reportModel } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown, REPORT_MD_LIMITS } from '../session-story.js';
-import { REPORT_DID_WORDS, REPORT_SECTION_WORDS, REPORT_ITEM_WORDS, REPORT_TRIM_WORDS, REPORT_NOT_CHECKED_WORDS,
-  REPORT_SEEN_WORDS } from '../report-words.js';
+import { REPORT_DID_WORDS, REPORT_SECTION_WORDS, REPORT_ITEM_WORDS, REPORT_TRIM_WORDS, REPORT_NOT_CHECKED_WORDS }
+  from '../report-words.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 
@@ -22,10 +22,14 @@ const runsPart = (md) => {
   const at = md.indexOf(`#### ${REPORT_SECTION_WORDS.runs}`);
   return at < 0 ? null : md.slice(at, md.indexOf('\n#### ', at + 1) + 1);
 };
+/** D199: whether the .md holds an evidence fold of Must act or Must know (its summary is the one word, every tier's),
+ *  read from their part: from Must act's heading to Good to know's. */
+const mustEvidence = (md) => md.slice(md.indexOf('### Must act'), md.search(/<summary>Good to know|### Good to know/))
+  .includes(`<summary>${REPORT_ITEM_WORDS.evidence}</summary>`);
 /** The numbers of the run lines a text holds. */
 const runLines = (text) => [...text.matchAll(/^- run (\d+) · /gm)].map((m) => Number(m[1]));
-/** The runs that the .md names outside its Runs part, by its own words (`REPORT_ITEM_WORDS.run`, which
- *  `REPORT_SEEN_WORDS.ofRun` holds), read from the rendered text, never from the model. */
+/** The runs that the .md names outside its Runs part, by its own words (`REPORT_ITEM_WORDS.run`), read from the
+ *  rendered text, never from the model. */
 const namedOutside = (md) => {
   const part = runsPart(md);
   const rest = part === null ? md : md.split(part).join('');
@@ -46,7 +50,8 @@ function runRefs(model) {
 
 /** Two quiet runs before the last edit (exit 0, no failure row), a failure the agent passed over (its item names it in
  *  its Where; its row holds a mark on its own result), the edit, a failed run after it and one that passed after it.
- *  The review's claim holds a mark on the failed run's result, so the claims list names that run. */
+ *  The review's claim holds a mark on the failed run's result. D199: no reader shows those marks (D104's), so the claims
+ *  list names no run; the rows keep them, so the readers are seen to leave them out. */
 function fiveRuns(files = 0, late = false) {
   const b = sessionBuilder();
   b.ask('I1', 'Speed up the build.');
@@ -86,31 +91,39 @@ test('D167: the .md counts every run by its result part and lists none, but the 
   assert.deepEqual([runs.total, runs.shown.length, runs.quietExit0, runs.cut], [5, 3, 2, 0]);
   assert.deepEqual(runs.parts, ['3 exited with code 0', '2 failed']);
   const md = renderReportMarkdown(session, report, {});
-  // Its review: the failure item's Where (run 3) and the claims list's mark (run 4) each keep their run's line, so
-  // every "run N" of the .md has its run in the .md; the page lists a run the .md does not (run 5), so the sentence.
+  // Its review: the failure item's Where (run 3) keeps its run's line, so every "run N" of the .md has its run in the
+  // .md; the page lists a run the .md does not (run 5), so the sentence. D199: the claims list's mark (run 4) is gone,
+  // so the claims list names no run, and run 4 keeps no line.
   const item = runs.shown.find((run) => run.k === 3).item;
   const part = runsPart(md);
   const blocks = part.split('\n\n');
   assert.deepEqual(blocks.slice(0, 3), [`#### ${REPORT_SECTION_WORDS.runs}`,
     REPORT_DID_WORDS.runsCounted(5, runs.parts.join(', ')), REPORT_DID_WORDS.runsNamed]);
   assert.deepEqual(blocks.slice(4), [REPORT_DID_WORDS.runsOnPage, '']);
-  const [three, four] = blocks[3].split('\n');
-  assert.deepEqual(runLines(md), [3, 4]);
-  // A kept line is the run's line as the page's list wrote it, its own shown-in-part mark included.
-  assert.ok(three.startsWith(`- run 3 · \`npm test\` · failed, exit code 1 · the agent passed over it → item ${item} · `
-    + `${REPORT_SEEN_WORDS.label} ${REPORT_SEEN_WORDS.lead} ${REPORT_SEEN_WORDS.ofRun(3)}. `), three);
-  assert.equal(four, '- run 4 · `npm run build` · failed, exit code 1');
-  assert.ok(md.includes(`${REPORT_SEEN_WORDS.ofRun(4)}.`), 'premise: the claims list names run 4');
-  assert.ok(md.includes(`\`npm test\`  \nWhere: ${REPORT_ITEM_WORDS.run(3)}\n\n<details><summary>Evidence · Why Must know`));
-  assert.deepEqual(namedOutside(md), [3, 4]);
-  // No other run is listed: neither the quiet ones nor the one that passed after the edit.
-  for (const command of ['npm ci', 'npm run lint', 'node bench.js']) assert.equal(md.includes(command), false, command);
+  assert.deepEqual(runLines(md), [3]);
+  // A kept line is the run's line as the page's list wrote it; D199: with no shown-in-part mark.
+  assert.equal(blocks[3], `- run 3 · \`npm test\` · failed, exit code 1 · the agent passed over it → item ${item}`);
+  // D199: the words were removed; as literals (D104's mark's place of a run).
+  assert.equal(md.includes('the result of run 4'), false, 'D199: the claims list names no run');
+  assert.ok(md.includes(`\`npm test\`  \nWhere: ${REPORT_ITEM_WORDS.run(3)}\n\n<details><summary>${REPORT_ITEM_WORDS.evidence}`
+    + '</summary>'));
+  assert.deepEqual(namedOutside(md), [3]);
+  // No other run is listed: neither the quiet ones, nor the one that passed after the edit, nor (D199) run 4.
+  for (const command of ['npm ci', 'npm run lint', 'node bench.js', 'npm run build'])
+    assert.equal(md.includes(command), false, command);
   // The page lists the runs as before: every run the list shows, and the quiet ones counted; none of the .md's words.
+  // D200 (review round): each row's marker is its run's number (`value`), as the list skips the quiet runs.
   const page = renderSessionPage(session, report, {});
-  for (const run of runs.shown) assert.ok(page.includes(`<li id="run-${run.k}">`), `run ${run.k}`);
+  for (const run of runs.shown) assert.ok(page.includes(`<li id="run-${run.k}" value="${run.k}">`), `run ${run.k}`);
   assert.ok(page.includes(REPORT_DID_WORDS.moreRuns(2)));
   for (const words of [REPORT_DID_WORDS.runsNamed, REPORT_DID_WORDS.runsOnPage, REPORT_DID_WORDS.runsCounted(5,
     runs.parts.join(', '))]) assert.equal(page.includes(words), false, words);
+  // D199: the rows keep their marks; no reader shows one, beside a run, a claim or an item.
+  assert.ok(report.failures[0].seenInPart.length && report.promises[0].seenInPart.length);
+  assert.ok(runs.shown.every((run) => run.seen.length === 0) && model.did.claims.shown.every((c) => c.seen.length === 0));
+  // D199: the words were removed; as literals (D104's mark's label and lead).
+  for (const text of [page, md])
+    assert.ok(!text.includes('Seen in part:') && !text.includes('Sonah first showed the session review only part of'));
 });
 
 /** The fixture report grown by `n` asks not done, so the .md is shortened past the evidence of Must know and Must act
@@ -134,25 +147,56 @@ test('D167: on every fixture and shortening, the .md keeps the line of exactly t
   for (const [name, md] of mds) {
     // Read from the text: a run the .md names outside its Runs part has its line there, and no other run has one.
     assert.deepEqual(runLines(runsPart(md) ?? ''), namedOutside(md), name);
-    if (md.includes(REPORT_TRIM_WORDS.mdShortened) && !md.includes('<summary>Evidence · Why Must')) cut++;
+    if (md.includes(REPORT_TRIM_WORDS.mdShortened) && !mustEvidence(md)) cut++;
     if (name.startsWith('grown') && !runLines(runsPart(md) ?? '').includes(4)) dropped++;
   }
   // Premises: a .md shortened past every evidence fold of Must know and Must act, where the run that only item 11's
-  // evidence named (run 4) keeps no line, while the failures' Where keep theirs.
+  // evidence named (run 4) keeps no line, while the items' Where keep theirs.
   assert.ok(cut > 0 && dropped > 0, `${cut} ${dropped}`);
   const grown = mds.find(([name]) => name === 'grown 200')[1];
-  assert.deepEqual(runLines(runsPart(grown)), [2, 3]);
-  // An item's own Where of a run is in an item that shows the run's call (its command or its tool).
+  // D201: a Verify item names the run its contradicting result came from in its Where too (item 2's claim: run 1;
+  // item 14's written statement: run 2), which no shortening cuts. So the runs the shortened .md keeps are exactly those
+  // an item's Where names (the model's `run-K` places), read from the model, never listed by hand: the failures' runs
+  // (2, 3) and D201's run 1.
+  const whereRuns = [...runRefs(reportModel(session, grownReport(session, 200), repoFacts())).anchor]
+    .sort((a, b) => a - b);
+  assert.ok(whereRuns.includes(1) && !whereRuns.includes(4),
+    `premise: D201's run is a Where, item 11's is not: ${whereRuns}`);
+  assert.deepEqual(runLines(runsPart(grown)), whereRuns);
+  // D201's review: the same lists pinned as literals too, so a move of the model's places and the text's lines together
+  // is still caught.
+  assert.deepEqual(whereRuns, [1, 2, 3]);
+  assert.deepEqual(runLines(runsPart(grown)), [1, 2, 3]);
+  // An item's own Where of a run is in an item that shows the run's call (its command or its tool): a Where that leads
+  // with the run, in the item's head; D201: a Where that names the run after the item's other places (a Verify item's
+  // contradicting result), in the item's evidence line that names that run (`REPORT_ITEM_WORDS.fromRun`). Every Where
+  // place of a run is read from the text, and they are exactly the model's.
   for (const [name, shape] of Object.entries(REPORT_SHAPES)) {
     const model = reportModel(session, shape(session), repoFacts());
     const md = renderReportMarkdown(session, shape(session), repoFacts());
-    for (const k of runRefs(model).anchor) {
-      // D169: a run the list leaves out is among those listed apart.
-      const run = [...model.did.runs.shown, ...model.did.runs.named].find((x) => x.k === k);
-      const at = md.indexOf(`Where: ${REPORT_ITEM_WORDS.run(k)}`);
-      assert.ok(at > 0, `${name}: Where: run ${k}`);
-      assert.ok(md.slice(md.lastIndexOf('<a name="item-', at), at).includes(run.text ?? run.tool), `${name}: run ${k}`);
+    const placed = new Set();
+    for (const where of md.matchAll(/^Where: (.*?) *$/gm)) {
+      for (const [at, place] of where[1].split(' · ').entries()) {
+        const k = Number(/^run (\d+)$/.exec(place)?.[1]);
+        if (!k) continue;
+        placed.add(k);
+        // D169: a run the list leaves out is among those listed apart.
+        const run = [...model.did.runs.shown, ...model.did.runs.named].find((x) => x.k === k);
+        const start = md.lastIndexOf('<a name="item-', where.index);
+        assert.ok(start >= 0, `${name}: Where: run ${k} is an item's`);
+        if (at === 0) {
+          assert.ok(md.slice(start, where.index).includes(run.text ?? run.tool), `${name}: run ${k}`);
+          continue;
+        }
+        const next = md.indexOf('<a name="item-', where.index);
+        const item = md.slice(start, next < 0 ? md.length : next);
+        assert.ok(item.includes(`\n- ${REPORT_ITEM_WORDS.fromRun} ${REPORT_ITEM_WORDS.run(k)}`)
+          && item.includes(run.text ?? run.tool), `${name}: D201, the result's run ${k}`);
+      }
     }
+    assert.deepEqual([...placed].sort((a, b) => a - b), [...runRefs(model).anchor].sort((a, b) => a - b), name);
+    // D201's review, as a literal: every shape places the failures' runs (2, 3) and item 2's result's run (1).
+    assert.deepEqual([...placed].sort((a, b) => a - b), [1, 2, 3], `${name}: the literal`);
     // The count line counts every run, its parts summing to the total; the page's list holds a run the .md does not.
     if (model.did.runs.total) {
       assert.ok(md.includes(`\n${REPORT_DID_WORDS.runsCounted(model.did.runs.total, model.did.runs.parts.join(', '))}\n`), name);
@@ -178,7 +222,9 @@ test('D167: a long session\'s runs no longer shorten the .md; the page still lis
   assert.ok(md.includes(`\n${REPORT_DID_WORDS.runsCounted(1_500, '1500 failed')}\n`));
   assert.deepEqual(runLines(md), []);
   const page = renderSessionPage(session, report, {});
-  assert.equal([...page.matchAll(/<li id="run-\d+">/g)].length, 40);
+  // D200 (review round): each listed row carries its run's number as its marker (`value`).
+  assert.equal([...page.matchAll(/<li id="run-(\d+)" value="\1">/g)].length, 40);
+  assert.equal([...page.matchAll(/<li id="run-\d+"/g)].length, 40);
   assert.ok(page.includes(REPORT_DID_WORDS.runsCut(40, 1_460, '1460 failed')));
 });
 
@@ -186,25 +232,37 @@ test('D167: the lists step cuts no count of runs and keeps the lines of the runs
   const session = reportSession();
   const whole = renderReportMarkdown(session, triagedReport(session), repoFacts());
   // Grown past the bound by what Sonah could not check (proposals withheld) and Good to know (questions), so the lists of
-  // what the agent did keep their counts (D131's `didCounts`).
+  // what the agent did keep their counts (D131's `didCounts`). D199: the .md says fewer notes, so it takes more withheld
+  // proposals to reach that step and stop there (was 90; 95 to 99 do).
   const report = triagedReport(session);
   const long = (k, n) => `${'word '.repeat(n)}${k}`;
   report.codePass.questions = [...report.codePass.questions, ...Array.from({ length: 125 }, (_, k) => ({ id: `G${k}`,
     question: `Question ${k}`, from: 'finding', finding: { title: `Finding ${k}`, kind: 'bug' }, concerns: null,
     quote: null, check: { verdict: 'refuted', reason: 'not_against_goal', explanation: long(k, 50) } }))];
-  report.codePass.withheld = [...report.codePass.withheld, ...Array.from({ length: 90 }, (_, k) => ({ what: 'finding',
+  report.codePass.withheld = [...report.codePass.withheld, ...Array.from({ length: 97 }, (_, k) => ({ what: 'finding',
     text: long(k, 25), kind: 'bug', lens: 'behaviour', reason: 'verify_refuted',
     check: { verdict: 'refuted', reason: 'incorrect', explanation: long(k, 25) } }))];
   const short = renderReportMarkdown(session, report, repoFacts());
   assert.ok(bytes(short) <= REPORT_MD_LIMITS.maxBytes);
   assert.match(short, new RegExp(`#### ${REPORT_SECTION_WORDS.files}\\n\\n${REPORT_NOT_CHECKED_WORDS.rowsNotShown(5)
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), 'premise: the lists keep their counts');
-  // Every part that names a run here (the failures' Where, item 11's evidence) is still printed, so the part is equal.
+  // Every part that names a run here (the failures' Where, item 11's evidence; D201: the Where and the evidence of a
+  // Verify item whose contradicting result came from a run) is still printed, so the part is equal.
   assert.equal(runsPart(short), runsPart(whole));
-  assert.deepEqual(runLines(runsPart(short)), [2, 3, 4], 'the failures\' runs and the run that item 11 rests on');
-  assert.deepEqual(namedOutside(short), [2, 3, 4]);
-  // A run that only the claims list named (its mark) loses its line with that list at `didCounts`; one that an item
-  // names keeps it. The fiveRuns session grown by 200 files with long paths stops there.
+  // D201: the runs named are read from the model (each `run-K` an item places or links), never listed by hand: the
+  // failures' runs (2, 3), the run that item 11 rests on (4) and the run item 2's result came from (1).
+  const refs = runRefs(reportModel(session, report, repoFacts()));
+  const named = [...new Set([...refs.anchor, ...refs.href])].sort((a, b) => a - b);
+  assert.ok(named.includes(1) && named.includes(4), `premise: D201's run and item 11's are named: ${named}`);
+  assert.deepEqual(runLines(runsPart(short)), named, 'the failures\' runs, the run that item 11 rests on and D201\'s');
+  assert.deepEqual(namedOutside(short), named);
+  // D201's review: the same lists pinned as literals too. D202: and the runs that the fixture's decisions cite as their
+  // actions (5, 6), each a line of the decision's evidence.
+  assert.deepEqual(named, [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(runLines(runsPart(short)), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(namedOutside(short), [1, 2, 3, 4, 5, 6]);
+  // A run that an item names keeps its line when the lists keep their counts (D199: the claims list names no run, its
+  // marks gone). The fiveRuns session grown by 200 files with long paths stops there.
   const { session: five, report: fiveReport } = fiveRuns(200);
   const grown = renderReportMarkdown(five, fiveReport, {});
   assert.ok(grown.includes(REPORT_TRIM_WORDS.mdShortened) && grown.includes(`#### ${REPORT_SECTION_WORDS.claims}\n\n`

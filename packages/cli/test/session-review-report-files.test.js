@@ -13,7 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSessionReviewCommand } from '../src/session-review-command.js';
 import { REPORT_OUTPUT_WORDS } from '../src/report-output.js';
-import { REPORT_TRIM_WORDS } from '../../render/report-words.js';
+import { REPORT_FOOTER_WORDS, REPORT_HEADER_WORDS, REPORT_ITEM_WORDS, REPORT_TRIM_WORDS }
+  from '../../render/report-words.js';
 import { REPORT_MD_LIMITS } from '../../render/session-story.js';
 import { CODE_FILES, codeSession, codeJudge, sha256 } from './code-pass-fixture.js';
 
@@ -79,13 +80,16 @@ test('D97 (7, 8, 11): the page and its .md, the printed lines, and code links af
   const md = await readFile(report, 'utf8');
   assert.match(md, /^## Sonah review · /);
   assert.equal(/https:\/\/github\.com/.test(md), false, 'not committed: no code link');
-  assert.match(md, /- This file differs from the last commit, so Sonah gives no link\./);
+  // D199: no place says beside an item why it has no link; the header says once that the file differs from the commit.
+  assert.ok(md.includes(REPORT_HEADER_WORDS.notCommitted(1)), md);
+  for (const text of [md, await readFile(page, 'utf8')])
+    assert.equal(text.includes(REPORT_ITEM_WORDS.noLinkUncommitted), false, 'no note beside a place');
   // The terminal: the count line (no "(folded)"), the local page, the .md with its bytes, the gh line with the path as
   // typed and quoted for the shell, and how to get code links.
   const lines = first.out.split('\n');
   const count = lines.find((line) => line.startsWith('Must act '));
   // D161: the agent's decisions, when the review holds one, after the tiers.
-  assert.match(count, /^Must act \d+ · Must know \d+ · Good to know \d+ (?:· \d+ decisions?(?: \([^)]*\))? )?· Your prompt: /);
+  assert.match(count, /^Must act \d+ · Must know \d+ · Good to know \d+ (?:· \d+ decisions?(?: \([^)]*\))? )?· Your asks: /);
   assert.equal(count.includes('(folded)'), false);
   assert.equal(first.out.includes('Where your attention is needed'), false);
   const at = (text) => { const i = lines.indexOf(text); assert.ok(i >= 0, `${text}\n${first.out}`); return i; };
@@ -150,7 +154,10 @@ test('D97 (9): with no --output the .md goes to stdout, and no gh line is printe
   const run = await review(repo, []);
   assert.equal(run.code, 0, run.err);
   assert.match(run.out, /\n## Sonah review · /);
-  assert.match(run.out, /\nRead this report before you share it\.\n/);
+  // D199: the .md ends with its legend, and no advice to read it before you share it. D202: its last line says what a ?
+  // in a line count means.
+  assert.ok(run.out.includes(`\n${REPORT_FOOTER_WORDS.legendCounts}\n`), run.out);
+  assert.equal(/before you share it/.test(run.out), false, run.out);
   assert.equal(run.out.includes('gh pr comment'), false);
   assert.equal(run.out.includes('Sonah wrote the report'), false);
 });

@@ -7,9 +7,16 @@ import assert from 'node:assert/strict';
 import { reportModel, reportPlacement, REPORT_LIMITS, reportItems } from '../report-model.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen }
   from '../../evidence/src/code-pass.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { STORY_KEY } from './session-story-fixture.js';
+/** D195: the page's tab labels read back as the in-page links they stand for (`data-href`), so these checks read links. */
+const asLinks = (html) => html.replace(/<label class="xl[^"]*" for="t-[^"]+" data-href="(#[^"]+)">([\s\S]*?)<\/label>/g,
+  '<a href="$1">$2</a>');
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(asLinks(renderSessionPageRaw(...args)));
 
 /** Every row of every source set, by `source:index`, enumerated here from the report itself (not from the model). */
 function sourceKeys(report) {

@@ -2040,6 +2040,48 @@ export function textBeforeRenderFix(text) {
   for (const { before, after } of Object.values(RENDER_FIX_READER_VERSIONS)) out = out.replaceAll(after, before);
   return out;
 }
+/** 0.3.0-beta.11: the reader its changes moved, once from 0.3.0-beta.10 (`RENDER_FIX_READER_VERSIONS`). D182: the
+ *  paragraph on how the code review works (code-report.js `how`, `howTied`) names no folder that the code review could
+ *  open. D183, D184 and D185: the report model says what Sonah cannot tell where the session review's calls did not
+ *  answer (D183), what the claims list holds and what the fold's results line covers (D184), and an ask done only in
+ *  part's shortfall by its role, with its check's reason (D185). D193 (the owner, 2026-10-30): the page moved once, from 0.3.0-beta.10's /46 (it had not moved
+ *  since 0.3.0-beta.7): its tabs, its panels and its new stylesheet. 0.3.0-beta.11 moves each reader once: every change of
+ *  beta.11 that moves a reader rides this same move. D194 (the owner, 2026-10-30): the story moved once, from
+ *  0.3.0-beta.10's /41: one list of decisions, and heads led by their quote; the page's rides D193's move. */
+export const BETA11_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/9', after: 'sonah.report-model/10' }),
+  page: Object.freeze({ before: 'sonah.session-page/46', after: 'sonah.session-page/47' }),
+  story: Object.freeze({ before: 'sonah.session-story/41', after: 'sonah.session-story/42' }),
+});
+/** D182: the sentence of each paragraph that names what the code review could open, now and as 0.3.0-beta.10 said it
+ *  (`how`, then `howTied`). As literals: this file imports no module under test. */
+const REACH_WORDS_HOW = Object.freeze([
+  Object.freeze({ now: 'It could also open, search and list files.',
+    before: 'It could open, search and list any file of the repository.' }),
+  Object.freeze({ now: 'could open, search and list files, and ran nothing.',
+    before: 'could open, search and list any file of the repository, and ran nothing.' }),
+]);
+/** D184: the fold's results line (REPORT_HEADER_WORDS `resultsAfterEdit`) and its words before (`results`), and how a
+ *  fact said the claims list holds what Sonah did not check, as literals: this file imports no module under test. */
+const RESULTS_AFTER_EDIT = Object.freeze({ now: 'Results of the commands after the agent\'s last edit: ',
+  before: 'Results: ' });
+/** 0.3.0-beta.11: a report .md or page as 0.3.0-beta.10's readers wrote it. D182: the paragraph on how the code review
+ *  works put back as it named the repository. D183, D184 and D185, for a report with no failed window of the session
+ *  review, no call asked again, no run without tokens or a limit, and no ask done only in part (D185 moves that item's
+ *  evidence: it is rendered back by the tests that hold one): the fold's results line said as the header's
+ *  ("Results: "), every fact said "list them" (or "list it"). And the version it names set back
+ *  (`BETA11_READER_VERSIONS`). Text only, as literals. It applies first, before `textBeforeRenderFix` and
+ *  `textBeforeTruthOnly`. */
+export function textBeforeBeta11(text) {
+  let out = String(text).replaceAll(RESULTS_AFTER_EDIT.now, RESULTS_AFTER_EDIT.before)
+    .replaceAll(RESULTS_AFTER_EDIT.now.replace("'", '&#39;'), RESULTS_AFTER_EDIT.before)
+    .replace(/The claims under What the agent did (?:list \d+ of them|do not list them)\./g,
+      'The claims under What the agent did list them.')
+    .replaceAll('The claims under What the agent did do not list it.', 'The claims under What the agent did list it.');
+  for (const { now, before } of REACH_WORDS_HOW) out = out.replaceAll(now, before);
+  for (const { before, after } of Object.values(BETA11_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
 /** A run profile with E1-F8's member rendered back to D111's (`refusedReadTier` taken out of every kind; the table's
  *  version is D110's move, which `profileBeforePremises` renders back); anything else untouched. `profileBeforeAccount`
  *  applies it first. D113 (0.3.0-beta.5): it applies `profileBeforeSessionChange` first. */

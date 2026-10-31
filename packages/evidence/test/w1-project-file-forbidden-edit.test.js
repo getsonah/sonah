@@ -111,7 +111,8 @@ test('W1 B: the versions, the contract and the brief', () => {
   // the footer says what the review cost.
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
-  assert.equal(STORY_VERSION, 'sonah.session-story/41');
+  // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
+  assert.equal(STORY_VERSION, 'sonah.session-story/42');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -146,7 +147,8 @@ test('W1 B: the versions, the contract and the brief', () => {
   // cost.
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/46');
+  // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes
@@ -211,8 +213,8 @@ test('W1 B: an edit against the project file is checked on the file form, publis
     assert.equal(items[0].candidate.instruction.role, 'project-instructions');
     // The page and the report .md show the file's words as the file's.
     const html = renderSessionPage(n.session, report, { sessionHash: 'a'.repeat(64) });
-    // D97: the page labels the file's words with the file's name.
-    assert.match(html, /The project instruction file [^<]+ says:<\/span> <q class="said">/);
+    // D97: the page labels the file's words with the file's name (D194: in the item's head when the quote leads it).
+    assert.match(html, /The project instruction file [^<]+ says:(?:<\/span>)? <q class="said">/);
     assert.ok(html.includes('Never add a runtime dependency.'));
     // D97: and the report .md, under the file's name.
     const story = renderReportMarkdown(n.session, report);

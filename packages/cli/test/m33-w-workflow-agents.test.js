@@ -19,7 +19,8 @@ import { modulesBeforeForbiddenEdit, modulesBeforeDisclosureWords } from '../../
 import { modulesBeforeStatusFact } from '../../evidence/test/status-fact-fixture.js';
 import { modulesBeforeHedgedClaims } from '../../evidence/test/h3-hedged-claims-fixture.js';
 import { modulesBeforeM36Conversation, modulesBeforeW1, modulesBeforeW2, modulesBeforeW3, modulesBeforeFixReview,
-  textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix } from '../../evidence/test/m33-integration-fixture.js';
+  textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix,
+  textBeforeBeta11 } from '../../evidence/test/m33-integration-fixture.js';
 import { AGENTS, CALL, RESULTS, RUN, SID, SID_EARLIER, SLUG, TEXT, captureStableCases, fixerRows, journalKey,
   linkedRun, mkdir, parentRows, resulted, rm, scratch, started, symlink, testerRows, workflowRows, writeFile, writeTree }
   from './m33-w-workflow-fixture.js';
@@ -1009,6 +1010,83 @@ const MOVED_BY_RENDER_FIX = Object.freeze([
   { story: '8c38006f31a3feb730e2d61ae4ad6585aa6375c0f4b3b8b7e30e942db260b5a1' },
   { story: 'f1daa7e7b8a1ffa713080493756125384c8c381ffa2eb92470a102cc9e997950' },
   { story: '7dc7cdedef21b0b2f3c3e6da328b9fb3efcba67610e45a3c6a50c7617fc2c4d1' }]);
+/** 0.3.0-beta.11 (D182, D183, D184 and D185): every story once more, as the code renders it: the report model's version
+ *  in its footer (BETA11_READER_VERSIONS). Rendered back (`textBeforeBeta11`), D169's, byte for byte. No ledger, gap,
+ *  request, label, window or window failure moved. */
+const MOVED_BY_BETA11 = Object.freeze([{ story: '95fa03e87cde84db28660fee4562dd83f17a707d85372327b73361615877d0a9' },
+  { story: '7d64cc9163011efd44a966467699ce6b663e40f00f39011f45a8e3ed853d1730' },
+  { story: 'f4b93b9262029c59d2bbc399eed04f2fcee136cf700722df263be93a0bee52a8' }]);
+/** D194 (0.3.0-beta.11; the owner, 2026-10-30): every story once more, by heads led by their quote (an item whose what
+ *  line is Sonah's fixed words alone) and the agent's decisions as one list, which no text rule renders back (`back`:
+ *  rendered back by the rules above; `now`: as the code renders it). No ledger, gap, request, label, window or window
+ *  failure moved. */
+const MOVED_BY_ONE_LIST = Object.freeze({ back: Object.freeze([
+  { story: 'dd6584cbd9926a721beba8c51248af158a77a80b1e6dff20b053d05f7e211a18' },
+  { story: '0621d5fb412915add9485dfbed60e26ce94888ce0edadb087595595131adc065' },
+  { story: 'ecdfe3d1e02f5a04d2750f9b13ede462df447783850482fce8c1710580bc182e' }]),
+  now: Object.freeze([{ story: 'e039e36fcea540938bc4a211580c400e1bd922560eb42f1a1f9a9cd095af07ef' },
+    { story: '30ed04b127ae39c38de6cdde987a3c805ea76b3e2e3126bdec9f1f1ebaeb0773' },
+    { story: '578cff38e27b49257745dda9058c8380340fcc542478455aba24ab22238288b5' }]) });
+/** D199 (0.3.0-beta.11; the owner, 2026-10-30: "Remove too many disclaimers", "All of them"): every story once more, by
+ *  lines removed alone, which no text rule renders back (`back`, `now`, as D194's): the no-code line's "The items show
+ *  no impact and no action."; each decision's evidence fold summary "Evidence" with no tier's reason, and in it no
+ *  "Sonah could not check whether you asked for this.", no reason of its whether-asked column (here "did not settle")
+ *  and no tier's why; each ask row's fold of why it is not checked (the cell is empty); the sentence under the asks
+ *  table on which parts Sonah checked; the session review's "Sonah finished its review of this session."; and the
+ *  footer's lines on "you" and on reading before you share. No status, count, quote or anchor moved. No ledger, gap,
+ *  request, label, window or window failure moved. */
+const MOVED_BY_FEWER_NOTES = Object.freeze({ back: Object.freeze([
+  { story: 'c8bbd942ad7f795aa529bf0bd42c661e297bf1b3ba3d07f82695d22f35225426' },
+  { story: '0208f2dd14f81059565a08f30805f5ff899584c7f008e70e21fc7b4ee395d29f' },
+  { story: '8f3d1eb81b008cdb6b7647e685f667495db155f9bb6df09629c6b1467b0f2a1e' }]),
+  now: Object.freeze([{ story: '0a3bbb5abe3084147af37f2a2b199e98d5b31094997a4696dcc6518e23e24d8d' },
+    { story: 'eaba39d326903b7d8a027af337ecb0027eadb24fc1fada64ab0c685d91bb06a2' },
+    { story: 'ed3043021acc83bc7e91dc61f8ab910a8c88b33ad8f1095c6ec082582558aa7b' }]) });
+/** D200 (0.3.0-beta.11; the owner, 2026-10-31: "bring back the precision markers as short tags"): every story once
+ *  more, by short tags and one line alone, which no text rule renders back (`back`, `now`, as D199's): each decision's
+ *  head gains " · Check did not settle" (its whether-asked column reason); each not-checked ask's note cell, empty
+ *  since D199, reads "Nothing cited." (the end-of-recording fact); and a line on which parts Sonah checked is back
+ *  once under the asks table. No status, count, quote or anchor moved. No ledger, gap, request, label, window or window
+ *  failure moved. D200's review round moved every story by that line alone, "Sonah checked only the marked parts of
+ *  your message." now "Sonah checked only the parts of your prompt that the table above lists." (REPORT_MD_WORDS
+ *  .coverage: the .md marks no parts); was back ff97785ee7f477919cdc6cce31b18843a3774d5e349104fa71bd0101cfb2c1a2,
+ *  80c0772ee009e140d535a02e66021569700a5c0cae8118c230cc08c89fc6a180,
+ *  22e8626f7637a31d89beff6fe956d41f5d93ff931f729dbba13dd678d8750c07; now
+ *  9aab0623a9a614991df539a71456f70aa4597d50c8b26ced3a4b5e60d584a90a,
+ *  f857d4a671db0f7421d6aa4d2df5a804aec36e792e551d00025f46caca2ce0b0,
+ *  4afbb4e415c6c53f8c4b422800c611b95a8565dd445ef7ddbf119361bdbb4a48. */
+const MOVED_BY_TAGS = Object.freeze({ back: Object.freeze([
+  { story: 'c21e4e4eb431a3c4e69ba456b4d9a246606b6241eb717d1d27ce1545b36b1c2a' },
+  { story: '65e564fefdcd3844cb554955fc68255e88d7feff5f0c8d6dac5130cd176ad186' },
+  { story: '59c5f05eed766472d24811abf71167f46ef7dfd3dca243a0040ff645e8f30b61' }]),
+  now: Object.freeze([{ story: '0ef1187f0d76a49cd0ff71954e27339c1b567aa8f52efec00244b3e0d89966b3' },
+    { story: '5c9e4858a31b46d89ed23bb4fb5292498f53e961d583c0f2abae3154b5e3c743' },
+    { story: '517ba76bb7ae9d2b2549668ea13c610f0720232cdfd94fe1f929641093c13bed' }]) });
+/** D202 (0.3.0-beta.11; the owner, 2026-10-31: "Done asks: what does it", "Short replies: context", "Decisions: their
+ *  actions", "Legend and small fixes", "Form, not meaning"): every story once more, which no text rule renders back
+ *  (`back`, `now`, as D200's): the legend's four lines more after the footer's three; where a story has them, the fold
+ *  of the asks' evidence under the table, the agent's message before yours in a message's fold, a decision's recorded
+ *  actions in its evidence, and the code review's impact and action lines' tag. No status, count, quote or anchor moved.
+ *  No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_EVIDENCE = Object.freeze({ back: Object.freeze([
+  { story: '95935b2e45a3cf20889c1cefe4402e491ddb57d0f5e324a84c39fe98e79f48bf' },
+  { story: 'afa900a8f9ae31a0aab62f664d6b0fe9c6acb30cd388fefc9c943bc4ae8a64c8' },
+  { story: 'a01d34126b84967267e3d2cd4f2d38bd4d6e1786abccaecb9e025cf5ffa94571' }]),
+  now: Object.freeze([{ story: '66c34eb253b25e32ee165cce09c5c47e8ddd6449772bf5d3b6af2e8cfe1056f2' },
+    { story: '6c9637660e3ef9491939f8b8f18b6713ca8241b820df55fac864473e9ad85c43' },
+    { story: '024dde4b42a6fbc5c638d1b25ffd5c98402f198bf9c0379887af88b6d64a85f7' }]) });
+/** D204 (0.3.0-beta.11; the coordinator's review of D202 and D203; the owner, 2026-10-31: "Your asks" everywhere,
+ *  "Everywhere now"): every story once more, which no text rule renders back (`back`, `now`, as D200's): the count line
+ *  and the prompt's heading say "Your asks", and where a story has them the legend's tag lines and a decision's statement
+ *  from its quote on. No status, count, quote or anchor moved. No ledger, gap, request, label, window or window failure
+ *  moved: these stories hold no row the slicer labels harness. */
+const MOVED_BY_ASKS_NAME = Object.freeze({ back: Object.freeze([
+  { story: '34ea9f20b148277d2b6750606414ad98bef48594039198f5da9626239dd0b8b3' },
+  { story: '1eb6e3662f6800a3683e3ce7b202bda40a02cbea8dddc29a5a4ac9e2f070065b' },
+  { story: '269d300e9bda3e3b815b794f7be6654db143ee111ca7ee3df81b3aba8f68200e' }]),
+  now: Object.freeze([{ story: '4b95a582e8e1c3481ebbe8894563a8b0e94ef10973e2cd52be8ccb28242d8587' },
+    { story: '188377f20dd3ebe0a8393fbe96c47b14e8c32613693d850370770d18bae2b7a1' },
+    { story: '334d8a4052756da26af23f9fd3351e5cd612ce29aedb51f60e91304d447c6d02' }]) });
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1136,17 +1214,24 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
     ...MOVED_BY_ABSENCE_AUDIT[at], ...MOVED_BY_GROUNDING_CAUSES[at], ...MOVED_BY_SEEN_IN_PART[at],
     ...MOVED_BY_ONE_BOUND[at], ...MOVED_BY_REPORT_TRUTH[at], ...MOVED_BY_FIRST_SCREEN[at],
     ...MOVED_BY_EVIDENCE_KINDS[at], ...MOVED_BY_BETA6_READERS[at], ...MOVED_BY_MUST_FIRST[at], ...MOVED_BY_QUIET[at],
-    ...MOVED_BY_TWO_PARTS.back[at], ...MOVED_BY_RUNS_COUNTED.back[at] }));
+    ...MOVED_BY_TWO_PARTS.back[at], ...MOVED_BY_RUNS_COUNTED.back[at], ...MOVED_BY_ONE_LIST.back[at],
+    ...MOVED_BY_FEWER_NOTES.back[at], ...MOVED_BY_TAGS.back[at], ...MOVED_BY_EVIDENCE.back[at],
+    ...MOVED_BY_ASKS_NAME.back[at] }));
   // D144 (0.3.0-beta.7): and every story once more (MOVED_BY_AGENT_PROMPT), by the report model's version in the
   // footer; rendered back (`textBeforeAgentPrompt`, after D152's `textBeforeTruthOnly`: the model's version once
   // more), 0.3.0-beta.6's, byte for byte.
   // D152: and once more (MOVED_BY_TRUTH_ONLY), by the model's version alone. D161: and once more (MOVED_BY_TWO_PARTS),
   // which nothing renders back: so the capture rendered back carries it too. D167: and once more (MOVED_BY_RUNS_COUNTED),
-  // the same way. D169: and once more (MOVED_BY_RENDER_FIX); rendered back (`textBeforeRenderFix`, first).
+  // the same way. D169: and once more (MOVED_BY_RENDER_FIX); rendered back (`textBeforeRenderFix`, first). 0.3.0-beta.11
+  // (D182 to D185): and once more (MOVED_BY_BETA11); rendered back (`textBeforeBeta11`, first of all). D194: and once
+  // more (MOVED_BY_ONE_LIST), which nothing renders back, as D161's. D199: and once more (MOVED_BY_FEWER_NOTES), the
+  // same way. D200: and once more (MOVED_BY_TAGS), the same way. D202: and once more (MOVED_BY_EVIDENCE), the same way.
   const asksFixes = beta6.map((c, at) => ({ ...c, ...MOVED_BY_AGENT_PROMPT[at], ...MOVED_BY_TRUTH_ONLY[at],
-    ...MOVED_BY_TWO_PARTS.now[at], ...MOVED_BY_RUNS_COUNTED.now[at], ...MOVED_BY_RENDER_FIX[at] }));
+    ...MOVED_BY_TWO_PARTS.now[at], ...MOVED_BY_RUNS_COUNTED.now[at], ...MOVED_BY_RENDER_FIX[at],
+    ...MOVED_BY_BETA11[at], ...MOVED_BY_ONE_LIST.now[at], ...MOVED_BY_FEWER_NOTES.now[at],
+    ...MOVED_BY_TAGS.now[at], ...MOVED_BY_EVIDENCE.now[at], ...MOVED_BY_ASKS_NAME.now[at] }));
   assert.deepEqual(await captureStableCases({ ...STABLE_MODULES, renderStory: (session, report) => textBeforeAgentPrompt(
-    textBeforeTruthOnly(textBeforeRenderFix(renderReportMarkdown(session, report)))) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
+    textBeforeTruthOnly(textBeforeRenderFix(textBeforeBeta11(renderReportMarkdown(session, report))))) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
     ...MOVED_BY_W3[at], ...MOVED_BY_FIX_REVIEW[at] })), 'as 0.3.0-beta.6 rendered them');
   // W2: and once more (MOVED_BY_W2); rendered back (`modulesBeforeW2`), W1's, byte for byte.
   // W3 F1(b): and once more (MOVED_BY_W3); rendered back (`modulesBeforeW3`), W2's, byte for byte.

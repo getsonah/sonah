@@ -8,9 +8,9 @@
 // code are shown nowhere. Pure renders of a synthetic session and report: no model, no network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionPage, PAGE_VERSION } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw, PAGE_VERSION } from '../session-page.js';
 import { reportModel, reportItems } from '../report-model.js';
-import { REPORT_SECTION_WORDS, REPORT_ITEM_WORDS } from '../report-words.js';
+import { REPORT_SECTION_WORDS, REPORT_ITEM_WORDS, REPORT_ASK_TAGS } from '../report-words.js';
 import { CHECKLIST_REQUIREMENT_FACT_WORDS, escapeSource } from '../../evidence/src/review.js';
 import { renderReportMarkdown, STORY_VERSION } from '../session-story.js';
 import { codeSectionPlan, codeFooterLines, codeCoverageLines, codeReceiptFound } from '../../evidence/src/code-report.js';
@@ -29,8 +29,12 @@ import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER
   GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
   ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COMPACTION_READER_VERSIONS,
-  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS }
+  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(renderSessionPageRaw(...args));
 
 const R = (eventId, role, quote) => ({ eventId, role, quote });
 const QUOTE = 'const parts = input.split(",");';
@@ -199,7 +203,11 @@ test('agentic code step page (D97): each published finding is an item, with its 
   assert.match(section, /1 file whose change the code review did not see \(1 binary\): logo\.png/);
   assert.match(section, /1 call that did not answer: a finding&#39;s check/);
   assert.match(section, /The repository changed while the code review ran, so a file that it quotes can differ now/);
-  assert.ok(section.includes(esc(CODE_REPORT_WORDS.how)));
+  // D199: no paragraph on how the code review works (D109's `how`, D110's `howConfirm`), on the page or in the .md.
+  // D199: the words were removed; as literals (the first sentence of each: `how` and `howTied` share theirs).
+  for (const words of ['Sonah asked for a review of the change as a code reviewer reviews a pull request',
+    'Sonah asks the check of each finding for the premises that the finding rests on'])
+    assert.ok(!page.includes(esc(words)) && !mdOf(r).includes(mdEsc(words)), words);
   assert.match(section, /The change runs from the commit where the session started \(b{40}\) to the files as they are now\./);
   for (const word of ['severity', 'confidence', 'verified']) assert.doesNotMatch(codeSectionOf(page), new RegExp(word, 'i'));
   // A row the code contradicts says so, in fixed words: here the claim, in the claims list.
@@ -423,7 +431,7 @@ test('agentic code step: a review question with no session receipt shows its que
   const story = mdOf(r);
   const at = story.indexOf(`<a name="item-${asked.n}"></a>`);
   // The item's block ends at the next item or the next section (D131: your prompt follows Must act and Must know).
-  const ends = [story.indexOf('<a name="item-', at + 1), story.indexOf('\n### ', at), story.indexOf('<details><summary>Your prompt', at)]
+  const ends = [story.indexOf('<a name="item-', at + 1), story.indexOf('\n### ', at), story.indexOf('<details><summary>Your asks', at)]
     .filter((i) => i > at);
   const block = story.slice(at, ends.length ? Math.min(...ends) : undefined);
   // D161: with no checked tie it is Good to know: its line is a fold's summary (HTML), its words in <em>.
@@ -755,43 +763,58 @@ test('R9: the end-of-recording fact beside an ask names no place in the recordin
 });
 
 // An ask the code step contradicts can also carry a fact of code's (here `no_deliverable_by_end`, beside an ask not
-// checked, the only requirement fact). Both are shown on the page: the fact first, then the code check, when the code
-// contradicts it; a row the code step did not contradict carries no code check (the per-row "not checked in the code"
-// note is gone, and an earlier report's "shown in the code" says nothing either). The story says the code check (it
-// never said that fact; D97: the report .md says both, as the page does). D88: an ask not checked is listed under What
-// Sonah could not check, on the page and in the report .md.
-test('agentic code step: an ask with a fact shows the fact, then its code check — and none for a row it did not contradict', () => {
+// checked, the only requirement fact). The page shows the code check when the code contradicts it; a row the code step
+// did not contradict carries no code check (the per-row "not checked in the code" note is gone, and an earlier report's
+// "shown in the code" says nothing either). D199 (the owner, 2026-10-30, "All of them"): the fact, D133's row fold, is
+// on no reader beside the ask; the model keeps it in the ask's `folded`. D88: an ask not checked is listed under What
+// Sonah could not check, on the page and in the report .md. D200 (the owner, 2026-10-31: "bring back the precision
+// markers as short tags"): the fact is beside the ask again as its short tag, its sentence the tag's title alone.
+test('agentic code step, D199, D200: an ask with a fact shows its code check and the fact\'s tag alone, the fact\'s sentence on no reader\'s lines — and no code check for a row it did not contradict', () => {
   const pageFact = CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end;
   const asked = (check) => ({ text: 'Return [] for empty input.', instruction: R('I1', 'instruction',
     'SYNTHETIC_CODE_ASK: add a parse function that returns [] for empty input, and do not touch the README.'),
   status: 'not-checked', facts: ['no_deliverable_by_end'], ...(check ? { codeCheck: check } : {}) });
   const only = (check) => ({ ...report(), promises: [], decisions: [], requirements: [asked(check)],
     codePass: { ...report().codePass, findings: [], questions: [], withheld: [] } });
-  const askLine = (page) => { const m = /<li(?: id="ask-1")?>ask 1 · [\s\S]*?<\/li>/.exec(page); return m ? m[0] : ''; };
+  // D199: the row is columns (its number, its status tag, your words, its lines).
+  // D202: the row's evidence fold (what the session review read, the agent's message before yours) is not its lines.
+  const askLine = (page) => { const m = /<li(?: id="ask-1")?(?: class="ask-row")?><span class="ak">ask 1<\/span>[\s\S]*?<\/li>/
+    .exec(page); return m ? m[0].replace(/<div class="ad acts">[\s\S]*?<\/details><\/div>/g, '') : ''; };
+  const factIn = (r) => reportModel(codeSession(), r, {}).prompt.asks[0].folded
+    .some((line) => line.map((p) => p.text).join('') === pageFact);
   const contradicts = `${CODE_REPORT_WORDS.outcomes['contradicted-by-code'][0].toUpperCase()}`
     + `${CODE_REPORT_WORDS.outcomes['contradicted-by-code'].slice(1)}.`;
+  // D200: the fact is back beside the ask as its short tag, the sentence only as the tag's title on the page and on no
+  // line of the .md. D200 (review round): no title; the sentence is the focusable tag's `.tip`, hidden until hover or
+  // focus.
+  const tagHtml = `<span class="why" tabindex="0">${esc(REPORT_ASK_TAGS.no_deliverable_by_end)} `
+    + `<span class="tip">${esc(pageFact)}</span></span>`;
+  const factOnlyAsTag = (page, item) => item.includes(tagHtml)
+    && page.split(esc(pageFact)).length === page.split(tagHtml).length;
   for (const outcome of ['contradicted-by-code']) {
     const r = only(codeCheck(outcome));
-    const item = askLine(renderSessionPage(codeSession(), r));
-    // D133 (R2): the code check on the row's open line; the fact (why the ask is not checked) in the row's own fold.
-    const fact = item.indexOf(esc(pageFact));
-    const code = item.indexOf(contradicts);
-    const folded = item.indexOf('<details class="row-evidence">');
-    assert.ok(code > 0 && folded > code && fact > folded, `${outcome}: the code check, then the fact in the fold`);
-    assert.equal(item.split(esc(pageFact)).length, 2, `${outcome}: the fact once`);
-    // The report .md: the ask's row in your prompt says the fact, then the code check, in the page's words.
+    const page = renderSessionPage(codeSession(), r);
+    const item = askLine(page);
+    // D133 (R2): the code check on the row's open line. D199: no row fold, and the fact on no reader. D200: its tag.
+    assert.ok(item.indexOf(contradicts) > 0, `${outcome}: the code check`);
+    assert.ok(!item.includes('<details') && factOnlyAsTag(page, item), `${outcome}: no fold, the fact as its tag`);
+    assert.ok(factIn(r), `${outcome}: the model keeps the fact`);
+    // The report .md: the ask's row in your prompt says the code check, in the page's words, and the fact's tag alone.
     const row = mdOf(r).split('\n').find((l) => l.startsWith('| Not checked | '));
-    assert.ok(row && row.indexOf(contradicts) > 0 && row.indexOf(pageFact) > row.indexOf('<details>')
-      && row.indexOf('<details>') > row.indexOf(contradicts), row);
+    assert.ok(row && row.indexOf(contradicts) > 0 && !row.includes('<details>'), row);
+    assert.ok(row.includes(`${REPORT_ASK_TAGS.no_deliverable_by_end}.`), row);
+    assert.ok(!mdOf(r).includes(pageFact), `${outcome}: the .md says no fact`);
   }
   // An earlier report's "not checked in the code" or "shown in the code" (or no code check at all): no code check on the
   // row.
   for (const check of [{ outcome: 'not-checked-in-code', receipts: [], reason: 'challenge_unsettled' },
     { ...codeCheck('shown-in-code'), by: 'held' }, null]) {
     const r = only(check);
-    const item = askLine(renderSessionPage(codeSession(), r));
-    assert.ok(item.includes(esc(pageFact)) && !item.includes(contradicts), JSON.stringify(check));
-    assert.ok(!mdOf(r).includes(contradicts), JSON.stringify(check));
+    const page = renderSessionPage(codeSession(), r);
+    const item = askLine(page);
+    // D199: the row is the ask alone; the fact is on no reader. D200: but as its tag.
+    assert.ok(item && !item.includes(contradicts) && factOnlyAsTag(page, item), JSON.stringify(check));
+    assert.ok(!mdOf(r).includes(contradicts) && !mdOf(r).includes(pageFact), JSON.stringify(check));
   }
 });
 
@@ -823,7 +846,7 @@ test('agentic code step: one word table — every closed token of the report has
   // D110: no word says that a second or independent reviewer checked a finding (one model reviews and checks); a
   // report made before the premise contract keeps a check line that claims no second reviewer.
   assert.equal(W.checkHolds, 'It traced the finding and found the same problem.');
-  for (const text of [W.how, ...Object.values(W).filter((v) => typeof v === 'string')])
+  for (const text of Object.values(W).filter((v) => typeof v === 'string'))
     assert.doesNotMatch(text, /found it holds|found to hold|statement the review/);
   // The members code-report.js names by value, not by index, are members of their lists.
   assert.ok(CODE_WITHHELD_REASONS.includes('verify_refuted') && CODE_FOOTER_KINDS.includes('withheld')
@@ -840,7 +863,6 @@ test('agentic code step: one word table — every closed token of the report has
       'receipt_path_ambiguous']]);
   for (const list of [CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS, CODE_QUESTION_VERDICTS, CODE_WITHHELD_REASONS,
     CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES]) assert.ok(Object.isFrozen(list));
-  assert.doesNotMatch(W.how, /three independent|checking passes/);
   for (const text of Object.values(W).filter((v) => typeof v === 'string'))
     for (const word of ['severity', 'confidence', 'verified']) assert.doesNotMatch(text, new RegExp(`\\b${word}\\b`, 'i'));
 });
@@ -897,8 +919,11 @@ test('agentic code step: the page and the story moved once, one link after the r
   // the agent under an item that leads in Must act.
   assert.deepEqual([AGENT_PROMPT_READER_VERSIONS.page.before, AGENT_PROMPT_READER_VERSIONS.story.before],
     [COST_READER_VERSIONS.page.after, COST_READER_VERSIONS.story.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [AGENT_PROMPT_READER_VERSIONS.page.after,
-    AGENT_PROMPT_READER_VERSIONS.story.after]);
+  // D193 and D194 (0.3.0-beta.11): each once more (BETA11_READER_VERSIONS), one link after D144's: the page's tabs,
+  // and one list of decisions with heads led by their quote.
+  assert.deepEqual([BETA11_READER_VERSIONS.page.before, BETA11_READER_VERSIONS.story.before],
+    [AGENT_PROMPT_READER_VERSIONS.page.after, AGENT_PROMPT_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [BETA11_READER_VERSIONS.page.after, BETA11_READER_VERSIONS.story.after]);
   // D126 and D127 meet D129 in the same move (the beta.6 integration): 0.3.0-beta.6 moves each reader once.
   assert.deepEqual(COST_READER_VERSIONS, COMPACTION_READER_VERSIONS);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it

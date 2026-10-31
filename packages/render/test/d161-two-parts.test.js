@@ -6,13 +6,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel, reportItems, reportPlacement, trailItem, TRAIL_PART } from '../report-model.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { countLines } from '../../cli/src/report-output.js';
 import { boundTier, UNTIED_TIER_RULE, ITEM_KIND_TABLE, kindBounds } from '../../evidence/src/triage.js';
-import { REPORT_TRAIL_WORDS, REPORT_COUNT_WORDS, REPORT_TIER_WHY } from '../report-words.js';
+import { REPORT_TRAIL_WORDS, REPORT_COUNT_WORDS, REPORT_TIER_WHY, REPORT_TAB_WORDS, REPORT_ROW_TAGS, REPORT_ITEM_WORDS }
+  from '../report-words.js';
 import { reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+/** D195: the page's tab labels read back as the in-page links they stand for (`data-href`), so these checks read links. */
+const asLinks = (html) => html.replace(/<label class="xl[^"]*" for="t-[^"]+" data-href="(#[^"]+)">([\s\S]*?)<\/label>/g,
+  '<a href="$1">$2</a>');
+const renderSessionPage = (...args) => asLinks(renderSessionPageRaw(...args));
 
 const DECIDE = ['decision_not_acting', 'decision_unasked', 'decision_chose', 'decision_whether_asked', 'pivot'];
 const r = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
@@ -127,35 +132,39 @@ test('D161: the decisions come in the order the session recorded them, by the mo
   assert.deepEqual(all.map((item) => item.n), all.map((_, i) => i + 1));
 });
 
-test('D161: one group a message of yours that holds an ask, the decisions before your first ask and those Sonah could not place apart', () => {
+test('D161, D194: one list in the session order, each decision saying which asks it follows or that it is before them (D199: an unplaced one says nothing)', () => {
   const session = timedSession();
   const model = reportModel(session, timedReport(session), {});
   const groups = model.decisions.groups;
-  assert.deepEqual(groups.map((g) => [g.key, g.asks, g.words, g.items.length]), [
-    ['before', [], REPORT_TRAIL_WORDS.beforeAsks, 1],
-    ['message:1', [1], REPORT_TRAIL_WORDS.afterAsks(1, 1), 3],
-    ['message:2', [2], REPORT_TRAIL_WORDS.afterAsks(2, 2), 1],
-    ['unplaced', [], REPORT_TRAIL_WORDS.unplaced, 1]]);
-  // A group lists its message's asks with their status words, as your prompt marks them.
-  const promptAsk = new Map(model.prompt.asks.map((a) => [a.n, a]));
-  for (const g of groups) for (const a of g.askLines) assert.deepEqual([a.state, a.status], [promptAsk.get(a.n).state,
-    promptAsk.get(a.n).status]);
-  // Open by default exactly when it holds an item tagged Must act or Must know: the setup decision alone is Good to know.
-  assert.deepEqual(groups.map((g) => g.open), [false, true, true, true]);
-  assert.equal(groups[0].items[0].tier.final, 'good_to_know');
-  assert.deepEqual(groups.map((g) => g.count), [REPORT_COUNT_WORDS.decisions(1, 0, 0),
-    REPORT_COUNT_WORDS.decisions(3, 0, 2), REPORT_COUNT_WORDS.decisions(1, 0, 1), REPORT_COUNT_WORDS.decisions(1, 0, 1)]);
-  // A decision whose instruction ties it to an ask says so on its line.
+  // D194 (the owner, 2026-10-30): one list, never a group a message, and no list of asks in it: your prompt holds them.
+  assert.deepEqual(groups.map((g) => [g.key, g.askLines.length, g.entries.length]), [['all', 0, 6]]);
+  // D199 (the owner, 2026-10-30, "All of them"): a decision Sonah could not place says nothing of it; it comes last.
+  assert.deepEqual(groups[0].entries.map((e) => e.after), [REPORT_TRAIL_WORDS.beforeRow, REPORT_TRAIL_WORDS.afterRow(1, 1),
+    REPORT_TRAIL_WORDS.afterRow(1, 1), REPORT_TRAIL_WORDS.afterRow(1, 1), REPORT_TRAIL_WORDS.afterRow(2, 2), null]);
+  // The ones tagged Must act or Must know first-hand, in order; the setup decision, tagged Good to know, in the fold.
+  const setup = groups[0].entries[0].item;
+  assert.equal(setup.tier.final, 'good_to_know');
+  const tagged = (want) => groups[0].entries.filter((e) => (e.tier === 'good_to_know') === want).map((e) => e.n);
+  assert.deepEqual(groups[0].more.map((e) => e.n), tagged(true));
+  assert.ok(tagged(true).includes(setup.n));
+  assert.deepEqual(groups[0].shown.map((e) => e.n), tagged(false));
+  assert.deepEqual([tagged(true).length, tagged(false).length], [2, 4]);
+  assert.equal(groups[0].moreWords, REPORT_TRAIL_WORDS.moreTagged(2, 'Good to know'));
+  // A decision whose instruction ties it to an ask says so on its line, then the asks it follows, then its tag.
   const page = renderSessionPage(session, timedReport(session), {});
-  const setup = groups[0].items[0];
   assert.deepEqual(setup.scope.asks, [1]);
-  assert.match(page, new RegExp(`id="item-${setup.n}"><summary>[^\\n]*<a href="#ask-1">ask 1</a> · <span class="tag `
-    + 'tier-tag">Good to know</span></summary>'));
-  // The page opens the same groups, and so does the .md.
-  assert.equal((page.match(/<details class="trail-group" open>/g) ?? []).length, 3);
+  // D198: a row: its ask a chip, then the asks it follows and its tag at the row's end. D199: its kind's short tag first.
+  assert.match(page, new RegExp(`id="item-${setup.n}"><summary>[^\\n]*<span class="rm"><span class="kind">${REPORT_ROW_TAGS.decision_chose}</span>`
+    + '(?:<span class="chip">[^<]*</span>)*'
+    + `<span class="chip">ask 1</span><span class="after">${REPORT_TRAIL_WORDS.beforeRow}</span>`
+    + '<span class="tag tier-tag tier-good-to-know">Good to know</span></span>'));
+  // No fold a group on the page or in the .md.
+  assert.equal(page.includes('trail-group'), false);
   const md = renderReportMarkdown(session, timedReport(session), {});
-  assert.equal((md.match(/^<details open><summary>/gm) ?? []).length, 3);
-  for (const g of groups) assert.ok(md.includes(`${g.words} · ${g.count}</summary>`), g.key);
+  assert.equal((md.match(/^<details open><summary>/gm) ?? []).length, 0);
+  assert.ok(md.includes(` · ${REPORT_TRAIL_WORDS.afterRow(2, 2)} · Must know</summary>`));
+  // D199: no reader says that Sonah could not place a decision. D199: the words were removed; as literals.
+  for (const text of [page, md]) assert.equal(text.includes('Sonah could not place it in the session order'), false);
 });
 
 test('D161: the counts agree on the model, the page, the .md and the terminal', () => {
@@ -168,9 +177,15 @@ test('D161: the counts agree on the model, the page, the .md and the terminal', 
     assert.equal(model.countLine.decisions.n, trailOf(model).length);
     assert.ok(countLines(model)[0].includes(` · ${words} · `), countLines(model)[0]);
     const page = renderSessionPage(session, rep, options);
-    assert.ok(page.includes(`<a href="#decisions">${words}</a>`));
+    // D199: the header's Decisions tile, its tab's word and the count, the count line's words in its title; from the
+    // header it opens the Decisions panel as every link into another panel does (D195: that panel's radio label).
+    const tiles = /<p class="count">[\s\S]*?<\/p>/.exec(renderSessionPageRaw(session, rep, options))?.[0] ?? '';
+    assert.ok(tiles.includes(`title="${words}"`) && tiles.includes(`<span class="k">${REPORT_TAB_WORDS.decisions}</span> `
+      + `<span class="num">${model.decisions.total}</span>`), tiles);
+    assert.match(tiles, /<label class="xl[^"]*" for="t-decisions"[^>]*>(?:(?!<\/label>)[\s\S])*<span class="k">Decisions<\/span>/,
+      'the Decisions tile opens its panel');
     assert.ok(page.includes(`${REPORT_TRAIL_WORDS.heading(model.decisions.total).replace(/'/g, '&#39;')}</h2>`));
-    assert.equal((page.match(/<details class="item gtk trail-item/g) ?? []).length, model.decisions.total);
+    assert.equal((page.match(/<(?:details|div) class="item gtk row trail-item/g) ?? []).length, model.decisions.total);
     const md = renderReportMarkdown(session, rep, options);
     assert.ok(md.includes(` · ${words} · `));
     assert.ok(md.includes(`### ${REPORT_TRAIL_WORDS.heading(model.decisions.total)}`));
@@ -205,9 +220,13 @@ test('D161: every pointer keeps its item after the renumbering — a question ti
   assert.deepEqual(q2.related.items, [chose.n]);
   assert.equal(chose.tier.final, 'must_know');
   assert.equal(chose.why, REPORT_TIER_WHY.tied(q2.n, 'Must know'));
+  // D199: the readers say that tie by the decision's evidence line, which links the question by its number.
+  assert.ok(chose.evidence.some((e) => e.parts.some((p) => p.href === `item-${q2.n}`
+    && p.text === REPORT_ITEM_WORDS.concernedBy(q2.n))));
   // The page holds that number once, inside the second part, and the question's links land there.
   const page = renderSessionPage(session, report, repoFacts());
   const trailPage = page.slice(page.indexOf('id="decisions"'), page.indexOf('id="prompt"'));
+  assert.ok(trailPage.includes(`<a href="#item-${q2.n}">${REPORT_ITEM_WORDS.concernedBy(q2.n)}</a>`));
   assert.equal(page.split(`id="item-${chose.n}"`).length - 1, 1);
   assert.ok(trailPage.includes(`id="item-${chose.n}"`));
   // What the agent said it did not do names the decision not to act by its own number; every item number any list
@@ -234,7 +253,7 @@ test('D161, amended by D163: a decision tagged Must act gets its prompt as any i
   const page = renderSessionPage(session, report, repoFacts());
   assert.equal(page.slice(page.indexOf('id="decisions"'), page.indexOf('id="prompt"')).includes('agent-prompt'), false);
   const md = renderReportMarkdown(session, report, repoFacts());
-  assert.equal(md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your prompt')).includes(
+  assert.equal(md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your asks')).includes(
     'Prompt for the agent'), false);
   // D163: the count line's Must act counts it and its labels name it, after the first part's items.
   assert.equal(model.countLine.counts.must_act, model.tiers.must_act.length + 1);
@@ -330,13 +349,15 @@ test('D161 (its review): the .md shortens lowest tier first across both parts; a
   assert.ok(page.includes(`id="item-${must.n}"`));
 });
 
-test('D161 (its review): with no message that holds an ask, no group says "Before your first ask"', () => {
+test('D161 (its review), D194: with no message that holds an ask, no decision says that it comes before your first ask', () => {
   const session = timedSession();
   const report = { ...timedReport(session), requirements: [] };
   const model = reportModel(session, report, {});
   assert.deepEqual(model.prompt.asks, []);
-  assert.deepEqual(model.decisions.groups.map((g) => [g.key, g.words]), [['all', REPORT_TRAIL_WORDS.inOrder],
-    ['unplaced', REPORT_TRAIL_WORDS.unplaced]]);
+  const entries = model.decisions.groups[0].entries;
+  // D199: and the one Sonah could not place says nothing of it either.
+  assert.deepEqual(entries.map((e) => e.after), entries.map(() => null));
   for (const text of [renderReportMarkdown(session, report, {}), renderSessionPage(session, report, {})])
-    assert.equal(text.includes(REPORT_TRAIL_WORDS.beforeAsks), false);
+    // D199: the words were removed; as literals.
+    assert.ok(!text.includes(REPORT_TRAIL_WORDS.beforeRow) && !text.includes('Sonah could not place it in the session order'));
 });

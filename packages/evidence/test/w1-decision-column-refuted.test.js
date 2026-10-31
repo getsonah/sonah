@@ -13,7 +13,9 @@ import { NOW_ANSWER, PROMPT_VERSION, RECOLUMN_HEADING, RECOLUMN_WORDS, RECOLUMN_
 import { DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, RESOLUTION_CHALLENGE_OUTCOMES, JUDGMENT_REASONS }
   from '../src/ledger.js';
 import { CHECKLIST_PROPOSITIONS, checklistProposition, SESSION_DOSSIER_NOTE } from '../src/challenge.js';
-import { renderSessionPage, PAGE_COLUMN_REASON_WORDS } from '../../render/session-page.js';
+import { renderSessionPage, PAGE_COLUMN_REASON_WORDS, escapeHtml } from '../../render/session-page.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
+import { REPORT_DECISION_TAGS } from '../../render/report-words.js';
 import { windowOfLabel } from '../../cli/src/session-review.js';
 
 const ASK = 'Fix greet.js so empty names give a friendly greeting.';
@@ -132,7 +134,7 @@ test('W1 A: a choice refuted on its column, which exists, is re-asked; a new col
     assert.equal(checklistProposition(recheckItem), CHECKLIST_PROPOSITIONS.decisionChoseHow);
   });
 
-test('W1 A: a new column its own check does not uphold is published "could not tell", with its closed reason',
+test('W1 A: a new column its own check does not uphold is published "could not tell", with its closed reason (D199: in the report, no reader says it; D200: its short tag does, the page in its tip)',
   async (t) => {
     const { session } = await load(t, rows());
     const n = fixture(session);
@@ -144,12 +146,29 @@ test('W1 A: a new column its own check does not uphold is published "could not t
       assert.deepEqual(record(report).challenged, counts(RESOLUTION_CHALLENGE_OUTCOMES, { [ended]: 1 }), ended);
       assert.deepEqual(windowIncompleteReasons(report.windowResults[0]), [], `${ended}: never makes a window incomplete`);
     }
-    // Every reader says why, in its own words.
+    // D199 (the owner, 2026-10-30, "All of them"): the report keeps the closed reason; no reader says it beside the
+    // decision, the page or the .md.
     const report = await review(session, judgeOf({ first: () => narrative([settledDecision(n)]),
       verdict: verdicts({ column: 'refuted' }), recolumn: () => narrative([choseHow(n)]) }));
+    assert.deepEqual(report.decisions.map((d) => d.reasons[0]), [DECISION_COLUMN_REFUTED]);
     const html = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) });
+    const md = renderReportMarkdown(session, report, {});
     const words = PAGE_COLUMN_REASON_WORDS[DECISION_COLUMN_REFUTED];
-    assert.ok(html.includes(words.replace(/'/g, '&#39;')));
+    assert.equal(typeof words, 'string');
+    // D200 (the owner, 2026-10-31: "bring back the precision markers as short tags"): the decision carries the reason's
+    // short tag, its sentence in the tag's tip on the page; the .md's head says the tag alone. D200's review: no title
+    // any more; the sentence is a `.tip` span hidden until hover or focus, so the page's open text is the page without
+    // the flag, as it was without the title.
+    const tag = REPORT_DECISION_TAGS[DECISION_COLUMN_REFUTED];
+    const flag = `<span class="flag">${escapeHtml(tag)} <span class="tip">${escapeHtml(words)}</span></span>`;
+    assert.equal(html.split(flag).length - 1, 1, 'D200: the decision\'s tag on the page');
+    assert.ok(md.includes(` · ${tag}`), 'D200: the decision\'s tag in the .md');
+    // D202 (a tag's sentence showed on a pointer's hover only): and once in the opened row, under the tag's word.
+    const line = `<p class="line tag-why kv"><span class="label">${escapeHtml(tag)}</span> `
+      + `<span class="v">${escapeHtml(words)}</span></p>`;
+    assert.equal(html.split(line).length - 1, 1, 'D202: the sentence in the opened row');
+    assert.equal(html.split(flag).join('').split(line).join('').includes(words.replace(/'/g, '&#39;')), false);
+    assert.equal(md.includes(words), false);
   });
 
 test('W1 A: precision — the refuted column is never published again, and a re-ask that fails changes no more',

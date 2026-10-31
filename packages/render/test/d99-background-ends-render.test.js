@@ -33,7 +33,7 @@ test('D99 F1 guard: the header counts an unread end apart, and never as a run wi
   // D133 (R2): the part that says what Sonah could not read is in What Sonah could not check, with its count.
   assert.deepEqual(header.runs, ['After its last edit, the agent ran 3 commands.',
     'Results: 1 has no recorded end, 1 stopped before it finished.']);
-  assert.ok(notChecked.quiet.includes('Results: for 1 Sonah could not read whether or how it ended.'), notChecked.quiet);
+  assert.ok(notChecked.quiet.includes('Results of the commands after the agent\'s last edit: for 1 Sonah could not read whether or how it ended.'), notChecked.quiet);
 });
 
 test('D99 F1 guard: the Runs list says what Sonah read of each run\'s end', () => {
@@ -69,5 +69,5 @@ test('D99 (review of A1b): a run no later record is shown to mention says Sonah 
     'Sonah could not check whether the recording holds an end of this run']);
   assert.deepEqual(header.runs, ['After its last edit, the agent ran 4 commands.',
     'Results: 1 has no recorded end, 1 stopped before it finished.']);
-  assert.ok(notChecked.quiet.includes('Results: for 2 Sonah could not read whether or how they ended.'));
+  assert.ok(notChecked.quiet.includes('Results of the commands after the agent\'s last edit: for 2 Sonah could not read whether or how they ended.'));
 });

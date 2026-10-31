@@ -1850,6 +1850,69 @@ export const WINDOW_STATES = Object.freeze(['complete', 'incomplete', 'failed'])
 /** M33: every value a window's `failure` can hold besides null — a judge failure code, or the one
  *  shortfall this module sets itself for a request too large to send. */
 export const WINDOW_FAILURE_CODES = Object.freeze([...JUDGE_FAILURE_CODES, 'unreviewed_scope']);
+/**
+ * D183 (0.3.0-beta.11): what a failed window's call did, by its closed failure code (WINDOW_FAILURE_CODES, never text),
+ * in WINDOW_FAILURE_CLASS: `not_sent`, Sonah never tried the request (`budget_exhausted`, a budget stop; or
+ * `unreviewed_scope`, a request too large to send), so no model call is counted for it; `refused`, the judge refused
+ * the request on this computer before sending it (no API key, bytes or images its transport cannot carry, a backend or
+ * model it does not take) after the budget had counted its try (cli review-budget.js `wrap` counts first), so the
+ * footer counts a model call that was never sent; `no_answer`, every other code: the call gave no answer that Sonah
+ * could use, in the code step's own sense of a call that did not answer (code-pass.js `failedCall`). The report says a
+ * cause for `not_sent` and `no_answer` (render report-model.js `sessionCallsOf`), and of `refused` only for
+ * `anthropic_key_missing`, which has its own (D190, `sessionCallsFact`). Closed: one entry for every
+ * member of WINDOW_FAILURE_CODES (D183 fix round: by the code itself, so `anthropic_key_missing`, whose narrative
+ * shortfall is `model_unavailable`, is never said as a call that did not answer).
+ */
+export const WINDOW_FAILURE_CLASSES = Object.freeze(['not_sent', 'no_answer', 'refused']);
+const [NOT_SENT, NO_ANSWER, REFUSED] = WINDOW_FAILURE_CLASSES;
+export const WINDOW_FAILURE_CLASS = Object.freeze({ budget_exhausted: NOT_SENT, unreviewed_scope: NOT_SENT,
+  anthropic_key_missing: REFUSED, invalid_model_input: REFUSED, unsupported_backend: REFUSED, invalid_model: REFUSED,
+  explicit_api_model_required: REFUSED, model_unavailable: NO_ANSWER, model_tool_use: NO_ANSWER,
+  model_timeout: NO_ANSWER, model_response_invalid: NO_ANSWER, model_output_limit: NO_ANSWER,
+  model_response_incomplete: NO_ANSWER, model_turn_limit: NO_ANSWER, model_structured_output_failed: NO_ANSWER });
+/** D183: a window record's failure class (WINDOW_FAILURE_CLASSES), or null when it did not fail. A window failed only
+ *  when its `failure` is a member of WINDOW_FAILURE_CODES (the keys of WINDOW_FAILURE_CLASS): membership, never
+ *  `!== null`, so an older record with no such field, or a value outside the list, is no failed window. Pure. */
+export function windowFailureClass(window) {
+  const failure = window !== null && typeof window === 'object' ? window.failure : undefined;
+  return typeof failure === 'string' && Object.hasOwn(WINDOW_FAILURE_CLASS, failure) ? WINDOW_FAILURE_CLASS[failure] : null;
+}
+/** D183: the cause the report and the terminal say after "did not finish", by what the failed windows' calls did: every
+ *  window failed and none answered (`no_answer`), some failed and none of those answered (`some_no_answer`), or every
+ *  window failed and Sonah tried none of their requests (`not_sent`). Any other shape (no failed window, failed windows
+ *  of mixed classes, some failed with none sent, or any failed `refused`) has no cause sentence. Closed.
+ *  D190 (0.3.0-beta.11; the owner, 2026-10-30: "Name the missing key"): a window whose call failed
+ *  `anthropic_key_missing` (cli review-judge.js returns it, before any request, when ANTHROPIC_API_KEY holds no key; the
+ *  window's first call, so no other call of that window ran) gives its own cause, by the code itself: every window
+ *  failed so (`key_missing`), or some window did, beside answering windows or windows that failed otherwise
+ *  (`some_key_missing`). Such a window is `refused`, so no D183 cause is said beside it. Every cause reads a window's
+ *  `failure`, which only its first call sets: a later call of the window (a challenge vote, a re-ask) that fails
+ *  records no code, so it gives none (in a resumed review, a window whose first answer replays and whose later calls
+ *  fail for the key says no cause). */
+export const SESSION_CALLS_CAUSES = Object.freeze(['no_answer', 'some_no_answer', 'not_sent', 'key_missing',
+  'some_key_missing']);
+const [CALLS_NO_ANSWER, CALLS_SOME_NO_ANSWER, CALLS_NOT_SENT, CALLS_KEY_MISSING, CALLS_SOME_KEY_MISSING] =
+  SESSION_CALLS_CAUSES;
+const KEY_MISSING = JUDGE_FAILURE_CODES.find((code) => code === 'anthropic_key_missing');
+/**
+ * D183: what the session review's calls did, read from its window records (`report.windowResults`) by structure only:
+ * `windows` (how many records), `failed` (how many failed, `windowFailureClass`), `failedAt` (each record's index: true
+ * when it failed), `all` (there is a window, and every one failed), `cls` (the one class of the failed windows, or null
+ * when none failed or their classes mix) and `cause` (SESSION_CALLS_CAUSES, or null). Pure.
+ */
+export function sessionCallsFact(windowResults) {
+  const records = Array.isArray(windowResults) ? windowResults : [];
+  const classes = records.map(windowFailureClass);
+  const failed = classes.filter((c) => c !== null);
+  const all = records.length > 0 && failed.length === records.length;
+  const cls = failed.length && failed.every((c) => c === failed[0]) ? failed[0] : null;
+  // D190: the windows that failed for a missing API key, by the closed code (membership of the record's `failure`).
+  const keyMissing = records.filter((w) => windowFailureClass(w) !== null && w.failure === KEY_MISSING).length;
+  const cause = keyMissing > 0 ? (all && keyMissing === failed.length ? CALLS_KEY_MISSING : CALLS_SOME_KEY_MISSING)
+    : cls === NO_ANSWER ? (all ? CALLS_NO_ANSWER : CALLS_SOME_NO_ANSWER)
+      : cls === NOT_SENT && all ? CALLS_NOT_SENT : null;
+  return { windows: records.length, failed: failed.length, failedAt: classes.map((c) => c !== null), all, cls, cause };
+}
 const [WINDOW_COMPLETE, WINDOW_INCOMPLETE, WINDOW_FAILED] = WINDOW_STATES;
 const windowState = (window) => (window?.failure !== null ? WINDOW_FAILED
   : window.groundingComplete === true && window.challenge?.complete === true ? WINDOW_COMPLETE : WINDOW_INCOMPLETE);

@@ -12,6 +12,7 @@ import { SESSION_REVIEW_CLAUDE_CLI_MODEL } from '../../evidence/src/run-review.j
 import { PROBE_REQUEST } from '../src/review-probe.js';
 import { AGENT_OPTIONS_CHECK, SAFE_MODE_CHECK } from '../src/doctor.js';
 import { session, toJsonl } from '../../golden/src/build.js';
+import { PAGE_SCRIPT } from '../../render/session-page.js';
 
 const exec = promisify(execFile);
 
@@ -305,7 +306,8 @@ process.stdin.on('end', () => {
   assert.match(written, /^<!doctype html>/i);
   assert.match(written, /Content-Security-Policy/);
   assert.match(written, /SYNTHETIC_INSTALL_ASK/);
-  assert.ok(!written.includes('<script'));
+  // D203: the page's one script, pinned by its hash, and no other.
+  assert.deepEqual(written.match(/<script\b[^>]*>[\s\S]*?<\/script>/g), [`<script>${PAGE_SCRIPT}</script>`]);
   assert.ok(!written.includes('https://'));
   assert.ok(!written.includes('http://'));
   assert.doesNotMatch(written, /\b(DECIDE|FYI|CLEAN|NO_FINDINGS|UNCHECKED)\b/);
@@ -386,7 +388,7 @@ process.stdin.on('end', () => {
   // D97: the page shows your prompt (the helper's brief was on the removed steps card; the call log above shows the
   // model received the linked helper's evidence).
   assert.match(sessionHtml, /inspect the repository with a helper/);
-  assert.ok(!sessionHtml.includes('<script'));
+  assert.deepEqual(sessionHtml.match(/<script\b[^>]*>[\s\S]*?<\/script>/g), [`<script>${PAGE_SCRIPT}</script>`]);
   assert.equal((await stat(sessionOutput)).mode & 0o777, 0o600);
   await run(bin, ['review', '--choose', '1', '--state-dir', sessionState]);
   assert.equal(await readFile(callLog, 'utf8'), afterSession, 'choosing the same parent reuses exact stored answers');

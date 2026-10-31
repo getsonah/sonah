@@ -962,7 +962,8 @@ test('M33 H repair: the report .md labels the helper\'s words "A helper said"; t
   const md = story.renderReportMarkdown(session, await reviewOf(session, [CLAIMS.helperSaid, CLAIMS.parentOnly]));
   assert.ok(md.includes(`${REPORT_ITEM_WORDS.helperSaid} “the nested parser tests pass now.”`), md);
   assert.ok(!md.includes(`${REPORT_ITEM_WORDS.agentSaid} “the nested parser tests pass now.”`));
-  assert.ok(md.includes('\n“lint is clean.”') && !md.includes(`${REPORT_ITEM_WORDS.helperSaid} “lint is clean.”`), md);
+  // D194: the parent's quote leads its item's head, with no label.
+  assert.ok(/:\*\* “lint is clean\.”/.test(md) && !md.includes(`${REPORT_ITEM_WORDS.helperSaid} “lint is clean.”`), md);
   // Self-corrected too: the correction is the helper's own statement.
   const resolvedBy = { observation: R.pass, statement: R.helperFixed };
   const corrected = story.renderReportMarkdown(session, await reviewOf(agentSession({ corrected: true }),

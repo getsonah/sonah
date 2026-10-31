@@ -19,7 +19,7 @@ import { reportModel, reportPlacement, reportItems } from '../report-model.js';
 import { renderSessionPage } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_PARTS, REPORT_NOT_CHECKED_WORDS, REPORT_ITEM_WORDS, REPORT_TIER_WHY,
-  REPORT_TIER_WORDS, REPORT_KIND_WORDS } from '../report-words.js';
+  REPORT_TIER_WORDS, REPORT_KIND_WORDS, REPORT_ASK_TAGS } from '../report-words.js';
 import { CHECKLIST_REQUIREMENT_FACT_WORDS } from '../../evidence/src/review.js';
 import { reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
@@ -109,8 +109,17 @@ test('D115: the end-of-recording fact says what the row cites and what the sessi
   // Ask 3 is not checked, its row cites nothing, and its part of the recording runs to the end; a later write does it.
   assert.deepEqual(askLines(model)[2], [CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end]);
   assert.doesNotMatch(CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end, /found nothing|recording|ended/);
+  // D199 (the owner, 2026-10-30, "All of them"): the model keeps it in the ask's `folded`; no reader prints the row fold.
+  // D200: its short tag is beside the ask again, the sentence only as the tag's title on the page.
+  const fact = CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end;
+  assert.deepEqual(model.prompt.asks[2].tags, [{ key: 'no_deliverable_by_end', words: fact }]);
   const md = renderReportMarkdown(session, truthReport(session), {});
-  assert.ok(md.includes(CHECKLIST_REQUIREMENT_FACT_WORDS.no_deliverable_by_end));
+  const page = renderSessionPage(session, truthReport(session), {});
+  assert.ok(!md.includes(fact));
+  assert.ok(md.includes(`| ${REPORT_ASK_TAGS.no_deliverable_by_end}. |`), md);
+  // D200 (review round): no title; the sentence is the focusable tag's `.tip`, hidden until hover or focus.
+  const tag = `<span class="why" tabindex="0">${REPORT_ASK_TAGS.no_deliverable_by_end} <span class="tip">${fact}</span></span>`;
+  assert.ok(page.includes(tag) && page.split(fact).length === page.split(tag).length);
   assert.doesNotMatch(md, /found nothing that does this ask/);
 });
 
@@ -126,7 +135,7 @@ test('D115: an ask Sonah lists under no message of yours is said by what code pr
   assert.deepEqual(model.notChecked.unreadAsks, ['Sonah could not read 1 ask of the session review.',
     'Sonah could not place 1 ask of the session review among the asks of your prompt.',
     'The session review named 2 asks that an agent wrote into a helper\'s brief. Sonah does not list them under your '
-      + 'prompt.']);
+      + 'asks.']);
   // Every unread ask is placed once, under What Sonah could not check, and the section counts one sentence a kind.
   const placement = reportPlacement(model);
   for (const index of [3, 4, 5, 6]) assert.deepEqual(placement[`requirements:${index}`], { notChecked: 'unreadAsks' });
@@ -304,6 +313,9 @@ test('D116\'s review: a question lifts the tier of the item it names only where 
   assert.deepEqual([pointers(q1), q1.related.items], [[], []]);
   const md = renderReportMarkdown(session, unplaced, repoFacts());
   assert.equal(md.includes(REPORT_TIER_WHY.tied(q1.n, 'Must know')), false, 'no sentence names the unchecked tie');
+  // D199: no reader prints the tier's reason; a tie is said by an evidence line (`concernedBy`), none for this one.
+  for (const text of [md, renderSessionPage(session, unplaced, repoFacts())])
+    assert.equal(text.includes(REPORT_ITEM_WORDS.concernedBy(q1.n)), false);
   // Q2 is routed from a finding whose anchor is a line of src/limiter.js, the file the decision's edit (W1) wrote: one
   // place. In Must know, it lifts the decision, and the tier sentence and its own related items name the same tie.
   const placed = triagedReport(session);
@@ -316,6 +328,11 @@ test('D116\'s review: a question lifts the tier of the item it names only where 
   assert.equal(chose(tied).tier.final, 'must_know');
   assert.equal(chose(tied).why, REPORT_TIER_WHY.tied(q2.n, 'Must know'));
   assert.deepEqual(q2.related.items, [chose(tied).n]);
+  // D199: the readers say the same tie by the decision's evidence line, linked to the question's item.
+  assert.ok(chose(tied).evidence.some((e) => e.parts.some((p) => p.text === REPORT_ITEM_WORDS.concernedBy(q2.n)
+    && p.href === `item-${q2.n}`)), JSON.stringify(chose(tied).evidence));
+  for (const text of [renderReportMarkdown(session, placed, repoFacts()), renderSessionPage(session, placed, repoFacts())])
+    assert.ok(text.includes(REPORT_ITEM_WORDS.concernedBy(q2.n)));
   // The same question anchored on a file the decision does not name: no tie, no lift, no pointer.
   placed.codePass.questions[1] = { ...placed.codePass.questions[1], finding: { ...placed.codePass.questions[1].finding,
     anchor: { path: 'README.md', side: 'new', startLine: 1, endLine: 1 } } };

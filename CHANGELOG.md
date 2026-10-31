@@ -1,5 +1,156 @@
 # Changelog
 
+## 0.3.0-beta.11 (2026-10-31)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+The review page is new. It opens on the counts, with Items, Decisions, Your asks, What the agent did and Not checked in
+tabs, and each item, decision and ask is one row with its evidence one click under it. A done ask now shows what does
+it, a short reply such as "go" shows the agent's last words before it, and a decision shows the calls it made. A review
+whose calls did not answer, or that found no API key, now says why. A write after `cd src` or `cd ~` is placed in that
+folder, and a reply that Claude Code writes in the agent's place, such as an API error, is no longer read as the agent's
+words.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay, except for a session that holds a write after a `cd` to a relative folder or to `~`,
+or a reply that Claude Code wrote in the agent's place, such as an API error or a usage limit: for such a session, Sonah
+asks again for the parts of its review that change. Commands, the page and the files under `~/.sonah` can still change
+between betas.
+
+### The review page
+
+The review page opens on a header of counts: Must act, Must know, Good to know and the agent's decisions, with Must
+know's tile also showing how many decisions are tagged Must know, and your asks as one bar, a part for each status in
+the order its words give them. Under it are tabs: Items, Decisions, Your asks, What the agent did and Not checked, all
+but What the agent did with their counts. Only the open tab shows, and on a phone the tabs wrap onto a second line. The
+tabs need no script, and a browser that cannot show tabs, or a printout, shows every part in order. On a phone the
+header's tiles sit four to a row, two on the narrowest. The look is plainer: no shadows, the system's fonts, a
+translucent tab bar, and the orange accent kept for the logo, Must act, quotes, the asks marked in your messages and
+focus. With every fold closed, the first screen shows about a third of the words it did.
+
+Each item and each of the agent's decisions is one row: its type (Fix, Verify, Decide or Read) as a label, the specific
+thing it is about first, where it is, and the action to take, labelled as the code review's words. Everything else is
+one click under it. A decision's row shows what it is about, then what the agent chose. The decisions are one list in
+the order the agent made them, each saying which of your asks it came after. Those tagged Must act or Must know come
+first, and the rest fold under one line. Must act and Must know each point to them in one line. A decision's evidence
+lists the calls that the session review cites as its actions: each run with its number and command, each other call by
+the tool name the recorder wrote and its file. A decision whose recorded message goes on past its quote shows that
+message from the quote on, to 600 characters. Its "after ask N" opens Your asks.
+
+Your asks open as a checklist, one row an ask, with its status and your words. One click under a row is its evidence:
+for a done ask, the quote that the session review cited as doing it, with the run its result came from or the file of
+its change; how the session review read your words; and the agent's last words before your message, so a short reply
+such as "go" can be read. A message you queued while the agent worked, or your answer to its question, has no such line.
+A reply that Claude Code writes in the agent's place, such as an API error or a usage limit, is no longer read as the
+agent's words, here or anywhere in the review. For a session that holds such a reply, Sonah asks again for the parts of
+its review that change; the rest of its stored answers replay. For a prompt of more than 30 asks, the checklist holds
+the asks that are not done, carry a tag or a line, or have no mark in your messages. The other asks fold under two
+lines: the done asks that rest only on the agent's word, and the other done asks. Your messages, each ask marked, fold
+below.
+
+Short tags say when a status rests on less than it seems: why an ask is not checked, that a done ask rests only on the
+agent's word, that Sonah did not check the code review's verdict on an ask or withheld its finding, that Sonah could not
+check whether you asked for a decision, that the session review's check on it did not hold, or that Sonah could not tie
+a question of the code review to an item or an ask. The code review's impact and action lines carry "Form, not meaning":
+Sonah checked their form, not their meaning. A tag shows its full sentence when you point at it, and in print; an ask's
+tag also when you move to it with the keyboard, and an item's tag in the item's row once you open it. The fold How to
+read this report says what the types, the row tags, the short tags, a ? in a line count and the bar mean.
+
+What the agent did opens on the claims, then the files, the commands and the other calls, each counted, with the claims
+by status and the runs by result as labels. When the Runs list cannot show every run, it keeps the runs that failed,
+were refused or did not run, stopped, or have no end that Sonah read, in the recording's order, each with its run's
+number. A Verify item for a contradicted claim gives the session review's own words for it and names the run the result
+came from. The item of a failed run shows the last lines of its output, and its command to 1,200 characters when its
+line cuts it. The runs that other parts name, which the Runs list leaves out, fold under one line that counts them.
+
+What Sonah could not check shows what Sonah did not check as labels, then the session review and the code review side by
+side. It says the same gaps of several messages in one line, with every message's number.
+
+The prompt for the agent is in a box with a copy button. A link to an item, an ask or a run opens its tab and takes you
+to that row, opening the fold it sits in (checked in Chromium); with the keyboard, such a link takes focus as a link and
+Enter follows it. Each jump adds one entry to the browser's history, so Back returns to the tab and place you came from,
+and to the link you took, and a page opened at an address ending in `#ask-12` or `#item-3` opens that row. A reload
+keeps the tab you are on. Both are the page's one script, and the page's policy allows it alone, by its hash. Without
+it, a link still opens its tab, at its top. Focus rings are drawn darker, so they show on the light theme. The copy
+button and the evidence chips answer a press, without motion under reduced motion, and the copy buttons do not print.
+When a page would pass its size limit, Sonah shows only the start of your longest messages, one at a time until it fits,
+and says how many. The page and the .md no longer print the notes that repeated how Sonah works, such as why an item is
+in its section and how the code review works.
+
+### A review whose calls did not answer
+
+A review whose session review's calls did not answer now says why Sonah did not finish, when one cause holds: none of
+the session review's calls answered, some of them did not answer, or Sonah did not send them. When every call of the
+session review failed or was not sent, the count line, Your asks and the empty lists under What the agent did say that
+Sonah cannot tell, where they said "Sonah found nothing for Must act or Must know." and "Sonah found no ask to check."
+Your messages that only failed calls held are listed apart, as messages for which Sonah cannot tell whether they hold an
+ask. The terminal's run-state line says the same cause. The footer now also says, when Sonah can count them, how many of
+this run's model calls it asked again after they failed, so its count of calls and the count of calls that did not
+answer read together. For a review that you stopped and resumed, one run whose calls all failed no longer hides the
+tokens and the usage limits of the others: they are summed over the runs that reported them, and the footer says over
+how many. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### A review with no API key
+
+With `--backend anthropic-api`, when the first call for every part of the session failed because Sonah found no API key
+in `ANTHROPIC_API_KEY`, the report's header and the terminal's run-state line now say so, and the header says to set it
+before you run Sonah again. When the first call failed so for only some parts, for example in a review that you resumed,
+they say that some of the session review's calls did. In a review that you resumed, a part whose first answer Sonah had
+stored can still fail for the key on a later call; such a call alone does not make them say so. Nothing that Sonah sends
+changes, so your stored answers still replay.
+
+### An open finding beside calls that failed or were not sent
+
+A code review finding that Sonah checked and tied to nothing it breaks says "Sonah found nothing that it breaks: no ask,
+claim, doc, caller or test." The asks and claims that the code review checks against come from the session review. So
+when the first call for a part of the session failed or was not sent, the line now says instead that Sonah cannot tell
+whether the finding breaks an ask or a claim, and that Sonah found no doc, caller or test that it breaks. Nothing that
+Sonah sends changes, so your stored answers still replay.
+
+### An ask done only in part
+
+For an ask that the agent did only in part, the quote that shows the part not done is no longer labelled "What is
+missing:". That quote is the agent's words, a helper's words, a recorded result or the change that shows the shortfall,
+and it now has the label that says which, as for an ask not done. When the session review's check gave a reason for
+"partly done", its evidence now also gives that reason, under "Its check, in the session review's words:", apart from
+the code review's "Its check:" lines. The prompt for the agent is unchanged. Nothing that Sonah sends changes, so your
+stored answers still replay.
+
+### What the claims list holds, and which runs a result covers
+
+Under What Sonah could not check, the line that counts the claims Sonah did not check now says how many of them the
+claims under What the agent did list. That list shows at most 50 claims, the page can shorten it, and the .md can count
+them in place of listing them, so the line said "list them" over a list that held fewer. It now says, for example, "list
+21 of them", or "do not list them". The results line there now says that it covers the commands after the agent's last
+edit, as the header's line does. Nothing that Sonah sends changes, so your stored answers still replay.
+
+### A write after a `cd` to a relative folder or to your home folder
+
+A file with a relative name that the agent's shell command or script writes after a `cd` to a relative folder that Sonah
+can read, such as `cd ../app` or `cd src`, is now placed in that folder, and one written after `cd ~` or `cd ~/…` in
+your home folder, as Sonah already placed a write after a `cd` to a folder that the command names in full. Sonah read
+such a write as a change to a file of that name where the last `cd` it followed left it, often in your working folder,
+so the code review could count a file of the change that does not exist and miss the file that the agent changed, in
+another repository too. Sonah follows each such `cd` as if it ran and succeeded: a relative one only from the working
+folder that the recording names or from a folder that an earlier `cd` of the same command gave, and a `cd ~` only when
+it can tell your home folder from where the recording lies, such as `~/.claude/projects`. It still does not follow other
+changes of folder, such as `pushd`, a subshell, a `cd` that is not a command of its own (`cd src 2>/dev/null`, `if cd
+src; then`), or a `cd` to a folder that the command does not name, nor a relative `cd` after one of them until a `cd` to
+a folder that the command names in full, and it does not see a change of folder inside another shell or a script. For a
+session that holds such a write, Sonah asks again for the parts of the review that the write changes; the rest of its
+stored answers replay.
+
+### What the code review reads and sends
+
+The documents now say in general words what the code review reads and sends, and [Privacy](docs/PRIVACY.md) says it in
+full: what it reads of the git repository that holds your working directory (or of that folder alone, when no repository
+holds it), of the other git repositories that the session wrote to and of each one you give with `--code-repo`, and
+which of these its agents can open. They no longer say, without its condition, that a folder is never read. The README
+and INSTALL also name the lines the session read and the skill files it used, which the code review sends as they are
+now. The stop for a `--state-dir` that holds the session's folder now says that Sonah read the recording and sent
+nothing, and the line that the code review did not run on another backend no longer says that Sonah read nothing.
+Nothing that Sonah sends changes, so your stored answers still replay.
+
 ## 0.3.0-beta.10 (2026-10-29)
 
 This beta is experimental, and we want to hear how the report reads for you.

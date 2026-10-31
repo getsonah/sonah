@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.10",
+  "version": "0.3.0-beta.11",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",

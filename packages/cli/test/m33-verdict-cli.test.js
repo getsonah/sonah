@@ -62,13 +62,15 @@ test('D71 the CLI says what of its own review ran, and prints no status', async 
   assert.equal(runStateLine(completed, 'initial'), "Sonah's review: complete, but no code was reviewed (session review "
     + 'complete). initial review.');
   const failed = await runReview({ session: delegatedSession(), pr: null, reviewScope: 'session-only', judge: async () => null });
-  assert.equal(runStateLine(failed, 'cached'), "Sonah's review: incomplete (session review did not finish). cached review.");
+  // D183: and why, when every window's call failed with no answer that Sonah could use (the judge answered nothing).
+  assert.equal(runStateLine(failed, 'cached'), "Sonah's review: incomplete (session review did not finish, because its "
+    + 'calls did not answer). cached review.');
   // D97 (S6, S5 review M2 before it): after the run state, the count line — counts from the items in their tiers,
   // never a lone count of findings that reads as a pass; a decision not to act and a failure passed over are items.
   const session = delegatedSession();
   const lines = countLines(reportModel(session, completed));
   // (Sonah's own row for the message no row of the review cited is an ask it did not check.)
-  assert.deepEqual(lines, ['Must act 0 · Must know 0 · Good to know 0 · Your prompt: 1 not checked',
+  assert.deepEqual(lines, ['Must act 0 · Must know 0 · Good to know 0 · Your asks: 1 not checked',
     REPORT_COUNT_WORDS.emptyTiers], 'nothing found is never said to mean the work is right');
   const marked = countLines(reportModel(session, { ...completed, findings: [],
     decisions: [{ notActing: true, column: null, chosen: 'skip the docs' }],

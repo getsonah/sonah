@@ -62,9 +62,10 @@ test('D132: what cannot be summed is not said — a reset limit, unreported toke
   assert.equal(footerOf(record({ calls: 3, five: [0.8, 0.05] }), [record({ calls: 2 })]), 'Over its 2 runs, this review '
     + 'made 5 model calls. The calls used 500 input tokens and 50 output tokens in 2 minutes. Your seven-day usage rose by '
     + '20% of its limit over these runs.');
-  // A run whose calls did not all report tokens: the time alone.
+  // A run whose calls did not all report tokens: D183 (D155 QF4), the time of every run, then the tokens of the runs
+  // that reported them for every call, said so (D132 said the time alone).
   const partial = { ...record({ calls: 2 }), inputReportedCalls: 1 };
-  assert.match(footerOf(record({ calls: 1 }), [partial]), /made 3 model calls\. The calls took 2 minutes\./);
+  assert.match(footerOf(record({ calls: 1 }), [partial]), /made 3 model calls\. The calls took 2 minutes\. The calls of 1 of these 2 runs used 100 input tokens and 10 output tokens\./);
   // The code review's part, summed over the runs that had one.
   assert.match(footerOf(record({ calls: 4, code: 1 }), [record({ calls: 2, code: 2 })]),
     /made 6 model calls, and the code review made 3 of them\./);

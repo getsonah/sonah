@@ -14,8 +14,8 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
   RUN_FAILURE_CODES, SESSION_ID_PROBLEMS, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
-import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL, rechecksUnexecuted }
-  from '../../evidence/src/run-review.js';
+import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL, rechecksUnexecuted,
+  sessionCallsFact } from '../../evidence/src/run-review.js';
 import { REVIEW_SPEED_PROFILE_NAMES, reviewSpeedProfile, requestBoundOf } from '../../evidence/src/review-profiles.js';
 import { sessionPage } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
@@ -302,9 +302,12 @@ export const REVIEW_FIX_WORDS = Object.freeze({
     + 'nothing. Give the folder of the repository that the session changed.',
   code_repo_not_git: 'A folder that you gave with --code-repo is in no git repository. Sonah read and sent nothing. Give '
     + 'the folder of a git repository that the session changed, or any folder in it.',
+  // D182: raised after the recording is read (`loadSession`, its `Recording:` line), since the check needs its working
+  // directory: so Sonah read the recording, and sent nothing.
   state_dir_holds_root: 'The --state-dir that you gave is the folder that the session worked in, or holds it. If '
-    + 'Sonah used it, the code review would read what Sonah writes there as part of the change. Sonah read and sent '
-    + 'nothing. Choose a --state-dir outside that folder, leave it out to use the folder of Sonah, or add --no-code-pass.',
+    + 'Sonah used it, the code review would read what Sonah writes there as part of the change. Sonah read the '
+    + 'recording and sent nothing. Choose a --state-dir outside that folder, leave it out to use the folder of Sonah, '
+    + 'or add --no-code-pass.',
   // D142: a session id given with --session (session-id.js `resolveSessionId`), by its file name only.
   session_id_not_found: 'Sonah found no recording whose file name has this session id. Sonah looked in the projects '
     + 'folder of Claude Code and in the Codex home. Check the id. Or run sonah sessions and choose a session from its list.',
@@ -685,14 +688,15 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // the working directory the recording names, with the repository's state; the estimate then adds the step's range.
     // The agentic code step (D90): nothing is withheld for privacy's sake; its agents read the repository with read-only
     // tools, which only the claude-cli backend gives them, so on another backend the step does not run, and says why
-    // (`code_step_backend`), before anything is read.
+    // (`code_step_backend`), before the code step reads anything (D182: after the recording is read).
     const state = stateOf(file);
     // What Sonah writes (what this review writes in its state folder, by name, and Sonah's home) is no part of the
     // session's change; it and what the coding agents write in their homes while the review runs (the review's own
     // agents and any session of the person's) are never read as the repository changing (code-snapshot.js
     // `readCodeSnapshot`). A place that holds the working directory is never left out, so a state folder that is the
     // working directory or holds it would put Sonah's own writes in the next review's change, and the change of a
-    // project folder named like one of its entries out of sight: the code step refuses it, before anything is read.
+    // project folder named like one of its entries out of sight: the code step refuses it, before it reads anything
+    // (D182: after the recording is read).
     if (codeStep.on && backend === 'claude-cli' && typeof loaded.cwd === 'string' && isAbsolute(loaded.cwd)
         && options.stateDir && await placeHolds(state, loaded.cwd)) throw failure('state_dir_holds_root');
     // D126 (N0): a session read with the recordings it continues starts where the first of them starts (D113's window);
@@ -1121,7 +1125,15 @@ export function reviewExitCode(report) {
 export const RUN_STATE_WORDS = Object.freeze({
   complete: 'complete', incomplete: 'incomplete', failed: 'failed',
   code: Object.freeze({ complete: 'read every file', partial: 'did not read every file', missing: 'did not run' }),
-  session: Object.freeze({ complete: 'complete', incomplete: 'did not finish' }),
+  // D183 (0.3.0-beta.11): and why it did not finish, when its failed windows' calls say it in one closed cause (evidence
+  // run-review.js SESSION_CALLS_CAUSES), as the report's header says it.
+  session: Object.freeze({ complete: 'complete', incomplete: 'did not finish',
+    no_answer: 'did not finish, because its calls did not answer',
+    some_no_answer: 'did not finish, because some of its calls did not answer',
+    not_sent: 'did not finish, because Sonah did not send its calls',
+    // D190: calls that failed for a missing API key, as the header says them (failed, and why; the variable named).
+    key_missing: 'did not finish, and its calls failed because Sonah found no API key in ANTHROPIC_API_KEY',
+    some_key_missing: 'did not finish, and some of its calls failed because Sonah found no API key in ANTHROPIC_API_KEY' }),
   codePass: Object.freeze({ complete: 'covered the whole change', partial: 'did not cover all of the change and its checks',
     missing: 'did not run', incomplete: 'did not finish',
     // D105: a review request too large to send was never sent, so no call started, as the page says.
@@ -1164,7 +1176,8 @@ export function runStateLine(report, mode) {
   let honest = null;
   try { honest = honestStatuses({ ...report, findings: Array.isArray(report?.findings) ? report.findings : [] }); }
   catch { honest = null; }
-  const session = RUN_STATE_WORDS.session[honest?.sessionReview === 'complete' ? 'complete' : 'incomplete'];
+  const cause = honest?.sessionReview === 'complete' ? null : sessionCallsFact(report?.windowResults).cause;
+  const session = RUN_STATE_WORDS.session[honest?.sessionReview === 'complete' ? 'complete' : cause ?? 'incomplete'];
   const parts = [RUN_STATE_WORDS.parts.session(session)];
   if (honest?.reviewScope !== 'session-only') {
     const code = Object.hasOwn(RUN_STATE_WORDS.code, report?.codeCoverage) ? report.codeCoverage : 'missing';
@@ -1285,9 +1298,10 @@ export function codeStepLine({ on, source } = {}, snapshot = null) {
 /** D87: what the CLI says when the code step has no working directory to read the session's files under. */
 export const CODE_PASS_NO_ROOT = 'Code review: did not run. Sonah could not read a working directory of the session here, '
   + 'so it read no file.';
-/** The agentic code step: what the CLI says when the review's backend cannot run it. */
+/** The agentic code step: what the CLI says when the review's backend cannot run it. D182: it prints after the
+ *  recording is read, so it says only that the step did not run, and why. */
 export const CODE_STEP_BACKEND_LINE = 'Code review: did not run. It runs only on the claude-cli backend, whose reviewer '
-  + 'can read the repository. Sonah read nothing.';
+  + 'can read the repository.';
 
 const [GIT_BASE] = CODE_DIFF_BASES;
 /** The dry run's line about the code pass: how many paths the change under review holds (D113: the paths the session's

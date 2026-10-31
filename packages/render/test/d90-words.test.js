@@ -6,10 +6,16 @@ import assert from 'node:assert/strict';
 import * as page from '../session-page.js';
 import * as story from '../session-story.js';
 import * as words from '../report-words.js';
+import { reportSession, triagedReport, repoFacts } from './report-fixture.js';
 
 test('D90: the page and the report .md name the recorded session, and a message with no words as the recording\'s', () => {
-  // D97: the page's and the report .md's footer say it once, in the report's words.
-  assert.equal(words.REPORT_FOOTER_WORDS.share, 'Read this report before you share it.');
+  // D97: the page's and the report .md's footer said it once, in the report's words. D199 (the owner, 2026-10-30, "All
+  // of them"): the footer no longer says it; the words are gone and neither reader holds them.
+  assert.equal(Object.hasOwn(words.REPORT_FOOTER_WORDS, 'share'), false);
+  const session = reportSession();
+  for (const out of [page.renderSessionPage(session, triagedReport(session), repoFacts()),
+    story.renderReportMarkdown(session, triagedReport(session), repoFacts())])
+    assert.equal(out.includes('Read this report before you share it.'), false);
   assert.equal(words.REPORT_PROMPT_WORDS.withheldMessage, 'Sonah found no words of this message.');
   assert.equal(page.PAGE_GAP_WORDS.instruction_omitted, 'the recorder or Sonah cut short one of your messages here');
 });

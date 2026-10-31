@@ -123,7 +123,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // cost.
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/46', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/47', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -157,7 +158,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // the footer says what the review cost.
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
-  assert.equal(STORY_VERSION, 'sonah.session-story/41', 'renumbered later: /18 is D84\'s masking');
+  // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
+  assert.equal(STORY_VERSION, 'sonah.session-story/42', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
@@ -186,7 +188,7 @@ test('fix-column: a project instruction file that fixed the value -> asked and s
     // The page, the story and the report name the file; none says the words were said in the session.
     // D97: a decision you settled is listed under What the agent did, the file's words under the file's name.
     const html = renderSessionPage(session, report);
-    assert.ok(html.includes(`${label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'))} <q class="said">`), 'the page names the file');
+    assert.ok(/(?:<span class="v">)?<q class="said">/.test(html.split(label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')))[1]?.slice(0, 40) ?? ''), 'the page names the file');
     assert.ok(!html.includes(label(REPORT_ITEM_WORDS.youSaid)) && !html.includes(label(REPORT_ITEM_WORDS.youAsked)));
     const story = renderReportMarkdown(session, report);
     assert.ok(story.includes(`${REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')} “`), 'the report .md names the file');
@@ -232,7 +234,7 @@ test('fix-column: the role comes from the cited source, never from the model\'s 
     'its proposition names the file');
   // The page shows the file's words under its path, never "You asked".
   const html = renderSessionPage(session, report);
-  assert.ok(html.includes(`${label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'))} <q class="said">`));
+  assert.ok(/(?:<span class="v">)?<q class="said">/.test(html.split(label(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md')))[1]?.slice(0, 40) ?? ''));
   assert.ok(!html.includes(label(REPORT_ITEM_WORDS.youAsked)), 'never "You asked" for words the file holds');
   // A human instruction cited with the file's role stays refused, as before.
   const human = ground(session, write, { instruction: { eventId: ask.id, role: 'project-instructions', quote: ASK },

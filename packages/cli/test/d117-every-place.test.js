@@ -1156,9 +1156,16 @@ test('D122, its review (low): docs/PRIVACY.md says what the code step reads as t
   const privacy = flat(await readFile(new URL('../../../docs/PRIVACY.md', import.meta.url), 'utf8'));
   const intro = privacy.slice(0, privacy.indexOf('## What leaves your computer'));
   // D117 amended (the owner, 2026-10-18: "files outside any repository are listed, not reviewed"): the code step reads no
-  // folder of no repository (a FOLDER place is only counted), so the opening says so and never names one as read.
+  // folder of no repository (a FOLDER place is only counted), so the opening never names one as read.
   assert.ok(!/repositor(?:y|ies) (?:and|or) folders?\b/.test(intro), intro);
-  assert.ok(intro.includes('A folder that no git repository holds, such as a notes folder, is never read'), intro);
+  // D182: a working directory that no git repository holds is read (code-snapshot.js: `root` with no `repository`), so
+  // the opening no longer says that such a folder is never read; it names the working directory, its repository and
+  // the other git repositories that the session wrote to or that you give (D182's review: a given one is read whatever
+  // the session wrote there, and git is asked about each one the session wrote to), and PRIVACY's code-step row says
+  // what of each in full.
+  assert.ok(!intro.includes('is never read'), intro);
+  assert.ok(intro.includes('your working directory, its repository and the other git repositories that the session '
+    + 'wrote to or that you give with `--code-repo`'), intro);
   // The one rule's test (3): an absolute spelling is checked where it points (`literalSpellings`), and git's list names a
   // file the session deleted (`namedSpellings`).
   assert.ok(privacy.includes('a relative spelling in the session\'s working folder, an absolute one where it points'));

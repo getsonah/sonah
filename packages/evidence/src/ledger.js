@@ -798,7 +798,8 @@ const workingDirectoryOf = (session) => (typeof session?.workingDirectory === 's
  * the file's text the agent's. The third review of the code step wrote it for the code step (a CLAUDE.md the agent
  * wrote in the session, then given back to it by the harness, was labelled the person's); its fourth review moved it
  * here so the session review reads the same rule (it still counted that file as the person's). Known limit: a write
- * the slicer does not type (`cp`, `mv`, `git checkout`, a write after a relative `cd`) is not seen. Pure.
+ * the slicer does not type (`cp`, `mv`, `git checkout`), or places in another folder (a write after a change of folder
+ * it does not follow), is not seen. Pure.
  */
 export function personsProjectFile(session, entry) {
   if (fileKey(entry?.path) === null || (entry.childId ?? null) !== null) return false;

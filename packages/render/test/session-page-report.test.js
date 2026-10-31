@@ -1,13 +1,17 @@
 // The session page renders the report model (D97): its order, its folds, its links,
 // its rules (ported from the checklist page's: one escape, a CSP, no script, no resource, quotes grounded, the same bytes
-// for the same inputs, a hard byte bound) and its snapshot. Every session and report here is synthetic.
+// for the same inputs, a hard byte bound; D199: one copy script, pinned by its hash) and its snapshot. Every session and
+// report here is synthetic.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { renderSessionPage, sessionPage, PAGE_VERSION, PAGE_LIMITS, PAGE_CSS } from '../session-page.js';
+import { createHash } from 'node:crypto';
+import { renderSessionPage, sessionPage, escapeHtml, PAGE_VERSION, PAGE_LIMITS, PAGE_CSS, PAGE_SCRIPT,
+  PAGE_SCRIPT_HASH } from '../session-page.js';
 import { reportModel, REPORT_MODEL_VERSION, reportItems } from '../report-model.js';
-import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_TIER_WORDS }
-  from '../report-words.js';
+import { renderReportMarkdown } from '../session-story.js';
+import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_TIER_WORDS,
+  REPORT_TAB_WORDS, REPORT_SECTION_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_DECISION_TAGS } from '../report-words.js';
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
@@ -26,7 +30,9 @@ const unescape = (text) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').repl
 const quotesOf = (html) => [...html.matchAll(/<q class="said">([\s\S]*?)<\/q>/g)].map((m) => unescape(m[1].replace(/<[^>]+>/g, '')));
 const textOf = (html) => unescape(html.replace(/<style>[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ');
 /** The markup of one item, to its own close. */
-const itemOf = (html, n) => { const at = html.indexOf(`id="item-${n}"`); return html.slice(at, html.indexOf('</article>', at)); };
+/** The markup of one item, to the next item or its section's end (D198: an item is a row, folds inside it). */
+const itemOf = (html, n) => { const at = html.indexOf(`id="item-${n}"`); const ends = [html.indexOf(' id="item-', at + 1),
+  html.indexOf('</section>', at)].filter((i) => i > 0); return html.slice(at, Math.min(...ends)); };
 const modelOf = (shape = triagedReport, options = repoFacts()) => {
   const session = reportSession();
   return reportModel(session, shape(session), options);
@@ -35,6 +41,9 @@ const modelOf = (shape = triagedReport, options = repoFacts()) => {
 test('D97: the synthetic report page renders exactly its snapshot', () => {
   // D112 amended (2026-10-18, unreleased, no version move): the fixture's Q1 names no place, so it is an item of its own.
   // D122 (b) (no version move): the fixture's refused read, a failure passed over, is in Must know.
+  // D199 (no version move, beta.11): the prompt box with its copy button and script, the tabs' stats, no disclaimers.
+  // D202 (no version move): your asks' evidence folds and the done asks' fold, a decision's recorded actions, the
+  // untied question's tag, the code review's lines' tag, the tag sentences in the opened rows, the legend's lines.
   assert.equal(page(), readFileSync(SNAPSHOT, 'utf8'));
 });
 
@@ -46,33 +55,67 @@ test('D97, D131: the page is the report model in its order — header, count lin
   const order = ['id="review-title"', 'class="count"', 'id="must-act"', 'id="must-know"', 'id="good-to-know"',
     'id="decisions"', 'id="prompt"', 'id="did"', 'id="not-checked"', 'class="foot"'].map(at);
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  // Must act and Must know are open sections; Good to know, what the agent did and what Sonah could not check are
-  // native folds, closed (no `open` attribute: the page runs no script).
+  // Must act and Must know are open sections; Good to know is a native fold, closed (no `open` attribute: the page runs
+  // no script). D193: the findings, the agent's decisions, your prompt, what the agent did and what Sonah could not check
+  // are each a panel that a tab names, in that order, and the first panel holds Must act.
   assert.match(html, /<section class="part tier" id="must-act">/);
   assert.match(html, /<details class="part tier fold-tier" id="good-to-know">/);
-  assert.match(html, /<details class="card-ui part fold-part" id="did">/);
-  // D161: but a group of the agent's decisions that holds one tagged Must act or Must know, open (no script either).
+  assert.match(html, /<section class="part panel" id="did">/);
+  const panels = [...html.matchAll(/<(?:div|section) class="[^"]*\bpanel\b[^"]*" id="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(panels, ['review', 'decisions', 'prompt', 'did', 'not-checked']);
+  // D195: each tab is the label of its panel's radio, the first checked.
+  assert.deepEqual([...html.matchAll(/<label class="tab tab-([a-z-]+)" for="t-([a-z-]+)">/g)].map((m) => [m[1], m[2]]),
+    panels.map((id) => [id, id]));
+  assert.deepEqual([...html.matchAll(/<input class="tab-r" type="radio" name="tab" id="t-([a-z-]+)"[^>]*?( checked)?>/g)]
+    .map((m) => [m[1], Boolean(m[2])]), panels.map((id, at) => [id, at === 0]));
+  assert.ok(html.indexOf('id="review"') < html.indexOf('id="must-act"'));
+  // D194: the agent's decisions are one list, no fold a group. D198: every item and decision is a closed row; no fold of
+  // the page is open.
   const model0 = modelOf();
-  assert.deepEqual([...html.matchAll(/<details([^>]*) open>/g)].map((m) => m[1]),
-    model0.decisions.groups.filter((g) => g.open).map(() => ' class="trail-group"'));
-  assert.ok(model0.decisions.groups.some((g) => g.open));
+  assert.equal((html.match(/<details[^>]* open>/g) ?? []).length, 0);
+  assert.equal(model0.decisions.groups.length, 1);
+  assert.equal(model0.decisions.groups.length, 1);
   // Every fold's summary carries its count.
   const model = modelOf();
   assert.match(html, new RegExp(`Good to know \\(${model.tiers.good_to_know.length}\\)`));
-  // R17: the fold counts the commands as the header does, and the calls of other tools apart.
-  assert.match(html, new RegExp(`What the agent did \\(${model.did.files.total} files · ${model.did.runs.commands} commands · `
-    + `${model.did.runs.others} other calls? · ${model.did.claims.total} claims\\)`));
+  // R17: the header counts the commands. D199: the page's What the agent did is headed by its tab's word, its counts
+  // the stats under it (files, runs: the commands and the calls of other tools, claims); the .md keeps the counted heading.
+  // Its review (R17): the commands and the other calls are two stats, as the header counts them; none of all runs.
+  assert.match(html, new RegExp(`<h2>${REPORT_TAB_WORDS.did}</h2>`));
+  assert.equal(html.includes('What the agent did ('), false);
+  const stat = (n, words) => `<span class="stat"><span class="num">${n}</span> <span class="k">${words}</span></span>`;
+  assert.ok(model.did.runs.commands > 0 && model.did.runs.others > 0, 'premise: commands and other calls');
+  // D201 (the owner, 2026-10-31: "move claims to the top on what the agent did"): the claims first, everywhere in the
+  // panel: their stat before the files', the commands' and the other calls'; their chip line before the runs'; their list
+  // before the files' and the runs', the other lists after, as before. The counts and the lists' words are as before.
+  assert.ok(html.includes(`<div class="stats">${stat(model.did.claims.total, REPORT_SECTION_WORDS.claims)}`
+    + `${stat(model.did.files.total, REPORT_SECTION_WORDS.files)}`
+    + `${stat(model.did.runs.commands, REPORT_TAB_WORDS.commands)}${stat(model.did.runs.others, REPORT_TAB_WORDS.otherCalls)}`
+    + '</div>'));
+  const didPanel = html.slice(html.indexOf('<section class="part panel" id="did">'),
+    html.indexOf('</section>', html.indexOf('<section class="part panel" id="did">')));
+  const chipLines = [...didPanel.matchAll(/<p class="marks"><span class="k">([^<]+)<\/span>/g)].map((m) => m[1]);
+  assert.deepEqual(chipLines, [REPORT_SECTION_WORDS.claims, REPORT_TAB_WORDS.runs]);
+  const lists = [...didPanel.matchAll(/<h3 class="sub-h">([^<]+)<\/h3>/g)].map((m) => m[1]);
+  assert.deepEqual(lists.slice(0, 3), [REPORT_SECTION_WORDS.claims, REPORT_SECTION_WORDS.files, REPORT_SECTION_WORDS.runs]
+    .map(escapeHtml));
+  assert.equal(html.includes(`<span class="k">${REPORT_TAB_WORDS.runs}</span></span>`), false);
+  assert.equal(model.did.runs.total, model.did.runs.commands + model.did.runs.others);
+  // D199: the claims by status, each the model's count, together every claim.
+  const counts = Object.entries(model.did.claims.counts);
+  for (const [key, n] of counts) assert.ok(html.includes(`>${n} ${REPORT_DID_WORDS.claimStatus[key]}</span>`), key);
+  assert.equal(counts.reduce((sum, [, n]) => sum + n, 0), model.did.claims.total);
   assert.ok(model.header.size.includes(`${model.did.runs.commands} commands`));
   assert.match(html, new RegExp(`What Sonah could not check \\(${model.notChecked.total} facts?\\)`));
   // Each item is numbered once; each Good to know item is one line that opens to the full item.
   for (const item of [...model.tiers.must_act, ...model.tiers.must_know])
-    assert.match(html, new RegExp(`<article class="item t-[a-z]+" id="item-${item.n}">`));
+    assert.match(html, new RegExp(`<details class="item row t-[a-z]+" id="item-${item.n}">`));
   for (const item of model.tiers.good_to_know)
-    assert.match(html, new RegExp(`<details class="item gtk t-[a-z]+" id="item-${item.n}"><summary>`));
+    assert.match(html, new RegExp(`<details class="item gtk row t-[a-z]+" id="item-${item.n}"><summary>`));
   // D161: each of the agent's decisions is one line that opens to the full item, its tier a tag.
   for (const item of model.decisions.groups.flatMap((g) => g.items))
-    assert.match(html, new RegExp(`<details class="item gtk trail-item t-[a-z]+" id="item-${item.n}"><summary>[^\\n]*`
-      + `<span class="tag tier-tag">${REPORT_TIER_WORDS[item.tier.final]}</span></summary>`));
+    assert.match(html, new RegExp(`<details class="item gtk row trail-item t-[a-z]+" id="item-${item.n}"><summary>[^\\n]*`
+      + `<span class="tag tier-tag tier-${item.tier.final.replace(/_/g, '-')}">${REPORT_TIER_WORDS[item.tier.final]}</span></span>`));
   // The generator meta names both versions.
   assert.match(html, new RegExp(`<meta name="generator" content="${PAGE_VERSION} ${REPORT_MODEL_VERSION}">`));
   // D101 moved it once more (sonah.session-page/41): an ask says which test refused its quote.
@@ -89,13 +132,46 @@ test('D97, D131: the page is the report model in its order — header, count lin
   // cost.
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/46');
+  // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
 });
 
-test('D97 (13): the page is inert: one CSP, no script, no resource; the only link out is a validated GitHub permalink', () => {
+test('D97 (13), D199, D203: the page is inert: one CSP, one script only by its hash, no resource; the only link out is a validated GitHub permalink', () => {
   const html = page();
-  assert.match(html, /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">/);
-  assert.equal(/<script|<link|<img|<iframe|<object|<embed|<form|src=|@import|url\(/i.test(html), false);
+  // D199: one CSP; with a copy button (D203: or an in-page link), one inline script, its sha256 the policy's one
+  // script-src and PAGE_SCRIPT_HASH.
+  const csps = [...html.matchAll(/<meta http-equiv="Content-Security-Policy" content="([^"]*)">/g)].map((m) => m[1]);
+  assert.equal(csps.length, 1);
+  assert.equal((html.match(/Content-Security-Policy/g) ?? []).length, 1);
+  assert.ok(html.includes('<button type="button" class="copy"'), 'the fixture has a prompt box');
+  assert.equal(csps[0], `default-src 'none'; style-src 'unsafe-inline'; script-src '${PAGE_SCRIPT_HASH}'; base-uri 'none'; `
+    + "form-action 'none'");
+  const hashes = [...csps[0].matchAll(/'sha256-([^']+)'/g)].map((m) => m[1]);
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.deepEqual([scripts.length, (html.match(/<script/gi) ?? []).length, scripts[0][1]], [1, 1, '']);
+  assert.deepEqual(hashes, [createHash('sha256').update(scripts[0][2]).digest('base64')]);
+  assert.equal(`sha256-${hashes[0]}`, PAGE_SCRIPT_HASH);
+  assert.equal(scripts[0][2], PAGE_SCRIPT);
+  // The script copies a box's text and follows in-page links (D203): it loads, sends and stores nothing, and reads no
+  // address.
+  // D204: it reads the address's fragment alone, and writes its own history entries alone.
+  assert.equal(/fetch|XMLHttpRequest|sendBeacon|WebSocket|import|eval|Function\(|location|cookie|Storage|src/.test(PAGE_SCRIPT
+    .replace(/location\.hash/g, '')), false);
+  const inert = html.replace(scripts[0][0], '');
+  assert.equal(/<script|<link|<img|<iframe|<object|<embed|<form|src=|@import|url\(/i.test(inert), false);
+  // D203: a page with no copy button still holds in-page links (its header's tiles open their tabs), so it carries the
+  // same one script by the same hash, and nothing else.
+  const b = sessionBuilder();
+  b.ask('I1', 'Say hello.');
+  b.say('F1', 'Hello.', 'final');
+  const plain = renderSessionPage(b.session(), { windowResults: [{ windowIndex: 0, eventIds: ['I1', 'F1'], failure: null }] }, {});
+  assert.equal(plain.includes('class="copy"'), false);
+  assert.ok(/data-href="#/.test(plain), 'the header\'s tiles are in-page links');
+  assert.ok(plain.includes(`content="default-src 'none'; style-src 'unsafe-inline'; script-src '${PAGE_SCRIPT_HASH}'; base-uri 'none'; form-action 'none'"`));
+  assert.equal((plain.match(/Content-Security-Policy/g) ?? []).length, 1);
+  const own = [...plain.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.deepEqual(own.map((m) => [m[1], m[2]]), [['', PAGE_SCRIPT]]);
+  assert.equal(/<script|<link|<img|<iframe|<object|<embed|<form|src=|@import|url\(/i.test(plain.replace(own[0][0], '')), false);
   const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => unescape(m[1]));
   const out = hrefs.filter((h) => !h.startsWith('#'));
   assert.ok(out.length > 0, 'the fixture has permalinks');
@@ -103,7 +179,7 @@ test('D97 (13): the page is inert: one CSP, no script, no resource; the only lin
   for (const tag of html.matchAll(/<a [^>]*href="https:[^>]*>/g)) assert.match(tag[0], /rel="noreferrer noopener"/);
   for (const href of hrefs.filter((h) => h.startsWith('#')))
     // D161: and the agent's decisions (`#decisions`).
-    assert.match(href, /^#(?:ask|item|run|claim|not-checked|did|prompt|must-act|must-know|good-to-know|decisions)(?:-[A-Za-z0-9]+)?$/);
+    assert.match(href, /^#(?:ask|item|run|claim|not-checked|did|prompt|must-act|must-know|good-to-know|decisions|review)(?:-[A-Za-z0-9]+)?$/);
   // Without the facts, no link leaves the page at all; facts that are not valid build none either.
   assert.equal(/href="https?:/.test(page(triagedReport, {})), false);
   assert.equal(/href="https?:/.test(page(triagedReport, repoFacts({ github: { owner: 'two words' } }))), false);
@@ -147,7 +223,24 @@ test('D97 (9): every shown quote is found again, word for word, in this recordin
     quote: 'The limiter uses Redis everywhere.' }, report.findings[0].receipts[1]] };
   const missing = renderSessionPage(session, report, repoFacts());
   assert.equal(missing.includes('Redis everywhere'), false);
-  assert.match(missing, /Sonah did not find this quote in the recording\./);
+  // D199 (the owner, 2026-10-30, "All of them"): the model still knows the item's quote was not found; no reader says it
+  // beside the item, on the page or in the .md. D200: its short tag does (REPORT_DECISION_TAGS.quoteMissing), the
+  // sentence only as the tag's title on the page.
+  const missingModel = reportModel(session, report, repoFacts());
+  assert.ok(reportItems(missingModel).some((item) => item.quoteMissing && !item.quote
+    && item.tags.some((t) => t.key === 'quoteMissing' && t.words === REPORT_ITEM_WORDS.quoteMissing)));
+  const missingMd = renderReportMarkdown(session, report, repoFacts());
+  assert.equal(missingMd.includes('Redis everywhere'), false);
+  // D200 (review round): no title; the sentence is the flag's `.tip`, hidden until a pointer shows it.
+  const flag = `<span class="flag">${REPORT_DECISION_TAGS.quoteMissing} <span class="tip">${REPORT_ITEM_WORDS.quoteMissing}`
+    + '</span></span>';
+  assert.ok(missing.includes(flag) && missingMd.includes(` · ${REPORT_DECISION_TAGS.quoteMissing}`));
+  // D202: and once in the opened row, under the tag's word, where a keyboard and a touch reach it.
+  const line = `<p class="line tag-why kv"><span class="label">${REPORT_DECISION_TAGS.quoteMissing}</span> `
+    + `<span class="v">${REPORT_ITEM_WORDS.quoteMissing}</span></p>`;
+  assert.ok(missing.includes(line));
+  for (const out of [missing.replaceAll(flag, '').replaceAll(line, ''), missingMd])
+    assert.equal(out.includes(REPORT_ITEM_WORDS.quoteMissing), false);
 });
 
 test('D97 (12): the same inputs give the same bytes, and the report is only read', () => {
@@ -181,19 +274,26 @@ test('D97 (14): a page past its bound folds the evidence first, then cuts the li
     assert.ok(html.includes(`id="item-${item.n}"`), `item ${item.n} stays`);
     // Its visible lines stay whole: the quote, the impact, what the agent said, the action and where.
     const shown = itemOf(html, item.n);
-    if (item.quote) assert.ok(shown.includes('<blockquote class="item-quote">'), `item ${item.n} quote`);
-    if (item.impact) assert.ok(shown.includes('<p class="line impact">'), `item ${item.n} impact`);
-    if (item.action) assert.ok(shown.includes('<p class="line action">'), `item ${item.n} action`);
-    if (item.agentSaid) assert.ok(shown.includes('<p class="line agent-said">'), `item ${item.n} agent said`);
-    if (item.where.length) assert.ok(shown.includes('<p class="line where">'), `item ${item.n} where`);
+    // D194: a quote that leads is in the head, what it is under it; any other quote is its own line.
+    // D198: the row's summary shows the action, else what kind of item it is; the row's body, every other line.
+    if (item.quote) assert.ok(item.leadQuote ? (shown.includes('<p class="kind-line">') || shown.includes('<span class="pv">'))
+      && shown.includes('<q class="said">') : shown.includes('<blockquote class="item-quote'), `item ${item.n} quote`);
+    if (item.impact) assert.ok(shown.includes('<p class="line impact kv">'), `item ${item.n} impact`);
+    if (item.action) assert.ok(shown.includes('<span class="pv act">'), `item ${item.n} action`);
+    if (item.agentSaid) assert.ok(shown.includes('<p class="line agent-said kv">'), `item ${item.n} agent said`);
+    if (item.where.length) assert.ok(shown.includes('<p class="line where kv">'), `item ${item.n} where`);
   }
   // No message was long: the page says nothing of messages.
-  assert.equal(html.includes(REPORT_TRIM_WORDS.messagesTrimmed), false);
+  assert.equal(html.includes('Sonah shows only the start of'), false);
   // Each trim says so once where it happens.
   const said = (sentence) => html.split(sentence).length - 1;
   // The evidence folds of the agent's decisions (D161), of Good to know, then of Must act and Must know: said once in
-  // each place the trim happens.
+  // each place the trim happens. D202: and your asks' evidence folds, left out with the decisions', said once in your
+  // asks in words of their own (its review: they keep no summary).
   assert.equal(said(REPORT_TRIM_WORDS.trimmed), 3);
+  const asked = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"'));
+  assert.equal(asked.split(REPORT_TRIM_WORDS.askEvidenceTrimmed).length - 1, 1, 'said once in your asks');
+  assert.equal(asked.includes('<details class="evidence ae">'), false, 'no ask keeps its evidence fold');
   const trail = html.slice(html.indexOf('id="decisions"'), html.indexOf('id="prompt"'));
   assert.equal(trail.split(REPORT_TRIM_WORDS.trimmed).length - 1, 1, 'said once in the agent\'s decisions');
   for (const item of model.decisions.groups.flatMap((g) => g.items)) assert.ok(trail.includes(`id="item-${item.n}"`));
@@ -207,7 +307,7 @@ test('D97 (14): a page past its bound folds the evidence first, then cuts the li
   // A page within its bound says nothing of trims.
   const small = page();
   assert.equal(small.includes(REPORT_TRIM_WORDS.trimmed) || small.includes(REPORT_TRIM_WORDS.listsTrimmed)
-    || small.includes(REPORT_TRIM_WORDS.messagesTrimmed), false);
+    || small.includes('Sonah shows only the start of'), false);
 });
 
 test('D97 (23): the reviews\' words are set apart by source; the legend says whose; your answer command is printed once', () => {
@@ -218,23 +318,42 @@ test('D97 (23): the reviews\' words are set apart by source; the legend says who
   assert.match(html, /<em class="by-code-review">adds a token bucket limiter<\/em>/);
   assert.match(html, /<em class="by-session-review">seconds<\/em>/);
   for (const line of [REPORT_FOOTER_WORDS.legend, REPORT_FOOTER_WORDS.legendCodeReview,
-    REPORT_FOOTER_WORDS.legendSessionReview, REPORT_FOOTER_WORDS.triageLegend, REPORT_FOOTER_WORDS.share])
+    REPORT_FOOTER_WORDS.legendSessionReview])
     assert.ok(textOf(html).includes(unescape(line)), line);
+  // D199 (the owner, 2026-10-30, "All of them"): no triage legend, no advice to read before you share, no line on what
+  // "you" means and no line on which parts of your message Sonah checked, on the page or in the .md (the words are gone).
+  // D200: the line on which parts Sonah checked is back, once on each reader, never in the legend (report-md.test.js
+  // D97 (1)); the impact and action lines name the code review themselves, so the legend still does not.
+  assert.deepEqual(['triageLegend', 'share', 'youMeans'].filter((k) => Object.hasOwn(REPORT_FOOTER_WORDS, k)), []);
+  assert.equal(REPORT_PROMPT_WORDS.coverage, 'Sonah checked only the marked parts of your message.');
+  const session = reportSession();
+  const md = renderReportMarkdown(session, triagedReport(session), repoFacts());
+  for (const out of [html, md]) for (const gone of ['The code review wrote the impact and action lines.',
+    'Read this report before you share it.', 'means the person who ran the agent'])
+    assert.equal(out.includes(gone), false, gone);
+  for (const out of [html, md]) assert.equal(out.split('Sonah checked only the').length - 1, 1);
+  assert.equal(html.slice(html.indexOf('<footer')).includes('Sonah checked only the'), false);
   assert.equal(html.split('sonah decision accept|change|clarify').length - 1, 1);
   // The title is your words, in quotation marks.
   assert.match(html, /<p class="title-words"><q class="said">Add rate limiting to the API\.<\/q><\/p>/);
   // A review with no code step says so on the header, and shows no impact or action line.
   const plain = page(sessionReviewOnlyReport, {});
-  // D118 (a): the owner's sentence and its one closed reason, first after your words.
-  assert.match(plain, /<p class="title-words">[^\n]*?<\/p><p class="meta no-code">No code was reviewed\. Reason: this review ran without the code review\. The items show no impact and no action\.<\/p>/);
-  assert.equal(/Impact on you:|Action:/.test(plain), false);
+  // D118 (a): the owner's sentence and its one closed reason, first after your words. D199: with no sentence after it that
+  // the items show no impact and no action (the header's noCode.impact is null).
+  assert.match(plain, /<p class="title-words">[^\n]*?<\/p><p class="meta no-code">No code was reviewed\. Reason: this review ran without the code review\.<\/p>/);
+  assert.equal(plain.includes('The items show no impact and no action.'), false);
+  // D200: in the words the lines now carry (REPORT_ITEM_WORDS.impact, .action), and the ones before.
+  assert.equal(/Impact on you:|Action:|impact on you:|review&#39;s action:/.test(plain), false);
+  assert.ok(/review&#39;s impact on you:/.test(html) && /review&#39;s action:/.test(html));
 });
 
 test('D97: the page follows the reader\'s theme unless asked; the colours stay those of sonah.dev', () => {
   assert.match(page(), /<html lang="en">/);
   assert.match(page(triagedReport, { ...repoFacts(), theme: 'dark' }), /<html lang="en" data-theme="dark">/);
-  assert.match(PAGE_CSS, /--accent: #f48d16;/);
-  assert.match(PAGE_CSS, /@media \(prefers-color-scheme: dark\)/);
+  // D193: each colour one light-dark() pair, sonah.dev's light first; `data-theme` sets the colour scheme it picks by.
+  assert.match(PAGE_CSS, /--accent: light-dark\(#f48d16, #f59a2e\);/);
+  assert.match(PAGE_CSS, /:root \{\n  color-scheme: light dark;/);
+  assert.match(PAGE_CSS, /:root\[data-theme="dark"\] \{ color-scheme: dark; \}/);
   // An ask's status is a word; no colour of a mark means safe: done and not checked share one look.
   assert.equal(/s-done[^{]*\{[^}]*green/i.test(PAGE_CSS), false);
 });
@@ -277,11 +396,11 @@ test('ported (M33 Y): who said it is read from the recording — you, the agent,
   // D161: the decisions are in the report's second part.
   const of = (chosen) => itemOf(html, reportItems(model).find((item) => item.what.parts.some((p) => p.text === chosen)).n);
   const first = of('in-memory Map');
-  assert.match(first, /You asked:<\/span> <q class="said">Store sessions somewhere durable<\/q>/);
-  assert.match(first, /The agent said:<\/span> <q class="said">keep the session store in memory<\/q>/);
-  assert.match(first, /Code written:<\/span> <q class="said">new Map\(\)<\/q>/);
+  assert.match(first, /You asked:<\/span> (?:<span class="v">)?<q class="said">Store sessions somewhere durable<\/q>/);
+  assert.match(first, /The agent said:<\/span> (?:<span class="v">)?<q class="said">keep the session store in memory<\/q>/);
+  assert.match(first, /Code written:<\/span> (?:<span class="v">)?<q class="said">new Map\(\)<\/q>/);
   assert.doesNotMatch(of('Redis'), /Code written/);
-  assert.match(of('an in-memory fake'), /A helper said:<\/span> <q class="said">use an in-memory fake<\/q>/);
+  assert.match(of('an in-memory fake'), /A helper said:<\/span> (?:<span class="v">)?<q class="said">use an in-memory fake<\/q>/);
   assert.doesNotMatch(of('an in-memory fake'), /The agent said:<\/span> <q/);
   assert.doesNotMatch(of('left failing'), /store tests fail/);
   // No words of the agent's are linked: no line about its words at all. A missing quote is never read as silence.
@@ -340,9 +459,9 @@ test('ported (D69 f): a long message is shown in part with its marks, folded who
   assert.match(prompt, /<details class="whole"><summary>Show the whole message<\/summary><p class="message">Please do these things:\n- item 0/);
   assert.equal((prompt.match(/id="ask-1"/g) ?? []).length, 1);
   assert.equal((prompt.match(/id="ask-2"/g) ?? []).length, 1);
-  assert.match(prompt, /<mark class="ask s-done" id="ask-2"><span class="tag">Done<\/span>change the module named part11 carefully<\/mark>/);
+  assert.match(prompt, /<mark class="ask s-done"(?: id="ask-2")?><small>Done<\/small>change the module named part11 carefully<\/mark>/);
   // A message held in two recorded spans: the join is Sonah's, outside both spans.
-  assert.match(prompt, /First half of the ask\.<span class="join"> … <\/span><mark class="ask s-notChecked" id="ask-3">/);
+  assert.match(prompt, /First half of the ask\.<span class="join"> … <\/span><mark class="ask s-notChecked"(?: id="ask-3")?>/);
 });
 
 test('ported (D69 f): the gaps of each message and of the whole session are said under What Sonah could not check', () => {
@@ -383,11 +502,12 @@ test('ported (D69 f (g) finding 10): every text colour holds 4.5:1 on its backgr
   const lum = (rgb) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   const blend = (fg, a, bg) => fg.map((c, i) => c * a + bg[i] * (1 - a));
-  const token = (block, name) => new RegExp(`--${name}: (#[0-9a-f]{6}|rgba\\([^)]*\\))`).exec(block)[1];
+  // D193: each token is one light-dark() pair; a theme is its side of every pair.
+  const pair = (name) => new RegExp(`--${name}: light-dark\\((#[0-9a-f]{6}|rgba\\([^)]*\\)), (#[0-9a-f]{6}|rgba\\([^)]*\\))\\)`)
+    .exec(PAGE_CSS);
+  const token = (side, name) => pair(name)[side];
   const rgba = (value) => { const [r0, g, b, a] = value.slice(5, -1).split(',').map(Number); return [[r0 / 255, g / 255, b / 255], a]; };
-  const light = PAGE_CSS.slice(PAGE_CSS.indexOf(':root {'), PAGE_CSS.indexOf('@media'));
-  const dark = PAGE_CSS.slice(PAGE_CSS.indexOf(':root[data-theme="dark"]'));
-  for (const block of [light, dark]) {
+  for (const block of [1, 2]) {
     const card = hex(token(block, 'card')), wash = hex(token(block, 'wash'));
     const backs = [card, wash];
     for (const tint of ['accent-soft', 'mark']) { const [c, a] = rgba(token(block, tint)); backs.push(blend(c, a, card)); }
@@ -490,8 +610,12 @@ test('ported (M33 Y): the page bound is hard — long messages keep their start,
   // A long message is shown only in part: its start, with the cut said; the trim is said once, where it happens.
   assert.doesNotMatch(html, /<details class="whole"/, 'a long message is shown only in part');
   const prompt = html.slice(html.indexOf('id="prompt"'), html.indexOf('id="did"'));
-  assert.equal(html.split(REPORT_TRIM_WORDS.messagesTrimmed).length - 1, 1);
-  assert.ok(prompt.includes(REPORT_TRIM_WORDS.messagesTrimmed));
+  // D204 (the owner: "Cut longest first"): the trim cuts the longest messages first, one at a time, and counts them.
+  const said = /To keep this page within its size, Sonah shows only the start of (?:one|(\d+)) of your long messages?\./
+    .exec(prompt);
+  assert.ok(said, 'the trim is said in your asks');
+  assert.equal((html.match(/To keep this page within its size, Sonah shows only the start of/g) ?? []).length, 1);
+  assert.ok(Number(said[1] ?? 1) >= 2, 'both pasted logs, the longest, are cut first');
   // Every ask has its place once: the start ones marked, the end ones listed with their words.
   for (let n = 1; n <= 4; n++) assert.equal(prompt.split(`id="ask-${n}"`).length - 1, 1, `ask ${n}`);
   for (const start of starts) assert.ok(prompt.includes(`${start}</mark>`), start);
@@ -508,6 +632,6 @@ test('ported (M33 Y): the page bound is hard — long messages keep their start,
   const shortSession = short.session();
   const whole = renderSessionPage(shortSession, { windowResults: windowOf(shortSession), requirements: [
     { text: starts[0], instruction: r('instruction', 'I0', starts[0]), status: 'done' }] }, {});
-  assert.equal(whole.includes(REPORT_TRIM_WORDS.messagesTrimmed), false);
+  assert.equal(whole.includes('Sonah shows only the start of'), false);
   assert.ok(whole.includes('<p class="message">Thanks.</p>'));
 });

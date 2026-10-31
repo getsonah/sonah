@@ -22,9 +22,9 @@ import { SKIM_SIDE_BYTES, skimSideBytesOf } from '../src/windows.js';
 import { CHECKLIST_GROUNDING_CAUSE_WORDS, CHECKLIST_QUOTE_ANCHOR_WORDS, CHECKLIST_REQUIREMENT_REASON_WORDS,
   COVERAGE_SENTENCE, checklistReasonWords } from '../src/review.js';
 import { reportModel } from '../../render/report-model.js';
-import { renderSessionPage } from '../../render/session-page.js';
+import { renderSessionPage, escapeHtml } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
-import { REPORT_SEEN_WORDS } from '../../render/report-words.js';
+import { REPORT_ASK_TAGS } from '../../render/report-words.js';
 import { READ_CENSUS, ABSENCE_REGISTRY, ABSENCE_HELD, ABSENCE_PROOFS, fingerprintOf }
   from '../../render/test/absence-audit.js';
 import { moduleEntries } from '../../render/test/style-lint.js';
@@ -148,7 +148,7 @@ test('premise: the long output is cut by the Claude Code skim, its head line wit
 
 // ---- 1. D101 beside D103 and D104 ----------------------------------------------------------------------------------
 
-test('D101 beside D104: a quote in the cut part reads not found there, and the same cut is the mark beside its cause',
+test('D101 beside D104: a quote in the cut part reads not found there, and the same cut is the mark beside its cause in the report (D199: no reader shows the mark or the ask\'s fold; What Sonah could not check counts the result; D200: the ask\'s short tag says the fold, the page in its tip)',
   async () => {
     const middle = lineOf(MIDDLE_LINE).slice('line 1000: '.length);
     const head = lineOf(HEAD_LINE);
@@ -183,27 +183,41 @@ test('D101 beside D104: a quote in the cut part reads not found there, and the s
       ['not-checked', 'response_ungrounded', 'not_found']);
     assert.deepEqual(failure.seenInPart, [record]);
     assert.equal(checklistReasonWords(failure, 'failure'), NOT_FOUND);
-    // The readers: the ask's line says the cause's words; the run's failure row shows the mark; what Sonah could not
-    // check counts the result. Neither replaces the other, on the page and in the .md alike. D167: the .md counts the
-    // runs in place of listing them, so the run's own mark is on the page alone, with its run; the .md keeps the count.
-    // Its review: no other part of the .md names that run (its failure is no item), so it keeps no line there.
+    // The readers: the model keeps the cause's words in the ask's fold; what Sonah could not check counts the result.
+    // D199 (the owner, 2026-10-30, "All of them"): no reader prints an ask's fold, and no reader shows the mark beside the
+    // run (its `seen` is empty); the page and the .md alike keep the count.
     const model = reportModel(s, report, {});
-    const askLines = model.prompt.asks.map((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join('')));
+    const askLines = model.prompt.asks.map((a) => a.folded.map((line) => line.map((part) => part.text).join('')));
     assert.ok(askLines.some((lines) => lines.includes(asSentence(NOT_FOUND))), JSON.stringify(askLines));
     const run = model.did.runs.shown.find((r) => r.text === 'npm test');
     assert.ok(run, JSON.stringify(model.did.runs.shown.map((r) => r.text)));
-    const seen = (run?.seen ?? []).map((line) => line.map((part) => part.text).join(''));
-    const left = REPORT_SEEN_WORDS.cut(record);
-    assert.ok(seen.some((line) => line.includes(left)), JSON.stringify(seen));
+    assert.deepEqual(run.seen, []);
+    // D199: the words were removed; as literals (the mark's label, and the start of what Sonah left out: lines, since
+    // the cut runs from after the head to past the middle).
+    const grouped = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const left = `It left out lines ${grouped(record.fromLine)} to ${grouped(record.throughLine)}`;
     const counted = asSentence(COVERAGE_SENTENCE.results_seen_in_part({ n: 1 }));
     const page = renderSessionPage(s, report, { sessionHash: 'a'.repeat(64) });
     const md = renderReportMarkdown(s, report, {});
-    for (const text of [page, md]) {
-      assert.ok(text.includes(asSentence(NOT_FOUND).slice(0, -1)), 'the cause\'s words');
+    // D200 (the owner, 2026-10-31: "bring back the precision markers as short tags"): the cut ask carries a short tag,
+    // the fold's words in its tip on the page; the .md says the tag alone. D200's review: the tag has no title any
+    // more, its sentence is a `.tip` span hidden until hover or focus (so open text is the page without it, as it was
+    // without the title); and a quote the gate searched for and did not find (`not_found`) is tagged by its row's
+    // reason (deliverable_ungrounded), never `quote`, which is kept for a quote the gate ran no search on. (The ask
+    // whose quote grounds keeps its own row's reason as its tag, apart from the cut.)
+    assert.deepEqual(model.prompt.asks.map((a) => a.tags), [
+      [{ key: 'deliverable_ungrounded', words: asSentence(NOT_FOUND) }],
+      [{ key: shown.reason, words: asSentence(checklistReasonWords(shown, 'requirement')) }]]);
+    const tag = `<span class="why" tabindex="0">${escapeHtml(REPORT_ASK_TAGS.deliverable_ungrounded)}`
+      + ` <span class="tip">${escapeHtml(asSentence(NOT_FOUND))}</span></span>`;
+    assert.equal(page.split(tag).length - 1, 1, 'D200: the page\'s tag');
+    assert.ok(md.includes(`| ${REPORT_ASK_TAGS.deliverable_ungrounded}. |`), 'D200: the .md\'s tag');
+    for (const text of [page.split(tag).join(''), md]) {
+      assert.equal(text.includes(asSentence(NOT_FOUND).slice(0, -1)), false, 'D199: no reader prints the ask\'s fold');
       assert.ok(text.includes(counted.slice(0, -1)), 'the count');
+      assert.equal(text.includes(left), false, 'D199: no mark\'s left-out lines');
+      assert.equal(text.includes('Seen in part:'), false, 'D199: no mark');
     }
-    assert.ok(page.includes(left.split(' (')[0]), 'the mark\'s left-out lines');
-    assert.equal(md.includes(left.split(' (')[0]), false, 'the .md lists no run, so no run\'s own mark');
   });
 
 // ---- 2. D99 inside D102 -------------------------------------------------------------------------------------------
@@ -281,19 +295,19 @@ test('D98 inside D102: a written statement of a write refused before it ran neve
 
 // ---- 4. D100 over D101 and D104 -------------------------------------------------------------------------------------
 
-/** The word keys D101 and D104 added, by the module the audit reads them in, each with its rendered texts' census. */
+/** The word keys D101 and D104 added, by the module the audit reads them in, each with its rendered texts' census. D199:
+ *  D104's mark (report-words.js REPORT_SEEN_WORDS) is gone with its words; its count stays. */
 const ADDED = Object.freeze({
   'packages/evidence/src/review.js': [...Object.keys(CHECKLIST_GROUNDING_CAUSE_WORDS)
     .map((cause) => `CHECKLIST_GROUNDING_CAUSE_WORDS.${cause}`),
   ...Object.keys(CHECKLIST_QUOTE_ANCHOR_WORDS).map((anchor) => `CHECKLIST_QUOTE_ANCHOR_WORDS.${anchor}`),
   'COVERAGE_SENTENCE.results_seen_in_part'],
-  'packages/render/report-words.js': Object.keys(REPORT_SEEN_WORDS).map((key) => `REPORT_SEEN_WORDS.${key}`),
 });
 
 test('D100 over D101 and D104: the audit read every sentence the other two added, and each stands on what it claims',
   async () => {
     const keys = Object.entries(ADDED).flatMap(([module, list]) => list.map((key) => [module, key]));
-    assert.equal(keys.length, 21, 'D101: 12 causes and 2 anchors; D104: the count and 6 parts of the mark');
+    assert.equal(keys.length, 15, 'D101: 12 causes and 2 anchors; D104: the count');
     for (const [module, key] of keys) {
       const read = READ_CENSUS[module]?.[key];
       assert.ok(read, `${module} ${key}: read by a person`);

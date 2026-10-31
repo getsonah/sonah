@@ -8,10 +8,10 @@
 // texts. Every choice here reads structure (which list a row is in, its index, a closed token, whether a quote is
 // literally in the span stored with it), never a word of a finding, a statement or a question.
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, CODE_WITHHELD_ITEMS, CODE_CLAIM_VERDICTS, CODE_SEEN_STATES,
-  CODE_REVIEW_TERMINALS, CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, honestStatuses }
+  CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, honestStatuses }
   from './ledger.js';
 import { codeContradictedRows, codePassFindings, codePassQuestions, codePassWithheld, codeSeenOf, codeChangeTally,
-  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven, tieRuled } from './code-pass.js';
+  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven } from './code-pass.js';
 import { askSourceOf } from './code-context.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -22,7 +22,6 @@ const [CONTRADICTED_BY_CODE] = CODE_CHECK_OUTCOMES;
 const [CLAIM_HOLDS] = CODE_CLAIM_VERDICTS;
 const [WITHHELD_FINDING] = CODE_WITHHELD_ITEMS;
 const [, SEEN_IN_PART, , NOT_SEEN, LINES_UNKNOWN] = CODE_SEEN_STATES;
-const [REVIEW_ANSWERED, REVIEW_UNUSABLE, REVIEW_FAILED] = CODE_REVIEW_TERMINALS;
 // Three CODE_FILE_STATES members, two CODE_FOOTER_KINDS members and a CODE_WITHHELD_REASONS member, named here by value:
 // their index differs between versions of the lists (the word table's test pins that each is a member).
 const OUTSIDE_ROOT = 'outside_root';
@@ -47,31 +46,9 @@ export const CODE_REPORT_WORDS = Object.freeze({
   footer: 'The code review read the code as it is now, after the session. It ran nothing.',
   // A row's code check: only what the code contradicts (a row the step did not contradict carries none).
   outcomes: Object.freeze({ [CONTRADICTED_BY_CODE]: 'the code at review time contradicts it' }),
-  // D109: true by how the step works in every case it can print: never "the change that the session made" (the change
-  // runs from the start commit, `base`), never that each question was checked (`questionsChecked` says what the records
-  // show). Its review: printed only where the record shows that the code review read what Sonah sent it (`codeHowLine`),
-  // and never that it read the change (it can see the change in part: the coverage line says how much) or that Sonah
-  // reviewed it (a code review that did not finish did not). D110 (the premise contract): no sentence says that a second
-  // or independent reviewer checked a finding. One model reviews and checks (code-pass.js: one judge serves every
-  // code-step request), and code computes the label (`howConfirm`). A finding published to verify was checked too: its
-  // check found the same problem.
-  how: 'Sonah asked for a review of the change as a code reviewer reviews a pull request. The code review read what '
-    + 'Sonah sent it and ran nothing. It could open, search and list any file of the repository. Sonah publishes a '
-    + 'finding only when the same model, with the same access, checked it and found the same problem. If the problem '
-    + 'is real but not against your ask, the finding becomes an open question for you. Sonah folds the rest at the '
-    + 'end, with the reason, and shows a quote only where code found it again.',
-  // D152 (the check judges truth only): `how` for a report whose code step put its findings in lists by the tie rule
-  // (code-pass.js `tieRuled`). The check judges only whether a problem is real. A checked finding (`howConfirm`, the next
-  // paragraph: its premises can make it an item to verify instead) goes where its kind and the level the code review
-  // proposed put it (D96, triage.js `boundTier`) when it is tied (`findingTied`): a row of the session review it follows
-  // from (`leadsFrom`), or a receipt its check gave of what it breaks that code found word for word (`check.breaks`); an
-  // untied one is open, with its own line (`openFinding`).
-  howTied: 'Sonah asked for a review of the change as a code reviewer reviews a pull request. The code review read what '
-    + 'Sonah sent, could open, search and list any file of the repository, and ran nothing. Sonah publishes a finding '
-    + 'only when the same model, with the same access, checked it and found the problem real. A checked finding goes '
-    + 'where its kind and the level the code review proposed put it, when something ties it. A tie is a session review '
-    + 'item it follows from, or a quote of what it breaks that Sonah found. Sonah folds the rest at the end, with the '
-    + 'reason, and shows a quote only where code found it again.',
+  // D199 (the owner, 2026-10-30: "All of them"): no reader prints the paragraph on how the code review works (D109's
+  // `how`, D152's `howTied`, D182's words) or how its check labels a finding (D110's `howConfirm`) any more, so their
+  // words and `codeHowLine` are gone; what the code step's paragraph says now is what the records show.
   // D109: how many of the published open questions have a check record: each one, how many of them, or (its review)
   // none, when no question carries a check record (a batch check that failed), in the words the other case ends with.
   // D110: the same model checks them, never a second reviewer.
@@ -79,14 +56,6 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + 'question.' : checked === 0 ? `Sonah publishes ${total === 1 ? 'the open question' : `the ${total} open questions`} `
     + 'unchecked.' : `With the same access, the same model checked ${checked} of the ${total} `
     + `open questions. Sonah publishes the ${total - checked === 1 ? 'other' : 'others'} unchecked.`),
-  // D110: how code computes the label, said after `how` when the report's code step used the premise contract. Its
-  // review: code checks only that each quote is literally in the repository and that each source is a token of the
-  // closed list. Whether a line shows its premise, and whether a behaviour is documented, are the check's to say, so
-  // each sentence names the check as the one that quotes or names, never Sonah as the one that settles.
-  howConfirm: 'Sonah asks the check of each finding for the premises that the finding rests on. Sonah calls a finding '
-    + 'checked only when its check quotes repository lines or names documented language behaviour for each premise. '
-    + 'Sonah must also find each quote word for word. A finding is an item to verify when its check finds the problem '
-    + 'but names anything else for a premise.',
   // D109: with a git base, when the change holds files no recorded edit of the session wrote, it says so.
   // D117: with files of the change in another repository or folder too (`here`), the line speaks of the working
   // directory's repository (or the working directory) alone; each other place has its own line (`placeBase`).
@@ -309,20 +278,19 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // the check's, since code checks only that a quote is literally there and that a source is a closed token.
   checkConfirmed: 'It found the same problem. For each premise, it quotes lines of the repository or names documented '
     + 'behaviour of the language.',
-  checkUnconfirmed: 'It found the same problem. Sonah could not check all of its premises in the repository or the '
-    + 'language.',
-  // D110: one premise of a check, in the check's own words, then where its evidence is, by its closed source (ledger.js
-  // CODE_PREMISE_SOURCES); a premise that cannot confirm (code-pass.js `premiseConfirms`) reads `outside`, whatever
-  // source it names. A language premise is the check's naming of documented behaviour: Sonah read no documentation, so
-  // the words say whose naming it is. A repository premise is the check's quoting of lines: Sonah found each quote word
-  // for word, and never judged whether a line shows the premise, so the words say whose quoting it is too.
-  premiseSources: Object.freeze({ repository: 'Its check quotes lines of the repository for it. Sonah found each quote '
-    + 'there word for word.',
-    language: 'Its check names documented behaviour of the language for it.',
-    outside: 'Sonah could not check it in the repository or the language.' }),
+  // D199: a finding to verify shows only its check's own explanation, and a premise only its words (render
+  // REPORT_ITEM_WORDS.restsOn), so D110's sentence for a check that it does not confirm (`checkUnconfirmed`) and the
+  // sentences for where a premise's evidence is (`premiseSources`) are gone.
   // D152: a finding its check found to hold that Sonah confirms, tied to no written promise (code-pass.js `findingTied`:
   // no row of the session review it follows from, and no receipt of what it breaks that grounded).
   openFinding: 'Checked: the code does this. Sonah found nothing that it breaks: no ask, claim, doc, caller or test.',
+  // D191 (the owner, 2026-10-30: "Cannot-tell open finding"): the same finding when a window of the session review
+  // failed: its first call failed or was not sent (run-review.js `sessionCallsFact`, the window records' closed
+  // codes). The code review's asks and claims are the session review's rows (code-context.js `codeDossier`), and a
+  // failed window gave none of its part, so Sonah cannot tell whether it breaks one. A doc, a caller or a test is
+  // what its check quotes from the repository, which no session review call gives.
+  openFindingCannotTell: 'Checked: the code does this. The session review did not finish, so Sonah cannot tell whether '
+    + 'it breaks an ask or a claim. Sonah found no doc, caller or test that it breaks.',
   // An open question that comes from a finding the check found real but not against what you asked (a record before
   // D152).
   fromFinding: 'From a finding of the code review',
@@ -966,32 +934,7 @@ export function codeUnseenFiles(pass) {
   return new Set(named.map((e) => e.path).filter((p) => typeof p === 'string')).size;
 }
 
-/**
- * D109 (its review): the paragraph that says how the code review works (`how`), only where the record shows each of its
- * sentences true: the step ran as one review agent that could open, search and list the repository, with its checking
- * agents (a code step before code-pass/7 kept no record of such an agent, `agent`, and worked another way), and the
- * code review read what Sonah sent it. With the review request's manifest, the one tally says so (`codeChangeTally`'s
- * `answered`: the request sent, with a sign that the review read it); a request too large to send, or a call that did
- * not answer with no turn, tool call or read recorded, holds none. With no manifest (a report written before D105, or a
- * change with nothing to review): the review agent's request ended in a reply (`agent.terminal` `answered` or
- * `unusable`), or in a failed call after which its record counts a turn, a tool call or a read; never `not_sent`, no
- * change to review. Else null: the coverage line then says what became of the review. Structure only. Pure.
- */
-export function codeHowLine(pass) {
-  if (pass?.ran !== true) return null;
-  // D152: under the tie rule, the paragraph says that the check judges truth only.
-  const how = tieRuled(pass) ? W.howTied : W.how;
-  const tally = codeChangeTally(pass);
-  if (tally !== null) return tally.answered === true ? how : null;
-  if (!plain(pass.agent)) return null;
-  const counted = (n) => Number.isSafeInteger(n) && n > 0;
-  const { terminal, turns, tools, reads } = pass.agent;
-  const acted = counted(turns) || counted(reads) || (plain(tools) && Object.values(tools).some(counted));
-  return terminal === REVIEW_ANSWERED || terminal === REVIEW_UNUSABLE || (terminal === REVIEW_FAILED && acted)
-    ? how : null;
-}
-
-/** D109: the line after `how` that says what the records show of the open questions' checks: of the questions the code
+/** D109: the line that says what the records show of the open questions' checks: of the questions the code
  *  step published, how many carry a check record (a question routed from a finding carries its finding's check). None
  *  when it published none, or did not run. */
 export function codeQuestionsLine(pass) {

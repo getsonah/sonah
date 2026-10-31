@@ -26,7 +26,7 @@ import { honestStatuses } from '../../evidence/src/ledger.js';
 import { publicCommentText } from '../../github/publication.js';
 import { reportModel, reportItems } from '../../render/report-model.js';
 import { sessionPage, escapeHtml } from '../../render/session-page.js';
-import { REPORT_COUNT_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_NOT_CHECKED_WORDS }
+import { REPORT_COUNT_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_ROW_TAGS }
   from '../../render/report-words.js';
 import { CODE_FILES, CODE_TEXT, PARSE_QUOTE, buildCodeSession, codeJudge, holds, holdsWith, repositoryPremise, reviewFinding,
   dossierItems, accountsHold, sha256, readsEveryFile, SYNTHETIC_RUN } from './code-pass-fixture.js';
@@ -276,10 +276,17 @@ test('D113 amended: the files outside the evaluated session are read apart and g
   assert.ok(excerptOfAway(run.report) !== null, 'an excerpt');
   assert.equal(excerptOfAway(moved), null, 'none of another version');
   const { html: page } = sessionPage(session, run.report, {});
-  assert.ok(page.includes(`<span class="scope">${REPORT_ITEM_WORDS.outsideSession}</span>`), 'the page\'s item');
+  // D199: the page's marker is a short tag (REPORT_ROW_TAGS), the .md keeps the sentence; one tag an item on them.
+  assert.ok(page.includes(`<span class="scope">${REPORT_ROW_TAGS.outsideSession}</span>`), 'the page\'s item');
+  assert.equal(page.split(`<span class="scope">${REPORT_ROW_TAGS.outsideSession}</span>`).length - 1, 2,
+    'one tag an item on them');
+  assert.ok(!page.includes(`<span class="scope">${REPORT_ITEM_WORDS.outsideSession}</span>`), 'no sentence as the tag');
   assert.ok(page.includes(`<p class="count-outside">${REPORT_COUNT_WORDS.outside(2)}</p>`), 'the page\'s count');
   assert.ok(page.includes(`<p class="note">${escapeHtml(REPORT_DID_WORDS.outsideSession(2))}</p>`), 'the page\'s files list');
-  assert.equal(page.split(` · ${W.outsideTag}`).length - 1, 4, 'each file on the page\'s files list, each withheld finding');
+  // D199: a files row's separators are spans of their own (hidden, kept in the text), so the page is read as text.
+  const pageText = page.replace(/<[^>]*>/g, '');
+  assert.equal(pageText.split(` · ${W.outsideTag}`).length - 1, 4,
+    'each file on the page\'s files list, each withheld finding');
 });
 
 test('D113 amended, judgment call (h) settled by the owner ("b"), on every path: a finding anchored in a file outside the evaluated session whose scope holds a changed line of the session\'s own is the session\'s, untagged and tied; one whose only changed lines in scope are theirs is tagged and ties to nothing (a claim the code contradicts withheld, its second review)', async (t) => {
@@ -458,9 +465,11 @@ test('D113 amended: with no change of the session\'s own to review, no code revi
   assert.ok(text.includes(W.noWrite), text);
   assert.ok(text.includes(REPORT_DID_WORDS.outsideSession(2)), 'the files list');
   assert.match(text, /^- `docs\/later\.md` · outside the evaluated session$/m);
-  // The page's row the same: its path and the tag, no type with no record of the file.
+  // The page's row the same: its path and the tag, no type with no record of the file (D199: a row of columns, its
+  // separator a hidden span kept in the text).
   const { html: page } = sessionPage(session, run.report, {});
-  assert.ok(page.includes(`<li><code>docs/later.md</code> · ${W.outsideTag}</li>`), 'the page\'s files list');
+  assert.ok(page.includes(`<li><code>docs/later.md</code><span class="sep"> · </span>`
+    + `<span>${W.outsideTag}</span></li>`), 'the page\'s files list');
 });
 
 test('D113 amended: the files list names the first files outside the evaluated session, as the code review\'s note does, and counts the rest, on the page and in the .md', async (t) => {
@@ -481,7 +490,9 @@ test('D113 amended: the files list names the first files outside the evaluated s
   assert.equal(rows[bound], REPORT_DID_WORDS.moreFiles(2));
   const { html: page } = sessionPage(session, run.report, {});
   const [, away] = page.split(`<p class="note">${escapeHtml(REPORT_DID_WORDS.outsideSession(bound + 2))}</p>`);
-  assert.ok(away.startsWith(`<ul class="files"><li><code>docs/n00.md</code> · ${W.outsideTag}</li>`), away.slice(0, 200));
+  // D199: a files row's separator is a hidden span kept in the text.
+  assert.ok(away.startsWith(`<ul class="files"><li><code>docs/n00.md</code><span class="sep"> · </span>`
+    + `<span>${W.outsideTag}</span></li>`), away.slice(0, 200));
   assert.ok(!away.split('</ul>')[0].includes('docs/n10.md'), 'the first names only');
   assert.ok(away.split('</ul>')[1].startsWith(`<p class="cut">${escapeHtml(REPORT_DID_WORDS.moreFiles(2))}</p>`),
     away.slice(0, 2000));

@@ -271,7 +271,7 @@ test('M33 S, D97 a real ledger report of the redis-pivot session reads its groun
   // result (the page lists it by its words).
   assert.ok(md.includes(`\n${REPORT_DID_WORDS.runsCounted(2, '1 failed, for 1 Sonah read no exit code')}\n`), md);
   // No ask of the review cites the message, so the report has no title of your words, and says so in its count line.
-  assert.ok(md.startsWith('## Sonah review\n') && md.includes('Your prompt: Sonah found no ask to check.'), md.slice(0, 400));
+  assert.ok(md.startsWith('## Sonah review\n') && md.includes('Your asks: Sonah found no ask to check.'), md.slice(0, 400));
   assert.ok(md.includes(`> ${REDIS_PIVOT_TEXT.ask.slice(0, 40)}`), 'the message is shown, folded, as recorded');
 });
 

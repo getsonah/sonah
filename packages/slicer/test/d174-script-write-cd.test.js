@@ -1,6 +1,6 @@
 // D174: a script's relative write is placed by the `cd` before its command, exactly as the shell forms are (shellWrites
-// `dir`), by the script's offset in the command; an unresolved, relative or later `cd` leaves it where it was (beta.9
-// known issue 2, narrowed).
+// `dir`), by the script's offset in the command; an unresolved or later `cd` leaves it where it was (beta.9 known issue 2,
+// narrowed). D192 follows a relative `cd` and a `~` one for both (d192-follow-cd.test.js): two tests below say so.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
@@ -44,11 +44,12 @@ test('a script after a cd into a folder of the cwd is spelled under it', async (
   assert.deepEqual(await edits(`cd "/w/main repo" && python3 -c "open('./c.py','w')"`), ['c.py via script open(w)']);
 });
 
-test('no cd, a later cd, an unresolved or relative cd, or an absolute path: as before', async () => {
+test('no cd, a later cd, an unresolved cd, or an absolute path: as before; a relative cd: followed (D192)', async () => {
   assert.deepEqual(await edits(`python3 -c "open('d.py','w')"`), ['d.py via script open(w)']);
   assert.deepEqual(await edits(`python3 -c "open('e.py','w')" && cd /w/other`), ['e.py via script open(w)']);
   assert.deepEqual(await edits(`cd "$X" && python3 -c "open('g.py','w')"`), ['g.py via script open(w)']);
-  assert.deepEqual(await edits(`cd sub && python3 -c "open('h.py','w')"`), ['h.py via script open(w)']);
+  // D192: a relative cd from the cwd is followed (it stayed in the cwd before).
+  assert.deepEqual(await edits(`cd sub && python3 -c "open('h.py','w')"`), ['sub/h.py via script open(w)']);
   assert.deepEqual(await edits(`cd /w/other && python3 -c "open('/w/main repo/i.py','w')"`), ['i.py via script open(w)']);
 });
 
@@ -67,10 +68,12 @@ test('a shell form and a script after the same cd name one file', async () => {
 });
 
 // Fix round (the limits the records state): scripts follow a `cd` exactly as the shell forms do, with the same limits.
-test('a relative or ~ cd is not followed: the write stays where the last followed cd put it, as a shell form\'s', async () => {
+// D192: a relative cd after an absolute one is followed now, for both; a `~` cd only where the recording's home is read
+// (this recording lies in no harness projects folder, so its home is not: the write stays where it was).
+test('a relative cd after an absolute one is followed, and a ~ cd with no home is not, as for a shell form', async () => {
   assert.deepEqual(await edits(`cd /w/other && cd sub && python3 -c "open('x.js','w')"`),
-    ['/w/other/x.js external via script open(w)']);
-  assert.deepEqual(await edits(`cd /w/other && cd sub && echo x > s.js`), ['/w/other/s.js external via redirect']);
+    ['/w/other/sub/x.js external via script open(w)']);
+  assert.deepEqual(await edits(`cd /w/other && cd sub && echo x > s.js`), ['/w/other/sub/s.js external via redirect']);
   assert.deepEqual(await edits(`cd /w/other && cd ~/proj && python3 -c "open('y.js','w')"`),
     ['/w/other/y.js external via script open(w)']);
 });

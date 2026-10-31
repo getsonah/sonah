@@ -71,7 +71,9 @@ test('B10d: each typed compaction, numbered, at its place, counted by what the c
       { n: 2, afterMessage: 2, dropped: null, before: null, words: SECOND }]);
     assert.equal(REPORT_PROMPT_WORDS.compaction(1, 956_238, 967_925), FIRST);
     // The page: each between the messages it falls between.
-    const page = renderSessionPage(session, report(ids));
+    // D198: your messages are in their fold, under the checklist of your asks.
+    const whole = renderSessionPage(session, report(ids));
+    const page = whole.includes('class="fold msgs"') ? whole.slice(whole.indexOf('class="fold msgs"')) : whole;
     const at = (text) => page.indexOf(text);
     const first = at(FIRST.replace("'", '&#39;')), second = at(SECOND.replace("'", '&#39;'));
     assert.ok(first > 0 && second > first, 'both on the page, in order');

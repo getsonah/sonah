@@ -16,8 +16,14 @@ import { GROUNDING_CAUSES, GROUNDING_LENGTH_CAUSES, GROUNDING_ANCHOR_CAUSES, GRO
 import { CHECKLIST_GROUNDING_CAUSE_WORDS, CHECKLIST_QUOTE_ANCHOR_WORDS, CHECKLIST_REQUIREMENT_REASON_WORDS,
   CHECKLIST_FAILURE_REASON_WORDS, checklistReasonWords } from '../src/review.js';
 import { reportModel } from '../../render/report-model.js';
-import { renderSessionPage } from '../../render/session-page.js';
+import { renderSessionPage, escapeHtml } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
+import { REPORT_ASK_TAGS } from '../../render/report-words.js';
+
+/** D200: an ask's short tag as the page shows it, the sentence it stands for in its `.tip` (D200's review: no title any
+ *  more; the tip is hidden until hover or focus, so a reader of open text drops it, as it dropped the title before). */
+const askTagHtml = (key, words) => `<span class="why" tabindex="0">${escapeHtml(REPORT_ASK_TAGS[key])}`
+  + ` <span class="tip">${escapeHtml(words)}</span></span>`;
 
 // ---- a synthetic session: a remark before the ask, the ask, a long remark after it, one more the window never showed, a
 // helper's remark after the ask (the window shows it beside the ask), a remark with no recorded order, one that holds a
@@ -247,7 +253,7 @@ test('D101: a failure row\'s response goes through the same gate, and a lowered 
   assert.deepEqual(FAILURE_RESPONSE_ROLES['told-human'], ['commentary']);
 });
 
-test('D101: through the whole review, the report\'s rows carry the cause; the readers say it and never the quote\'s place',
+test('D101: through the whole review, the report\'s rows carry the cause; the model says it in the ask\'s fold, never the quote\'s place (D199: no reader prints that fold; D200: the ask\'s short tag says it, the page in its tip)',
   async (t) => {
     const { session } = await load(t, failureRows());
     const asked = session.events.find((event) => event.kind === 'instruction');
@@ -266,15 +272,22 @@ test('D101: through the whole review, the report\'s rows carry the cause; the re
     const failure = report.failures.find((r) => r.eventId === failing.id);
     assert.deepEqual([failure.handling, failure.reason, failure.cause, failure.quoteLength, failure.quotePlace],
       ['not-checked', 'response_ungrounded', 'quote_over_limit', { chars: 131, counted: 131, limit: 120 }, 'cited']);
-    // The readers: the ask's line names the failed test and code's numbers.
+    // The model: the ask's folded line names the failed test and code's numbers. D199: no reader prints an ask's fold
+    // (What Sonah could not check counts the ask), so neither the page nor the .md says it. D200: the ask's short tag
+    // (`quote`: the gate ran no search on this quote) carries the same words as its `words`; the page shows them only
+    // in that tag's hidden tip (D200's review: no title any more), the .md the tag.
     const words = 'The session review quoted 133 characters, more than the 120 that Sonah checks, so Sonah did not check it.';
     const model = reportModel(session, report, {});
-    const askLines = model.prompt.asks.flatMap((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join('')));
+    const askLines = model.prompt.asks.flatMap((a) => a.folded.map((line) => line.map((part) => part.text).join('')));
     assert.ok(askLines.includes(words), JSON.stringify(askLines));
+    assert.deepEqual(model.prompt.asks.flatMap((a) => a.tags), [{ key: 'quote', words }]);
     const page = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) });
     const md = renderReportMarkdown(session, report, {});
-    for (const text of [page, md]) {
-      assert.ok(text.includes(words.slice(0, -1)));
+    const tag = askTagHtml('quote', words);
+    assert.ok(page.includes(tag), 'D200: the page\'s tag, the fold\'s words its tip');
+    assert.ok(md.includes(`| ${REPORT_ASK_TAGS.quote}. |`), 'D200: the .md\'s tag, the row\'s note');
+    for (const text of [page.split(tag).join(''), md]) {
+      assert.equal(text.includes(words.slice(0, -1)), false, 'D199: no reader prints the fold');
       assert.equal(text.includes('did not find, word for word'), false, 'the search never ran on this quote');
     }
     // The quote's place is the report's only: whatever it says, the readers render the same bytes.
@@ -429,11 +442,12 @@ async function cutReview(t, deliverables) {
   const model = reportModel(session, report, {});
   return { session, events, report, rowOf: (ask) => report.requirements.find((r) => r.instruction?.quote === ask),
     lines: model.prompt.asks.flatMap((a) => [...a.lines, ...a.folded].map((line) => line.map((part) => part.text).join(''))),
+    tags: model.prompt.asks.flatMap((a) => a.tags),
     page: renderSessionPage(session, report, { sessionHash: 'a'.repeat(64) }), md: renderReportMarkdown(session, report, {}) };
 }
 const asSentence = (words) => `${words[0].toUpperCase()}${words.slice(1)}.`;
 
-test('D101: through the whole review, not found is said only of the place cited and of what that answer was shown',
+test('D101: through the whole review, not found is said only of the place cited and of what that answer was shown (D199: in the model alone; D200: and in the tip of the ask\'s tag on the page)',
   async (t) => {
     const review = await cutReview(t, ({ write, output, closing }) => ({
       // Words the window showed in the ask, cited from the closing remark.
@@ -454,8 +468,20 @@ test('D101: through the whole review, not found is said only of the place cited 
     }
     const said = asSentence(NOT_FOUND_WORDS);
     assert.equal(review.lines.filter((line) => line === said).length, 3, JSON.stringify(review.lines));
+    // D200: each of the three asks carries a short tag, the same words in its hidden tip on the page; the .md says the
+    // tag alone. D200's review: a quote the gate searched for and did not find (`not_found`) is tagged by its row's
+    // reason (deliverable_ungrounded), never `quote`, which is kept for a quote the gate ran no search on.
+    assert.deepEqual(review.tags, Array(3).fill({ key: 'deliverable_ungrounded', words: said }));
+    const tag = askTagHtml('deliverable_ungrounded', said);
+    assert.equal(review.page.split(tag).length - 1, 3, 'D200: one tag for each ask');
+    assert.equal(review.md.split(`| ${REPORT_ASK_TAGS.deliverable_ungrounded}. |`).length - 1, 3,
+      'D200: the .md\'s tag, in each row');
     for (const text of [review.page, review.md]) {
-      assert.ok(text.includes(said.slice(0, -1)));
+      assert.equal(text.includes(REPORT_ASK_TAGS.quote), false, 'D200\'s review: a searched quote is never `quote`');
+    }
+    for (const text of [review.page.split(tag).join(''), review.md]) {
+      // D199: an ask's fold of what Sonah could not check is printed by no reader.
+      assert.equal(text.includes(said.slice(0, -1)), false);
       assert.equal(text.includes(NOT_FOUND_WORDS_BEFORE), false, 'never not found at all');
     }
   });
@@ -463,7 +489,7 @@ test('D101: through the whole review, not found is said only of the place cited 
 /** The event_not_shown words: only the place cited (its event in its role), and only for the answer that gave it. */
 const NOT_SHOWN_WORDS = 'Sonah did not show the session review the place that it cited, for the answer that gave the quote';
 
-test('D101: a place the window was not shown is said not shown for that answer, never a part of the recording not shown',
+test('D101: a place the window was not shown is said not shown for that answer, never a part of the recording not shown (D199: in the model alone; D200: and in the tip of the ask\'s tag on the page)',
   async (t) => {
     // A remark the window never showed: the place, and its whole event, are not in its source map.
     const session = sessionOf();
@@ -479,8 +505,15 @@ test('D101: a place the window was not shown is said not shown for that answer, 
     assert.deepEqual([row?.status, row?.reason, row?.cause, row?.quotePlace],
       ['not-checked', 'deliverable_ungrounded', 'event_not_shown', 'shown']);
     assert.ok(review.lines.includes(asSentence(NOT_SHOWN_WORDS)), JSON.stringify(review.lines));
-    for (const text of [review.page, review.md]) {
-      assert.ok(text.includes(NOT_SHOWN_WORDS));
+    // D200: the ask's short tag `quote` (the gate ran no search: the place was not shown), the same words in its hidden
+    // tip on the page (D200's review: no title any more); the .md says the tag alone.
+    assert.deepEqual(review.tags, [{ key: 'quote', words: asSentence(NOT_SHOWN_WORDS) }]);
+    const tag = askTagHtml('quote', asSentence(NOT_SHOWN_WORDS));
+    assert.equal(review.page.split(tag).length - 1, 1, 'D200: the page\'s tag');
+    assert.ok(review.md.includes(`| ${REPORT_ASK_TAGS.quote}. |`), 'D200: the .md\'s tag');
+    for (const text of [review.page.split(tag).join(''), review.md]) {
+      // D199: an ask's fold of what Sonah could not check is printed by no reader.
+      assert.equal(text.includes(NOT_SHOWN_WORDS), false);
       assert.equal(text.includes('a part of the recording that Sonah did not show it'), false, 'it showed that part');
     }
   });

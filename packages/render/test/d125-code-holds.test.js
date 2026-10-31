@@ -13,13 +13,19 @@
 // Without such a verdict nothing changes: a `holds` entry renders as any other examined outcome (D111 I9) on every
 // other ask. D125's review: no note over a not-checked reason that is a check of Sonah's that speaks against the ask
 // or did not settle it (ledger.js ASK_CODE_HOLDS_REASONS, and no reason), and none whose quotes are of the start commit.
+// D199 (the owner, 2026-10-30, "All of them"): no reader prints an ask's fold, so on the page and in the .md the note is
+// the verdict and where Sonah found its quotes, beside the status "Not checked"; that Sonah did not check it, and the
+// session review's reason, stay in the model's fold (`folded`). D200 (the owner, 2026-10-31: "bring back the precision
+// markers as short tags"; its review round): the reason is back beside the ask as its short tag, and so is that Sonah
+// did not check the verdict ("Verdict not checked"), on the same definition as the note; each sentence only as its
+// tag's hidden `.tip` on the page.
 //
 // Synthetic session and report: no recording, no model, no network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSessionPage } from '../session-page.js';
 import { reportModel } from '../report-model.js';
-import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_HEADER_WORDS } from '../report-words.js';
+import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_HEADER_WORDS, REPORT_ASK_TAGS } from '../report-words.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { ATTENTION_WORDS, askRowKind, askCodeHoldsNote, attentionSummary, checklistRowCounts, escapeSource }
   from '../../evidence/src/review.js';
@@ -84,43 +90,60 @@ const commentOf = (r) => publicCommentText({ ...r, ...honestStatuses(r) }).summa
 /** Every surface of one report: the page, the report .md, the terminal's count lines and the PR comment. */
 const surfaces = (r) => ({ page: pageOf(r), md: mdOf(r), terminal: countLines(modelOf(r)).join('\n'), comment: commentOf(r) });
 /** The page's line for ask `n` under your prompt, as text. */
-const askLineOf = (page, n) => { const m = new RegExp(`<li(?: id="ask-${n}")?>ask ${n} · [\\s\\S]*?</li>`).exec(page);
+// D198: a checklist row also says the ask's words, a quote after its status; read apart here. D199: the row is columns
+// (the ask's number, its status, your words `.aw`, its lines `.al`), each after a separator that stays in the text.
+// D200: its tags (`.at`) after your words, before its lines. D200 (review round): a tag's sentence is a `.tip` span a
+// pointer or focus shows (the title before), dropped here as the title was: the line is the row's open text.
+const askLineOf = (page, n) => { const m = new RegExp(`<li id="ask-${n}" class="ask-row">[\\s\\S]*?</li>`).exec(page
+  .replace(/<span class="sep"> · <\/span><span class="aw">[\s\S]*?<\/span>(?=<span class="sep">|<span class="al">|<\/li>)/g,
+    '').replace(/ <span class="tip">[^<]*<\/span>/g, '')
+  // D202: the row's evidence fold is not its line.
+  .replace(/<div class="ad acts">[\s\S]*?<\/details><\/div>/g, ''));
   return m ? m[0].replace(/<[^>]+>/g, '').replace(/&#39;/g, "'") : ''; };
 const UNGROUNDED = 'Sonah did not find, word for word, the evidence that the session review cited for it.';
-/** The note as the .md says it, for its places (each `path:line`, as code). */
-const noteMd = (places) => `${REPORT_PROMPT_WORDS.codeHolds(places.length)} ${places.map((p) => `\`${p}\``)
-  .reduce((out, p, at) => `${out}${at ? (at === places.length - 1 ? ' and ' : ', ') : ''}${p}`, '')}). `
-  + REPORT_PROMPT_WORDS.codeHoldsUnchecked;
+/** The verdict as the .md says it, for its places (each `path:line`, as code). D199: all that a reader prints of the
+ *  note, the last words of its row's note cell. */
+const verdictMd = (places) => `${REPORT_PROMPT_WORDS.codeHolds(places.length)} ${places.map((p) => `\`${p}\``)
+  .reduce((out, p, at) => `${out}${at ? (at === places.length - 1 ? ' and ' : ', ') : ''}${p}`, '')}).`;
+/** The note's words, the verdict and that Sonah did not check it, as the model holds them (its open line and its fold). */
+const noteMd = (places) => `${verdictMd(places)} ${REPORT_PROMPT_WORDS.codeHoldsUnchecked}`;
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** D133 (R2): the note is two parts — the code review's verdict and where Sonah found its quotes, on the row's open
- *  line, and that Sonah did not check it, in the row's own fold after the session review's reason. Each surface with the
- *  note taken out: on the page the line ` · <verdict>` and the fold's paragraph, in the .md the verdict after its row's
- *  other words and the sentence in the row's fold; a fold left empty goes with it. What is left must be byte for byte
- *  the surface without the verdict. */
+ *  line, and that Sonah did not check it, in the row's own fold after the session review's reason. D199: no reader
+ *  prints that fold, so each surface with the note taken out is: on the page the line `<sep>verdict` in the row's
+ *  column of lines (`.al`, a column left empty goes with it; its review: each line wrapped as `.ln`, which goes with
+ *  it), in the .md the verdict in its row's note cell, with the space that joins it to another line of the cell. What
+ *  is left must be byte for byte the surface without the verdict. */
 const VERDICT = escape(REPORT_PROMPT_WORDS.codeHolds(1)).replace('its quote', 'its quotes?');
-const UNCHECKED = escape(REPORT_PROMPT_WORDS.codeHoldsUnchecked);
-const NOTE_PAGE = new RegExp(` · ${VERDICT} (?:<code>[^<]*</code>(?:, | and )?)+\\)\\.`, 'g');
-const NOTE_PAGE_FOLD = new RegExp(`<p class="note">${UNCHECKED}</p>`, 'g');
+const NOTE_PAGE = new RegExp(`<span class="ln"><span class="sep"> · </span>${VERDICT} (?:<code>[^<]*</code>(?:, | and )?)+`
+  + '\\)\\.</span>', 'g');
 const NOTE_MD = new RegExp(`${VERDICT} (?:\`[^\`]*\`(?:, | and )?)+\\)\\.`, 'g');
-const NOTE_MD_FOLD = new RegExp(` ${UNCHECKED}(?=</details>)|(?<=<summary>Evidence</summary>)${UNCHECKED}`, 'g');
-/** The page lists a marked ask only when it has a line (session-page.js), so an item left with its status alone, and a
- *  list left empty, go with the note. */
-const withoutNote = (s) => ({ ...s, md: s.md.replace(new RegExp(`${NOTE_MD.source} `, 'g'), '').replace(NOTE_MD_FOLD, '')
-  .replaceAll('<details><summary>Evidence</summary></details>', ''),
-page: s.page.replace(NOTE_PAGE, '').replace(NOTE_PAGE_FOLD, '')
-  .replaceAll(' · <details class="row-evidence"><summary>Evidence</summary></details>', '')
-  .replace(/<li>ask \d+ · <span class="tag s-[A-Za-z]+">[^<]*<\/span><\/li>\n/g, '')
-  .replace('<ul class="rows ask-lines"></ul>', '') });
-/** D133 (R2): a row of the .md's asks table with the note: the verdict, then the row's fold with the reason (if any)
- *  and that Sonah did not check it. */
-const noteRowMd = (places, reason = null) => `${REPORT_PROMPT_WORDS.codeHolds(places.length)} ${places.map((p) => `\`${p}\``)
-  .reduce((out, p, at) => `${out}${at ? (at === places.length - 1 ? ' and ' : ', ') : ''}${p}`, '')}). `
-  + `<details><summary>Evidence</summary>${reason ? `${reason} ` : ''}${REPORT_PROMPT_WORDS.codeHoldsUnchecked}</details>`;
+/** D200 (review round): that Sonah did not check the verdict is back beside it as the ask's short tag
+ *  (`codeHoldsUnchecked`, one definition with the note: review.js `askCodeHoldsNote`): on the page a tag in the row's
+ *  column of tags (`.at`, its sentence the tag's `.tip`; a column left empty goes with it, as does its separator), in
+ *  the .md its words and a full stop in the note cell, before the verdict. The note is taken out with it, and each
+ *  surface holds the tag exactly as often as the verdict. */
+const HOLDS_TAG_PAGE = new RegExp(`<span class="why" tabindex="0">${escape(REPORT_ASK_TAGS.codeHoldsUnchecked)} `
+  + `<span class="tip">${escape(REPORT_PROMPT_WORDS.codeHoldsUnchecked)}</span></span>`, 'g');
+const HOLDS_TAG_MD = new RegExp(escape(`${REPORT_ASK_TAGS.codeHoldsUnchecked}.`), 'g');
+/** A note of a .md cell taken out with the space that joins it to another note of the cell. */
+const cellOut = (text, source) => text.replace(new RegExp(`(?<!\\|) ${source}|${source} (?!\\|)|${source}`, 'g'), '');
+const many = (text, re) => text.match(re)?.length ?? 0;
+const withoutNote = (s) => {
+  assert.equal(many(s.md, HOLDS_TAG_MD), many(s.md, NOTE_MD), 'D200: the .md tags each verdict, and nothing else');
+  assert.equal(many(s.page, HOLDS_TAG_PAGE), many(s.page, NOTE_PAGE), 'D200: the page tags each verdict, and nothing else');
+  return { ...s,
+    md: cellOut(cellOut(s.md, NOTE_MD.source), HOLDS_TAG_MD.source),
+    page: s.page.replace(NOTE_PAGE, '').replaceAll('<span class="al"></span>', '')
+      .replace(new RegExp(`<span class="sep"> · </span>${HOLDS_TAG_PAGE.source}|${HOLDS_TAG_PAGE.source}`
+        + '(?:<span class="sep"> · </span>)?', 'g'), '')
+      .replaceAll('<span class="sep"> · </span><span class="at"></span>', '') };
+};
 /** The report with every `holds` entry made `outside` (an examined outcome that renders no byte, D111 I9). */
 const asOutside = (r) => ({ ...r, codePass: { ...r.codePass, account: { ...r.codePass.account,
   entries: r.codePass.account.entries.map((e) => (e.fate === 'holds' ? { ...e, fate: 'outside' } : e)) } } });
 
-test('D125 amended, S1\'s shape: the three asks the session review left not checked and the code review found to hold keep "Not checked" and every count, and their rows say the verdict, where Sonah found its quotes and that Sonah did not check it', () => {
+test('D125 amended, S1\'s shape: the three asks the session review left not checked and the code review found to hold keep "Not checked" and every count, and their rows say the verdict and where Sonah found its quotes (D199: that Sonah did not check it stays in the model\'s fold, which no reader prints)', () => {
   const r = s1();
   // The one definition: the note's, and the kind of every ask as before (not checked, folded).
   assert.deepEqual(r.requirements.map((x) => askCodeHoldsNote(x, r)?.receipts ?? null), [[MONEY], [CART], null, [README],
@@ -139,26 +162,43 @@ test('D125 amended, S1\'s shape: the three asks the session review left not chec
   assert.ok(s.md.includes(`${REPORT_HEADER_WORDS.notCheckedLead} 4 asks · `), s.md);
   assert.ok(s.md.includes(REPORT_NOT_CHECKED_WORDS.asksThere(4)));
   // The terminal's count line (D97), the page's and the .md's.
-  assert.ok(s.terminal.split('\n')[0].endsWith('Your prompt: 3 done, 4 not checked'), s.terminal);
-  assert.ok(s.page.includes('Your prompt: 3 done, 4 not checked'));
-  assert.ok(s.md.includes('### Your prompt (7 asks: 3 done, 4 not checked)'), s.md);
+  assert.ok(s.terminal.split('\n')[0].endsWith('Your asks: 3 done, 4 not checked'), s.terminal);
+  assert.ok(s.page.includes('Your asks: 3 done, 4 not checked'));
+  assert.ok(s.md.includes('### Your asks (7: 3 done, 4 not checked)'), s.md);
   // The rows: "Not checked", the session review's reason, unchanged, then the note as one line, with the grounded
   // file:line; the page's mark says "Not checked".
   for (const [n, rc] of [[1, MONEY], [2, CART], [4, README]]) {
     const at = `${rc.path}:${rc.startLine}`;
     // D133 (R2): the verdict on the row's open line; the reason and that Sonah did not check it in the row's own fold.
-    assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[n - 1])}” | ${noteRowMd([at], UNGROUNDED)} |`),
+    // D199: no reader prints that fold, so the row ends on the verdict. D200: the reason's short tag before it. D200
+    // (review round): then the tag that Sonah did not check the verdict.
+    const tag = REPORT_ASK_TAGS.deliverable_ungrounded, holds = REPORT_ASK_TAGS.codeHoldsUnchecked;
+    assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[n - 1])}” | ${tag}. ${holds}. ${verdictMd([at])} |`),
       `ask ${n}\n${s.md}`);
-    assert.equal(askLineOf(s.page, n), `ask ${n} · Not checked · ${REPORT_PROMPT_WORDS.codeHolds(1)} `
-      + `${at}). · Evidence${UNGROUNDED}${REPORT_PROMPT_WORDS.codeHoldsUnchecked}`);
-    assert.match(s.page, new RegExp(`<mark class="ask s-notChecked" id="ask-${n}"><span class="tag">Not checked</span>`));
+    assert.equal(askLineOf(s.page, n),
+      `ask ${n} · Not checked · ${tag} · ${holds} · ${REPORT_PROMPT_WORDS.codeHolds(1)} ${at}).`);
+    assert.deepEqual(model.prompt.asks[n - 1].tags, [{ key: 'deliverable_ungrounded', words: UNGROUNDED },
+      { key: 'codeHoldsUnchecked', words: REPORT_PROMPT_WORDS.codeHoldsUnchecked }]);
+    assert.match(s.page, new RegExp(`<mark class="ask s-notChecked"(?: id="ask-${n}")?><small>Not checked</small>`));
     assert.deepEqual([model.prompt.asks[n - 1].lines.length, model.prompt.asks[n - 1].folded.length], [1, 2],
       `ask ${n}: the verdict; the reason, then that Sonah did not check it`);
   }
-  // Ask 3, done and held: Done, as before, no note; ask 5, outside: Not checked, as before, no note.
+  // D199: neither the session review's reason nor that Sonah did not check it is on the page or in the .md. D200: the
+  // reason is its tag's title on the page, and on no line of either. D200 (review round): no title; each sentence is
+  // its tag's `.tip`, hidden until hover or focus, and that Sonah did not check the verdict is a tag too.
+  const SETTLE = "The session review's own check on it did not settle.";
+  const forms = (words) => [...new Set([words, words.replace(/'/g, '&#39;')])];
+  const count = (text, words) => forms(words).reduce((n, w) => n + text.split(w).length - 1, 0);
+  const tipped = (text, words) => forms(words).reduce((n, w) => n + text.split(`<span class="tip">${w}</span>`).length - 1, 0);
+  for (const text of [s.page, s.md]) for (const words of [UNGROUNDED, REPORT_PROMPT_WORDS.codeHoldsUnchecked, SETTLE])
+    assert.equal(count(text, words), text === s.page ? tipped(text, words) : 0, words);
+  assert.deepEqual([tipped(s.page, UNGROUNDED), tipped(s.page, REPORT_PROMPT_WORDS.codeHoldsUnchecked)], [3, 3]);
+  assert.ok(s.page.includes(`<span class="why" tabindex="0">${REPORT_ASK_TAGS.challenge_unsettled} `
+    + `<span class="tip">${SETTLE.replace(/'/g, '&#39;')}</span></span>`));
+  // Ask 3, done and held: Done, as before, no note; ask 5, outside: Not checked, as before, no note (D199: and no fold
+  // of its reason).
   assert.ok(s.md.includes(`\n| Done | “${escapeSource(ASKS[2])}” |`));
-  assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[4])}” | <details><summary>Evidence</summary>The `
-    + 'session review\'s own check on it did not settle.</details> |'), s.md);
+  assert.ok(s.md.includes(`\n| Not checked | “${escapeSource(ASKS[4])}” | ${REPORT_ASK_TAGS.challenge_unsettled}. |`), s.md);
   assert.equal(s.md.match(NOTE_MD).length, 3);
   // The PR comment: the folded line counts them among the rows that Sonah could not check, as before.
   assert.equal(checklistRowCounts(r).asksNotChecked, 4);
@@ -179,9 +219,11 @@ test('D125 amended: the words of the note', () => {
   assert.equal(REPORT_PROMPT_WORDS.codeHolds(2), 'The code review found that it holds in the code (Sonah found its quotes '
     + 'word for word at');
   // A row with no reason (the session review's own not checked): the note is its first line.
+  // D200 (review round): its first note is the tag that Sonah did not check the verdict.
   const r = s1({ rows: { 0: { reason: null } } });
   const md = mdOf(r);
-  assert.ok(md.includes(`\n| Not checked | “${escapeSource(ASKS[0])}” | ${noteRowMd([`${MONEY.path}:5`])} |`), md);
+  assert.ok(md.includes(`\n| Not checked | “${escapeSource(ASKS[0])}” | ${REPORT_ASK_TAGS.codeHoldsUnchecked}. `
+    + `${verdictMd([`${MONEY.path}:5`])} |`), md);
   assert.deepEqual(withoutNote(surfaces(r)), surfaces(asOutside(r)));
 });
 
@@ -189,7 +231,7 @@ test('D125: several quotes are each named once, in their order', () => {
   const twice = s1({ entries: null, fates: {} });
   twice.codePass.account.entries[0] = entry(0, 'holds', [MONEY, TESTS, MONEY, { ...CART, startLine: 20, endLine: 22 }]);
   const md = mdOf(twice);
-  assert.ok(md.includes(noteRowMd([`${MONEY.path}:5`, `${TESTS.path}:26`, `${CART.path}:20-22`], UNGROUNDED)), md);
+  assert.ok(md.includes(verdictMd([`${MONEY.path}:5`, `${TESTS.path}:26`, `${CART.path}:20-22`])), md);
   assert.ok(md.includes(`${REPORT_PROMPT_WORDS.codeHolds(3)} \`${MONEY.path}:5\`, \`${TESTS.path}:26\` and `
     + `\`${CART.path}:20-22\`). `), md);
   assert.deepEqual(withoutNote(surfaces(twice)), surfaces(asOutside(twice)));
@@ -299,7 +341,7 @@ test('D125\'s review: a verdict that quotes the start commit is no line of the c
     entries: r.codePass.account.entries.map((e, i) => (i < 2 ? { ...e, fate: 'outside' } : e)) } } };
   assert.deepEqual(surfaces(r), surfaces(outside));
   const md = mdOf(r);
-  assert.ok(md.includes(noteRowMd([`${README.path}:7`], UNGROUNDED)), md);
+  assert.ok(md.includes(verdictMd([`${README.path}:7`])), md);
   assert.equal(md.match(NOTE_MD).length, 1);
   assert.ok(!md.includes(`${MONEY.path}:5`) && !md.includes(`${CART.path}:22`), md);
 });

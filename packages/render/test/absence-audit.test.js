@@ -262,7 +262,61 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // Sonah read the same bytes of the file in: a count and a fact Sonah's record holds). It states no absence. + [0, 0, 1].
   // D180, a not-checked ask of a turn the read left open: 3 sonah in (its status, its count-line part and its folded
   // line: what the session review did not read). None states an absence. + [0, 3, 0].
-  assert.deepEqual(AUDIT_CLASSES.map(count), [97, 520, 487]);
+  // D182, the code step's reach: 4 read again with new words, each in its class: the paragraph on how the code review
+  // works and its tie-rule form (other: they name no folder now), the line that the code step did not run on another
+  // backend (sonah: no longer "Sonah read nothing") and the fix of state_dir_holds_root (sonah: Sonah read the
+  // recording and sent nothing). None states an absence. + [0, 0, 0].
+  // D183, a review whose calls did not answer: 10 sonah in (the header's three causes, the terminal's three, what Sonah
+  // cannot tell of your prompt, of Must act and Must know and of an empty list, and the messages that only failed
+  // windows hold); the footer's two read again in their class (sonah). None states an absence. + [0, 10, 0]. (Its fix
+  // round took out an eleventh, what the code review found.)
+  // D184, two count lines that say more than they show: 1 other in (the fold's results line, as `results`); the two
+  // facts that the claims list holds them read again in their class (sonah). + [0, 0, 1].
+  // D185, an ask done only in part: `whatMissing` out (absence, proved by the session review's checked shortfall): its
+  // quote is labelled by its receipt's role. + [-1, 0, 0].
+  // D189, the source of that ask's check line: 1 other in (its label, in D163's form: whose words follow). + [0, 0, 1].
+  // D190, calls that failed for a missing API key: 4 sonah in (the header's two causes and the terminal's two: what
+  // Sonah's own calls did, and the variable to set). None states an absence. + [0, 4, 0].
+  // D191, an open code finding beside a failed window of the session review: 1 sonah in (what Sonah cannot tell, and the
+  // repository's lines it found none of, in `openFinding`'s class). + [0, 1, 0].
+  // D193, the page's tabs and its legend's fold: 1 sonah in (Not checked, as the section's heading), 6 other in. None
+  // states an absence. + [0, 1, 6].
+  // D194, one list of decisions: 1 sonah and 7 other in, 1 sonah and 8 other out. + [0, 0, -1].
+  // D198, the fold of your messages under the checklist of your asks: 1 other in. + [0, 0, 1].
+  // D199, the page as a dashboard: in, the row tags (not asked and outside this session as absences on their items'
+  // proofs; three kinds of decision as other), a refused call as an absence on its typed denial, the item that concerns
+  // it, the copy button and the runs' stat (other); out, the notes no reader prints any more (the prompt's voice, the
+  // files by ask, the footer's triage legend, its "you" and its share line: 4 other, 1 sonah; the coverage lines of
+  // the page and the .md: 3 sonah). + [3, -4, 2]. Its cleanup: out of the tables, the words that no reader prints any
+  // more since D199. Of the page and the .md: the header's notes (no GitHub remote, no impact and no action: 2 sonah; a
+  // commit git did not show on GitHub, new, old and both: 3 absence), an item's tier why line (other), the session
+  // review's "finished" lead of what Sonah could not check (other), an ask's lines of a withheld finding (1 sonah, its
+  // pointer 1 other) and of a finding to verify (sonah), a decision Sonah could not place in the session order (sonah)
+  // and D104's seen-in-part mark (label and three places: 4 other; its lead and what Sonah left out: 2 sonah). Of the
+  // code review: the paragraph on how it works and its tie-rule form, how its check labels a finding (3 other), a check
+  // it does not confirm (sonah) and where a premise's evidence is (repository and language: 2 other; outside: 1 sonah).
+  // + [-3, -9, -12]. Its review round: in, the done asks for which the session review cited only the agent's words, named
+  // under What Sonah could not check (sonah, a review row's sentence), the copy button's "Copied" and the stats of the
+  // commands and the other calls apart (3 other). + [0, 1, 3].
+  // D200, the precision markers as short tags (the owner: "bring back the precision markers as short tags"): each tag of
+  // an ask, a decision or a run's result in the class of the sentence it abbreviates (4 absence on those sentences'
+  // proofs, 26 sonah, 4 other), the grouped messages' gaps (sonah), the coverage line again (sonah), the list note of a
+  // long prompt and Must know's decisions (other); the impact and action lines say whose words they are (read again).
+  // + [4, 28, 6]. Its review round: the unrun write's tag says what Sonah did ("Write not counted"), no absence (absence to
+  // sonah); in, the code review's verdict that Sonah did not check, a long prompt's fold of the done asks on the agent's
+  // word (a row sentence), and the .md's own two coverage lines again (4 sonah). + [-1, 5, 0].
+  // D201, more of a Verify item's evidence: the labels of the run a result came from, a failed run's last output lines
+  // and the session review's own words (3 other). + [0, 0, 3].
+  // D202, a done ask's evidence, context for your words, a decision's actions and a legend: the labels of the session
+  // review's reading and of the agent's message before yours, the other done asks' fold, the actions' label and count,
+  // four legend lines and the bar's (9 other); the untied question's tag and sentence, the code review's lines' tag and
+  // sentence, and the legend of the short tags and of a ? count (6 sonah); its review, the notice that your asks'
+  // evidence folds were left out to fit the page (sonah). + [0, 7, 9].
+  // D204, the coordinator's review of D202 and D203 and the owner's answers: the fold of the runs other parts name, a
+  // failed run's whole command and a decision's statement from its quote on (3 other); the legend of the code review's
+  // lines' tag and of the untied tag (2 sonah); the page's sentence for the runs listed apart goes with its fold
+  // (1 sonah out); its review: the label of a command its bound still cuts (1 other). + [0, 1, 4].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [99, 565, 510]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
@@ -280,7 +334,17 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // D143: 5 more, on commit_range_lines (2), recording_file_names (2) and commit_call_search (1). Its review round: none
   // more; a pull request's whole list (`pull_request_commit_lines`), no recording read (`recording_not_read`) and a
   // commit the repository does not hold (`commit_not_held`) are added as proofs of two keys already counted.
-  assert.deepEqual([proved - rows, rows, held], [94, 6, 3]);
+  // D185: 1 out (`whatMissing`, by `judged_ask_shortfall`, which its other keys still use).
+  // D199: 3 more: the page's tags not asked and outside this session, on their items' proofs, and a refused call's
+  // evidence line, on the recorder's typed denial. Its cleanup: 3 out, the header's notes of a commit git did not show
+  // on GitHub (new, old and both), which no reader prints any more; their proof (`git_remote_refs`) stays, for the
+  // terminal's own words (cli report-output.js REPORT_OUTPUT_WORDS.notPushed). Its review round: 1 more row sentence,
+  // the done asks that rest on the agent's words, named, on the proof of their count (`review_row_cites`).
+  // D200: 4 more absences (an unrun write, a run that did not run, with no recorded end, or stopped: their tags, on the
+  // proofs of the sentences they abbreviate) and 2 more row sentences (the done ask on the agent's words, and nothing
+  // cited, as tags). Its review round: the unrun write's tag out (it says what Sonah did), the long prompt's fold of the
+  // done asks on the agent's word in (a row sentence).
+  assert.deepEqual([proved - rows, rows, held], [96, 10, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

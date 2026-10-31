@@ -26,7 +26,8 @@ import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
-import { textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix } from '../../evidence/test/m33-integration-fixture.js';
+import { textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix, textBeforeBeta11 }
+  from '../../evidence/test/m33-integration-fixture.js';
 import { CODE_BRIEFS_ABSOLUTE, CODE_REVIEW_SYSTEM, CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_VERIFY_SYSTEM,
   CODE_BATCH_VERIFY_SYSTEM, CODE_ACCOUNT_SYSTEM } from '../../evidence/src/code-pass.js';
 
@@ -150,6 +151,8 @@ async function digestsOf(t, shape) {
   // rendered back before that (`textBeforeTruthOnly`): the paragraph on how the code review works, and the model's
   // version. D169 (0.3.0-beta.10) rendered back first of all (`textBeforeRenderFix`, before the order is put back,
   // which reads Good to know's fold): an empty Good to know's fold and "(folded)", and the model's version.
+  // 0.3.0-beta.11 (D182 to D185) rendered back before that (`textBeforeBeta11`): the paragraph on how the code review
+  // works, as it named the repository, D184's two count lines, and the model's version.
   const before = (text) => textBeforeAgentPrompt(textBeforeTruthOnly(text)).replaceAll(`Sonah ${PACKAGE_VERSION} · `, 'Sonah 0.3.0-beta.5 · ')
     .replace(/\. To review that code, run sonah review again with --code-repo (?:&lt;|<)the (?:repository's|repository&#39;s) folder(?:&gt;|>)/g, '')
     .replace(/<p>In this run, Sonah made [^<]*<\/p>/g, '').replace(/In this run, Sonah made [^\n]*  \n/g, '')
@@ -157,13 +160,14 @@ async function digestsOf(t, shape) {
     .replaceAll('sonah.session-story/40', 'sonah.session-story/39');
   // D131 (R1, B12) rendered back: Must act and Must know before your prompt is the order's one move; the prompt is put
   // back before them, on the page and in the .md, and nothing else moves.
+  // D193: the prompt's marker is its panel's.
   const pageOrder = (html) => {
-    const [act, prompt, good] = ['<section class="part tier" id="must-act">', '<section class="card-ui part" id="prompt">',
+    const [act, prompt, good] = ['<section class="part tier" id="must-act">', '<section class="part panel" id="prompt">',
       '<details class="part tier fold-tier" id="good-to-know">'].map((marker) => html.indexOf(marker));
     return html.slice(0, act) + html.slice(prompt, good - 1) + '\n' + html.slice(act, prompt - 1) + html.slice(good);
   };
   const mdOrder = (md) => {
-    const [act, prompt, good] = ['### Must act (', '### Your prompt (', '<details><summary>Good to know (']
+    const [act, prompt, good] = ['### Must act (', '### Your asks (', '<details><summary>Good to know (']
       .map((marker) => md.indexOf(marker));
     return md.slice(0, act) + md.slice(prompt, good) + md.slice(act, prompt) + md.slice(good);
   };
@@ -190,8 +194,10 @@ async function digestsOf(t, shape) {
   return { read: read.map(([, options]) => Object.keys(options).sort()),
     given: [JSON.stringify(report), ...requests].some((text) => text.includes('"given"')),
     requests: digest(named(requests.join('\n'))),
-    md: digest(named(before(mdOrder(textBeforeRenderFix(unlocatedBack(await readFile(join(run, 'story.md'), 'utf8'))))))),
-    page: digest(named(before(pageOrder(textBeforeRenderFix(renderSessionPage(session, report, { folder: recorded })))))),
+    md: digest(named(before(mdOrder(textBeforeRenderFix(unlocatedBack(textBeforeBeta11(await readFile(join(run, 'story.md'),
+      'utf8')))))))),
+    page: digest(named(before(pageOrder(textBeforeRenderFix(textBeforeBeta11(renderSessionPage(session, report,
+      { folder: recorded }))))))),
     labels: calls.map((r) => r.label ?? null), absolute };
 }
 
@@ -216,11 +222,83 @@ test('D124: without --code-repo, the requests and the report of each shape are b
     // D167: the .md counts the runs in place of listing them, which moved the script shape's .md alone, the one shape
     // with a run (was a77fe0a283737ee2); no page and no request moved. Its review: that run is quiet (exit 0 before the
     // last edit), which the page does not list, so the .md no longer says the list is on the page (was
-    // 2d5ba7a8e05f9184).
-    ordinary: { requests: '3c472f0b2f284287', md: '069c1ac7864cfec3', page: 'b76844956962288d',
+    // 2d5ba7a8e05f9184). D193: the page's tabs, panels and stylesheet moved the page alone (was ordinary
+    // b76844956962288d, sibling 68cb29f37291560f, script bbcd8b8cc5e7e7b6); no .md and no request moved. D194: the
+    // decision list's style rules moved the page alone once more (was ordinary b29e3af1ba4ec2bf, sibling
+    // 8998389afdd589a4, script 1f153438d3158e5b); these shapes hold no decision and no quote-led item, so no .md moved.
+    // D195: the page's pills and key column moved the page alone once more (was ordinary 2285b66e027728ae, sibling
+    // 6b8eb39d5bae0c43, script 8094690ee63872f1). D196: the tabs as radios, the header's tiles and the asks bar moved the
+    // page alone once more (was ordinary 2b9b3bcdfbb658af, sibling 3ad6fd57ce67dca4, script 9e4a004b7d13dfe6). D197: the
+    // chips and the run and claim marks moved it once more (was ordinary c445704926dff9b6, sibling 01de2127436e130d,
+    // script f713ef6a641c222e). D198: rows and the asks checklist moved it once more (was ordinary ccc0bc7e55c5a30f,
+    // sibling ee1822bd7a157a74, script 9e5973ec8e6e4f64). D199 (the owner, 2026-10-30, "All of them"): the .md and the
+    // page by lines removed alone (was md ordinary 069c1ac7864cfec3, sibling 61b3262c1a3f4bce, script 86b886eaeb816962;
+    // page ordinary 7591ce3bdce825a2, sibling f4058225bce5887e, script e525f8c351e1bbcb): the header's no-GitHub-remote
+    // line (.md of ordinary and sibling); the ask row's fold of why it is not checked, with the note that Sonah could
+    // not find its words in your message; the sentence on which parts of your prompt Sonah checked; "Sonah finished
+    // its review of this session."; the paragraphs on how the code review works and labels a finding; the footer's
+    // lines on "you" and on reading before you share; and on the page, the dashboard markup (the asks' heading without
+    // its status parts and the did heading without its counts, each with its stats under it; the files' hidden
+    // separators and type pills; the not-checked chips and cards) and its stylesheet rules. No such shape holds a
+    // prompt for the agent, so no page gains a script. No request, status, count, quote or anchor moved. D199's review
+    // round moved the page alone once more (was ordinary 555a2808e60e530a, sibling 0db228d8b96b1a9b, script
+    // ca9364684a30b1ce): the asks' stats one a state in the count line's words, a row with nothing under it a plain
+    // row, the session review's card only with something in it, and the decisions tile a label. Its review round's
+    // second pass moved the .md and the page once more (was md ordinary 868e2a8edc147c5a, sibling 7338cebdb6b72cba,
+    // script 3f9a865363197101; page ordinary 3e33159d4c154890, sibling 53fa120eeb2e9237, script 3d0549f77b09e032):
+    // Sonah's own row for the message (codeMade) has words, the start of that message as a recorded quote, in the .md's
+    // row and the page's row; and the script shape's run stat is Commands (R17). No request, status, count or anchor
+    // moved. (A pass between listed that row again under its message in Your messages, with the note on words Sonah could
+    // not find there, which is false of a message's own start: page ordinary e980de528f3c0ca9, sibling 6058771d1e38e0d8,
+    // script 7dc85311f0f19b74; the model now leaves Sonah's own rows out of a message's `unlocated`.)
+    // D200 (the owner, 2026-10-31: "bring back the precision markers as short tags") moved the .md and the page once
+    // more, each shape alike (was md ordinary 173946948be3af8b, sibling 4eab1e3019420018, script d5251f76e9cfbf9f; page
+    // ordinary e4335e2a529a3d83, sibling 2f1692510467f5e1, script bb8729e278d72201): the not-checked ask's row gains
+    // its tag, "Ask not named" (the .md's note cell, "Ask not named."; on the page a tag after your words, its reason's
+    // sentence its title); "Sonah checked only the marked parts of your message." is back, under the .md's table and
+    // first in the page's fold of your messages; and the page's stylesheet: the --ease token, tight tracking on the big
+    // numbers, translucent sticky tabs (solid under reduced transparency), the rules of the tags and of the header's
+    // sub-count, the copy button's and the chips' press feedback and the copy check's fade-in (off under reduced
+    // motion), and the dead .item-head rules gone. No request, status, count, quote or anchor moved. D200's review
+    // round moved the .md and the page once more, each shape alike, by one line of the .md and the tag's markup (was md
+    // ordinary 46707c26cbba284d, sibling dd4d16b33eda9bef, script 627407710675f965; page ordinary ccb0110c16b2faac,
+    // sibling bd1beb745d2df6f4, script 06f02d36a6304fae): under the .md's table, "Sonah checked only the marked parts
+    // of your message." reads "Sonah checked only the parts of your prompt that the table above lists." (the page
+    // keeps "marked parts" in its fold of your messages); on the page, the tag drops its title for tabindex="0" and
+    // holds the same sentence in a `.tip` span ("Ask not named <span class="tip">The session review did not name what
+    // you asked in this message, …</span>"); the stylesheet gains the .tip rules (clipped until the tag is hovered or
+    // focused, open in print), position:relative on .why and .flag, and the phone rule that spans .ask-row .at across
+    // the row. No request, status, count, quote or anchor moved.
+    // D201 (the owner, 2026-10-31: "move claims to the top on what the agent did") moved the page alone, each shape
+    // alike (was ordinary fb7eb9ec4df728b7, sibling 9c24508edd02425e, script 789a01655bd5c264): in What the agent did,
+    // the Claims list (its heading, "The session review recorded no claim." and the fold of closing lines no claim
+    // covers) now comes before Files and Runs, word for word as it was. These shapes hold no claim and no Verify item,
+    // so no stats tile, chip line or evidence line moved; no .md, request, status, count, quote or anchor moved.
+    // D201's review moved the page alone once more, each shape alike, by one stylesheet rule (was ordinary
+    // bad2c33e9a3118cc, sibling 8c8dd839e70be439, script 0393eb62a1f46727; the page without that rule gives them back):
+    // under prefers-reduced-motion, the copy button's and the acts' summaries' press transform is none. No .md, request,
+    // status, count, quote or anchor moved.
+    // D202 (the owner, 2026-10-31: "Done asks: what does it", "Short replies: context", "Decisions: their actions",
+    // "Legend and small fixes", "Form, not meaning") moved the .md and the page, each shape alike (was md ordinary
+    // 161da9d2979df61a, sibling 0b1a580567305422, script bab6a648311d5191; page ordinary 149f63770c731185, sibling
+    // 7a1cb1221174c388, script 2b1005352e3015dd): the legend's four lines more (the page's six, with the row tags' and
+    // the bar's); where a shape has them, the asks' evidence (the .md's fold under the table, the page's row folds), the
+    // agent's message before yours, a decision's recorded actions, the code review's lines' tag; on the page, a radio's
+    // name with its count, a 0 tile's class, the bar in its words' order, and the stylesheet's D202 rules. No request,
+    // status, count, quote or anchor moved. D203 (the owner, 2026-10-31: "Yes, extend the script") moved the page alone,
+    // each shape alike: it now carries the page's one script, which also follows an in-page link (these shapes have no
+    // copy button, so they had none), its hash in the policy, a place's room under the tab bar and its ring, and every
+    // focus ring in the accent's ink. No .md, request, status, count, quote or anchor moved. D204 (the coordinator's
+    // review of D202 and D203; the owner, 2026-10-31: "Your asks" everywhere, "Yes, add Back") moved the .md and the page,
+    // each shape alike: the count line and the prompt's heading say "Your asks", the legend says what the code review's
+    // lines' tag means where a shape has those lines, and the page's script adds Back and opening at a #place (its
+    // review: the entries written before the page moves, the browser's own scroll restoring kept, the link focused on
+    // Back, a tab opened by hand kept for a reload), and a phone's tiles never split a word. No request, status, count, quote or anchor moved.
+    ordinary: { requests: '3c472f0b2f284287', md: 'e91ad34d210fafaf', page: '310f1683d05c8093',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    sibling: { requests: '1d3c67aaf360cf88', md: '61b3262c1a3f4bce', page: '68cb29f37291560f',
+    sibling: { requests: '1d3c67aaf360cf88', md: 'b64f4fd8a797af09', page: '1d3ead4efc6c9d75',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    script: { requests: 'afe064acbf3c9007', md: '86b886eaeb816962', page: 'bbcd8b8cc5e7e7b6', labels: ['narrative:w1'] },
+    script: { requests: 'afe064acbf3c9007', md: '21b702a6c58bbad6', page: '2a2082cb2c86f27d',
+      labels: ['narrative:w1'] },
   });
 });

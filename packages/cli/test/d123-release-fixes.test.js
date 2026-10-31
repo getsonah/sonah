@@ -28,7 +28,7 @@ import { runSessionReviewCommand, RUN_STATE_WORDS, runStateLine }
 import { CODE_REPORT_WORDS, codeNotReviewedOf, codeCoverageLines, reportNotReviewedOf }
   from '../../evidence/src/code-report.js';
 import { CODE_NOT_REVIEWED_REASONS } from '../../evidence/src/ledger.js';
-import { REPORT_DID_WORDS, REPORT_SECTION_WORDS } from '../../render/report-words.js';
+import { REPORT_DID_WORDS, REPORT_SECTION_WORDS, REPORT_TAB_WORDS } from '../../render/report-words.js';
 import { reportModel, REPORT_NO_FILES_KINDS } from '../../render/report-model.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
 import { renderSessionPage } from '../../render/session-page.js';
@@ -144,7 +144,14 @@ test('D123 (1): a session that started in a folder of no repository and changed 
     .replace(/&gt;/g, '>');
   assert.ok(page.includes(reason) && page.includes(REPORT_DID_WORDS.noSeenFiles), 'the page');
   assert.ok(!page.includes(wroteNothing) && !page.includes(REPORT_DID_WORDS.noFiles), 'the page');
-  assert.ok(page.includes(REPORT_SECTION_WORDS.didCounted(null, 1, 0, 0)) && !page.includes('0 files'), 'the page');
+  // D199: the page's heading names the tab, its counts the stats under it: no Files stat by the same gate, 1 command
+  // (its review, R17: the commands and the other calls apart, as the header and the .md count them; no other call here).
+  assert.ok(page.includes(`<h2>${REPORT_TAB_WORDS.did}</h2>`)
+    && !page.includes(REPORT_SECTION_WORDS.didCounted(null, 1, 0, 0)) && !page.includes('0 files'), 'the page');
+  const stats = page.split('<section class="part panel" id="did">')[1].split('</section>')[0];
+  assert.ok(stats.includes(`<span class="stat"><span class="num">1</span> <span class="k">${REPORT_TAB_WORDS.commands}`
+    + '</span></span>') && !stats.includes(`<span class="k">${REPORT_SECTION_WORDS.files}</span>`)
+    && !stats.includes(`<span class="k">${REPORT_TAB_WORDS.otherCalls}</span>`), stats.slice(0, 500));
   // The PR comment and the GitHub check's title.
   assert.ok(publicCommentText(run.report).summary.includes(escapePublicText(reason)));
   assert.match(runStateLine(run.report), /^Sonah's review: complete, but no code was reviewed/);

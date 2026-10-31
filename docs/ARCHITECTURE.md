@@ -93,8 +93,9 @@ integration checks this for `slicer`, `redact` and `render`.
 
 The code step, on by default with the `claude-cli` backend, runs after step 9 on the session's report.
 `cli/src/code-snapshot.js` reads, before any call, the change the session made (git's list and patches from the
-session's start commit, or the recorded edits with no git history) and the repository's state (a hash of every file
-git lists), and gives evidence a repository reader (any file of the repository, now or at the start commit).
+session's start commit, or the recorded edits with no git history) and the state of each repository it reads (a hash
+of every file git lists), and gives evidence a repository reader (any file of those repositories, now or at their start
+commit).
 `evidence/src/code-context.js` lays out the change and the session dossier. `evidence/src/code-pass.js` sends the
 review agent's request, checks each item it answers by shape and grounds every quote by string search through the
 reader, sends one repair for what fails, then one checking agent per finding and one for its questions, and decides

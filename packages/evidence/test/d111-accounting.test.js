@@ -686,7 +686,7 @@ test('D111 review: an item counted beside a published finding that follows from 
   const line = CODE_REPORT_WORDS.unaccounted.ask.person(1);
   // The finding is a Must act item on ask 1, and the count is shown below it.
   assert.ok(md.includes('Must act 1 ·') && md.includes('Where: `src/parse.js:2` · ask 1'), 'the finding, on ask 1');
-  assert.ok(page.includes('Must act 1') && page.includes(escapeHtml(line)) && md.includes(line), 'the count is shown');
+  assert.ok(page.replace(/<[^>]+>/g, '').includes('Must act 1') && page.includes(escapeHtml(line)) && md.includes(line), 'the count is shown');
   // Each count's line names the check whose entries it counts by the name a call of that check takes when it does not
   // answer (CODE_REPORT_WORDS.parts.account): what the counted fates prove, for every fate, and no more.
   const check = CODE_REPORT_WORDS.parts.account.replace(/^its /, '');
@@ -843,8 +843,11 @@ async function readersOf(c) {
   const story = md.slice(from, md.indexOf('\n\n</details>', from)).split('\n\n');
   const h3 = `<h3 class="sub-h">${escapeHtml(REPORT_NOT_CHECKED_WORDS.codeReview)}</h3>`;
   const at = page.indexOf(h3);
-  return { p: result.codePass, nc: reportModel(f.session, joined).notChecked, story, page,
-    pageCode: page.slice(at, page.indexOf('</div></details>', at)),
+  return { p: result.codePass, nc: reportModel(f.session, joined).notChecked, story, page, md, from,
+    // D193: What Sonah could not check is a panel, a section, no longer a fold. D199: the code review's part is the last
+    // of its two cards (`.nc-card`), the session review's the first.
+    pageCode: page.slice(at, page.indexOf('</div></div></div></section>', at)),
+    pageSession: page.slice(page.indexOf('<div class="nc-card">'), at),
     terminal: runStateLine({ ...joined, codePass: { ...joined.codePass, required: false } }) };
 }
 
@@ -852,7 +855,7 @@ test('D111 second review: in every combination of an entry\'s end and a publishe
   assert.equal(COMBINATIONS.length, 4 + 2 * 9);
   for (const c of COMBINATIONS) {
     const why = `${c.name}, ${c.finding ? 'with' : 'without'} a published finding on its item`;
-    const { p, nc, story, page, pageCode, terminal } = await readersOf(c);
+    const { p, nc, story, page, md, from, pageCode, pageSession, terminal } = await readersOf(c);
     // The record: the entry's end, the finding published or not, the review's own coverage complete (the fixture's review
     // reads every file and every check answers), and the coverage partial exactly when the item is counted (I10).
     const entry = p.account.entries.find((e) => e.key === (c.key ?? ASK1));
@@ -865,18 +868,26 @@ test('D111 second review: in every combination of an entry\'s end and a publishe
     // the line with no finding when none is published; D109's line of the open questions' checks when one is published),
     // then one list — the accounting's calls that did not answer or were not made, then the count — then the session
     // review's rows that no reader reads.
-    // D152: a code step under the tie rule says that its check judges truth only (`howTied`).
-    const paragraphs = [W.howTied, W.howConfirm, ...(p.questions.length ? [codeQuestionsLine(p)] : []), W.base(null),
+    // D199 (the owner, 2026-10-30, "All of them"): no paragraph on how the code review works (D152's `howTied`) or how
+    // its check labels a finding (D110's `howConfirm`), whose words are gone; the section opens on what the records
+    // show, as the section's byte-for-byte checks below pin on both readers.
+    const paragraphs = [...(p.questions.length ? [codeQuestionsLine(p)] : []), W.base(null),
       W.files(1, [['whole', 1]], 0), ...(p.findings.length ? [] : [W.proposedNone])];
     const bullets = [...(c.calls ?? []), ...(counted ? [W.unaccounted.ask.person(1)] : [])].map((line) => `${line}.`);
     assert.deepEqual(story, [`#### ${REPORT_NOT_CHECKED_WORDS.codeReview}`, ...paragraphs,
-      ...(bullets.length ? [bullets.map((line) => `- ${line}`).join('\n')] : []), ...nc.unreadAsks, ...nc.unreadRows], why);
+      ...(bullets.length ? [bullets.map((line) => `- ${line}`).join('\n')] : [])], why);
+    // D199: the session review's rows that no reader reads close the session review's part, before the code review's,
+    // as on the page.
+    const unread = [...nc.unreadAsks, ...nc.unreadRows];
+    if (unread.length) assert.ok(md.slice(0, from).trimEnd().endsWith(unread.join('\n\n')), why);
     // The page's code section, whole: the same paragraphs, then (D169) the same list under the same heading, as the
-    // story has it (the page writes a line after each list entry).
+    // story has it (the page writes a line after each list entry). D199: the session review's rows that no reader reads
+    // close the session review's card, before it.
     assert.equal(pageCode, `<h3 class="sub-h">${escapeHtml(REPORT_NOT_CHECKED_WORDS.codeReview)}</h3>${paragraphs
       .map((line) => `<p class="note">${escapeHtml(line)}</p>`).join('')}${bullets.length ? `<ul class="rows">${bullets
-      .map((line) => `<li>${escapeHtml(line)}</li>\n`).join('')}</ul>` : ''}${[...nc.unreadAsks, ...nc.unreadRows]
-      .map((line) => `<p class="note">${escapeHtml(line)}</p>`).join('')}`, why);
+      .map((line) => `<li>${escapeHtml(line)}</li>\n`).join('')}</ul>` : ''}`, why);
+    assert.ok(pageSession.endsWith(`${[...nc.unreadAsks, ...nc.unreadRows].map((line) => `<p class="note">${escapeHtml(line)}</p>`)
+      .join('')}</div><div class="nc-card">`), `${why}: ${pageSession}`);
     for (const line of bullets) assert.ok(page.includes(`<li>${escapeHtml(line)}</li>`), `${why}: ${line}`);
     assert.equal(page.includes(escapeHtml(W.unaccounted.ask.person(1))), counted, why);
     // The terminal: the whole change covered; and, when the item is counted, that its item-by-item check did not examine

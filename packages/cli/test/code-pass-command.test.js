@@ -131,7 +131,9 @@ test('D87: the session part is byte-identical with the code step on and off — 
   assert.doesNotMatch(off.out, /src\/parse\.js:2/);
   assert.doesNotMatch(off.out, /code review (covered|did|had)/);
   // D118 (a): off, the first screen says no code was reviewed and why, right after the run state; on, it does not.
-  assert.match(off.out, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\.\nNo code was reviewed\. Reason: this review ran without the code review\. The items show no impact and no action\.$/m);
+  // D199: the no-code line no longer says that the items show no impact and no action.
+  assert.match(off.out, /^Sonah's review: complete, but no code was reviewed \(session review complete\)\.\nNo code was reviewed\. Reason: this review ran without the code review\.$/m);
+  assert.doesNotMatch(off.out, /The items show no impact and no action/);
   assert.doesNotMatch(on.out, /No code was reviewed/);
   assert.equal(off.out.match(/code review/gi).length, 2, 'off: only the line that says so, and the no-code line');
 });

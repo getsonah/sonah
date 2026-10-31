@@ -30,7 +30,6 @@ import { runCodePass, codeSnapshotPlan, freezeCodeSnapshot, readFindingVerdict, 
   CODE_BRIEFS_ABSOLUTE, CODE_PASS_PROFILE, CODE_TIE_RULE, TRACE_LIMITS } from '../src/code-pass.js';
 import { itemKindOf, boundTier, ITEM_KIND_TABLE } from '../src/triage.js';
 import { answerableRowIds } from '../src/checklist.js';
-import { CODE_REPORT_WORDS as W, codeHowLine } from '../src/code-report.js';
 import { CODE_FILES, CODE_TEXT, codeSession, reviewFinding, holds, holdsWith, repositoryPremise, traceReceipts,
   allSound, verifiedFinding, batchItems, PARSE_QUOTE, accountsHold } from '../../cli/test/code-pass-fixture.js';
 import { verifyBriefBeforeTruthOnly } from './m33-integration-fixture.js';
@@ -179,8 +178,8 @@ test('D152 (3): each finding ends once — tied by its row or by what it breaks,
     boundTier('code_finding_open', 'high').bound], ['good_to_know', 'must_know', 'kind_ceiling']);
   assert.equal(ITEM_KIND_TABLE.code_finding_open.type, 'decide');
   assert.ok(answerableRowIds({ codePass: p }).includes(p.open[0].id));
-  // The paragraph on how the code review works says that the check judges truth only.
-  assert.equal(codeHowLine(p), W.howTied);
+  // D199 (the owner, 2026-10-30, "All of them"): no reader prints the paragraph on how the code review works any more,
+  // so neither its tie-rule form nor `codeHowLine` is pinned here.
 });
 
 test('D152 (4): every reader computes the lists again from the record; a record before the tie rule reads as written', async () => {
@@ -217,7 +216,6 @@ test('D152 (4): every reader computes the lists again from the record; a record 
   assert.equal(tieRuled(before), false);
   assert.deepEqual([titles(codePassFindings({ codePass: before })), codePassOpen({ codePass: before })],
     [['SYNTHETIC tied', 'SYNTHETIC by a doc line', 'SYNTHETIC open'], []]);
-  assert.equal(codeHowLine(before), W.how);
 });
 
 test('D152 (5): only a finding\'s checking request moved — its brief and contract; rendered back, D149\'s bytes', async () => {

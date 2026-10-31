@@ -123,8 +123,10 @@ test('D112 (1): a question the code review wrote joins the item of the row it co
     && textOf(e.parts) === 'The code keeps one global counter.'));
   assert.deepEqual(question.where, [], 'it names no item: it is inside its own');
   const visible = itemVisibleText(item);
+  // D200: the impact and action lines say whose words they are (REPORT_ITEM_WORDS.impact, .action).
   for (const line of [REPORT_ITEM_WORDS.members(1), 'Decide: Should the limit be per client or global? The ask does not say. · '
-    + 'Must know', 'Impact on you: One client can use the whole limit.', 'Action: Choose a limit per client.'])
+    + 'Must know', "The code review's impact on you: One client can use the whole limit.",
+  "The code review's action: Choose a limit per client."])
     assert.ok(visible.includes(line), line);
   // Every reader shows it, inside the item.
   const page = renderSessionPage(session, report, repoFacts());
@@ -156,7 +158,7 @@ test('D112 (1): a member whose own tier is below its item\'s is shown folded, un
   assert.equal(question.why, REPORT_TIER_WHY.byDefault(REPORT_KIND_WORDS.code_question, 'Good to know'));
   const page = renderSessionPage(session, report, repoFacts());
   const at = page.indexOf(`id="item-${item.n}"`);
-  assert.match(page.slice(at, page.indexOf('</article>', at)), /<details class="member"><summary><strong class="type">Decide:<\/strong> <em class="by-code-review">Should the limit be per client or global\? The ask does not say\.<\/em> · <span class="tier-word">Good to know<\/span><\/summary>/);
+  assert.match(page.slice(at, page.indexOf('</article>', at)), /<details class="member"><summary><strong class="type ty-decide">Decide<\/strong> <em class="by-code-review">Should the limit be per client or global\? The ask does not say\.<\/em> · <span class="tier-word">Good to know<\/span><\/summary>/);
   // Its item's visible text shows its head alone.
   assert.ok(itemVisibleText(item).endsWith('Decide: Should the limit be per client or global? The ask does not say. · Good to know'));
 });

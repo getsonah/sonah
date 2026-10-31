@@ -37,9 +37,9 @@ test('D97 (8): the terminal\'s count line has the D93 split and no "(folded)"; t
   const d = model.decisions;
   assert.equal(count, `Must act ${model.tiers.must_act.length + model.pointers.must_act.length} · Must know `
     + `${model.tiers.must_know.length} · Good to know ${model.tiers.good_to_know.length} · ${d.total} decisions `
-    + `(${d.tagged.must_act} Must act, ${d.tagged.must_know} Must know) · Your prompt: 1 done, 1 done with a code finding, `
+    + `(${d.tagged.must_act} Must act, ${d.tagged.must_know} Must know) · Your asks: 1 done, 1 done with a code finding, `
     + '1 partly done, 2 not done, 1 not checked');
-  assert.equal(count, 'Must act 9 · Must know 8 · Good to know 7 · 7 decisions (1 Must act, 3 Must know) · Your prompt: '
+  assert.equal(count, 'Must act 9 · Must know 8 · Good to know 7 · 7 decisions (1 Must act, 3 Must know) · Your asks: '
     + '1 done, 1 done with a code finding, 1 partly done, 2 not done, 1 not checked');
   assert.equal(count.includes('(folded)'), false);
   // D112: the Must act items the code review rated high come first, so their labels lead; D138: then the contradicted

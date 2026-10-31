@@ -8,13 +8,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel, reportItems, visibleWords, pointerLineText, trailEntryText } from '../report-model.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { countLines } from '../../cli/src/report-output.js';
 import { REPORT_TRAIL_WORDS, REPORT_ITEM_WORDS, REPORT_TIER_WORDS, REPORT_COUNT_WORDS, REPORT_SECTION_WORDS,
-  REPORT_FOOTER_WORDS } from '../report-words.js';
+  REPORT_FOOTER_WORDS, REPORT_TAB_WORDS } from '../report-words.js';
 import { reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+/** D195: the page's tab labels read back as the in-page links they stand for (`data-href`), so these checks read links. */
+const asLinks = (html) => html.replace(/<label class="xl[^"]*" for="t-[^"]+" data-href="(#[^"]+)">([\s\S]*?)<\/label>/g,
+  '<a href="$1">$2</a>');
+const renderSessionPage = (...args) => asLinks(renderSessionPageRaw(...args));
 
 const r = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
 const id = (c) => `sha256:${c.repeat(64)}`;
@@ -84,18 +88,21 @@ test('D163 (L1): Must act counts, names and points to a decision tagged Must act
   assert.ok(lines[0].includes(` · ${REPORT_COUNT_WORDS.decisions(4, 1, 1)} · `), lines[0]);
   assert.equal(lines[1], `${REPORT_COUNT_WORDS.mustActLead} check the store`);
   const page = renderSessionPage(session, report, {});
-  assert.ok(page.includes('<a href="#must-act">Must act 1</a>'));
+  // D195: a tile, its count large; its text is the count line's.
+  assert.ok(/<a href="#must-act"[^>]*><span class="k">Must act<\/span> <span class="num">1<\/span><\/a>/.test(page));
   const act = page.slice(page.indexOf('id="must-act"'), page.indexOf('id="must-know"'));
   assert.ok(act.includes(`<h2>${esc(REPORT_SECTION_WORDS.tier('Must act', 1))}</h2>`));
-  assert.ok(act.includes(`<h3 class="sub-h">${esc(REPORT_TRAIL_WORDS.taggedHere('Must act', 1))}</h3>`));
-  assert.ok(act.includes(`<li><a href="#item-${tagged.n}"><span class="n">${tagged.n}</span>`));
+  // D194: the pointer is one line that counts the decisions tagged Must act and links to the list, which shows each once.
+  assert.ok(act.includes(`<p class="note pointers"><a href="#decisions">${esc(REPORT_TRAIL_WORDS.taggedThere('Must act', 1))}`
+    + '</a></p>'));
+  assert.equal(act.includes(`href="#item-${tagged.n}"`), false, 'no line of the decision in Must act');
   assert.equal(page.split(`id="item-${tagged.n}"`).length - 1, 1, 'one anchor, in the second part');
   const md = renderReportMarkdown(session, report, {});
   const mdAct = md.slice(md.indexOf('### Must act'), md.indexOf('### Must know'));
   assert.ok(mdAct.startsWith(`### ${REPORT_SECTION_WORDS.tier('Must act', 1)}`));
-  assert.ok(mdAct.includes(`#### ${REPORT_TRAIL_WORDS.taggedHere('Must act', 1)}\n\n- [${tagged.n} Decide: The agent `
-    + `decided on *eviction*: *an LRU*.](#item-${tagged.n}) ${REPORT_ITEM_WORDS.notAsked}`), mdAct);
-  assert.equal(pointerLineText(model.pointers.must_act[0]), `${tagged.n} Decide: The agent decided on eviction: an LRU. `
+  assert.ok(mdAct.includes(`[${REPORT_TRAIL_WORDS.taggedThere('Must act', 1)}](#decisions)`), mdAct);
+  assert.ok(md.includes('<a name="decisions"></a>'));
+  assert.equal(pointerLineText(model.pointers.must_act[0]), `${tagged.n} Decide: eviction: an LRU. The agent decided it. `
     + REPORT_ITEM_WORDS.notAsked);
   assert.equal(md.split(`<a name="item-${tagged.n}"></a>`).length - 1, 1);
   assert.ok(md.includes('Must act: [*check the store*](#item-'));
@@ -113,23 +120,22 @@ test('D163 (L1): Must know points to its decisions under its own heading and doe
   const page = renderSessionPage(session, report, {});
   const knowPart = page.slice(page.indexOf('id="must-know"'), page.indexOf('id="good-to-know"'));
   assert.ok(knowPart.includes(`<h2>${esc(REPORT_SECTION_WORDS.tier('Must know', 0))}</h2>`));
-  assert.ok(knowPart.includes(esc(REPORT_TRAIL_WORDS.taggedHere('Must know', 1))));
-  assert.ok(knowPart.includes(`href="#item-${know[0].n}"`));
+  // D194: one line that counts them, linked to the list.
+  assert.ok(knowPart.includes(esc(REPORT_TRAIL_WORDS.taggedThere('Must know', 1))));
+  assert.ok(knowPart.includes('href="#decisions"'));
   const md = renderReportMarkdown(session, report, {});
   const mdKnow = md.slice(md.indexOf('### Must know'), md.indexOf('Good to know ('));
-  assert.ok(mdKnow.includes(`#### ${REPORT_TRAIL_WORDS.taggedHere('Must know', 1)}`));
-  assert.ok(mdKnow.includes(`](#item-${know[0].n})`));
-  // A pointer is a visible line of the first part: the first screen's words count it.
+  assert.ok(mdKnow.includes(`[${REPORT_TRAIL_WORDS.taggedThere('Must know', 1)}](#decisions)`));
+  // A pointer line is a visible line of the first part: the first screen's words count it.
   const words = (text) => text.split(/\s+/).filter(Boolean).length;
   const without = { ...model, pointers: { must_act: [], must_know: [] } };
-  assert.equal(visibleWords(model) - visibleWords(without), words([REPORT_TRAIL_WORDS.taggedHere('Must act', 1),
-    ...model.pointers.must_act.map(pointerLineText), REPORT_TRAIL_WORDS.taggedHere('Must know', 1),
-    ...model.pointers.must_know.map(pointerLineText)].join('\n')));
+  assert.equal(visibleWords(model) - visibleWords(without), words([REPORT_TRAIL_WORDS.taggedThere('Must act', 1),
+    REPORT_TRAIL_WORDS.taggedThere('Must know', 1)].join('\n')));
   // A tier with no decision tagged with it has no heading for them.
   const none = reportModel(session, smallReport(session, { codePass: { ran: true, triage: [] } }), {});
   assert.deepEqual(none.pointers.must_act, []);
-  assert.equal(renderSessionPage(session, smallReport(session, { codePass: { ran: true, triage: [] } }), {})
-    .includes(esc(REPORT_TRAIL_WORDS.taggedHere('Must act', 0))), false);
+  assert.equal(/hold \d+ decisions? tagged Must act\./.test(renderSessionPage(session, smallReport(session,
+    { codePass: { ran: true, triage: [] } }), {})), false);
 });
 
 test('D163: the second part lists every decision, one that the first part keeps by a line at its place, counted and tagged', () => {
@@ -174,21 +180,28 @@ test('D163: the second part lists every decision, one that the first part keeps 
   const page = renderSessionPage(session, report, repoFacts());
   const trail = page.slice(page.indexOf('id="decisions"'), page.indexOf('id="prompt"'));
   assert.ok(trail.includes(`<a href="#item-${holder.n}">${REPORT_TRAIL_WORDS.shownAbove(holder.n)}</a> · `
-    + `<span class="tag tier-tag">Must act</span></p>`));
+    + `<span class="tag tier-tag tier-must-act">Must act</span></p>`));
   assert.equal(page.split(`id="item-${holder.n}"`).length - 1, 1);
   const md = renderReportMarkdown(session, report, repoFacts());
-  const mdTrail = md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your prompt'));
+  const mdTrail = md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your asks'));
   assert.ok(mdTrail.includes(` · [${REPORT_TRAIL_WORDS.shownAbove(holder.n)}](#item-${holder.n}) · Must act\n`));
   assert.equal(md.split(`<a name="item-${holder.n}"></a>`).length - 1, 1);
   assert.equal(trailEntryText(above[0]).endsWith(` · ${REPORT_TRAIL_WORDS.shownAbove(holder.n)} · Must act`), true);
-  // The page's and the .md's second part count it: heading and count line.
-  assert.ok(page.includes(`<a href="#decisions">${model.countLine.decisions.words}</a>`));
+  // The page's and the .md's second part count it: heading and count line. D199: the page's count line is the header's
+  // Decisions tile, its tab's word and the count, the count line's words in its title; from the header it opens the
+  // Decisions panel as every link into another panel does (D195: that panel's radio label).
+  const tiles = /<p class="count">[\s\S]*?<\/p>/.exec(renderSessionPageRaw(session, report, repoFacts()))?.[0] ?? '';
+  assert.ok(tiles.includes(`title="${model.countLine.decisions.words}"`) && tiles.includes(`<span class="k">`
+    + `${REPORT_TAB_WORDS.decisions}</span> <span class="num">${model.decisions.total}</span>`), tiles);
+  assert.match(tiles, /<label class="xl[^"]*" for="t-decisions"[^>]*>(?:(?!<\/label>)[\s\S])*<span class="k">Decisions<\/span>/,
+    'the Decisions tile opens its panel');
   assert.ok(md.includes(`### ${REPORT_TRAIL_WORDS.heading(model.decisions.total)}`));
   // Its review: the pointers' heading counts the decisions further down alone; the count line's tags count this entry
   // too, which its own section shows.
   assert.equal(model.pointers.must_act.length, model.decisions.tagged.must_act - 1);
-  assert.ok(md.includes(`#### ${REPORT_TRAIL_WORDS.taggedHere('Must act', model.pointers.must_act.length)}\n`));
-  assert.equal(REPORT_TRAIL_WORDS.taggedHere('Must act', 1), 'Decisions further down tagged Must act (1)');
+  // D194: one line, its count.
+  assert.ok(md.includes(`[${REPORT_TRAIL_WORDS.taggedThere('Must act', model.pointers.must_act.length)}](#decisions)`));
+  assert.equal(REPORT_TRAIL_WORDS.taggedThere('Must act', 1), "The agent's decisions hold 1 decision tagged Must act.");
 });
 
 /** Its review: the fixture's decision on how to do your ask (asked, Good to know of its own) with a question of the code
@@ -211,35 +224,32 @@ function keptAlone(extra = 0) {
   return { session, report };
 }
 
-test('D163\'s review: a group whose one Must entry is a decision the first part keeps is open, and keeps that line', () => {
+test('D163\'s review, D194: a decision the first part keeps is a line of the list, shown with the Must ones, kept when shortened', () => {
   const { session, report } = keptAlone();
   const model = reportModel(session, report, repoFacts());
-  const group = model.decisions.groups.find((g) => g.entries.some((e) => e.above));
+  const [group] = model.decisions.groups;
   const above = group.entries.find((e) => e.above);
   assert.equal(group.items.some((item) => item.tier.final !== 'good_to_know'), false, 'no Must decision of its own');
-  // Judgment call 2: the entry opens it, as a decision of the part tagged Must does; its Good to know ones fold.
+  // Judgment call 2: it shows as a decision of the list tagged Must does; the Good to know ones fold, counted.
   assert.equal(above.tier, 'must_act');
-  assert.deepEqual([group.open, group.shown, group.more.length], [true, [above], group.entries.length - 1]);
+  assert.deepEqual([group.shown, group.more.length], [[above], group.entries.length - 1]);
   assert.equal(group.moreWords, REPORT_TRAIL_WORDS.moreTagged(group.entries.length - 1, REPORT_TIER_WORDS.good_to_know));
-  assert.ok(group.askLines.length > 0);
+  assert.deepEqual(group.askLines, []);
   const page = renderSessionPage(session, report, repoFacts());
   const trail = page.slice(page.indexOf('id="decisions"'), page.indexOf('id="prompt"'));
-  const opened = trail.slice(trail.indexOf('<details class="trail-group" open>'));
-  assert.ok(trail.includes('<details class="trail-group" open>'));
-  const line = opened.indexOf(`<a href="#item-${above.n}">${REPORT_TRAIL_WORDS.shownAbove(above.n)}</a>`);
-  assert.ok(opened.indexOf('class="rows trail-asks"') < line && line < opened.indexOf('class="trail-more"'));
+  const line = trail.indexOf(`<a href="#item-${above.n}">${REPORT_TRAIL_WORDS.shownAbove(above.n)}</a>`);
+  assert.ok(line > 0 && line < trail.indexOf('class="trail-more"'));
   const md = renderReportMarkdown(session, report, repoFacts());
-  const mdTrail = md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your prompt'));
-  assert.ok(mdTrail.startsWith(`### ${REPORT_TRAIL_WORDS.heading(model.decisions.total)}\n\n<details open><summary>`));
+  const mdTrail = md.slice(md.indexOf("### The agent's decisions"), md.indexOf('### Your asks'));
   assert.ok(mdTrail.indexOf(`[${REPORT_TRAIL_WORDS.shownAbove(above.n)}]`) < mdTrail.indexOf(`<summary>${group.moreWords}`));
-  // Past 60,000 bytes, at the groups' counts: the line stays (Must is never cut before Good to know), and the group
-  // counts its decisions tagged Good to know alone.
+  // Past 60,000 bytes, at the list's counts: the line stays (Must is never cut before Good to know), and the list counts
+  // its decisions tagged Good to know alone.
   const big = keptAlone(100);
   const bigModel = reportModel(big.session, big.report, repoFacts());
-  const bigGroup = bigModel.decisions.groups.find((g) => g.entries.some((e) => e.above));
+  const [bigGroup] = bigModel.decisions.groups;
   const bigMd = renderReportMarkdown(big.session, big.report, repoFacts());
   assert.ok(Buffer.byteLength(bigMd) <= 60_000);
-  assert.ok(bigMd.includes(` · [${REPORT_TRAIL_WORDS.shownAbove(above.n)}](#item-${above.n}) · Must act\n`));
+  assert.ok(bigMd.includes(`[${REPORT_TRAIL_WORDS.shownAbove(above.n)}](#item-${above.n}) · Must act\n`));
   assert.ok(bigMd.includes(REPORT_TRAIL_WORDS.goodToKnowNotShown(bigGroup.entries.filter((e) => e.tier === 'good_to_know')
     .length)));
   assert.equal(bigGroup.entries.filter((e) => e.tier !== 'good_to_know').length, 1);
@@ -253,14 +263,15 @@ test('D163\'s review: a pointer to a decision tied to your ask names that ask on
   assert.ok(p && p.scope.asks.length === 1, 'the decision on how to do your ask, rated high');
   const asked = REPORT_ITEM_WORDS.asked(p.scope.asks[0]);
   assert.ok(pointerLineText(p).endsWith(` · ${asked}`));
+  // D194: the pointer is one line that counts; the decision's own line in the list names the ask, on every reader.
   const md = renderReportMarkdown(session, report, {});
-  const at = md.indexOf(`#### ${REPORT_TRAIL_WORDS.taggedHere('Must act', 1)}`);
-  assert.ok(at > 0);
-  const line = md.slice(at).split('\n')[2];
-  assert.ok(line.startsWith(`- [${p.n} `) && line.endsWith(` · ${asked}`), line);
+  const line = md.split('\n').find((l) => l.includes(`<a name="item-${p.n}"></a>`));
+  assert.ok(line.includes(` · ${esc(asked)} · `), line);
   const page = renderSessionPage(session, report, {});
-  const act = page.slice(page.indexOf('id="must-act"'), page.indexOf('id="must-know"'));
-  assert.ok(act.includes(` · <a href="#ask-${p.scope.asks[0]}">${esc(asked)}</a></li>`));
+  const trail = page.slice(page.indexOf('id="decisions"'));
+  const summary = trail.slice(trail.indexOf(`id="item-${p.n}"`), trail.indexOf('</summary>', trail.indexOf(`id="item-${p.n}"`)));
+  // D198: a chip on the decision's row.
+  assert.ok(summary.includes(`<span class="chip">${esc(asked)}</span>`), summary);
 });
 
 test('D163\'s review: a change of approach labels a result a recorded result only when the recording types its call', () => {
@@ -319,13 +330,14 @@ test('D163 (L5): an open group shows its Must decisions, then one counted fold o
   assert.equal(visibleWords(model) - visibleWords(swap({ ...group, more: [], moreWords: null })), words(group.moreWords));
   assert.equal(visibleWords(swap({ ...group, shown: group.entries, more: [], moreWords: null })) - visibleWords(model),
     words(group.more.map(trailEntryText).join('\n')) - words(group.moreWords));
-  // A group with no Must decision stays folded, every decision in it, no fold of its own.
+  // D194: a list with no Must decision is one fold that counts every decision in it.
   const quiet = smallReport(session, { codePass: { ran: true, triage: [] }, decisions: [decided({ id: id('c'),
     dimension: 'file', chosen: 'one file', actions: ['W1'], column: 'asked-chose', constrainedBy: {
       instruction: r('instruction', 'I1', 'Add a cache to the client.'), settles: false, settledValueQuote: null } })] });
   const closed = reportModel(session, quiet, {}).decisions.groups[0];
-  assert.deepEqual([closed.open, closed.more, closed.moreWords, closed.shown.length], [false, [], null, 2]);
-  assert.equal(renderSessionPage(session, quiet, {}).includes('class="trail-more"'), false);
+  assert.deepEqual([closed.shown, closed.more.length, closed.moreWords], [[], 2, REPORT_TRAIL_WORDS.allTagged(2,
+    'Good to know')]);
+  assert.ok(renderSessionPage(session, quiet, {}).includes(`<details class="trail-more"><summary>${closed.moreWords}`));
   assert.equal(renderReportMarkdown(session, quiet, {}).includes(REPORT_TRAIL_WORDS.moreTagged(2, 'Good to know')), false);
 });
 
@@ -343,10 +355,10 @@ test('D163: a change of approach labels each quote by its receipt\'s role, and s
     'session-review', false]]);
   const page = renderSessionPage(session, report, {});
   const body = page.slice(page.indexOf(`id="item-${pivot.n}"`));
-  const said = body.indexOf('class="line agent-said"'), why = body.indexOf('class="line review-why"');
+  const said = body.indexOf('class="line agent-said kv"'), why = body.indexOf('class="line review-why kv"');
   assert.ok(said > 0 && why > said, 'the agent\'s own words first');
-  assert.ok(body.includes(`<p class="line review-why"><span class="label">${esc(REPORT_ITEM_WORDS.reviewWhy)}</span> `
-    + '<em class="by-session-review">The test showed that the map grew without bound.</em></p>'));
+  assert.ok(body.includes(`<p class="line review-why kv"><span class="label">${esc(REPORT_ITEM_WORDS.reviewWhy)}</span> `
+    + '<span class="v"><em class="by-session-review">The test showed that the map grew without bound.</em></span></p>'));
   assert.ok(body.includes(`<span class="label">${REPORT_ITEM_WORDS.recordedResult}</span> <q class="said">`));
   const md = renderReportMarkdown(session, report, {});
   assert.ok(md.includes(`${REPORT_ITEM_WORDS.reviewWhy} *The test showed that the map grew without bound.*`));
@@ -388,7 +400,7 @@ test('D163: an instruction a helper\'s session recorded is never "You said:"; yo
   assert.equal(p2.agentSaidLabel, REPORT_ITEM_WORDS.helperSaid);
 });
 
-test('D163: the .md keeps every pointer and Must decision until Good to know is counts; then each pointer keeps its number', () => {
+test('D163, D194: the .md keeps every Must decision until Good to know is counts; the pointer is one line throughout', () => {
   const b = sessionBuilder();
   b.ask('I1', 'Add a cache to the client.');
   b.change('W1', 'src/cache.js', { after: 'export const cache = new Map();\n' });
@@ -406,19 +418,15 @@ test('D163: the .md keeps every pointer and Must decision until Good to know is 
   assert.deepEqual([model.pointers.must_know.length, model.decisions.tagged.good_to_know], [70, 200]);
   const md = renderReportMarkdown(session, report, {});
   assert.ok(Buffer.byteLength(md) <= 60_000, `${Buffer.byteLength(md)} bytes`);
-  // Good to know went first (counted in its group); every Must decision keeps its line and anchor; every pointer its link.
+  // Good to know went first (counted in the list); every Must decision keeps its line and anchor.
   assert.ok(md.includes(REPORT_TRAIL_WORDS.goodToKnowNotShown(200)));
-  for (const p of model.pointers.must_know) {
-    assert.ok(md.includes(`<a name="item-${p.n}"></a>`), `decision ${p.n}`);
-    assert.ok(md.includes(`[${p.n}](#item-${p.n})`) || md.includes(`](#item-${p.n})`), `pointer ${p.n}`);
-  }
-  // A smaller report keeps each pointer's whole line.
+  for (const p of model.pointers.must_know) assert.ok(md.includes(`<a name="item-${p.n}"></a>`), `decision ${p.n}`);
+  // D194: the pointer is one line that counts them, on every reader, at every size.
+  assert.ok(md.includes(`[${REPORT_TRAIL_WORDS.taggedThere('Must know', 70)}](#decisions)`));
   const small = { ...report, decisions: report.decisions.slice(0, 3) };
-  const smallMd = renderReportMarkdown(session, small, {});
-  const smallModel = reportModel(session, small, {});
-  for (const p of smallModel.pointers.must_know) assert.ok(smallMd.includes(`- [${p.n} Decide: `), `pointer ${p.n}`);
-  // The page keeps them whole, a line each.
+  assert.ok(renderReportMarkdown(session, small, {}).includes(`[${REPORT_TRAIL_WORDS.taggedThere('Must know', 3)}](#decisions)`));
   const page = renderSessionPage(session, report, {});
-  assert.equal((page.slice(page.indexOf('id="must-know"'), page.indexOf('id="good-to-know"')).match(/<li><a href="#item-/g)
-    ?? []).length, 70);
+  const know = page.slice(page.indexOf('id="must-know"'), page.indexOf('id="good-to-know"'));
+  assert.equal((know.match(/href="#item-/g) ?? []).length, 0);
+  assert.ok(know.includes(esc(REPORT_TRAIL_WORDS.taggedThere('Must know', 70))));
 });

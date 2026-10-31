@@ -10,8 +10,8 @@ import { actionOutcome, contradictionSourceOf, EVIDENCE_QUOTE_MAX, DISCLOSURE_QU
   FAILURE_UNCHECKED_REASONS, PROMISE_UNCHECKED_REASONS, REQUIREMENT_FACTS, RESULT_OUTCOME_WORDS } from '../src/ledger.js';
 import { DIGEST_PATTERN } from '../contracts/canonical.js';
 import { SONAH_SESSION_REVIEW_AGENT, SESSION_REVIEW_AGENT_VERSION } from '../src/review-agent.js';
-import { renderSessionPage, PAGE_COLUMN_REASON_WORDS } from '../../render/session-page.js';
-import { REPORT_SECTION_WORDS } from '../../render/report-words.js';
+import { renderSessionPage, PAGE_COLUMN_REASON_WORDS, escapeHtml } from '../../render/session-page.js';
+import { REPORT_SECTION_WORDS, REPORT_DECISION_TAGS } from '../../render/report-words.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
 import { REPORT_WHAT_WORDS } from '../../render/report-words.js';
 
@@ -92,7 +92,7 @@ test('S6 M4: the closing message\'s lines no claim covers and those read as asse
     'SYNTHETIC_S6 line three: thanks.']) assert.ok(claims.includes(`<li><q class="said">${line}</q></li>`), line);
 });
 
-test('S6 H1: a claim and a decision whose own check did not settle are kept with their weakest status, and readers say why', async (t) => {
+test('S6 H1: a claim and a decision whose own check did not settle are kept with their weakest status, and keep why in the report (D199: no reader says it beside them; D200: the decision\'s short tag does, the page in its tip)', async (t) => {
   const { session } = await load(t, rows());
   const [closing] = of(session, 'commentary').slice(-1);
   const [, lint] = of(session, 'invocation');
@@ -110,9 +110,26 @@ test('S6 H1: a claim and a decision whose own check did not settle are kept with
   assert.equal(unsure.claimsRejected, 0, 'a kept claim is not counted as left out');
   assert.ok(unsure.promises.some((p) => p.reason === 'challenge_unsettled'), 'the kept claim says why it is not checked');
   const html = renderSessionPage(session, unsure, { sessionHash: 'a'.repeat(64) });
-  // The claim, listed, says why; the decision Sonah could not tie to an ask says why in its evidence.
-  assert.ok(html.includes("The session review&#39;s own check on it did not settle."));
-  assert.ok(html.includes(PAGE_COLUMN_REASON_WORDS.unsettled.replace(/'/g, '&#39;')));
+  const md = renderReportMarkdown(session, unsure, {});
+  // D199 (the owner, 2026-10-30, "All of them"): the claim is listed and the decision kept, and neither reader says
+  // why beside them (the claim's closed reason, the decision's column reason); the report keeps both reasons.
+  assert.ok(html.includes('<q class="said">SYNTHETIC_S6 line two: the lint is clean.</q>'), 'the claim is listed');
+  // D200 (the owner, 2026-10-31: "bring back the precision markers as short tags"): the decision carries its column
+  // reason's short tag, the reason's sentence in its tip on the page; the .md's head says the tag alone. D200's review:
+  // no title any more; the sentence is a `.tip` span hidden until hover or focus, so the page's open text is the page
+  // without the flag, as it was without the title.
+  const flag = `<span class="flag">${escapeHtml(REPORT_DECISION_TAGS.unsettled)}`
+    + ` <span class="tip">${escapeHtml(PAGE_COLUMN_REASON_WORDS.unsettled)}</span></span>`;
+  assert.equal(html.split(flag).length - 1, 1, 'D200: the decision\'s tag on the page');
+  assert.ok(md.includes(` · ${REPORT_DECISION_TAGS.unsettled}`), 'D200: the decision\'s tag in the .md');
+  // D202 (a tag's sentence showed on a pointer's hover only): and once in the opened row, under the tag's word.
+  const line = `<p class="line tag-why kv"><span class="label">${escapeHtml(REPORT_DECISION_TAGS.unsettled)}</span> `
+    + `<span class="v">${escapeHtml(PAGE_COLUMN_REASON_WORDS.unsettled)}</span></p>`;
+  assert.equal(html.split(line).length - 1, 1, 'D202: the sentence in the opened row');
+  for (const [text, esc] of [[html.split(flag).join('').split(line).join(''), (s) => s.replace(/'/g, '&#39;')], [md, (s) => s]]) {
+    assert.equal(text.includes(esc("The session review's own check on it did not settle.")), false);
+    assert.equal(text.includes(esc(PAGE_COLUMN_REASON_WORDS.unsettled)), false);
+  }
   assert.equal(PAGE_COLUMN_REASON_WORDS.unsettled, "The session review's check on it did not settle.");
   // A refuted claim or decision is still left out: that is not unsure.
   const refuted = await runReview({ session, pr: null, reviewScope: 'session-only', judge: judge('refuted') });
@@ -155,8 +172,8 @@ test('S6 L4, L5, M5, L7: the report .md marks a decision not to act; the outcome
   const story = renderReportMarkdown(session, { findings: [], decisions: [decision], reviewScope: 'session-only' });
   // R14: what it is about stands beside what the agent chose, each behind its own label. D161: in the report's second
   // part, its line a fold's summary (HTML), the session review's words in <em>.
-  assert.ok(story.includes(`1 Decide: ${REPORT_WHAT_WORDS.notActingAbout} <em>rerun</em>. `
-    + `${REPORT_WHAT_WORDS.notActingDecision} <em>no rerun</em>.`), story);
+  // D194: what it is about and what the agent chose lead, the fixed sentence of its kind after them.
+  assert.ok(story.includes(`1 Decide: <em>rerun</em>: <em>no rerun</em>. ${REPORT_WHAT_WORDS.notActingTail}`), story);
   assert.equal(RESULT_OUTCOME_WORDS['output-no-status'].output, 'output recorded; no exit code or completion typed for it');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.

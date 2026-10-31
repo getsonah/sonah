@@ -6,7 +6,9 @@
 // hunks alone are over the change block's cap is too large on its own (`oversize`), never left out for room; one that
 // fits alone but not beside the others is left out for room. (4) No open question checked is said in true words.
 // (5) The paragraph on how the code review works prints only where the record shows that the review read what Sonah
-// sent it, and each of its sentences holds in every state the code step can end in.
+// sent it, and each of its sentences holds in every state the code step can end in. D199 (the owner, 2026-10-30, "All
+// of them"): no reader prints that paragraph any more (its words and `codeHowLine` are gone); the coverage line and the
+// rules it stated are still pinned in every state.
 //
 // Synthetic sessions, snapshots and deterministic fake agents: no recording, no model, no network.
 import test from 'node:test';
@@ -14,7 +16,7 @@ import assert from 'node:assert/strict';
 import { isCodeReviewLabel, codeSnapshotPlan, freezeCodeSnapshot, runCodePass, changeBlock, codeChangeTally, codeSeenOf,
   CODE_CHANGE_BLOCK_MAX_BYTES } from '../src/code-pass.js';
 import { CODE_REPORT_WORDS as W, codeBaseLine, codeCoverageLines, codeFooterLines, codeSeenLines, codeUnseenFiles,
-  codeQuestionsLine, codeHowLine, withheldWhy } from '../src/code-report.js';
+  codeQuestionsLine, withheldWhy } from '../src/code-report.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
 import { CODE_FILES, codeSession, memoryRepo, holds, holdsWith, repositoryPremise, allSound, withRun, reviewFinding,
@@ -188,8 +190,9 @@ test('D109 review: when no open question carries a check record, the line says s
   for (const n of [1, 2, 5]) assert.doesNotMatch(W.questionsChecked(0, n), /checked 0|the other/);
 });
 
-test('D109 review: the paragraph on how the code review works prints only where the record shows that the review read '
-  + 'what Sonah sent it, and each of its sentences holds in every state the code step can end in', async () => {
+test('D109 review: in every state the code step can end in, the coverage line says what the review saw only where the '
+  + 'record shows that it read what Sonah sent it, and each rule of the paragraph on how it works holds (D199: no reader '
+  + 'prints that paragraph)', async () => {
   const fixture = snapshotOf([{ ...addedFile('src/later.js', 3) }]);
   // One claim of the session, so a question of the code review has a dossier item (S1) to name.
   const report = { promises: [{ id: `sha256:${'1'.repeat(64)}`, stated: { eventId: 'C1', role: 'commentary',
@@ -218,7 +221,7 @@ test('D109 review: the paragraph on how the code review works prints only where 
   const unusable = () => withRun({ findings: 'none' });
   const ungrounded = reviewFinding({ title: 'A finding whose quote is not in the file',
     trace: [{ ...reviewFinding().trace[0], quote: 'not in the file at all' }] });
-  // Every state, with whether the paragraph prints there.
+  // Every state, with whether the record shows that the review read what Sonah sent it (where the paragraph printed).
   const states = [
     ['an answer with nothing to publish', agents(), true],
     ['an answer whose finding and question each have a check', agents({ review: answer({ findings: [reviewFinding()],
@@ -239,7 +242,7 @@ test('D109 review: the paragraph on how the code review works prints only where 
     ['a call with no answer stored and no record', agents({ review: fails('max_calls') }), false],
   ];
   const ran = [];
-  for (const [name, judge, prints] of states) ran.push([name, (await runOn(fixture, judge, { report })).codePass, prints]);
+  for (const [name, judge, read] of states) ran.push([name, (await runOn(fixture, judge, { report })).codePass, read]);
   ran.push(['a request too large to send', (await runOn(fixture, agents(), { report, bound: 2_000 })).codePass, false]);
   ran.push(['no change to review', (await runOn({ session: fixture.session, snapshot: [] }, agents(), { report }))
     .codePass, false]);
@@ -247,19 +250,22 @@ test('D109 review: the paragraph on how the code review works prints only where 
     false]);
   const said = [W.noFile, W.noRoot, ...Object.values(W.notRun)];
   const unread = (line, total) => said.includes(line) || line === W.noAnswer(total) || line === W.tooLarge(total);
-  // D152: every state here runs under the tie rule, so the paragraph is its words (`howTied`); a record before it reads
-  // `how` (below).
-  for (const [name, codePass, prints] of ran) {
-    assert.equal(codeHowLine(codePass), prints ? W.howTied : null, name);
+  // D199: the words were removed; as literals: the first sentence of the paragraph on how the code review works (the
+  // same in `how` and in D152's `howTied`), and the first of how its check labels a finding (D110's `howConfirm`).
+  const OLD_HOW_LEAD = 'Sonah asked for a review of the change as a code reviewer reviews a pull request';
+  const OLD_HOW_CONFIRM_LEAD = 'Sonah asks the check of each finding for the premises that the finding rests on';
+  for (const [name, codePass, read] of ran) {
+    // D199 (the owner, 2026-10-30, "All of them"): no reader prints the paragraph, nor how the check labels a finding.
     for (const text of [textOf(renderSessionPage(fixture.session, { ...report, codePass })),
       renderReportMarkdown(fixture.session, { ...report, codePass })])
-      assert.equal(text.includes(W.howTied), prints, `${name}: the paragraph on a reader`);
-    // Printed, the record shows that the review read what Sonah sent it, and the coverage line says what it saw; not
-    // printed, the coverage line says what became of the review instead.
+      for (const words of [OLD_HOW_LEAD, OLD_HOW_CONFIRM_LEAD])
+        assert.equal(text.includes(words), false, `${name}: the paragraph on a reader`);
+    // Read, the record shows that the review read what Sonah sent it, and the coverage line says what it saw; not
+    // read, the coverage line says what became of the review instead.
     const tally = codeChangeTally(codePass);
     const total = tally?.total ?? 0;
-    assert.equal(unread(codeCoverageLines(codePass)[0], total), !prints, `${name}: ${codeCoverageLines(codePass)[0]}`);
-    if (prints) assert.equal(tally.sent === true && tally.answered === true, true, name);
+    assert.equal(unread(codeCoverageLines(codePass)[0], total), !read, `${name}: ${codeCoverageLines(codePass)[0]}`);
+    if (read) assert.equal(tally.sent === true && tally.answered === true, true, name);
     // The paragraph's rules hold in every state: each published finding, tied or open, has a check that found the
     // problem real, no question comes from a finding (D152), and each item withheld has its reason.
     assert.ok([...codePass.findings, ...codePass.open].every((f) => f.check?.verdict === 'holds'), name);
@@ -283,23 +289,18 @@ test('D109 review: the paragraph on how the code review works prints only where 
   assert.equal(at('a request too large to send').manifest.review.sent, false);
   assert.equal(at('no change to review').manifest, undefined);
   assert.equal(at('a step that did not run').ran, false);
-  // The words never say that the code review read the change, or that Sonah reviewed it.
-  for (const words of [W.how, W.howTied]) assert.doesNotMatch(words, /read the change|Sonah reviewed/);
-  // A report written before D105 (no manifest) is read by its review agent's record; a step before code-pass/7, with
-  // no such record, worked another way, and none prints.
+  // A report written before D105 (no manifest), whose review agent's record shows that it read its request or not, and a
+  // step before code-pass/7, with no such record: D199: the .md prints the paragraph for none of them.
   const { manifest, agents: runs, receiptPlaces, ...earlier } = at('an answer with nothing to publish');
   const failed = { terminal: 'failed', turns: null, tools: { Read: 0, Grep: 0, Glob: 0 }, reads: 0 };
-  for (const [agent, prints] of [[{ ...failed, terminal: 'answered' }, true], [{ ...failed, terminal: 'unusable' }, true],
-    [{ ...failed, turns: 2 }, true], [{ ...failed, reads: 1 }, true], [{ ...failed, tools: { Read: 0, Grep: 1, Glob: 0 } },
-      true], [failed, false], [{ ...failed, terminal: 'not_sent' }, false], [undefined, false]]) {
+  for (const agent of [{ ...failed, terminal: 'answered' }, { ...failed, terminal: 'unusable' }, { ...failed, turns: 2 },
+    { ...failed, reads: 1 }, { ...failed, tools: { Read: 0, Grep: 1, Glob: 0 } }, failed,
+    { ...failed, terminal: 'not_sent' }, undefined]) {
     const pass = { ...earlier, ...(agent ? { agent } : { agent: undefined }) };
-    assert.equal(codeHowLine(pass), prints ? W.howTied : null, JSON.stringify(agent));
-    assert.equal(renderReportMarkdown(fixture.session, { ...report, codePass: pass }).includes(W.howTied), prints,
-      JSON.stringify(agent));
-    // D152: a record before the tie rule (its version names none) prints the paragraph of its day.
+    // D152: and a record before the tie rule (its version names none).
     const { tie: _tie, ...before } = pass.version;
-    assert.equal(codeHowLine({ ...pass, version: before }), prints ? W.how : null, JSON.stringify(agent));
+    for (const codePass of [pass, { ...pass, version: before }])
+      assert.equal(renderReportMarkdown(fixture.session, { ...report, codePass }).includes(OLD_HOW_LEAD), false,
+        JSON.stringify(agent));
   }
-  // A step that did not run prints none, whatever else its record holds.
-  assert.equal(codeHowLine({ ...earlier, ran: false, agent: { ...failed, terminal: 'answered' } }), null);
 });

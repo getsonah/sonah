@@ -145,13 +145,17 @@ neither command changes a file that is not as Sonah wrote it.
 
 Sonah reads the session's recording and sends it to the reviewer model through your own login (`claude` by default), as
 it was recorded, secrets and pasted images included. The code step, on by default (with the `claude-cli` backend only),
-then reads the session's changes since its start commit, read with git, which Sonah never writes to, and gives them to a
-review agent: Claude Code with read-only tools (Read, Grep and Glob) over your repository as it is now, which reads what
-it needs there and sends it to the model as it works, and checking agents with the same tools. Nothing else about you or
-your work leaves your computer: no telemetry. The other requests are the update check, once a day at most, to npm's
-public registry ([Update](#update) says what it does and how to turn it off), and requests to GitHub, only when you name
-a pull request with `--github`. Nothing is masked or withheld, in what is sent or in what Sonah shows and keeps: treat
-the page, the .md and `~/.sonah` as holding your session as recorded. [PRIVACY.md](PRIVACY.md) has the details.
+then reads files of your working directory and of the git repositories that it reads ([PRIVACY.md](PRIVACY.md) says
+which): the session's changes since its start commit, read with git, which writes nothing, the other files that differ
+from where the session started, the lines the session read of other files and the skill files it used, as they are now.
+It gives them to a review agent, Claude Code with read-only tools (Read, Grep and Glob), and to checking agents with the
+same tools. They read what they need over your working directory, its repository, the other git repositories that hold a
+file of the change and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the
+start commit, and send it to the model as they work. Nothing else about you or your work leaves your computer: no
+telemetry. The other requests are the update check, once a day at most, to npm's public registry ([Update](#update) says
+what it does and how to turn it off), and requests to GitHub, only when you name a pull request with `--github`. Nothing
+is masked or withheld, in what is sent or in what Sonah shows and keeps: treat the page, the .md and `~/.sonah` as
+holding your session as recorded. [PRIVACY.md](PRIVACY.md) has the details.
 
 ### Turning the code step off
 
@@ -211,9 +215,9 @@ Listing and dry runs make no model call and write nothing.
 ### A repository that the recording does not show the session changing
 
 The code review reads the session's change where the recording shows its writes. A script that writes the paths it
-builds, a script file that the command runs, or a write after a change of folder that Sonah does not follow (a `cd` to a
-relative folder, to `~` or to a folder that the command does not name, `pushd`, a subshell, another shell, or a script's
-own change of folder) can change a repository with no write that Sonah sees there. The first lines of the report then
+builds, a script file that the command runs, or a write after a change of folder that Sonah does not follow (such as a
+`cd` to a folder that the command does not name, `pushd`, a subshell, another shell, or a script's own change of folder)
+can change a repository with no write that Sonah sees there. The first lines of the report then
 say that no code was reviewed, and why. Point the code review at that repository with `--code-repo` (since
 0.3.0-beta.5):
 
@@ -266,20 +270,23 @@ the code step's agents ran, the line also gives their `agent turns`; their input
 sent them, while what they read as they worked is in the input tokens your provider reported.
 
 The report's footer says the same in plain words: the model calls and the code review's part of them, the tokens, the
-time and how far each usage limit moved. For a review that ran once, these are that run's. For a review that you
-stopped and resumed, the footer gives the whole review over the runs that its state folder keeps and that made model
-calls with the same backend, model and code model: the calls, tokens and time summed, and how far each usage limit
-rose in all. A run on stored answers alone makes no call and is not counted. The footer gives no list price; the usage
-line does. Sonah keeps these figures in its record of the review (`report.private.json` under the review's state
-folder, as `instrument.usage`), as counts only. Beside it, `usage.private.json` keeps the figures of every run, one
-entry each, also when a run stopped where you asked, was interrupted or failed, so a review that you resume over
-several runs keeps what each run cost.
+time and how far each usage limit moved, and, when Sonah can count them, how many of this run's calls it asked again
+after they failed. For a review that ran once, these are that run's. For a review that you stopped and resumed, the
+footer gives the whole review over the runs that its state folder keeps and that made model calls with the same backend,
+model and code model: the calls and time summed, the tokens summed over the runs that reported them for every call, and
+how far each usage limit rose in all over the runs that read it; when that is not every run, the footer says over how
+many. A run on stored answers alone makes no call and is not counted. The footer gives no list price; the usage line
+does. Sonah keeps these figures in its record of the review (`report.private.json` under the review's state folder, as
+`instrument.usage`), as counts only. Beside it, `usage.private.json` keeps the figures of every run, one entry each,
+also when a run stopped where you asked, was interrupted or failed, so a review that you resume over several runs keeps
+what each run cost.
 
 ### Reading the result
 
 `--format html --output FILE` writes the page and opens it. Use `--no-open` for automation or a computer with no
-browser. If Sonah cannot open the page, it still keeps it. The page is one file: no script, nothing from the network,
-light or dark as your system shows. Sonah also writes the same report in Markdown beside the page: `review.html` gives
+browser. If Sonah cannot open the page, it still keeps it. The page is one file: nothing from the network, light or
+dark as your system shows. Its one script copies a prompt for the agent and follows the page's links to their place,
+with an entry in the browser's history for Back; it sends nothing. Sonah also writes the same report in Markdown beside the page: `review.html` gives
 `review.md`. `--format md --output FILE` writes the .md alone. Without `--output`, the .md goes to the terminal,
 with no prompt for the agent (see below). A relative `--output` is read from the folder you run Sonah in. The examples
 use `~/review.html`, in your home folder: outside the project, the next review does not read the report as part of
@@ -292,40 +299,59 @@ The report has this order:
    read, or that the session continues from an earlier part.
 2. A count line. It counts the items in each section, the asks of each status, and the agent's decisions with their
    tags. Must act also counts the decisions tagged Must act.
-3. Must act and Must know: the items that need you, first. Right after its own items, each has one line for each
-   decision further down that is tagged with it, linked to that decision.
+3. Must act and Must know: the items that need you, first. Right after its own items, each has one line that counts
+   the agent's decisions tagged with it, linked to the list of decisions.
 4. Good to know, folded. With nothing in it, its heading alone.
-5. The agent's decisions, in the order it made them, under the message of yours that each one followed, each with its
-   tag: Must act, Must know or Good to know. A group that holds a decision tagged Must act or Must know is open, and
-   folds its decisions tagged Good to know under one line that counts them. A decision that stays in Must act or Must
-   know has a line here, at its place, that links to it.
-6. Your prompt. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
+5. The agent's decisions, as one list in the order it made them. Each line says which of your asks it came after, and
+   ends with its tag: Must act, Must know or Good to know. The decisions tagged Must act or Must know show first; those
+   tagged Good to know fold under one line that counts them. A decision that stays in Must act or Must know has a line
+   here, at its place, that links to it. A decision's evidence lists the calls that the session review cites as its
+   actions.
+6. Your asks. It shows your message, and Sonah marks each ask in it. Sonah counts an ask apart when a finding of the
    code review concerns it. Each compaction of the agent's context shows between your messages, with how many tokens
-   it dropped. An ask's row has its own small fold: why Sonah did not check the ask, or that the session review cited
-   only the agent's words for it. In the .md, the asks table is cut at each compaction, under one line "Before
-   compaction N." above the asks that you gave before it. When your prompt holds more than 30 asks, Sonah folds it,
-   and its heading keeps the count of each status.
-7. What the agent did, folded. It lists the files with their added and removed lines, and the commands with their
+   it dropped. In the .md, the asks table is cut at each compaction, under one line "Before
+   compaction N." above the asks that you gave before it. An ask can carry a short tag that says why its status is not
+   more than Sonah checked: why Sonah did not check it (for example "Check did not settle" or "Cited quote not
+   checked"), that a done ask rests only on the agent's word ("Agent's word only"), that Sonah did not check the code
+   review's verdict that an ask holds ("Verdict not checked"), or that Sonah withheld a finding of the code review about
+   it. On the page, a tag's full sentence shows when you point at it or move to it with the keyboard, and in print. An
+   ask's evidence folds under it: for a done ask, the quote that the session review cited as doing it, with the run or
+   the file it came from; how the session review read your words; and the agent's last words before your message (none
+   for a message you queued, or for your answer to its question). The .md gives these in one fold under its asks
+   table, and the agent's message in its message's fold. When your prompt holds more than 30
+   asks, the page lists first the asks that are not done, carry a tag or a line, or have no mark in your messages; the
+   done asks fold under two lines, those that rest only on the agent's word and the others; your messages, each ask
+   marked, fold below. Sonah checked only the marked parts of your messages.
+7. What the agent did, folded in the .md. It lists the files with their added and removed lines, and the commands with their
    results. It also lists the claims, what the agent said it did not do, and the decisions that you settled. The .md
    does not list the runs (the commands, and the other calls that a failure is about): it counts them by their results.
    It keeps the line of a run that another part of the .md names by its number, such as a failure's. When the HTML
    page lists a run that the .md does not, the .md says that the list is on the page. The HTML page's list of runs holds
-   at most 40; after it, the page lists each other run that another part of the report names.
-8. What Sonah could not check, folded. Its first lines say what Sonah did not check, the results that Sonah could not
+   at most 40, each with its run's number; past 40 it keeps first the runs that failed, were refused, did not run,
+   stopped, or have no end that Sonah read, in the recording's order; after it, the page lists each other run that another part of the report names.
+8. What Sonah could not check, folded in the .md. Its first lines say what Sonah did not check, the results that Sonah could not
    read, and, for a session continued after a compaction, that Sonah did not read the earlier part. It lists each
-   limit of the recording with its count, also when Sonah shortens the .md. The legend at the end says that Sonah
-   checked only the marked parts of your message.
+   limit of the recording with its count, also when Sonah shortens the .md.
 
-Each item starts with its type: Fix, Decide, Read or Verify. Then it says what the item is and where it is. With the
-code review, the item also says the impact on you and one action. These two lines are the code review's words. Sonah
-checks their form, not their meaning. Sonah folds the evidence under each item, with the reason for its section. The
-fold also says first when Sonah did not find the item's quote, or could not check whether you asked for it.
+On the HTML page, parts 3 to 8 are tabs under the header: Items (Must act, Must know and Good to know), Decisions,
+Your asks, What the agent did and Not checked. The page shows one tab at a time, and a link to an item, an ask or a run
+opens its tab at that row.
+
+Each item starts with its type: Fix, Decide, Read or Verify. Then it says what the item is and where it is. When the
+item's own line is Sonah's fixed words, its quote comes first, and the line under it says what kind of item it is. A
+decision says first what it is about and what the agent chose. A decision can carry a short tag when Sonah could not
+check whether you asked for it, or when the session review's check on it did not hold, for example "Asked: not checked"
+or "Check did not settle". With the code review, the item also says the impact on you and one action, each labelled as
+the code review's words and tagged "Form, not meaning": Sonah checks their form, not their meaning. A question of the
+code review that Sonah could not tie to an item or an ask is tagged "Not tied". Sonah folds the evidence under each
+item; on the page, an item's tags say their full sentences when you open its row. The fold "How to read this report" at
+the end of the page, and the last lines of the .md, say what the types and the tags mean.
 
 A Must act item can also have a fold "Prompt for the agent": a short message that you can paste into your agent. In it,
 "I" is you and "you" is the agent. It gives your words or the agent's, the quotes from the recording that the item
 shows, the files to look at, and one closing line, such as "Fix this." For an item of the code review, it gives the
-code review's title and action, labelled as its words. On the page, one click selects the whole prompt; in the .md, it
-is a code block. Sonah writes a prompt for these Must act items: an ask that the agent did not do or did only in part;
+code review's title and action, labelled as its words. On the page, the prompt is in a box with a copy button at its
+top right; in the .md, it is a code block. Sonah writes a prompt for these Must act items: an ask that the agent did not do or did only in part;
 a claim, or a statement in a file, that the recording contradicts; an edit against your words; and a bug, a broken
 contract or rule, an ask that the code does not meet or a false claim that the code review found. It writes one only
 when it found the quotes that the prompt needs. Other items have none. The .md that Sonah prints in the terminal holds no prompt, so a review that runs
@@ -337,10 +363,7 @@ on how to do something that you asked goes to Good to know, unless a finding of 
 of the code review that concerns it moves it too, but only when the two name one place: the same recorded event, such
 as a message or an edit, or the same file. Without the code review, each item stays in the section of its kind, and it shows no impact or action.
 
-Sonah shows its reviewer only the start and the end of a long output (see PRIVACY.md). An item, an ask, a claim, a run
-or a decision that cites such an output carries a mark. The mark names the run or the place of the output, and the
-lines that Sonah left out. For a file read, it also names the lines of the file. The mark changes no status. It says
-what Sonah left out, and nothing more: it does not say what those lines would change. What Sonah could not check
+Sonah shows its reviewer only the start and the end of a long output (see PRIVACY.md). What Sonah could not check
 counts these outputs.
 
 When Must act and Must know are both empty, the report says so, and its fold What Sonah could not check adds that this
@@ -359,16 +382,14 @@ With no pull request number, `gh` posts on the pull request of your current bran
 put its number after `comment`. Sonah posts nothing itself. When it can, Sonah keeps the .md within 60,000 bytes, so
 it fits in a GitHub comment. To fit, it takes these steps in order, and stops as soon as the .md fits. First, it shows
 only the start of your long messages. Then it leaves out the evidence folds of the agent's decisions tagged Good to
-know, then of Good to know. Then the table of your prompt keeps the asks that are not done, and Sonah counts your
+know, then of Good to know. Then the table of Your asks keeps the asks that are not done, and Sonah counts your
 messages in place of showing them. Then it counts the rows of the lists in What the agent did, then in What Sonah
 could not check, and shows the counts in place of the rows; What Sonah could not check still lists its first lines and
-each limit of the recording, with its count. Then it leaves out the code excerpts. Then each group of the agent's
+each limit of the recording, with its count. Then it leaves out the code excerpts. Then the list of the agent's
 decisions counts its decisions tagged Good to know in place of showing them. Then it shows Good to know as a count of
-each kind of item. Then the lines in Must act and Must know that link to the decisions further down keep only each
-decision's number. Then it leaves out the prompts for the agent. Last of all, it leaves out the evidence folds of Must
-know, then of Must act, with those of the decisions tagged with them; a fold keeps only what Sonah could not check of
-its item, when there is something. It says so at the top of the first part that it shortened. It never
-shortens the header, the count line, the counts of your prompt or its asks that are not done. It keeps the open lines
+each kind of item. Then it leaves out the prompts for the agent. Last of all, it leaves out the evidence folds of Must
+know, then of Must act, with those of the decisions tagged with them. It says so at the top of the first part that it shortened. It never
+shortens the header, the count line, the counts of Your asks or the asks that are not done. It keeps the open lines
 of the Must act and Must know items, and of the decisions tagged with them, whole too. When these parts alone are longer than 60,000 bytes, the .md says that it is still too long. Sonah then
 prints no `gh` command (see TROUBLESHOOTING.md). The .md pings no one. Sonah puts a mention, an issue number or a commit
 hash from the recording in a code span. In the .md, "you" means the person who ran the agent.
@@ -382,12 +403,11 @@ terminal tells you how to get the links:
 3. Run the same command with a new `--output` file.
 
 Sonah reuses its stored answers, so the second run makes no model call. Keep the report files outside the repository,
-or add them to `.gitignore`. Otherwise the second run reads them as part of the change, and the code review asks again.
-The terminal tells you when Sonah wrote the report inside the repository.
+or add them to `.gitignore`. Otherwise the second run reads them as a change of the repository, and the code review asks
+again. The terminal tells you when Sonah wrote the report inside the repository.
 
 Only you can read the output files, and Sonah never overwrites a file: use a new name each run. The report quotes your
-session as the recording holds it, secrets included. Sonah masks nothing. Read the report before you share it, as its
-footer says.
+session as the recording holds it, secrets included. Sonah masks nothing. Read the report before you share it.
 
 Exit codes report only whether Sonah's own review ran: `0` when it ran to completion, `1` when it ran but did not
 complete (a part of the session was not reviewed; the output names which part and why) or when no session was found for
@@ -533,17 +553,18 @@ connector that you installed. Your organisation's managed policy still applies. 
 state file (`~/.claude.json` in your home folder, or `.claude.json` inside the folder `CLAUDE_CONFIG_DIR` names) and its
 plugin cache in the config folder, as in any session. With `CLAUDE_CONFIG_DIR` set, these writes now go to your folder.
 The code step's agents run in your working directory with the same environment and three read-only tools (Read, Grep and
-Glob), confined to your repository, the other git repositories that hold a file of the change and, when the change is
-reviewed in parts, Sonah's copy of the changed files as they were at the start commit, each within a budget of turns and
-time (the review agent 150 turns and 45 minutes, each check 60 or 80 turns and 30 minutes). Every answer is checked to
-come from the model and window asked for; if not, the answer is never kept: that part is marked not reviewed, or the
-review stops with `model_unavailable`. If you want subscription usage rather than API billing, remove
-`ANTHROPIC_API_KEY` and endpoint overrides from the terminal you sign in from. Each checking call of the session review
-(the calls that test what the reviewer proposed) is limited to 32,768 output tokens per attempt, a cost guard against a
-reply that runs on; the `claude` CLI may ask the model to continue a cut reply up to three times, so one checking call
-costs at most 131,072 output tokens. A continuation that answers whole is read like any other reply; a reply still cut
-after the third counts as a check that did not run, and nothing cut is ever read in part. The call that reads a window
-has no such limit.
+Glob), confined to the working directory, its repository, the other git repositories that hold a file of the change
+and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit
+([PRIVACY.md](PRIVACY.md) says more), each within a budget of turns and time (the review agent 150 turns and 45 minutes,
+each check 60 or 80 turns and 30 minutes).
+Every answer is checked to come from the model and window asked for; if not, the answer is never kept: that part is
+marked not reviewed, or the review stops with `model_unavailable`. If you want subscription usage rather than API
+billing, remove `ANTHROPIC_API_KEY` and endpoint overrides from the terminal you sign in from. Each checking call of the
+session review (the calls that test what the reviewer proposed) is limited to 32,768 output tokens per attempt, a cost
+guard against a reply that runs on; the `claude` CLI may ask the model to continue a cut reply up to three times, so one
+checking call costs at most 131,072 output tokens. A continuation that answers whole is read like any other reply; a
+reply still cut after the third counts as a check that did not run, and nothing cut is ever read in part. The call that
+reads a window has no such limit.
 
 **Codex.** `--backend codex-cli --model gpt-6.1-sol`, with the Codex CLI signed in to your ChatGPT account (on macOS
 the CLI inside the ChatGPT or Codex app is preferred; `SONAH_CODEX_BIN` names another). It runs read-only with its
@@ -663,67 +684,64 @@ last finished review would post, or says there is none yet.
 The code step (on unless you run `sonah config code-pass off` or add `--no-code-pass`; `--code-pass` turns it on for one
 review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. It runs
 with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: each file that
-differs from the commit the session started from (read with git, which it never writes to; with no git history to start
+differs from the commit the session started from (read with git, which writes nothing; with no git history to start
 from, the session's own recorded edits) that a recorded write of the session could have changed, or whose last change
 came while the session ran (a file git shows changed that no recorded edit wrote is then marked so), with its lines
 before and after. A file that differs but changed outside both (a later commit, a file already changed when the session
-began) is outside the evaluated session: it is never part of the change, the report names it apart with those words,
-and when the change holds a file to review the review agent is given it too, after the change and apart from it (the
-first part left out when the request is too large). A finding about such a file is marked "outside the evaluated
-session" and never tied to your asks or the agent's claims. A broken contract, a broken rule or a contradicted claim
-that a line the session changed causes is the session's finding even when it shows in such a file: it is not marked,
-and it keeps its ties. A check of a finding about such a file that fails or is too large to send leaves the coverage of
-the session's change as it is. It gives that change, each changed file whole, the lines the session read of files it
-left unchanged, your words, the project instruction and skill files the session loaded and its review of the session to
-a review agent: Claude Code with three read-only tools (Read, Grep and Glob) over the repository as it is now, for as
-many turns as it needs (up to 150). It cannot run or write anything. It opens any changed file it was not given whole
-(the whole files fill up to about 400 KB, and a file that does not fit is named), reads the callers, tests and docs and
-the project's rules, and checks the change, your asks and the agent's claims and decisions against the code. Each
-finding names the input that shows it and quotes every step from that input to the line (of the session, a step may
-quote only your words or a recorded result, never the agent's: a helper's report, and a `CLAUDE.md` the agent wrote,
-edited or deleted in the session, count as the agent's). Every quote
-is checked word for word by code against the file it names; an answer that breaks the contract goes back to the agent
-once, naming what is wrong. Then a checking agent with the same tools tries to refute each finding, never shown the
-agent's words from the session, and one more checks the questions it asks. A finding is published only when its checker
-upholds it with quotes of the code; a supporting sentence the checker finds false is cut and not shown; a finding that
-Sonah confirms but ties to nothing (no item of the session review it follows from, such as an ask, a claim, a decision
-or a failure the agent passed over, and no doc line, caller, test or words of yours that its check quotes) is shown as
-checked, in Good to know by default and never in Must act; anything withheld is listed with its reason. A binary file
-(or one git diffs as binary, through a `binary` or `-diff` attribute),
-one too large, and a file the session deleted that is there again have no lines in the change the agent is given; the
-code review does not read as complete while any part of the change went unshown, or while the repository changed
-during the review. A file that changed after the session's last recorded edit (a formatter, say) is shown with its
-change from where the session started, like any changed file, and the report says that Sonah cannot tell whether
-all of its lines are the agent's. When the working directory is a folder of a larger repository, git is asked about that folder
-and about the files the session wrote elsewhere in the repository (the other paths that differ elsewhere are counted),
-and the agents may still read the whole repository. A file the session wrote in another git repository, such as a
-sibling worktree, is part of the change too (since 0.3.0-beta.5), after the repository's files: its change runs from the
-commit where that repository stood when the session began, by the same rule as yours, and a file there that no recorded
-write of the session touched is part of it only when its last change came while the session ran (the other files that
-differ there are named apart, outside the evaluated session). Such a repository counts only when a file the session
-wrote there is there now and differs from that commit; the agents may read each such repository too. A repository that
-you give with `--code-repo` is read the same way, whatever the session wrote there (see "A repository that the
-recording does not show the session changing"). A file the session
-wrote in a folder that no git repository holds (a notes or temporary folder) is not reviewed: the report lists its
-folder with how many files the session wrote there. A write whose path holds a shell variable or command substitution
-that the recording does not expand (`cat > "$DIR/notes.md"`) names no file Sonah can find: it is counted apart, unless
-that spelling names a file or folder that is there (relative to the session's working folder, or where an absolute path
-points) or a file git lists as changed since the start commit (a file named with a `$`). A file
-the session wrote in a coding agent's home folder or Sonah's, or under a name from your home folder, is counted, not
-reviewed. When the session ran a shell command, the report says that Sonah does not yet
-see every edit made by helper agents or by scripts after a `cd`. Each finding and
-each question of the code review is an item of the report. What Sonah could not check lists what the code review did
-not cover and what its checks withheld. A claim that a finding shows false says so beside its status. The code review
-never changes that status. The code review also proposes a level for each item, and it writes one line for each changed
-file (see "Reading the result"). In a git repository, run it again on the same `--state-dir` with nothing
-changed since, and nothing is asked again (what Sonah writes in its state folder is never part of the change, and a
-`--state-dir` that is the working directory or holds it is refused; a file git tracks or the session wrote always is,
-and so is any other file written in the repository after the session began, such as a page saved there with `--output`);
-with only the repository changed, the session part reuses its stored answers: only the code pass asks anything new.
-`--dry-run --state-dir DIR` says, with no call and nothing written, how many stored session answers such a run would
-reuse and what the code pass would send first. `--code-model ID` (or `SONAH_CODE_MODEL`) runs the code pass on a model
-of its own, such as `claude-opus-5-5[1m]`, while the session review stays on `--model` (or the default); the code pass's
-stored answers are kept per model.
+began) is outside the evaluated session: it is never part of the change, the report names it apart with those words, and
+when the change holds a file to review the review agent is given it too, after the change and apart from it (the first
+part left out when the request is too large). A finding about such a file is marked "outside the evaluated session" and
+never tied to your asks or the agent's claims. A broken contract, a broken rule or a contradicted claim that a line the
+session changed causes is the session's finding even when it shows in such a file: it is not marked, and it keeps its
+ties. A check of a finding about such a file that fails or is too large to send leaves the coverage of the session's
+change as it is. It gives that change, each changed file whole, the lines the session read of files it left unchanged,
+your words, the project instruction and skill files the session loaded and its review of the session to a review agent:
+Claude Code with three read-only tools (Read, Grep and Glob) over the repository as it is now, for as many turns as it
+needs (up to 150). It cannot run or write anything. It opens any changed file it was not given whole (the whole files
+fill up to about 400 KB, and a file that does not fit is named), reads the callers, tests and docs and the project's
+rules, and checks the change, your asks and the agent's claims and decisions against the code. Each finding names the
+input that shows it and quotes every step from that input to the line (of the session, a step may quote only your words
+or a recorded result, never the agent's: a helper's report, and a `CLAUDE.md` the agent wrote, edited or deleted in the
+session, count as the agent's). Every quote is checked word for word by code against the file it names; an answer that
+breaks the contract goes back to the agent once, naming what is wrong. Then a checking agent with the same tools tries
+to refute each finding, never shown the agent's words from the session, and one more checks the questions it asks. A
+finding is published only when its checker upholds it with quotes of the code; a supporting sentence the checker finds
+false is cut and not shown; a finding that Sonah confirms but ties to nothing (no item of the session review it follows
+from, such as an ask, a claim, a decision or a failure the agent passed over, and no doc line, caller, test or words of
+yours that its check quotes) is shown as checked, in Good to know by default and never in Must act; anything withheld is
+listed with its reason. A binary file (or one git diffs as binary, through a `binary` or `-diff` attribute), one too
+large, and a file the session deleted that is there again have no lines in the change the agent is given; the code
+review does not read as complete while any part of the change went unshown, or while the repository changed during the
+review. A file that changed after the session's last recorded edit (a formatter, say) is shown with its change from
+where the session started, like any changed file, and the report says that Sonah cannot tell whether all of its lines
+are the agent's. When the working directory is a folder of a larger repository, git is asked about that folder and about
+the files the session wrote elsewhere in the repository (the other paths that differ elsewhere are counted), and the
+agents may still read the whole repository. A file the session wrote in another git repository, such as a sibling
+worktree, is part of the change too (since 0.3.0-beta.5), after the repository's files: its change runs from the commit
+where that repository stood when the session began, by the same rule as yours, and a file there that no recorded write
+of the session touched is part of it only when its last change came while the session ran (the other files that differ
+there are named apart, outside the evaluated session). Such a repository counts only when a file the session wrote there
+is there now and differs from that commit; the agents may read each such repository too. For a repository that you give
+with `--code-repo`, see "A repository that the recording does not show the session changing". A file the session wrote
+outside the working directory, in a folder that no git repository holds (a notes or temporary folder), is not reviewed:
+the report lists its folder with how many files the session wrote there. A write whose path holds a shell variable or
+command substitution that the recording does not expand (`cat > "$DIR/notes.md"`) names no file Sonah can find: it is
+counted apart, unless that spelling names a file or folder that is there (relative to the session's working folder, or
+where an absolute path points) or a file git lists as changed since the start commit (a file named with a `$`). A file
+the session wrote under a name from your home folder, or outside the working directory in a coding agent's home folder
+or Sonah's, is counted, not reviewed. When the session ran a shell command, the report says that Sonah does not yet see
+every edit made by helper agents or by scripts after a `cd`. Each finding and each question of the code review is an
+item of the report. What Sonah could not check lists what the code review did not cover and what its checks withheld. A
+claim that a finding shows false says so beside its status. The code review never changes that status. The code review
+also proposes a level for each item, and it writes one line for each changed file (see "Reading the result"). In a git
+repository, run it again on the same `--state-dir` with nothing changed since, and nothing is asked again (Sonah never
+counts what it writes in its state folder, and refuses a `--state-dir` that is the working directory or holds it; any
+other file written in the repository since, such as a page saved there with `--output`, counts as a change); with only
+the repository changed, the session part reuses its stored answers: only the code pass asks anything new. `--dry-run
+--state-dir DIR` says, with no call and nothing written, how many stored session answers such a run would reuse and what
+the code pass would send first. `--code-model ID` (or `SONAH_CODE_MODEL`) runs the code pass on a model of its own, such
+as `claude-opus-5-5[1m]`, while the session review stays on `--model` (or the default); the code pass's stored answers
+are kept per model.
 
 ### Cursor and optional stops
 
@@ -752,7 +770,8 @@ It does not:
 
 - give a verdict, approve, merge or block anything;
 - run your code or your tests: the review reads the recording and, with the code step (on unless you turn it off),
-  your repository as it is now, with read-only tools, and the session's changes from Git, which it never writes to;
+  your working directory and the git repositories it reads, as they are now, with read-only tools, and the session's
+  changes from Git, which writes nothing;
 - let the model rate its own confidence or the severity of anything;
 - post anything anywhere unless you ask for it and confirm;
 - change your recordings.
@@ -761,7 +780,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.10`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.11`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
@@ -781,21 +800,21 @@ can change between betas.
   yours, such as `commit`, counts as the harness's own context. A few kinds of row with text are not read, such as the
   output of a command that you ran in Claude Code itself; a session that holds one is said to have incomplete
   evidence.
-- The code review reads the folder that the recording names as the session's working directory (and the other git
-  repositories that the session wrote to), not the folder that you run `sonah review` in, unless you add `--code-repo`.
-  It sees a script's write only when the command names the file, and places a relative name after a `cd` only when the
-  command names that folder in full or through a variable that it sets. It does not follow a `cd` to a relative folder,
-  to `~` or to a folder that the command does not name, `pushd`, a subshell, another shell or a script's own change of
+- The code review reads the working directory that the recording names and the repositories of its change, not the
+  folder that you run `sonah review` in, unless you add `--code-repo`.
+  It sees a script's write only when the command names the file, and places a relative name after a `cd` only when it
+  can tell that folder from the command: named in full, through a variable that the command sets, under your home folder
+  (`~`), or relative to the working directory or to such a folder. It does not follow other changes of folder, such as a
+  `cd` to a folder that the command does not name, `pushd`, a subshell, another shell or a script's own change of
   folder, and it does not see a path that a script builds or what a script file writes. Such a change is reviewed only
-  in a git repository that the review reads (your working directory's, another one that the session wrote to, or one
-  that you give with `--code-repo`), when the file's last change came while the session ran. If the session changed no
-  other file that Sonah reviews, the first lines say that no code was reviewed. Check such a repository yourself with
-  `git status` and `git diff`, or run the review again with `--code-repo` and its folder. With `--code-repo`, a file
-  there is part of the change only when its last change came while the session ran (or a recorded write could have
-  changed it): a file that the session changed and that changed again after it, or whose last change kept an older time
-  (a copy, a move), is outside the evaluated session. When the working directory is a folder of a larger repository,
-  giving that repository changes nothing that Sonah reads: elsewhere in it, a change that Sonah does not see or place
-  stays unread, and the report says so.
+  in a git repository that the review reads, when the file's last change came while the session ran. If the session
+  changed no other file that Sonah reviews, the first lines say that no code was reviewed. Check such a repository
+  yourself with `git status` and `git diff`, or run the review again with `--code-repo` and its folder. With
+  `--code-repo`, a file there is part of the change only when its last change came while the session ran (or a recorded
+  write could have changed it): a file that the session changed and that changed again after it, or whose last change
+  kept an older time (a copy, a move), is outside the evaluated session. When the working directory is a folder of a
+  larger repository, giving that repository changes nothing that Sonah reads: elsewhere in it, a change that Sonah does
+  not see or place stays unread, and the report says so.
 - The code step reads the files as they are on this computer now. A recording from another computer, or a project
   whose files were deleted since, leaves it with nothing to read. The page and the terminal say so, and the exit code
   still follows the session review, unless you add `--code-pass`, which makes the code step's coverage count.

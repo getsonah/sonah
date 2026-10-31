@@ -11,7 +11,7 @@ is wrong in the code.**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/getsonah/sonah/assets/review-dark.png">
-  <img width="800" alt="The first screen of a Sonah review: the count line, then the Must act and Must know items" src="https://raw.githubusercontent.com/getsonah/sonah/assets/review-light.png">
+  <img width="800" alt="The first screen of a Sonah review: the counts and your asks, then the tabs and the Must act and Must know sections" src="https://raw.githubusercontent.com/getsonah/sonah/assets/review-light.png">
 </picture>
 
 </div>
@@ -123,9 +123,11 @@ lists the messages and exit codes.
   lists the few parts that are cut or left out, such as the agent's private reasoning. By default this is your
   `claude` login, so it goes to Anthropic. With `--backend codex-cli` it goes to OpenAI through your `codex` login.
   With `--backend anthropic-api` it goes to Anthropic's API with your key.
-- **With the code review (on by default):** the session's change, the files it changed, and what the code review's
-  read-only agents open. They read your repository, any other git repository where the session changed a file, and
-  any that you give with `--code-repo`. Turn the code review off with `--no-code-pass`, or for every review with `sonah config code-pass off`.
+- **With the code review (on by default):** files of your working directory and of the git repositories that the code
+  review reads ([Privacy](docs/PRIVACY.md) says which): the session's change, the other files that differ from where
+  the session started, the lines the session read of other files and the skill files it used, as they are now, and
+  what the code review's read-only agents open. Turn the code review off with `--no-code-pass`, or for every review
+  with `sonah config code-pass off`.
 - **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics.
   Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's public registry
   for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`) and tells you

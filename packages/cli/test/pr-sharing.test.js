@@ -8,6 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { confirmPrSharing, sharePrReview, validatePrSharing } from '../src/pr-sharing.js';
 import { REPORT_FOOTER_WORDS } from '../../render/report-words.js';
+import { renderSessionPage } from '../../render/session-page.js';
+import { renderReportMarkdown } from '../../render/session-story.js';
+import { reportSession, triagedReport, sessionOnlyReport } from '../../render/test/report-fixture.js';
 
 const BASE = 'b'.repeat(40), HEAD = 'a'.repeat(40);
 const env = { SONAH_GITHUB_ACTOR_ID: '7', SONAH_GITHUB_APP_ID: '9' };
@@ -188,9 +191,21 @@ test('a throwing confirmation prints only a closed diagnostic and preserves loca
   assert.match(stderr.text, /github_unavailable/); assert.doesNotMatch(stderr.text, /Synthetic private/);
 });
 
-test('the local page the comment follows carries the same read-before-share reminder', () => {
-  // D97: the page's footer says it in the report's words.
-  assert.match(REPORT_FOOTER_WORDS.share, /^Read this report before you share it\.$/);
+test('D199: the local page and its .md no longer carry a read-before-share reminder; the comment keeps its own',
+  async (t) => {
+  // D199 (the owner, 2026-10-30, "All of them"): the footer's advice is gone from the words and from every reader of
+  // the report; the PR comment's own reminder is the publication's, and stays.
+  assert.equal(REPORT_FOOTER_WORDS.share, undefined);
+  const session = reportSession();
+  for (const report of [triagedReport(session), sessionOnlyReport(session)]) {
+    for (const text of [renderSessionPage(session, report, {}), renderReportMarkdown(session, report, {})]) {
+      assert.ok(text.includes(REPORT_FOOTER_WORDS.legend), 'its footer');
+      assert.ok(!/before you share it/.test(text), text.slice(-600));
+    }
+  }
+  const { args, server } = await setup(t);
+  assert.equal((await sharePrReview(args)).state, 'complete');
+  assert.match(JSON.stringify(posts(server)), /Read it before you share it\./);
 });
 
 test('a metadata read GitHub refuses or answers malformed fails closed, before confirmation or write', async (t) => {

@@ -8,9 +8,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReportMarkdown, STORY_VERSION } from '../session-story.js';
-import { renderSessionPage, PAGE_VERSION } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw, PAGE_VERSION } from '../session-page.js';
 import { REPORT_DID_WORDS } from '../report-words.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(renderSessionPageRaw(...args));
 
 const TEXT = {
   ask: 'SYNTHETIC_SFR_ASK: make the parser suite pass.',
@@ -100,7 +104,8 @@ test('status fact readers: versions moved with the bytes', () => {
   // the footer says what the review cost.
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
-  assert.equal(STORY_VERSION, 'sonah.session-story/41');
+  // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
+  assert.equal(STORY_VERSION, 'sonah.session-story/42');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -154,7 +159,8 @@ test('status fact readers: versions moved with the bytes', () => {
   // cost.
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/46');
+  // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {

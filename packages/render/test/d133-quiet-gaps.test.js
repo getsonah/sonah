@@ -5,6 +5,13 @@
 // The invariants, over every review the render tests hold (the fixtures' shapes, the story and long sessions, the
 // checklist session, and a generated session of many asks): outside a fold no sentence of Sonah's about what it could
 // not check appears more than twice; each moved count equals the fold's; every moved line is in the fold, never open.
+// D199 (the owner, 2026-10-30, "All of them"): an ask row's fold, an item's fold notes and the legend's coverage line are
+// gone from every reader; What Sonah could not check keeps its lines and counts.
+// D200 (the owner, 2026-10-31: "bring back the precision markers as short tags"): an ask's and an item's short tags are
+// back on their rows, the sentence each stands for only as the tag's title on the page; the coverage line is said once on
+// each reader again. D200 (review round): no title; the sentence is the tag's `.tip`, a span hidden until a pointer or
+// focus shows it, read here as hidden as the title was (it is the sentence the tag stands for, not open text); the .md's
+// coverage line is its own (REPORT_MD_WORDS.coverage, or coverageAsks when its table is shortened).
 //
 // Every session and report here is synthetic.
 import test from 'node:test';
@@ -13,10 +20,10 @@ import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { renderSessionPage, sessionPage, escapeHtml } from '../session-page.js';
-import { renderReportMarkdown } from '../session-story.js';
+import { renderReportMarkdown, REPORT_MD_WORDS } from '../session-story.js';
 import { reportModel, REPORT_FOLD_CHOICES, reportItems } from '../report-model.js';
 import { REPORT_PROMPT_WORDS, REPORT_NOT_CHECKED_PARTS, REPORT_HEADER_WORDS, REPORT_COUNT_WORDS, REPORT_ITEM_WORDS,
-  REPORT_TRIM_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_SECTION_WORDS } from '../report-words.js';
+  REPORT_TRIM_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_SECTION_WORDS, REPORT_DECISION_TAGS } from '../report-words.js';
 import { coverageCauses } from '../../evidence/src/review.js';
 import { honestStatuses } from '../../evidence/src/ledger.js';
 import { moduleEntries, WORD_MODULE_DIRS, WORD_MODULES_NAMED } from './style-lint.js';
@@ -48,11 +55,16 @@ async function sonahSentences() {
   return [...out];
 }
 
+/** D200 (review round): a tag's sentence, its `.tip` span, hidden until a pointer or focus shows it: no open text. */
+const withoutTips = (html) => html.replace(/ <span class="tip">[^<]*<\/span>/g, '');
 const unescape = (text) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
   .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 /** The page's text with every fold closed: a `<details>` shows only its own summary; styles go. Structure only. */
 function closedText(html) {
-  const body = html.replace(/<style>[\s\S]*?<\/style>/g, '');
+  let body = withoutTips(html).replace(/<style>[\s\S]*?<\/style>/g, '');
+  // D193: a panel after the first is a tab the reader opens, closed as a fold is.
+  const panels = [...body.matchAll(/<(?:div|section) class="[^"]*\bpanel\b[^"]*"/g)].map((m) => m.index);
+  if (panels.length > 1) body = body.slice(0, panels[1]) + body.slice(body.indexOf('<footer'));
   let out = '', depth = 0, summary = 0, last = 0;
   for (const m of body.matchAll(/<\/?(details|summary)\b[^>]*>|<[^>]+>/g)) {
     if (depth === 0 || summary) out += body.slice(last, m.index);
@@ -146,8 +158,12 @@ test('D133: the two placements the owner confirmed (2026-10-22) are on', () => {
 test('D133: outside a fold, no sentence of Sonah\'s about what it could not check appears more than twice', async () => {
   const sentences = await sonahSentences();
   // The audit's class holds the moved sentences, so the invariant reads them.
-  for (const s of [REPORT_PROMPT_WORDS.coverage, REPORT_PROMPT_WORDS.agentOnly, REPORT_ITEM_WORDS.askedUnknown,
-    REPORT_ITEM_WORDS.quoteMissing, REPORT_PROMPT_WORDS.codeHoldsUnchecked]) assert.ok(sentences.includes(s), s);
+  // D199: the coverage sentence is gone from the words (and from every page and .md below). D200: it is back, said once
+  // on each reader.
+  assert.equal(REPORT_PROMPT_WORDS.coverage, 'Sonah checked only the marked parts of your message.');
+  for (const s of [REPORT_PROMPT_WORDS.agentOnly, REPORT_ITEM_WORDS.askedUnknown,
+    REPORT_ITEM_WORDS.quoteMissing, REPORT_PROMPT_WORDS.codeHoldsUnchecked, REPORT_PROMPT_WORDS.coverage])
+    assert.ok(sentences.includes(s), s);
   let messages = 0, agentOnly = 0, unlocated = 0;
   for (const [name, { session, report, options }] of Object.entries(cases())) {
     const html = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64), ...options });
@@ -156,10 +172,18 @@ test('D133: outside a fold, no sentence of Sonah\'s about what it could not chec
     agentOnly += model.prompt.asks.filter((a) => a.folded.some((l) => l[0]?.text === REPORT_PROMPT_WORDS.agentOnly)).length;
     const closed = closedText(html);
     for (const s of sentences) assert.ok(count(closed, s) <= 2, `${name}: ${count(closed, s)} × ${s}`);
-    // The legend says the coverage sentence once, when the page marks a message.
-    assert.equal(count(closed, REPORT_PROMPT_WORDS.coverage), model.prompt.messages.length ? 1 : 0, name);
+    // D199: no reader says which parts of your message Sonah checked (the legend said it once, when the page marked a
+    // message; the .md under its table). D200: once on each reader again: the page's first line in the fold of your
+    // messages, never open; the .md's under its table of your asks.
+    const whole = renderReportMarkdown(session, report, options);
+    assert.equal(count(html, REPORT_PROMPT_WORDS.coverage), model.prompt.messages.length ? 1 : 0, name);
+    assert.equal(count(closed, REPORT_PROMPT_WORDS.coverage), 0, name);
+    // D200 (review round): the .md's own words, the table's or (shortened) the asks', never the page's "marked parts".
+    assert.equal(count(whole, REPORT_PROMPT_WORDS.coverage), 0, name);
+    assert.equal(count(whole, REPORT_MD_WORDS.coverage) + count(whole, REPORT_MD_WORDS.coverageAsks),
+      model.prompt.asks.length ? 1 : 0, name);
     // D133's review: the same in the .md, its text outside every fold, Markdown's escapes taken out.
-    const md = closedText(renderReportMarkdown(session, report, options)).replace(/\\(.)/g, '$1');
+    const md = closedText(whole).replace(/\\(.)/g, '$1');
     for (const s of sentences) assert.ok(count(md, s) <= 2, `${name} (.md): ${count(md, s)} × ${s}`);
     unlocated += model.prompt.messages.reduce((n, m) => Math.max(n, m.unlocated.length), 0) >= 3 ? 1 : 0;
   }
@@ -169,7 +193,7 @@ test('D133: outside a fold, no sentence of Sonah\'s about what it could not chec
 });
 
 test('D133: each moved line is in its fold, word for word, never open; each moved count equals the fold\'s', () => {
-  let quiet = 0, folded = 0;
+  let quiet = 0, folded = 0, tagged = 0;
   for (const [name, { session, report, options }] of Object.entries(cases())) {
     const model = reportModel(session, report, options);
     const html = renderSessionPage(session, report, { sessionHash: 'a'.repeat(64), ...options });
@@ -178,9 +202,11 @@ test('D133: each moved line is in its fold, word for word, never open; each move
     const fold = notCheckedFold(html);
     // The first screen's lines: in the page's fold and the .md's, never open; the header says none of them.
     assert.equal(model.header.didNotCheck, null, name);
+    // D199: the page shows the line of what Sonah did not check as chips, its words the same: read as text.
+    const foldText = unescape(fold.replace(/<[^>]+>/g, ''));
     for (const line of model.notChecked.quiet) {
       quiet++;
-      assert.ok(fold.includes(escapeHtml(line)), `${name}: ${line}`);
+      assert.ok(foldText.includes(line), `${name}: ${line}`);
       assert.ok(!closed.includes(line), `${name}: open: ${line}`);
       assert.ok(mdFoldText(md).includes(`- ${line}`), `${name}: .md: ${line}`);
     }
@@ -198,14 +224,34 @@ test('D133: each moved line is in its fold, word for word, never open; each move
     if (cited) assert.ok(phrases.includes(REPORT_NOT_CHECKED_PARTS.agentOnly(cited)) || nc.didNotCheck?.more, name);
     if (nc.didNotCheck) assert.ok(nc.quiet.includes(`${REPORT_HEADER_WORDS.notCheckedLead} ${phrases.join(' · ')}`
       + `${nc.didNotCheck.more ? ` ${nc.didNotCheck.more}` : ''}`), name);
-    // An ask's folded lines are in its own fold on the page, after its status, and in its .md row.
+    // D199: an ask's folded lines (the model keeps them; the line above counts them) are in no fold of its row, on the
+    // page or in the .md's table: no row holds a fold.
+    assert.equal(html.slice(html.indexOf('<main')).includes('row-evidence'), false, name);
+    const rows = md.split('\n').filter((l) => l.startsWith('| '));
+    assert.equal(rows.some((row) => row.includes('<details>')), false, name);
+    // D200: but a line its tag stands for is the tag's title on the page (never the row's text), and each tag's sentence
+    // is one of the lines the model keeps folded. D200 (review round): the tag's `.tip`, hidden, in place of the title.
     for (const ask of asks.filter((a) => a.folded.length)) {
       folded++;
-      const li = new RegExp(`<li(?: id="ask-${ask.n}")?>ask ${ask.n} · [\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-      const at = li.indexOf('<details class="row-evidence">');
-      assert.ok(at > 0, `${name}: ask ${ask.n}`);
-      for (const line of ask.folded) assert.ok(li.indexOf(escapeHtml(line.map((p) => p.text).join(''))) > at,
+      const li = new RegExp(`<li id="ask-${ask.n}" class="ask-row">[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+      // D202: the row's one fold is its evidence (what does it, how the session review read it, the agent's message
+      // before), never these lines.
+      assert.equal(li.replace(/<div class="ad acts">[\s\S]*?<\/details><\/div>/g, '').includes('<details'), false,
         `${name}: ask ${ask.n}`);
+      for (const line of ask.folded) {
+        const words = line.map((p) => p.text).join('');
+        assert.equal(count(li, escapeHtml(words)), count(li, `<span class="tip">${escapeHtml(words)}</span>`),
+          `${name}: ask ${ask.n}: ${words}`);
+        assert.equal(unescape(withoutTips(li).replace(/<[^>]+>/g, '')).includes(words), false, `${name}: ask ${ask.n}: ${words}`);
+        assert.equal(rows.some((row) => row.replace(/\\(.)/g, '$1').includes(words)), false, `${name}: ask ${ask.n} (.md)`);
+      }
+    }
+    for (const ask of asks) {
+      const said = ask.folded.map((line) => line.map((p) => p.text).join(''));
+      for (const tag of list(ask.tags).filter((t) => t.key !== 'withheld')) {
+        tagged++;
+        assert.ok(said.includes(tag.words), `${name}: ask ${ask.n}: ${tag.key}`);
+      }
     }
     // Must act and Must know empty: the count line says what Sonah found; the sentence after it is in the fold.
     if (model.countLine.empty) {
@@ -213,10 +259,12 @@ test('D133: each moved line is in its fold, word for word, never open; each move
       assert.ok(nc.quiet.includes(REPORT_COUNT_WORDS.notCorrect), name);
     }
   }
-  assert.ok(quiet >= 8 && folded >= 10, `${quiet} lines in the fold, ${folded} rows with a fold`);
+  assert.ok(quiet >= 8 && folded >= 10 && tagged >= 10,
+    `${quiet} lines in the fold, ${folded} rows with a fold, ${tagged} tags`);
 });
 
-test('D133: a page past its size keeps, in each evidence fold it shortens, what Sonah could not check of the item', () => {
+test('D133, D199: a page past its size shortens each evidence fold to its summary; no fold says what Sonah could not check '
+  + 'of the item', () => {
   // 1,500 more decisions that Sonah could not tie to an ask: the page leaves out the evidence folds' lines to fit.
   const session = reportSession();
   const r = triagedReport(session);
@@ -228,7 +276,11 @@ test('D133: a page past its size keeps, in each evidence fold it shortens, what 
   const items = reportItems(reportModel(session, big, {})).filter((item) => item.scope?.askedUnknown
     && !item.scope?.notAsked);
   assert.ok(items.length > 1_500);
-  assert.equal(count(page.html, REPORT_ITEM_WORDS.askedUnknown), items.length);
+  // D199 (the owner, 2026-10-30, "All of them"): the model still knows each; no reader says it, shortened or not.
+  assert.equal(count(page.html, REPORT_ITEM_WORDS.askedUnknown), 0);
+  assert.equal(count(renderReportMarkdown(session, big, {}), REPORT_ITEM_WORDS.askedUnknown), 0);
+  assert.ok(page.html.includes(`<details class="evidence"><summary>${REPORT_ITEM_WORDS.evidence}</summary></details>`),
+    'a shortened fold keeps its summary');
 });
 
 /** A report whose .md is shortened past the step that cuts the lists of What Sonah could not check to counts: 100 more
@@ -253,9 +305,14 @@ test('D133 (its review): a shortened .md keeps every coverage cause with its cou
   const md = renderReportMarkdown(session, report, {});
   const fold = mdFoldText(md);
   assert.ok(md.includes(REPORT_TRIM_WORDS.mdShortened));
-  // The fold's other lists are cut to counts here.
-  assert.match(fold, new RegExp(REPORT_NOT_CHECKED_WORDS.rowsNotShown(3).replace(/[.]/g, '\\.')));
+  // The fold's other lists are cut to counts here (D199's review: the session's list holds one more fact, the done asks
+  // whose row cites only the agent's words, so 4 where it was 3).
+  assert.match(fold, new RegExp(REPORT_NOT_CHECKED_WORDS.rowsNotShown(4).replace(/[.]/g, '\\.')));
   const model = reportModel(session, report, {});
+  const agentOnly = model.notChecked.facts.filter((f) => f.group === 'session'
+    && f.parts.map((p) => p.text).join('').startsWith(REPORT_NOT_CHECKED_WORDS.agentOnlyAsks(1)));
+  assert.equal(agentOnly.length, 1);
+  assert.ok(!fold.includes(REPORT_NOT_CHECKED_WORDS.agentOnlyAsks(1)), 'among the facts cut to a count');
   const causes = model.notChecked.facts.filter((f) => f.cause === true).map((f) => f.parts.map((p) => p.text).join(''));
   // Every cause the review declares (the terminal's "Not covered" line before D133), each with its count.
   const declared = coverageCauses({ ...report, ...honestStatuses({ ...report, findings: [] }) });
@@ -268,37 +325,43 @@ test('D133 (its review): a shortened .md keeps every coverage cause with its cou
   for (const line of model.notChecked.quiet) assert.ok(fold.includes(`- ${line}`), line);
 });
 
-test('D133 (its review): "Sonah did not find this quote in the recording." is its item\'s evidence fold\'s first line, '
-  + 'never on the item\'s visible lines, also when the fold is shortened', () => {
+test('D133 (its review), D199, D200: "Sonah did not find this quote in the recording." is on no reader\'s lines (D200: only '
+  + 'its tag\'s title), in no evidence fold and on no item\'s visible lines, also when the report is shortened', () => {
+  // D199 (the owner, 2026-10-30, "All of them"): D133's review put it first in its item's evidence fold, kept when the fold
+  // was shortened; no reader says it now. The model keeps `quoteMissing`, and the quote is never shown.
   const said = REPORT_ITEM_WORDS.quoteMissing;
   const { session, report } = missingQuote();
   const items = reportItems(reportModel(session, report, repoFacts())).filter((i) => i.quoteMissing);
   assert.ok(items.length >= 1 && items.some((i) => i.tier.final !== 'good_to_know'), 'an open item without its quote');
   const html = renderSessionPage(session, report, repoFacts());
-  assert.equal(count(closedText(html), said), 0);
-  for (const item of items) {
-    const at = html.indexOf(`id="item-${item.n}"`);
-    const fold = html.indexOf('<details class="evidence"><summary>', at);
-    const body = html.indexOf('</summary>', fold) + '</summary>'.length;
-    assert.ok(html.startsWith(`<p class="note">${escapeHtml(said)}</p>`, body), `item ${item.n}`);
-  }
   const md = renderReportMarkdown(session, report, repoFacts());
-  // In the .md: only as the first line of an evidence fold.
-  const lines = md.split('\n');
-  const at = lines.flatMap((line, i) => (line.includes(said) ? [i] : []));
-  assert.equal(at.length, items.length);
-  for (const i of at) {
-    assert.equal(lines[i], `- ${said}`);
-    assert.match(lines[i - 2], /^<details><summary>Evidence · Why /);
+  // D200: the item's short tag says it (REPORT_DECISION_TAGS.quoteMissing), the sentence only as the tag's title on the
+  // page; the .md's item head carries the tag. D200 (review round): the sentence is the tag's hidden `.tip`, no title.
+  const missing = items.filter((i) => list(i.tags).some((t) => t.key === 'quoteMissing'));
+  assert.equal(missing.length, items.length);
+  const flag = `<span class="flag">${escapeHtml(REPORT_DECISION_TAGS.quoteMissing)} <span class="tip">${escapeHtml(said)}`
+    + '</span></span>';
+  // D202 (a tag's sentence showed on a pointer's hover only): and once in the opened row, under the tag's word, where a
+  // keyboard and a touch reach it.
+  const line = `<p class="line tag-why kv"><span class="label">${escapeHtml(REPORT_DECISION_TAGS.quoteMissing)}</span> `
+    + `<span class="v">${escapeHtml(said)}</span></p>`;
+  assert.ok(count(html, flag) >= 1 && count(html, escapeHtml(said)) === count(html, flag) + count(html, line),
+    'the sentence as the tag\'s tip, and in the opened row');
+  assert.equal(count(html, line), count(html, flag));
+  assert.ok(md.includes(` · ${REPORT_DECISION_TAGS.quoteMissing}`), 'the .md\'s tag');
+  for (const out of [html.split(line).join(''), md]) {
+    assert.equal(count(withoutTips(out), said), 0);
+    assert.equal(out.includes('Redis everywhere'), false);
   }
-  // Shortened past Must act's evidence (150 more code findings): the item's fold keeps it (`foldNotes`), and only it.
+  // Shortened past Must act's evidence (150 more code findings): Must act keeps no evidence fold, and nothing says it.
   const f = report.codePass.findings[0];
   const big = { ...report, codePass: { ...report.codePass, findings: [...report.codePass.findings,
     ...Array.from({ length: 150 }, (_, i) => ({ ...f, id: `sha256:${String(i).padStart(64, 'a')}`, title: `${f.title} ${i}`,
       trace: list(f.trace).map((t) => ({ ...t, step: `${t.step} ${'w'.repeat(200)} ${i}` })) }))] } };
   const shortMd = renderReportMarkdown(session, big, repoFacts());
   assert.ok(shortMd.includes(REPORT_TRIM_WORDS.mdShortened));
-  const kept = [...shortMd.matchAll(/<details><summary>Evidence · Why Must act<\/summary>\n\n([\s\S]*?)\n\n<\/details>/g)]
-    .map((m) => m[1]);
-  assert.deepEqual(kept, [`- ${said}`], 'Must act\'s evidence is cut; the missing quote\'s note stays');
+  const act = shortMd.slice(shortMd.search(/^### Must act \(/m), shortMd.search(/^### Must know \(/m));
+  assert.ok(act.includes('<a name="item-'), 'Must act keeps its items');
+  assert.equal(act.includes(`<summary>${REPORT_ITEM_WORDS.evidence}</summary>`), false, 'Must act\'s evidence is cut');
+  assert.equal(count(shortMd, said), 0);
 });

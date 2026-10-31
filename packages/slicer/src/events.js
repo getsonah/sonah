@@ -1334,6 +1334,10 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
     }
 
     if (rec.kind !== 'assistant') continue;
+    // The owner, 2026-10-31 ("Everywhere now"): an assistant row the slicer labelled harness (records.js `claudeLabeller`:
+    // Claude Code's own synthetic row, an API error or a usage limit) is not the agent's: none of its text is a statement
+    // or the turn's closing words. The label census counts the row (`labelCounts`).
+    if (rec.label === LABELS.harness) continue;
 
     if (['analysis', 'reasoning'].includes(d.channel ?? d.message?.channel)) {
       commentaryCapture.privateExcluded++; continue;
@@ -1445,7 +1449,7 @@ export function buildEvents(records, { cwd = '', outcomes = null, claudeLocators
       // recorded as the write's `after`, taken from the command as recorded (`heredocBodies`). Only when the heredoc is the path's one write in this
       // command: a later `sed -i` of the same file would make the body a state the file left.
       if (typeof ev.cmd === 'string' && !spec.distinctWorkdir) {
-        const writes = shellWrites(ev.cmd, cwd);
+        const writes = shellWrites(ev.cmd, cwd, place.home);
         const statusEligible = shellWriteStatusEligible(ev.cmd, cwd, writes);
         const bodies = writes.some((w) => w.heredoc) ? heredocBodies(ev.cmd) : null;
         for (const [k, w] of writes.entries()) {
@@ -2286,7 +2290,7 @@ function claudeResultFacts(ev, res) {
 // words which line is the error. A result is its recorded output, cut by position only (D68 P, T); a failure is what the
 // recorder typed (an error flag, an exit code, a native status).
 
-function shellWrites(cmd, cwd) {
+function shellWrites(cmd, cwd, home = null) {
   if (!cmd) return [];
   const text = String(cmd);
   const found = new Map();   // path -> {how, abs, heredoc?}, so `cat > f << EOF` is one write, not two
@@ -2299,6 +2303,11 @@ function shellWrites(cmd, cwd) {
   const vars = new Map();
   for (const m of text.matchAll(/\b([A-Za-z_]\w*)=(\/[^\s;|&"']+)/g)) vars.set(m[1], m[2]);
   let dir = '';   // '' = the session cwd
+  // D192: whether the folder the command stands in is known here. A change of folder Sonah does not follow (a `cd` to a
+  // variable the command does not set or to `$(…)`, `cd -`, a `cd` that `cdFolder` does not place, a `cd` on a heredoc
+  // body line, a subshell, `pushd`, `popd`) leaves it unknown until an absolute `cd`, so no relative `cd` after it is
+  // followed from a folder that may be wrong.
+  let known = true;
   // W3c-11: the command is LEXED (`lexShell`), so a separator inside quotes no longer splits a
   // command and a heredoc's body is known for what it is. Its body lines are still scanned, one
   // line at a time, exactly as the whole command used to be — a heredoc feeding `bash` or
@@ -2345,13 +2354,24 @@ function shellWrites(cmd, cwd) {
       ? /^\$\{?([A-Za-z_]\w*)\}?([^$`]*)$/.exec(spaced) ?? [spaced, null, ''] : null;
     if (cdVar || cdLit || spaced !== null) {
       const variable = cdVar ?? spacedVar;
-      if (variable && !vars.has(variable[1])) { dir = ''; continue; }   // unresolved: assume internal
+      if (variable && !vars.has(variable[1])) { dir = ''; known = false; continue; }   // unresolved: assume internal
       const target = variable ? vars.get(variable[1]) + (variable[2] ?? '') : cdLit ? cdLit[2] : spaced;
-      if (target.startsWith('/')) dir = target;
-      else if (target === '-') dir = '';
-      // a relative cd keeps us where we were, as far as we can prove
+      // D192: a heredoc body line (a lexed command's part with no words of its own) is input to a command, and its `cd`
+      // never moves the shell that runs the command: an absolute one still sets `dir` (D174), but the folder is unknown.
+      if (target.startsWith('/')) { dir = target; known = !(lexed && !part.tokens); }
+      else if (target === '-') { dir = ''; known = false; }
+      else {
+        // D192: a relative folder from the folder the command stands in, `~` from the recording's home (`cdFolder`), only
+        // in a command part the lexer read (never a heredoc body line or a command that does not lex).
+        const at = part.tokens ? cdFolder(target, cdLit !== null && cdLit[1] === '', known ? dir || cwd : '', home) : null;
+        if (at === null) known = false;
+        else dir = at;
+      }
       continue;
     }
+    // D192: a change of folder Sonah does not read (a subshell, `pushd`, `popd`, a `cd` that is not a part of its own)
+    // leaves the folder unknown.
+    if (part.tokens?.some((k) => k.op === '(' || (!k.quoted && FOLDER_BUILTINS.includes(k.word)))) known = false;
     // Most-specific first: a heredoc also matches the redirect pattern, and reporting both
     // doubles the edit count for one command. The structured reads come before every regex.
     const hits = [];
@@ -2755,6 +2775,30 @@ function spacedCdOperand(tokens) {
   const [head, operand] = tokens;
   return head.word === 'cd' && !head.quoted && typeof operand.word === 'string'
     && operand.heredoc === undefined && /\s/.test(operand.word) ? operand.word : null;
+}
+
+/** D192: a `cd` operand that the shell expands (a parameter or command substitution, an escape, a glob, a brace) names
+ *  no folder Sonah can read from the command. */
+const CD_EXPANDS = /[$`\\*?[{]/;
+/** D192: the shell's own commands that change its folder, by their names (bash and zsh builtins). */
+const FOLDER_BUILTINS = Object.freeze(['cd', 'pushd', 'popd']);
+
+/**
+ * D192 (owner decision 2026-10-30, D186's way A; D174's open follow-up): the folder that a `cd` to a relative or
+ * home-relative operand moves to, by shell grammar, or null when Sonah does not follow it. A relative folder is joined to
+ * `from`, the folder the command stands in (the cwd, or the folder an earlier `cd` of the command gave) when that is
+ * known and absolute. An unquoted `~` or `~/…` is joined to `home`, the recording's home folder (before.js
+ * `recordingHome`: from where its recorder wrote the recording, never from its contents), when that is known. Not
+ * followed: an option (`-P`), an operand the shell expands (`CD_EXPANDS`), `~user`, a quoted `~`, a `~` with no home and
+ * a relative folder from no known folder.
+ */
+function cdFolder(target, unquoted, from, home) {
+  if (CD_EXPANDS.test(target) || target.startsWith('-')) return null;
+  if (target.startsWith('~')) {
+    return unquoted && (target === '~' || target.startsWith('~/')) && typeof home === 'string' && home.startsWith('/')
+      ? posix.normalize(`${home}/${target.slice(1)}`) : null;
+  }
+  return typeof from === 'string' && from.startsWith('/') ? posix.normalize(`${from}/${target}`) : null;
 }
 
 /**

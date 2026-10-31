@@ -341,7 +341,7 @@ test('D109: hunks left out for room are said so, never "too large"; a file too l
   });
 
 test('D109: with a git base, the change says it can hold work done after the session when the manifest holds files no '
-  + 'recorded edit wrote, and how many; the method never says the change is the session\'s', () => {
+  + 'recorded edit wrote, and how many (D199: the method, which never said the change is the session\'s, is gone)', () => {
   const file = (path, recorded) => ({ path, state: 'whole', side: 'new', shown: [[1, 1]], beforeUnshown: 0, lines: 1,
     recorded });
   const passOf = (files, base = { kind: 'git', commit: 'c'.repeat(40) }) => ({ ran: true, base, coverage: 'complete',
@@ -355,7 +355,6 @@ test('D109: with a git base, the change says it can hold work done after the ses
   // A manifest written before D109 (no `recorded`) says nothing of it; with no git base, the change is the edits.
   assert.equal(codeBaseLine(passOf([{ ...file('a', true), recorded: undefined }])), W.base(commit));
   assert.equal(codeBaseLine(passOf([file('a', false)], { kind: 'recorded_edits' })), W.base(null));
-  assert.doesNotMatch(W.how, /that the session made|checked each open question|each finding/);
 });
 
 test('D109: the open questions\' checks are said as the records show them — each one only when every published question '

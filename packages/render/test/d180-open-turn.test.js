@@ -3,7 +3,8 @@
 // reads the recording while the command that started it has no result yet, and a recording cut short by a crash or a
 // kill ends the same way. So a plain not-checked ask of the message whose turn the read left open (session-story.js
 // `storyFacts` `openTurn`: the read's last step holds a command of the main thread whose result no window holds) has
-// its own state, `notCheckedOpenTurn`: its status word, its count-line part and one folded line say what Sonah found.
+// its own state, `notCheckedOpenTurn`: its status word, its count-line part and one folded line say what Sonah found
+// (D199: the model's folded line; no reader prints an ask's row fold).
 // Every other state, and the header's count of the asks Sonah did not check, is as before. Structure only: the
 // recorder's kinds, the main thread's lineage and what the windows hold, never the words. Every session here is
 // synthetic.
@@ -94,13 +95,13 @@ test('D180: in an open last turn only the plain not-checked ask moves; done, not
   assert.deepEqual(back(after), JSON.parse(JSON.stringify(before)));
   assert.deepEqual(after.notChecked.quiet, before.notChecked.quiet);
   assert.deepEqual(after.tiers, before.tiers, 'no item moves');
-  // The page and the .md show the status and the folded line.
+  // The page and the .md show the status (D199: and not the folded line, the model's alone).
   const page = renderSessionPage(session, r, {});
-  assert.ok(page.includes(`<span class="tag">${REPORT_PROMPT_WORDS.status.notCheckedOpenTurn}</span>`));
-  assert.ok(page.includes(REPORT_PROMPT_WORDS.openTurn));
+  assert.ok(page.includes(`>${REPORT_PROMPT_WORDS.status.notCheckedOpenTurn}</`));
+  assert.ok(!page.includes(REPORT_PROMPT_WORDS.openTurn));
   const md = renderReportMarkdown(session, r, {});
   assert.ok(md.includes(`| ${REPORT_PROMPT_WORDS.status.notCheckedOpenTurn} |`));
-  assert.ok(md.includes(REPORT_PROMPT_WORDS.openTurn));
+  assert.ok(!md.includes(REPORT_PROMPT_WORDS.openTurn));
   assert.ok(md.includes(REPORT_PROMPT_PARTS.notCheckedOpenTurn(1)));
 });
 

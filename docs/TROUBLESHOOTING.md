@@ -184,8 +184,8 @@ It then prints `Review window N/M finished` as each part completes. There are no
 : With the code step on, the `--state-dir` you gave is the folder the session worked in, or a folder that holds it.
   The code step reviews every file there that changed since the session began, so what Sonah writes in its state folder
   would read as part of the next review's change, and a folder of your project named like one Sonah writes there could
-  be taken for Sonah's. Nothing was read or sent. Choose a `--state-dir` outside that folder (or leave it out: the
-  default is under `~/.sonah`), or add `--no-code-pass`.
+  be taken for Sonah's. Sonah read the recording and sent nothing. Choose a `--state-dir` outside that folder (or leave
+  it out: the default is under `~/.sonah`), or add `--no-code-pass`.
 
 **`Code review: did not run. It runs only on the claude-cli backend ...`**
 : Before the first call, the line about the code step already says it: `Code review: on (...), but it did not run`. The code
@@ -222,8 +222,8 @@ It then prints `Review window N/M finished` as each part completes. There are no
 
   | What the output says | What to do |
   | --- | --- |
-  | `narrative:model_unavailable` (the page: "the model could not be reached") | A call failed: no login, a usage limit, a timeout or the network. Run `sonah doctor` to see which, then the same command again. |
-  | `narrative:no_json`, `narrative:schema`, `narrative:response_incomplete`, `challenge:votes_invalid`, `challenge:items_unresolved` | The model's answer could not be used. Run the same command again: only those parts are asked again. |
+  | `narrative:model_unavailable` | A call failed: no login, a usage limit, a timeout or the network. Run `sonah doctor` to see which (for Codex, add `--backend codex-cli` and `--model` with the model you review with), then the same command again. `sonah doctor` does not check `--backend anthropic-api`: there, check your network, your API key and your API account's limits. With that backend, it can also mean that Sonah found no API key in `ANTHROPIC_API_KEY`; the `Sonah's review:` line then says so. Set the key, then run the same command again. |
+  | `narrative:no_json`, `narrative:schema`, `narrative:response_incomplete`, `challenge:votes_invalid`, `challenge:items_unresolved` | The model's answer could not be used. `challenge:votes_invalid` also follows a check call that failed: no login, a usage limit, a timeout, the network, or with `--backend anthropic-api` no API key in `ANTHROPIC_API_KEY`. The `Sonah's review:` line names a missing key only when the first call for a part failed for it. Fix such a cause first, as for `narrative:model_unavailable` above. Then run the same command again: only those parts are asked again. |
   | `narrative:budget` ("the request did not fit the review input budget") | That part is too large for one request. Rerunning will not help; `sonah review --dry-run` counts such parts before anything is spent. |
   | "no review windows were produced" or "no actions were recorded" | The file is not a recording Sonah can read, or the session did nothing. Check the path; `--dry-run` shows what was read. |
 
@@ -247,11 +247,11 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | The repository changed while the code review ran | A file of the repository changed between the start of the review and the end of the code step, so a file it quotes may differ now. Leave the repository alone while a review runs, then run the same command again. |
   | files whose change the code review did not see (binary, too large for one call, changed after the session's last recorded edit, not readable) | A limit of the change itself, not a failure: running again will not change it. |
   | files whose change the code review did not see (in another repository, written by an agent from another working directory, outside the working directory) | A report from before 0.3.0-beta.5: the session wrote these files, but they were not part of the change that Sonah gave the code review. Since 0.3.0-beta.5 a file in a git repository is: run the review again to have it reviewed. A file in a folder that no git repository holds is listed by its folder, not reviewed. |
-  | In a folder, the change runs from the session's start commit there … / the change is the edits that the session recorded; N of them lie in a folder | Not a gap: the session also wrote files in another git repository (a sibling worktree, a repository nested in yours), and Sonah reviews them there (since 0.3.0-beta.5). The change there runs from the commit where that repository stood when the session began, by the same rule as in your working directory, or, when that repository's history began during the session, it is the edits that the session recorded. A repository counts only when a file the session wrote there is there now and differs from that commit. The code review reads each such repository too. Each file says where it lies in the list of files. When another repository holds files of the change, the line about where the change runs from in your working directory begins "In the working directory's repository". (A report made before this rule was narrowed can also say this of a folder that no git repository holds.) |
+  | In a folder, the change runs from the session's start commit there … / the change is the edits that the session recorded; N of them lie in a folder | Not a gap: another git repository holds files of the change (one the session wrote to, such as a sibling worktree or a repository nested in yours, or one you gave with `--code-repo`), and Sonah reviews them there (since 0.3.0-beta.5). The change there runs from the commit where that repository stood when the session began, by the same rule as in your working directory, or, when that repository's history began during the session, it is the edits that the session recorded. A repository counts only when a file the session wrote there is there now and differs from that commit, or when you give it with `--code-repo`. The code review's agents also read each one that holds a file of the change, and in one that you give Sonah reads with git the files that differ there, whatever the session wrote ([PRIVACY.md](PRIVACY.md) says what is sent). Each file says where it lies in the list of files. When another repository holds files of the change, the line about where the change runs from in your working directory begins "In the working directory's repository". (A report made before this rule was narrowed can also say this of a folder that no git repository holds.) |
   | In a folder, Sonah did not review files that changed outside this session's recorded writes. They are outside the evaluated session / In a folder, files that changed outside this session's recorded writes are outside the evaluated session | In another git repository the session wrote to, these files differ from that repository's commit, but no write that the recording shows touched them, and the file system's modification time does not place their last change while the session ran: another agent's or your own work there, before or after the session. Sonah names them (the first 10, then how many more). As in your working directory, they are outside the evaluated session: with a change of the session's own to review, Sonah gives them to the code review apart from it if there is room in its input (the second line), else it does not review them (the first). A file there that changed while the session ran is part of the change instead, marked as one that no recorded edit wrote. |
   | The session wrote N files in folders that no git repository holds. Sonah lists them and did not review them | Not a gap in the change: these files lie outside every git repository (a notes folder, an agent's scratch folder, your home folder). Sonah does not review them, its agents do not read those folders, and they do not change the coverage. It names each folder (the first 10, then how many more) with how many files the session wrote there; the footer counts them with the other paths it did not review. |
   | writes of the session name paths with an unexpanded shell variable or command substitution | A shell command of the session wrote to a path such as `$DIR/notes.md` or `$(pwd)/x.md`. The recording holds the command as typed, not what the shell expanded it to, so Sonah cannot tell which file it wrote. It counts these writes apart and does not review them. A path that a file tool (Write, Edit) wrote is taken as it is spelled, even with a `$` in its name, and so is a path that, spelled as recorded, names a file or folder that is there (a relative path in the session's working folder, an absolute path where it points), or a file that git lists as changed since the start commit, such as one the session deleted (the recording keeps no quotes: a route file `app/routes/users.$id.tsx` that a shell command wrote is a file of the change). |
-  | Sonah does not yet see every edit made by helper agents or by scripts after a cd | The session ran a shell command. A script can write files after a change of folder that Sonah does not follow (a `cd` to a relative folder, to `~` or to a folder that the command does not name, `pushd`, a subshell, another shell, or a script's own change of folder), where Sonah cannot place its writes, and Sonah does not yet read every helper agent's own edits. So the change the code review had can miss some of them: review such edits yourself. Shown in the code review's part of What Sonah could not check, on the page and in the .md (since 0.3.0-beta.6 no longer on the terminal's code review line). |
+  | Sonah does not yet see every edit made by helper agents or by scripts after a cd | The session ran a shell command. A script can write files after a change of folder that Sonah does not follow (such as a `cd` to a folder that the command does not name, `pushd`, a subshell, another shell, or a script's own change of folder), where Sonah cannot place its writes, and Sonah does not yet read every helper agent's own edits. So the change the code review had can miss some of them: review such edits yourself. Shown in the code review's part of What Sonah could not check, on the page and in the .md (since 0.3.0-beta.6 no longer on the terminal's code review line). |
   | Sonah showed the code review every changed line of N files in K calls | Not a gap: since 0.3.0-beta.9, a change larger than one request holds (about 400 KB of lines) is split by file into parts, each sent in its own call with the whole change's list of files. "It could not show M files" names the files that no call showed, and why. |
   | files whose change Sonah left out of the code review's input for room | A call's input had no room left for these files beside the rest of it (the change's list of files, your words, the rule files, the commands). The agent was told to read those files itself. Before 0.3.0-beta.9, a change larger than one request holds (about 400 KB of lines) also left its largest files out; now each part of it has its own call. |
   | files changed after the session's last recorded edit | Not a gap: a file the session wrote changed again afterwards (a formatter, a script, your own edit). Its change from where the session started was shown and reviewed, but some of its lines now may not be the agent's. |
@@ -281,17 +281,16 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | the code review saw none of the files of the change | The code review answered without seeing any file. Run the same command again. |
   | this review was saved by an earlier version of Sonah, which did not record why | The review was saved before Sonah kept a record of the code review's input, so its record does not say why no request was made. Run the review again to see why. |
 
-  Running the review from another folder does not change the reason: the code review reads the folder that the
-  recording names as the session's working directory (and the other git repositories that the session wrote to), not
-  the folder that you run `sonah review` in. To point the code review at another repository, add `--code-repo` with its
-  folder (below).
+  Running the review from another folder does not change the reason: the code review reads the working directory that
+  the recording names and the repositories of its change, not the folder that you run `sonah review` in. To point the
+  code review at another repository, add `--code-repo` with its folder (below).
 
 **`--code-repo DIR`** (the code review of a repository that the recording does not show the session changing)
 : A session can change a repository in a way that no recorded write shows: a script that writes the paths it builds, a
-  script file that the command runs, or a write after a change of folder that Sonah does not follow (a `cd` to a
-  relative folder, to `~` or to a folder that the command does not name, `pushd`, a subshell, another shell, or a
-  script's own change of folder). Run `sonah review` again with `--code-repo` and the folder of that repository (any
-  folder in it; give the option once for each repository). Sonah reads it as if the session had written there: its
+  script file that the command runs, or a write after a change of folder that Sonah does not follow (such as a `cd` to
+  a folder that the command does not name, `pushd`, a subshell, another shell, or a script's own change of folder). Run
+  `sonah review` again with `--code-repo` and the folder of that repository (any folder in it; give the option once for
+  each repository). Sonah reads it as if the session had written there: its
   change runs from the commit where it stood when the session started (the same rule as the working directory's), and
   holds the files that a recorded write could have changed there and the files whose last change came while the session
   ran (each marked as written by no recorded edit). The other files that differ there are outside the evaluated session,
@@ -345,10 +344,9 @@ It then prints `Review window N/M finished` as each part completes. There are no
   shell commands, whose writes Sonah does not yet see (a script can still have changed files: check each repository
   that those commands could change with `git status` and `git diff`, and add `--code-repo` with its folder to review
   it); Sonah found no changed file here that the session
-  wrote (its writes lie in a coding agent's home folder, in Sonah's own folders or under a name from your home folder,
-  or no longer differ from where the session started); or Sonah found no changed file here. "Here" is the folder that
-  the recording names, not the folder that you run the review in, so running the review from another folder does not
-  change it. Files that differ but changed outside this session's
+  wrote (Sonah does not review where its writes lie, or they no longer differ from where the session started); or Sonah
+  found no changed file here. "Here" is the folder that the recording names, not the folder that you run the review in,
+  so running the review from another folder does not change it. Files that differ but changed outside this session's
   recorded writes are outside the evaluated session: they are named on the page (the table above says what that line
   means), and with no change of the session's own to review Sonah does not review them.
 
@@ -359,12 +357,12 @@ It then prints `Review window N/M finished` as each part completes. There are no
   means). On by default or by your setting, this does not change the exit
   code; with `--code-pass` on the command line the review reads as not complete (exit 1).
 
-**`The code review found that it holds in the code`** (a note on a "Not checked" ask under "Your prompt")
+**`The code review found that it holds in the code`** (a note on a "Not checked" ask under "Your asks", on the page and in
+the .md)
 : The session review could not check this ask in the recording, and the code review's item-by-item check found in the
   code that it holds. The note names the lines where Sonah found each quote of that check word for word in the files as
-  they are now. The row's own fold holds the session review's reason and "Sonah did not check whether it holds." (since
-  0.3.0-beta.6; before, both were on the row). Open the file at those lines to check it yourself. Sonah did not check
-  the code review's verdict, so the ask still reads "Not checked", and every count (the count line, the "Sonah did not
+  they are now. Open the file at those lines to check it yourself. Sonah did not check
+  the code review's verdict, so the ask carries the tag "Verdict not checked" and still reads "Not checked", and every count (the count line, the "Sonah did not
   check" line in What Sonah could not check, and the pull request comment) counts it as not checked. The code can also do an ask that the agent did not do in this session. An ask that
   the code review ties to a finding, a question or a withheld finding has no such note and keeps its line. Neither does
   an ask that one of Sonah's own checks speaks against or did not settle (its cited run or write did not run to its end
@@ -384,7 +382,7 @@ It then prints `Review window N/M finished` as each part completes. There are no
   before you post it, because it quotes your session as the recording holds it.
 
 **`The report is more than 60,000 bytes, the limit that Sonah sets for a GitHub comment.`**
-: Sonah never shortens the header, the count line, the counts of your prompt or its asks that are not done. It keeps
+: Sonah never shortens the header, the count line, the counts of Your asks or the asks that are not done. It keeps
   the open lines of the Must act and Must know items whole too. Here these parts alone are longer than the limit, so Sonah prints no `gh` command. Open
   the page, or post a part of the .md yourself.
 
@@ -397,22 +395,14 @@ It then prints `Review window N/M finished` as each part completes. There are no
   leave the prompts out; the HTML page keeps them unless it is shortened too. The .md that Sonah prints in the terminal
   holds no prompt: give `--output` to write the report with them.
 
-**`Commit 1a2b3c4 is not on origin yet.`**
-: GitHub does not have this commit, so the report has no links to the code that needs it. The header says so when the
-  report names a place in that code. The line names those links. When it is your last commit, they are the links to the code as the agent left it. When it is
-  the commit that the session started from, they are the links to the code as it was before the session. When one
-  commit is both, the report has no code links. Pushing does not add links to a report that Sonah already wrote. To get
-  a report with code links, push the commit, then run the same command with a new `--output` file (the next line says
-  so too).
-
 **`To get code links, commit your work.`**
 : Some reviewed files differ from your last commit, or a commit is not on GitHub. So the report has no code links for
   them. Commit your work. Push the commit. Then run the same command with a new `--output` file. Sonah reuses its
   stored answers, so this run makes no model call.
 
 **`Sonah wrote the report inside the repository.`**
-: On the next run, a report file in the repository is part of the change, so the code review asks again. Move the
-  report files out of the repository, or add them to `.gitignore`, before you run Sonah again.
+: On the next run, a report file in the repository reads as a change of the repository, so the code review asks again.
+  Move the report files out of the repository, or add them to `.gitignore`, before you run Sonah again.
 
 **`Review could not complete: output_folder_missing.`** or **`output_folder_unwritable.`**
 : The folder of the `--output` file does not exist, or you cannot write to it. Sonah creates no folders: create it

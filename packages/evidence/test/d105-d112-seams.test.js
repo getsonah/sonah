@@ -136,13 +136,19 @@ test('D110 x D105/D109: a finding in a file the request left out is checked by p
   assert.deepEqual(codeCoverageLines(confirmed), [W.files(2, [['whole', 1]], 1), W.coverage.partial]);
   assert.equal(codeUnseenFiles(confirmed), 1);
   assert.deepEqual(confirmed.receiptPlaces, { inside: 0, outside: 1, unknown: 0 });
-  // The readers: a confirmed bug, its premise said as what its check quotes, beside the line that the review did not
-  // see the file.
+  // The readers: a confirmed bug, its premise in its check's words, beside the line that the review did not see the
+  // file. D199: the premise line is the premise alone, with no sentence of where its evidence is.
   const model = reportModel(f.session, withCodePass(f.report, { codePass: confirmed, checks: new Map() }), {});
   const items = reportItems(model);
   const bug = items.find((x) => x.kind === 'code_bug');
   assert.ok(bug, items.map((x) => x.kind).join());
-  assert.ok(JSON.stringify(bug.evidence).includes(W.premiseSources.repository), JSON.stringify(bug.evidence));
+  assert.deepEqual(bug.evidence.filter((e) => e.label === REPORT_ITEM_WORDS.restsOn).map((e) => said(e.parts)),
+    finding.check.premises.map((p) => p.premise), JSON.stringify(bug.evidence));
+  // D199: the words were removed; as literals (where a premise's evidence is: repository, language, outside).
+  for (const words of ['Its check quotes lines of the repository for it. Sonah found each quote there word for word.',
+    'Its check names documented behaviour of the language for it.',
+    'Sonah could not check it in the repository or the language.'])
+    assert.equal(JSON.stringify(bug.evidence).includes(words), false, words);
   assert.ok(model.notChecked.code.map(said).includes(W.files(2, [['whole', 1]], 1)));
   // One premise outside the repository and the language: an item to verify, never checked; the tally the same.
   const toVerify = (await runOn(f, agents({ review: answer,

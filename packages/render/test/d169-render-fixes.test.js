@@ -8,13 +8,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportModel } from '../report-model.js';
-import { renderSessionPage, sessionPage, PAGE_LIMITS } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw, sessionPage as sessionPageRaw, PAGE_LIMITS } from '../session-page.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_DID_WORDS, REPORT_SECTION_WORDS, REPORT_ITEM_WORDS, REPORT_NOT_CHECKED_WORDS, REPORT_COUNT_WORDS,
   REPORT_TIER_WORDS } from '../report-words.js';
 import { REPORT_LIMITS } from '../report-model.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+/** D195: the page's tab labels read back as the in-page links they stand for (`data-href`), so these checks read links. */
+const asLinks = (html) => html.replace(/<label class="xl[^"]*" for="t-[^"]+" data-href="(#[^"]+)">([\s\S]*?)<\/label>/g,
+  '<a href="$1">$2</a>');
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(asLinks(renderSessionPageRaw(...args)));
+const sessionPage = (...args) => { const p = sessionPageRaw(...args); return { ...p, html: asWords(asLinks(p.html)) }; };
 
 const r = (role, eventId, quote) => ({ role, eventId, quote, sessionKey: STORY_KEY });
 const windowOf = (session) => [{ windowIndex: 0, eventIds: session.events.map((e) => e.id), failure: null }];
@@ -87,12 +95,17 @@ test('D169: a run that an item names past the page\'s 40 is listed after the lis
   const item = model.tiers.must_know.concat(model.tiers.must_act, model.tiers.good_to_know)
     .find((x) => x.kind === 'failure_passed_over');
   assert.deepEqual(item.where.map((w) => w.anchor), ['run-45']);
-  // The page: the 40, then the sentence, then run 45's line, its number first; the count of the rest leaves it out.
-  const list = page.indexOf('<ol class="rows runs">'), apart = page.indexOf(REPORT_DID_WORDS.runsNamedApart);
-  assert.ok(list > 0 && apart > list, 'the sentence comes after the list');
-  assert.ok(page.slice(apart).startsWith(`${REPORT_DID_WORDS.runsNamedApart}</p><ul class="rows"><li id="run-45">`
+  // The page: the 40, then the fold of the runs listed apart (D204: counted, folded), then run 45's line, its number
+  // first; the count of the rest leaves it out.
+  const fold = `<details class="fold named-runs"><summary>${REPORT_DID_WORDS.runsNamedFold(1, true)}</summary>`;
+  const list = page.indexOf('<ol class="rows runs">'), apart = page.indexOf(fold);
+  assert.ok(list > 0 && apart > list, 'the fold comes after the list');
+  assert.ok(page.slice(apart).startsWith(`${fold}<ul class="rows"><li id="run-45">`
     + `${REPORT_ITEM_WORDS.run(45)} · <code>npm run e2e</code> · `), page.slice(apart, apart + 200));
-  assert.equal([...page.matchAll(/<li id="run-\d+">/g)].length, 41);
+  // D200 (review round): a row of the list carries its run's number as its marker (`value`); the run listed apart says
+  // its number in its words, and has no marker.
+  assert.equal([...page.matchAll(/<li id="run-\d+"/g)].length, 41);
+  assert.equal([...page.matchAll(/<li id="run-(\d+)" value="\1">/g)].length, 40);
   assert.ok(page.includes(escapeHtml(REPORT_DID_WORDS.runsCut(41, 4, '4 failed'))));
   assert.ok(page.includes(`<a href="#run-45">${REPORT_ITEM_WORDS.run(45)}</a>`), 'the Where is a link');
   // The .md: the Where's run keeps its line, after the label; the page holds runs it does not show.
@@ -106,7 +119,7 @@ test('D169: with no run past the list, the page lists none apart and says no sen
   const { session, report } = longFailures(30);
   const { model, page } = assertEveryNamedRunListed(session, report, {}, 'short');
   assert.deepEqual([model.did.runs.named, model.did.runs.cut], [[], 0]);
-  assert.equal(page.includes(REPORT_DID_WORDS.runsNamedApart), false);
+  assert.equal(page.includes('class="fold named-runs"'), false);
 });
 
 test('D169: a quiet run that an incomplete claim rests on is listed apart, and no longer counted quiet', () => {
@@ -152,8 +165,9 @@ test('D169: with no run in the list above, the runs listed apart are headed as t
     codePass: { triage: [{ ref: { source: 'promises', index: 0 }, level: 'high' }] } };
   const { model, page } = assertEveryNamedRunListed(session, report, {}, 'all quiet');
   assert.deepEqual([model.did.runs.shown.length, model.did.runs.named.map((x) => x.k), model.did.runs.quietExit0], [0, [2], 1]);
-  assert.equal(page.includes(REPORT_DID_WORDS.runsNamedApart), false, 'no sentence points to a list above');
-  assert.ok(page.includes(`<p class="note">${REPORT_DID_WORDS.runsNamed}</p><ul class="rows"><li id="run-2">`));
+  // D204: with no run in the list above, the fold counts them as runs, not as more runs.
+  assert.ok(page.includes(`<details class="fold named-runs"><summary>${REPORT_DID_WORDS.runsNamedFold(1, false)}</summary>`
+    + '<ul class="rows"><li id="run-2">'));
 });
 
 test('D169: a run listed apart with no command and no tool says its number, then its result', () => {
@@ -171,7 +185,10 @@ test('D169: the size trim keeps the runs listed apart whole, so an item\'s run k
   // Long asks push the page past its bound, so its lists are cut.
   const b = sessionBuilder();
   const asks = [];
-  for (let a = 0; a < 1_344; a++) {
+  // D195: the page's marks of your asks are shorter, so it takes more of them to reach the bound (was 1,344). D199: an
+  // ask's checklist row is a row of columns, so it takes fewer to reach it and stay in it (was 1,368; 1,348 to 1,356 do).
+  // D202: the legend's six lines and the done asks' fold take room, so it takes fewer (was 1,354; 1,330 to 1,352 do).
+  for (let a = 0; a < 1_340; a++) {
     b.ask(`I${a}`, `Ask number ${a}: please make the case ${a} pass. ${'Some long context words here. '.repeat(20)}`);
     asks.push({ text: `pass ${a}`, instruction: r('instruction', `I${a}`, `please make the case ${a} pass.`), status: 'done',
       deliverable: r('code', 'W1', 'export const a = 1;') });
@@ -214,7 +231,8 @@ test('D169: Good to know with no item is a heading, never an empty fold, and the
   const heading = REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know, 0);
   assert.ok(page.includes(`<section class="part tier" id="good-to-know"><h2>${heading}</h2></section>`));
   assert.equal(page.includes('class="part tier fold-tier"'), false);
-  assert.ok(page.includes(`<a href="#good-to-know">${REPORT_COUNT_WORDS.tier(REPORT_TIER_WORDS.good_to_know, 0)}</a>`));
+  // D195: a tile; its text is the count line's.
+  assert.ok(page.includes(`<a href="#good-to-know"><span class="k">${REPORT_TIER_WORDS.good_to_know}</span> <span class="num">0</span></a>`));
   assert.ok(md.includes(`\n### ${heading}\n`));
   assert.equal(md.includes(`<details><summary>${heading}</summary>`), false);
   for (const text of [page, md]) assert.equal(text.includes(`Good to know 0 ${REPORT_COUNT_WORDS.folded}`), false);
@@ -225,7 +243,13 @@ test('D169: Good to know with no item is a heading, never an empty fold, and the
   const fullPage = renderSessionPage(session, full, repoFacts()), fullMd = renderReportMarkdown(session, full, repoFacts());
   assert.ok(fullPage.includes(`<details class="part tier fold-tier" id="good-to-know">`));
   assert.ok(fullMd.includes(`<details><summary>${REPORT_SECTION_WORDS.tier(REPORT_TIER_WORDS.good_to_know, n)}</summary>`));
-  for (const text of [fullPage, fullMd]) assert.ok(text.includes(`Good to know ${n} ${REPORT_COUNT_WORDS.folded}`));
+  // D195: the page's tile splits the words into spans; its text is the count line's. D199: the page's tile is the tier's
+  // word and its count alone; the .md's count line still says folded.
+  assert.ok(fullMd.includes(`Good to know ${n} ${REPORT_COUNT_WORDS.folded}`));
+  const tile = /<p class="count">[\s\S]*?<\/p>/.exec(fullPage)?.[0] ?? '';
+  assert.ok(tile.includes(`<a href="#good-to-know"><span class="k">${REPORT_TIER_WORDS.good_to_know}</span> `
+    + `<span class="num">${n}</span></a>`), tile);
+  assert.equal(tile.includes(REPORT_COUNT_WORDS.folded), false);
 });
 
 test('D169: the page puts each fact about the code review under The code review, as the .md does', () => {
@@ -246,11 +270,14 @@ test('D169: the page puts each fact about the code review under The code review,
     const li = page.indexOf(`<li>${escapeHtml(textOf(f))}</li>`, at);
     assert.ok(li > codeH && li < withheld, `under The code review, before the withheld fold: ${textOf(f)}`);
   }
-  // The session review's facts stay under its own heading; the .md's order is the same.
+  // The session review's facts stay under its own heading; the .md's order is the same. D199's review: a fact may hold
+  // links (the done asks whose row cites only the agent's words, each "ask N"), labels on the page, so the part under
+  // the heading is read as text.
+  const underSession = page.slice(sessionH, codeH).replace(/<[^>]+>/g, '');
+  assert.ok(model.notChecked.facts.some((x) => x.group !== 'code' && x.parts.some((p) => p.href)),
+    'premise: a fact with a link');
   for (const f of model.notChecked.facts.filter((x) => x.group !== 'code')) {
-    const text = escapeHtml(textOf(f));
-    const li = page.indexOf(text, sessionH);
-    assert.ok(li > sessionH && li < codeH, `under The session review: ${textOf(f)}`);
+    assert.ok(underSession.includes(escapeHtml(textOf(f))), `under The session review: ${textOf(f)}`);
   }
   const mdAt = md.indexOf(`#### ${REPORT_NOT_CHECKED_WORDS.codeReview}`);
   for (const f of code) assert.ok(md.indexOf(textOf(f), mdAt) > mdAt, `the .md, too: ${textOf(f)}`);

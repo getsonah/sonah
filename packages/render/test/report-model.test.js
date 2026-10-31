@@ -118,11 +118,12 @@ test('D97 (5): header line D counts from structure; line E stands exactly when t
   assert.ok(facts.includes('Sonah did not check 3 claims. The claims under What the agent did list them.'), facts.join('\n'));
   assert.ok(facts.includes('Sonah did not check 1 statement that the agent wrote into a file. The claims under What the '
     + 'agent did list it.'));
-  // D118 (a): line E is the first screen's "No code was reviewed." with its one closed reason; with no code step that
-  // ran, the items' line beside it; a folder only where the code step looked in one.
+  // D118 (a): line E is the first screen's "No code was reviewed." with its one closed reason; a folder only where the
+  // code step looked in one. D199 (the owner, 2026-10-30, "All of them"): no line beside it that the items show no impact
+  // and no action (`impact` is always null).
   const c = modelOf(sessionReviewOnlyReport);
   assert.deepEqual(c.header.noCode, { reason: 'step_off', words: 'No code was reviewed. Reason: this review ran without '
-    + 'the code review.', folder: null, impact: words.REPORT_HEADER_WORDS.noCodeImpact });
+    + 'the code review.', folder: null, impact: null });
   // D122 (a review low of D118): a report that holds a finding of the retired combined route's code review and no code
   // pass record is a combined review, whose run words name its code review: no line E, as the terminal and the PR
   // comment say none (one definition, evidence code-report.js `reportNotReviewedOf`).
@@ -132,8 +133,7 @@ test('D97 (5): header line D counts from structure; line E stands exactly when t
   const notRun = { ...untriagedReport(session), codePass: { ran: false, gaps: [{ code: 'code_step_backend' }] } };
   const model = reportModel(session, notRun, { folder: '/work/project' });
   assert.deepEqual(model.header.noCode, { reason: 'backend', words: 'No code was reviewed. Reason: the code review '
-    + 'needs Claude Code, and this review used another backend.', folder: null,
-  impact: words.REPORT_HEADER_WORDS.noCodeImpact });
+    + 'needs Claude Code, and this review used another backend.', folder: null, impact: null });
   const noRoot = reportModel(session, { ...notRun, codePass: { ran: false } }, { folder: '/work/project' });
   assert.deepEqual([noRoot.header.noCode.reason, noRoot.header.noCode.folder], ['no_folder', '/work/project']);
 });
@@ -177,7 +177,8 @@ test('D97 (6): without triage (fixtures b and c) no item shows an impact or an a
       else assert.equal(item.tier.final, item.tier.default, item.kind);
       assert.ok(item.label.every((p) => p.by !== 'code-review'), 'the fixed kind label');
     }
-    assert.equal(model.footer.triageLegend, null);
+    // D199: the footer holds no triage legend, triaged or not (the field and its words are gone).
+    assert.equal(Object.hasOwn(model.footer, 'triageLegend'), false);
   }
 });
 
@@ -198,8 +199,14 @@ test('D97 (7): impact, action and label lines appear only for triaged items; a b
   assert.equal(floored.why, 'The code review proposed low. Sonah never puts a bug that Sonah checked in Good to know.');
   const refused = itemsOf(model).find((item) => item.tier.bound === 'refused_call_ceiling');
   assert.equal(refused.why, words.REPORT_TIER_WHY.refused);
+  // D199: no reader prints `why`; that a call it cites was refused is an evidence line of the item, and of no other.
+  for (const item of itemsOf(model)) assert.equal(item.evidence.some((e) => textOf(e.parts)
+    === words.REPORT_ITEM_WORDS.refusedCall), item.tier.from !== 'member' && item.tier.bound === 'refused_call_ceiling',
+  `item ${item.n}`);
   assert.equal(one(model, 'pivot').why, 'Sonah puts a change of approach in Good to know by default.');
-  assert.equal(model.footer.triageLegend, words.REPORT_FOOTER_WORDS.triageLegend);
+  // D199: the model keeps `why` (no reader prints it); the footer holds no triage legend, and its words are gone.
+  assert.deepEqual([Object.hasOwn(model.footer, 'triageLegend'), Object.hasOwn(words.REPORT_FOOTER_WORDS, 'triageLegend')],
+    [false, false]);
   // The moves are measurable with zero calls.
   const moves = tierMoves(model);
   assert.equal(moves.length, itemsOf(model).length);
@@ -394,22 +401,27 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
     'Claude Code recording · a change of 1 file, +2 −0 · 1 command',
     'After its last edit, the agent ran 1 command. Results: 1 exited with code 0.',
     // D169: an empty Good to know is not said folded.
-    'Must act 2 · Must know 0 · Good to know 0 · Your prompt: 4 done, 1 partly done, 1 not checked',
+    'Must act 2 · Must know 0 · Good to know 0 · Your asks: 4 done, 1 partly done, 1 not checked',
     'Must act: fix the Retry-After unit · ask 2',
-    'Your prompt (6 asks: 4 done, 1 partly done, 1 not checked)',
+    'Your asks (6: 4 done, 1 partly done, 1 not checked)',
     'Done Add rate limiting to the public API. Partly done 100 requests per minute per API key. Done Return 429 with a '
       + 'Retry-After header. Done Add tests and Not checked make sure nothing else breaks. Done Don\'t touch the billing '
       + 'service.',
     'ask 2 · Partly done · See item 2.',
-    // D133 (R2): why ask 5 is not checked, and what the session review cited for ask 6, are in each row's own fold.
-    'ask 5 · Not checked · Evidence',
-    'ask 6 · Done · Evidence',
+    // D133 (R2): why ask 5 is not checked, and what the session review cited for ask 6, were in each row's own fold;
+    // D199: no reader shows that fold, so their rows hold no line of the first screen. D200: their short tags are on
+    // their rows (`tags`), and in this text.
+    'ask 5 · Not checked · Evidence not found',
+    "ask 6 · Done · Agent's word only",
     // Item 1 is the bug that the code review rated high: inside a section, by final level first (D112), then by kind.
+    // D200: its impact and action lines say whose words they are.
     '1 Fix: Retry-After gives the wait in milliseconds',
-    'Impact on you: A client that obeys the header can stop calling your API for up to 17 hours.',
-    'Action: Send the wait time in whole seconds.',
+    "The code review's impact on you: A client that obeys the header can stop calling your API for up to 17 hours.",
+    "The code review's action: Send the wait time in whole seconds.",
     'Where: src/middleware/rateLimit.ts:2 · ask 3',
   ].join('\n'));
+  assert.deepEqual(model.prompt.asks.map((a) => a.tags.map((t) => t.key)), [[], [], [], [], ['deliverable_ungrounded'],
+    ['agentOnly']]);
   // 7 + 14 + 15 + 19 + 24 + 9 + 12 + 41 + 9 + 9 + 22 + 22 + 8 + 19 + 8 + 5 words, line by line, by `wc -w` (D100: the
   // line of an ask that rests only on the agent's words says what the session review cited, five words more; D109's
   // review: "a change of 1 file", two words more; D112: the first item is the bug with its impact and action, 18 words
@@ -417,14 +429,15 @@ test('D97 (15): the first screen of a review shaped like the research sketch, co
   // ask's line says only that, two words fewer). D131 (R1, B12): Must act comes before your prompt, so the first screen is
   // the header and the count line (7 + 14 + 15 + 19 + 24 + 9) and the first item (8 + 19 + 8 + 5): 128 words, 115 fewer.
   // D133 (R2): the header's "Sonah did not check" line (19 words) is folded: 109. D169: an empty Good to know is not
-  // said folded, one word fewer on the count line (23): 108.
-  assert.equal(firstScreenWords(model), 108);
+  // said folded, one word fewer on the count line (23): 108. D200: the impact and action lines name the code review,
+  // three words more each (22 and 11): 114.
+  assert.equal(firstScreenWords(model), 114);
   assert.equal(firstScreenExcerptLines(model), 1);
   // The bug carries the code review's impact and action, and one excerpt of at most 8 lines.
   assert.equal(model.tiers.must_act[0].where[0].excerpt.lines.length, 1);
-  // The partly done ask, item 2, has no level: it follows.
-  assert.equal(itemVisibleText(model.tiers.must_act[1]), ['2 Fix: The agent did only part of ask 2.',
-    '“100 requests per minute per API key”', 'Where: ask 2 · src/middleware/rateLimit.ts'].join('\n'));
+  // The partly done ask, item 2, has no level: it follows. D194: its quote leads, what it is under it.
+  assert.equal(itemVisibleText(model.tiers.must_act[1]), ['2 Fix: “100 requests per minute per API key”',
+    'The agent did only part of ask 2.', 'Where: ask 2 · src/middleware/rateLimit.ts'].join('\n'));
 });
 
 test('D97 (16): the marked prompt wraps exactly the located spans; an overlap and an unlocated ask are said', () => {
@@ -434,8 +447,10 @@ test('D97 (16): the marked prompt wraps exactly the located spans; an overlap an
   assert.deepEqual(marked, [[1, 'Add rate limiting to the API'], [2, 'Return 429 with a Retry-After header in seconds'],
     [3, 'Keep the auth checks before the limiter'], [4, 'Do not change the CI config'], [5, 'Update the README']]);
   assert.equal(first.segments.map((s) => s.text).join(''), REPORT_TEXT.ask1, 'the whole message, in order');
-  // D133 (R2): the coverage sentence is said once, in the page's legend, never under each message.
-  assert.equal(openText(model).split('\n').filter((l) => l === words.REPORT_PROMPT_WORDS.coverage).length, 0);
+  // D133 (R2): the coverage sentence was said once, in the page's legend, never under each message. D199: nowhere (its
+  // words are gone). D200: its words are back, said once by each reader (report-md.test.js D97 (1)), never in a message.
+  assert.equal(words.REPORT_PROMPT_WORDS.coverage, 'Sonah checked only the marked parts of your message.');
+  assert.equal(openText(model).includes('Sonah checked only'), false);
   // An ask that overlaps an earlier one keeps only what the earlier one leaves, and says so.
   const b = sessionBuilder();
   b.ask('I1', 'Make the button blue and large.');
@@ -500,7 +515,7 @@ test('D97 (19): the D93 split — a done ask with a code finding is counted apar
   const model = modelOf(triagedReport);
   assert.deepEqual(model.prompt.parts, ['1 done', '1 done with a code finding', '1 partly done', '2 not done',
     '1 not checked']);
-  assert.equal(model.countLine.prompt, 'Your prompt: 1 done, 1 done with a code finding, 1 partly done, 2 not done, '
+  assert.equal(model.countLine.prompt, 'Your asks: 1 done, 1 done with a code finding, 1 partly done, 2 not done, '
     + '1 not checked');
   const bug = itemsOf(model).find((item) => textOf(item.what.parts) === 'The bucket refills before the first request');
   const done = model.prompt.asks[0];
@@ -511,10 +526,11 @@ test('D97 (19): the D93 split — a done ask with a code finding is counted apar
     === 'Is a 429 body needed?');
   // D101: the ask the quote gate lowered says which test refused its quote, with code's numbers. D116: the question
   // whose key names this ask names no place (its quote is null), so no code checked the tie: no line names it.
-  // D133 (R2): the reason is in the row's own fold (`folded`).
-  assert.deepEqual(notChecked.lines.map(textOf), [
-    'Sonah withheld a finding of the code review about this ask: its check refuted it: it misreads the code. See the '
-      + 'section What Sonah could not check.']);
+  // D133 (R2): the reason is in the row's own fold (`folded`). D199 (the owner, 2026-10-30, "All of them"): no line beside
+  // the ask that a finding about it was withheld; What Sonah could not check lists that finding, with why.
+  assert.deepEqual(notChecked.lines.map(textOf), []);
+  assert.deepEqual(model.notChecked.withheld.map((w) => [w.index, w.why]), [[0, 'Why Sonah withheld it: its check '
+    + 'refuted it: it misreads the code.']]);
   assert.deepEqual(notChecked.folded.map(textOf), [
     'The session review quoted 134 characters, more than the 120 that Sonah checks, so Sonah did not check it.']);
   assert.ok(question, 'the question is still an item of its own');
@@ -573,7 +589,7 @@ test('D97 (21): line C names every result class; the runs map every class and fo
   // counted as run a command that may never have run.
   // D133 (R2): the parts that say what Sonah could not read of a run are said in What Sonah could not check, each with
   // its count; the header keeps how the runs ended.
-  assert.ok(model.notChecked.quiet.includes('Results: 1 completed with no exit code that Sonah read, for 1 Sonah read no '
+  assert.ok(model.notChecked.quiet.includes('Results of the commands after the agent\'s last edit: 1 completed with no exit code that Sonah read, for 1 Sonah read no '
     + 'exit code.'));
   assert.deepEqual(model.header.runs, ['After its last edit, the agent ran 5 commands.',
     'Results: 1 exited with code 0, 1 failed, 1 has no recorded end.',
@@ -645,9 +661,19 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const chose = one(model, 'decision_chose');
   assert.deepEqual(chose.what.parts.filter((p) => p.by === 'session-review').map((p) => p.text),
     ['Retry-After unit', 'seconds']);
+  // D202: then what the types, the short tags and a ? in a line count mean (the row tags and the bar: the page's own).
   assert.deepEqual(model.footer.legend, ['Text in quotation marks is word for word from the recording.',
     "Titles, questions, labels and file notes in italics are the code review's words.",
-    "Words in italics inside Sonah's sentences are the session review's words."]);
+    "Words in italics inside Sonah's sentences are the session review's words.",
+    "Fix marks a problem with the agent's work, such as an unmet ask or a bug. Verify marks a claim, an ask, a call's "
+      + 'result or a finding, for you to check yourself.',
+    "Decide marks a decision of the agent's, or a question or finding of the code review, for you to settle. Read marks "
+      + "a decision that Sonah could not tie to an ask, or an earlier code review's finding.",
+    'A short tag says what Sonah could not check, or how far its check went.',
+    // D204: this review has the code review's lines and an untied question, so the legend says what their tags mean.
+    'Form, not meaning on a line of the code review says that Sonah checked its form, not its meaning.',
+    'Not tied marks a question of the code review that Sonah could not tie to an item or an ask.',
+    'A ? in place of a line count means Sonah could not count those lines from the recording.']);
   assert.deepEqual({ ...model.header.title, parts: textOf(model.header.title.parts) }, { text: 'Add rate limiting to the API.',
     parts: '“Add rate limiting to the API.”', quoted: true, cut: false });
   // A long first sentence is cut at a word, the cut outside the quotation marks; a caller's title is plain.
@@ -662,7 +688,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/9 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/10 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {
@@ -912,6 +938,11 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
   assert.deepEqual([tied.tier.default, tied.tier.final], ['must_know', 'must_know']);
   const contract = one(tiedModel, 'code_contract');
   assert.equal(tied.why, `Item ${contract.n} of the code review concerns it, so Sonah puts it in Must know.`);
+  // D199: no reader prints `why`; the tie is an evidence line of its own, linked to the item that concerns it.
+  const concerned = (item, n) => item.evidence.some((e) => e.label === null && e.parts.length === 1
+    && e.parts[0].text === words.REPORT_ITEM_WORDS.concernedBy(n) && e.parts[0].href === `item-${n}`);
+  assert.ok(concerned(tied, contract.n));
+  assert.equal(chose(plainModel).evidence.some((e) => /of this review concerns it/.test(textOf(e.parts))), false);
   // A question of the code review concerns it where code checked the tie (D116's review): the same. The fixture's Q2,
   // routed from a finding, is anchored on a line of src/limiter.js, the file that the decision's edit wrote.
   const routed = triagedReport(session);
@@ -924,6 +955,7 @@ test('D96 amended (owner decision 2026-10-16): "you asked, the agent decided how
   assert.equal(chose(routedModel).tier.final, 'must_know');
   assert.equal(chose(routedModel).why, `Item ${fromFinding.n} of the code review concerns it, so Sonah puts it in Must `
     + 'know.');
+  assert.ok(concerned(chose(routedModel), fromFinding.n));
   // D112 amended, D116's review: a question that names no place (Q1, quote null) is an item of its own, and its key
   // ties nothing that code checked: the decision stays in Good to know, and no sentence names the question.
   const asked = triagedReport(session);
@@ -954,11 +986,12 @@ test('D97: a decision\'s what line names what it is about beside what the agent 
   // h4's only Must know item read "The agent decided not to act: Not changed; treated as a separate existing issue",
   // what it left alone folded under its evidence. The session review's dimension now stands in the line.
   const model = modelOf(triagedReport);
-  const expect = { decision_not_acting: 'The agent decided not to act. About: store. Its decision: no Redis.',
+  // D194: what it is about and what the agent chose lead; the fixed sentence of its kind follows, a sentence of its own.
+  const expect = { decision_not_acting: 'store: no Redis. The agent decided not to act.',
     // D161: the first of the kind in the report's second part, in the order the session recorded them.
-    decision_unasked: 'The agent decided on build output: clean dist.',
-    decision_chose: 'You asked, and the agent decided on Retry-After unit: seconds.',
-    decision_whether_asked: 'The agent decided on limit per client: ten requests.' };
+    decision_unasked: 'build output: clean dist. The agent decided it.',
+    decision_chose: 'Retry-After unit: seconds. You asked, and the agent decided how.',
+    decision_whether_asked: 'limit per client: ten requests. The agent decided it.' };
   for (const [kind, text] of Object.entries(expect)) {
     const item = one(model, kind);
     assert.equal(textOf(item.what.parts), text, kind);
@@ -978,9 +1011,10 @@ test('D97: a decision\'s what line names what it is about beside what the agent 
   for (const dimension of ['Leaving the legacy script alone', 'Not adding a Redis store', 'Skipping lint checks']) {
     report.decisions[0] = { ...report.decisions[0], dimension, chosen: 'Not changed' };
     const what = one(reportModel(session, report, repoFacts()), 'decision_not_acting').what.parts;
-    assert.equal(textOf(what), `The agent decided not to act. About: ${dimension}. Its decision: Not changed.`);
+    // D194: the review's words lead; the fixed words are a sentence of their own after them, never attached to them.
+    assert.equal(textOf(what), `${dimension}: Not changed. The agent decided not to act.`);
     assert.deepEqual(what.filter((p) => p.by !== 'session-review').map((p) => p.text),
-      ['The agent decided not to act. About: ', '. Its decision: ', '.']);
+      [': ', '. ', 'The agent decided not to act.']);
   }
 });
 

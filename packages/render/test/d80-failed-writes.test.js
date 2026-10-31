@@ -12,7 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReportMarkdown, storyFacts } from '../session-story.js';
-import { renderSessionPage } from '../session-page.js';
+import { renderSessionPage as renderSessionPageRaw } from '../session-page.js';
 import { reportModel } from '../report-model.js';
 import { REPORT_OUTCOME_WORDS, REPORT_DID_WORDS } from '../report-words.js';
 import { resultOutcome, actionOutcome, STOPPED_DENIALS, STOPPED_WORDS, RESULT_OUTCOME_WORDS }
@@ -22,6 +22,10 @@ import { effectOf } from '../../evidence/src/session.js';
 import { codeSnapshotPlan } from '../../evidence/src/code-pass.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
 import { checklistSession, checklistReport } from './session-page-checklist-fixture.js';
+/** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
+const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
+  .replace(/<span class="tag c-[^"]*">/g, '<span class="tag">');
+const renderSessionPage = (...args) => asWords(renderSessionPageRaw(...args));
 
 const text = (b, key, value) => {
   b.blobs[key] = value;
@@ -139,7 +143,8 @@ test('D80 an interrupted and a cancelled denial read the same, stopped before it
         story: [c.failed, c.didNotRun, c.stopped, story.includes('\n1 run: 1 stopped before it finished.\n')
           && !story.includes("`cat > src/a.js <<'EOF' export const a = 1; EOF npm test`"),
           story.includes(REPORT_DID_WORDS.unconfirmed(1)), /failed, exit code|did not run: refused/.test(story)],
-        page: [/<li id="run-1"><code>[^<]*<\/code> · stopped before it finished<\/li>/.test(page),
+        // D200 (review round): a listed run's marker is its number (`value`).
+        page: [/<li id="run-1" value="1"><code>[^<]*<\/code> · stopped before it finished<\/li>/.test(page),
           // The write parsed from the command is its last recorded edit, after the command itself.
           t.includes('Sonah found no command that the agent ran after its last edit.'),
           t.includes(REPORT_DID_WORDS.unconfirmed(1)), /failed, exit code|did not run: refused/.test(page)],

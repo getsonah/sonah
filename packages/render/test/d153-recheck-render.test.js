@@ -24,6 +24,14 @@ const accusing = (n) => [REPORT_WHAT_WORDS.ask_not_done(n), REPORT_WHAT_WORDS.as
   REPORT_PROMPT_WORDS.status.notDone, REPORT_PROMPT_WORDS.status.partly];
 
 test('D153: the report and the page of a review run with the re-check, byte for byte (snapshots)', async () => {
+  // D199 (no version move) moved both: no tier's reason, no coverage line, no footer advice, the tabs' stats.
+  // D201 moved both: item 2 (a corrected claim) and item 3 (a corrected written statement) name run 1, the run their
+  // contradicting result came from (a Where place and "The result came from:"), and the .md lists run 1 among the runs
+  // it names; the page puts the claims first in What the agent did. Its review: no "In the session review's words:"
+  // line on either, since neither is a contradicted claim; the page's reduced-motion rule. D202 moved both: asks 1 and
+  // 3 say what does them (run 4's result, run 4 listed among the runs the .md names), each quoted ask how the session
+  // review read it, messages 2 and 3 the agent's message before them, and the legend's lines. D204 moved both: "Your
+  // asks" names the part and its count; the page's script (Back, a #place), its phone tiles and its print rule.
   const report = await recheckRenderReport();
   assert.equal(renderReportMarkdown(recheckRenderSession(), report, {}), snapshot('d153-recheck-report.md'));
   assert.equal(renderSessionPage(recheckRenderSession(), report, {}), snapshot('d153-recheck-page.html'));

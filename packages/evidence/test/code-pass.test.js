@@ -35,7 +35,7 @@ import { runProfile } from '../src/run-review.js';
 import { REVIEW_TRANSPORT_VERSION } from '../../cli/src/review-judge.js';
 import { ANSWER_CACHE_VERSION } from '../../cli/src/answer-cache.js';
 import { PAGE_VERSION, renderSessionPage } from '../../render/session-page.js';
-import { STORY_VERSION } from '../../render/session-story.js';
+import { STORY_VERSION, renderReportMarkdown } from '../../render/session-story.js';
 import { REPORT_MODEL_VERSION } from '../../render/report-model.js';
 import { withAskCodeLinks } from '../src/ask-code-links.js';
 import { ASK_CODE_WORDS, askCodeNotes } from '../src/review.js';
@@ -57,7 +57,8 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   COMPACTION_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace, UNITS_LEFT_OUT_REASON,
   UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, TRUTH_ONLY_REFUTATION, TRUTH_ONLY_KIND,
-  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS } from './m33-integration-fixture.js';
+  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS, BETA11_READER_VERSIONS }
+  from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
   verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
   from '../../cli/test/code-pass-fixture.js';
@@ -357,8 +358,14 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D169 (0.3.0-beta.10): the report model once more (RENDER_FIX_READER_VERSIONS), one link after 0.3.0-beta.9's; the
   // page and the story did not move.
   assert.deepEqual(RENDER_FIX_READER_VERSIONS.model.before, TRUTH_ONLY_READER_VERSIONS.model.after);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [AGENT_PROMPT_READER_VERSIONS.page.after,
-    AGENT_PROMPT_READER_VERSIONS.story.after, RENDER_FIX_READER_VERSIONS.model.after]);
+  // 0.3.0-beta.11 (D182, D183, D184 and D185): the report model once more (BETA11_READER_VERSIONS), one link after
+  // 0.3.0-beta.10's; the story did not move. D193 (0.3.0-beta.11): the page once more, one link after 0.3.0-beta.7's.
+  assert.deepEqual(BETA11_READER_VERSIONS.model.before, RENDER_FIX_READER_VERSIONS.model.after);
+  assert.deepEqual(BETA11_READER_VERSIONS.page.before, AGENT_PROMPT_READER_VERSIONS.page.after);
+  // D194: and the story once more, one link after 0.3.0-beta.7's.
+  assert.deepEqual(BETA11_READER_VERSIONS.story.before, AGENT_PROMPT_READER_VERSIONS.story.after);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [BETA11_READER_VERSIONS.page.after,
+    BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.
@@ -1919,7 +1926,7 @@ test('agentic code step: a claim_false finding contradicts its row, and nothing 
   assert.deepEqual([...other.checks.keys()], []);
 });
 
-test('agentic code step: the ask rows read its report — a withheld finding keeps its leadsFrom, a question its concerns; the line says why, the page links each', async () => {
+test('agentic code step: the ask rows read its report — a withheld finding keeps its leadsFrom, a question its concerns; the note says why, the page holds each item it names (D199: What Sonah could not check lists the withheld finding, no line beside the ask)', async () => {
   const report = sessionReport();
   const RETURN = 'return parts.map((part) => part.trim());';
   const published = reviewFinding({ leadsFrom: [ASK] });
@@ -1947,13 +1954,19 @@ test('agentic code step: the ask rows read its report — a withheld finding kee
   const notes = askCodeNotes(joined, row);
   assert.deepEqual(notes.find((n) => n.link === 'withheld_finding'), { link: 'withheld_finding', withheld: 0,
     words: `${ASK_CODE_WORDS.withheld} (its check refuted it: it misreads the code)`, subject: refuted.title });
-  // On the page (D97) the ask's lines link the finding's and the question's items, and the withheld finding's place
-  // under What Sonah could not check.
+  // On the page (D97) the ask's lines name the finding's and the question's items, each on the page.
   const page = renderSessionPage(codeSession(), joined);
-  for (const id of ['not-checked', ...[...page.matchAll(/See item (\d+)\./g)].map((m) => `item-${m[1]}`)])
-    assert.ok(page.includes(`id="${id}"`) && page.includes(`href="#${id}"`) || id.startsWith('item-')
-      && page.includes(`id="${id}"`), id);
+  for (const id of [...page.matchAll(/See item (\d+)\./g)].map((m) => `item-${m[1]}`))
+    assert.ok(page.includes(`id="${id}"`), id);
   assert.ok((page.match(/See item \d+\./g) ?? []).length >= 2, 'the finding and the question');
+  // D199: no line beside the ask says that a finding was withheld, on the page or in the .md; What Sonah could not
+  // check lists it, with why. D199: the words were removed; as literals.
+  const md = renderReportMarkdown(codeSession(), joined);
+  for (const text of [page, md]) for (const words of ['Sonah withheld a finding of the code review about this ask',
+    'See the section What Sonah could not check.']) assert.equal(text.includes(words), false, words);
+  const notChecked = page.slice(page.indexOf('id="not-checked"'));
+  assert.ok(page.includes('id="not-checked"') && notChecked.includes(refuted.title)
+    && notChecked.includes('its check refuted it: it misreads the code'), notChecked);
   assert.ok(!page.includes('code-held-'), 'no statement found to hold is listed or linked');
 });
 

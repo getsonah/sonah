@@ -1,7 +1,7 @@
 // D144 (0.3.0-beta.7; the owner, 2026-10-23): a prompt for the agent under each item that leads in
 // Must act — your words and the quotes Sonah checked, labelled in your voice, and one closing line — made by the report
-// model from the item's own checked parts alone, folded on the page (a block one click selects) and in the .md (a
-// fence). Its invariants on every report shape, a fixture per covered kind, the closed reasons a Must act
+// model from the item's own checked parts alone, folded on the page (a block one click selects; D199: in a box with a
+// copy button) and in the .md (a fence). Its invariants on every report shape, a fixture per covered kind, the closed reasons a Must act
 // item has none, the folds, and the snapshots rendered back. Every session and report here is synthetic.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import { reportModel, agentPromptOf, agentPromptText, agentPromptLabelOf, AGENT_PROMPT_KINDS, AGENT_PROMPT_LABELS,
   placeTextOf, REPORT_LIMITS, reportItems } from '../report-model.js';
 import { renderReportMarkdown } from '../session-story.js';
-import { renderSessionPage, sessionPage, escapeHtml, PAGE_CSS, PAGE_LIMITS } from '../session-page.js';
+import { renderSessionPage, sessionPage, escapeHtml, PAGE_CSS, PAGE_LIMITS, PAGE_SCRIPT, PAGE_SCRIPT_HASH }
+  from '../session-page.js';
 import { REPORT_AGENT_PROMPT_WORDS as W, REPORT_ITEM_WORDS, REPORT_TRIM_WORDS } from '../report-words.js';
 import { AGENT_PROMPT_NONE_REASONS, REPORT_ITEM_KINDS, REPORT_TIERS } from '../../evidence/src/ledger.js';
 import { ITEM_KIND_TABLE } from '../../evidence/src/triage.js';
@@ -56,10 +57,10 @@ const PAGE_TO_PROMPT = Object.freeze({ 'You said:': 'I said:', 'The agent said:'
 const UNLABELLED = Object.freeze({ ask_not_done: 'I asked:', ask_partly_done: 'I asked:', claim_contradicted: 'You said:',
   written_contradicted: 'You wrote this into a file:' });
 /** The prompt label that a quote Part of an item should have, read from what the item shows for it: its own quote's
- *  label, or its evidence line's (by its role, where the line's label says what the quote shows: what is missing). */
+ *  label, or its evidence line's (D185: every line's label says whose words or what record its quote is). */
 function expectedLabel(item, part) {
   const line = part === item.quote ? null : item.evidence.find((e) => e.parts.length === 1 && e.parts[0] === part);
-  const shown = part === item.quote ? item.quoteLabel : line ? line.roleLabel ?? line.label : undefined;
+  const shown = part === item.quote ? item.quoteLabel : line ? line.label : undefined;
   if (shown === undefined) return undefined;
   if (shown === null) return UNLABELLED[item.kind] ?? null;
   const file = /^The project instruction file (.+) says:$/.exec(shown);
@@ -226,8 +227,8 @@ test('D144: the prompt\'s labels are in your voice, one closed map from the item
     PAGE_TO_PROMPT);
   for (const label of Object.keys(AGENT_PROMPT_LABELS))
     assert.ok(Object.values(REPORT_ITEM_WORDS).flatMap((v) => (plain(v) ? Object.values(v) : [v])).includes(label), label);
-  // What is missing from an ask is no label of the prompt's: that quote is labelled by its role.
-  assert.equal(Object.hasOwn(AGENT_PROMPT_LABELS, REPORT_ITEM_WORDS.whatMissing), false);
+  // D185: what is missing from an ask is no label at all: that quote is labelled by its role, on the item too.
+  assert.equal(Object.hasOwn(REPORT_ITEM_WORDS, 'whatMissing'), false);
   // Each label on a prompt built from the item alone, exact: the agent's acts and words, your words, a helper's (whose
   // label wins over the kind's own), a recorded result, the change, code written, a project instruction file.
   const head = (item) => agentPromptText(agentPromptOf({ where: [], ...item }).prompt).split('\n');
@@ -268,8 +269,11 @@ test('D144: an ask done only in part labels its shortfall\'s quote by its role, 
   const prompt = (shortfall) => {
     const [item] = reportModel(session, { windowResults: windowOf(session), sessionReview: 'complete',
       coverage: 'complete', requirements: [ask(shortfall)] }, {}).tiers.must_act;
-    // The page keeps its label; the line also says whose words or what record its quote is.
-    assert.ok(item.evidence.some((e) => e.label === REPORT_ITEM_WORDS.whatMissing && e.roleLabel));
+    // D185: the page's line says whose words or what record its quote is, as the prompt does; no line has `roleLabel`.
+    assert.ok(item.evidence.every((e) => !Object.hasOwn(e, 'roleLabel')));
+    assert.ok(item.evidence.some((e) => e.label === (shortfall.role === 'commentary' ? REPORT_ITEM_WORDS.agentSaid
+      : shortfall.role === 'observation' ? REPORT_ITEM_WORDS.recordedResult : REPORT_ITEM_WORDS.changeShows)
+      && e.parts[0]?.text === shortfall.quote));
     return agentPromptText(item.agentPrompt).split('\n');
   };
   assert.deepEqual(prompt(r('commentary', 'F1', 'I did not add the timeout.')), ['I asked: “Add retries and a timeout to the client.”',
@@ -293,27 +297,47 @@ test('D144: a quote cut at 120 characters keeps its mark in the prompt, outside 
   assert.equal(first, `I asked: “${[...long].slice(0, REPORT_LIMITS.quoteChars - 1).join('')}”…`);
 });
 
-test('D144: the page folds each prompt after the item\'s visible lines, in a block one click selects; no script', () => {
+test('D144, D199: the page folds each prompt after the item\'s visible lines, in a box one click selects, its copy button at '
+  + 'its top; one script, by its hash', () => {
   const session = reportSession();
   const report = everyKind(session);
   const model = reportModel(session, report, repoFacts());
   const html = renderSessionPage(session, report, repoFacts());
+  // D199 (the owner, 2026-10-30: "keep the prompt in a proper box with copy button at top right"): the box holds the copy
+  // button (its icons alone, no text) and then the prompt; no note on the prompt's voice (the words are gone). Its
+  // review: the button is hidden until the page's script shows it (no button sits there doing nothing where no script
+  // runs), and names what its label becomes once it has copied (`data-done`).
+  assert.equal(Object.hasOwn(W, 'voice'), false);
+  assert.equal(html.includes('In this prompt,'), false);
+  const head = `<details class="agent-prompt"><summary>${W.fold}</summary><div class="prompt-box"><button type="button" `
+    + `class="copy" hidden aria-label="${escapeHtml(W.copy)}" title="${escapeHtml(W.copy)}" `
+    + `data-done="${escapeHtml(W.copied)}">`;
   for (const item of items(model)) {
     const at = html.indexOf(`id="item-${item.n}"`);
     const own = html.slice(at, html.indexOf('</article>', at) > 0 ? html.indexOf('</article>', at) : undefined);
-    const fold = `<details class="agent-prompt"><summary>${W.fold}</summary><p class="note">${escapeHtml(W.voice)}</p>`
-      + `<pre class="agent-prompt-text">${escapeHtml(agentPromptText(item.agentPrompt))}</pre></details>`;
     if (!item.agentPrompt) { assert.equal(own.includes('agent-prompt'), false, `item ${item.n}`); continue; }
-    assert.ok(own.includes(fold), `item ${item.n}`);
+    const tail = `</button><pre class="agent-prompt-text">${escapeHtml(agentPromptText(item.agentPrompt))}</pre></div></details>`;
+    const from = own.indexOf(head);
+    const to = own.indexOf(tail, from);
+    assert.ok(from >= 0 && to > from, `item ${item.n}`);
+    assert.match(own.slice(from + head.length, to), /^(?:<svg [^>]*aria-hidden="true">(?:(?!<\/svg>)[^<]|<(?!\/svg>)[^>]*>)*<\/svg>)+$/,
+      `item ${item.n}: the button holds its icons alone`);
     // After the visible lines, before the evidence fold.
-    assert.ok(own.indexOf(fold) < own.indexOf('<details class="evidence">'), `item ${item.n}`);
-    assert.ok(own.indexOf('<p class="line where">') < 0 || own.indexOf('<p class="line where">') < own.indexOf(fold));
+    assert.ok(from < own.indexOf('<details class="evidence">'), `item ${item.n}`);
+    assert.ok(own.indexOf('<p class="line where">') < 0 || own.indexOf('<p class="line where">') < from);
   }
-  assert.equal(html.split('<details class="agent-prompt">').length - 1, model.tiers.must_act.filter((x) => x.agentPrompt).length);
-  // One click selects the whole prompt (CSS, no script); the page's policy is as it was.
+  const prompts = model.tiers.must_act.filter((x) => x.agentPrompt).length;
+  assert.equal(html.split('<details class="agent-prompt">').length - 1, prompts);
+  assert.equal(html.split('<button type="button" class="copy"').length - 1, prompts);
+  // One click still selects the whole prompt (CSS), with no script too; D199: the page's one script copies it, allowed
+  // by its hash alone (session-page-report D97 (13) pins the script and the policy).
   assert.match(PAGE_CSS, /pre\.agent-prompt-text \{[^}]*user-select: all;/);
-  assert.equal(/<script/i.test(html), false);
-  assert.ok(html.includes(`content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"`));
+  assert.equal((html.match(/<script/gi) ?? []).length, 1);
+  assert.ok(html.includes(`content="default-src 'none'; style-src 'unsafe-inline'; script-src '${PAGE_SCRIPT_HASH}'; `
+    + "base-uri 'none'; form-action 'none'\""));
+  // Its review: the script first shows every copy button, and after a copy names it by `data-done` for a moment.
+  assert.ok(PAGE_SCRIPT.startsWith("document.querySelectorAll('button.copy').forEach(function(b){b.removeAttribute('hidden')});"));
+  assert.ok(PAGE_SCRIPT.includes("b.setAttribute('aria-label',b.dataset.done)") && PAGE_SCRIPT.includes(',1500)'));
 });
 
 test('D144: a page past its bound leaves the prompts out with the evidence, never an empty fold', () => {
@@ -330,6 +354,10 @@ test('D144: a page past its bound leaves the prompts out with the evidence, neve
   assert.ok(Buffer.byteLength(html, 'utf8') <= PAGE_LIMITS.maxBytes);
   assert.ok(html.includes(REPORT_TRIM_WORDS.trimmed), 'the evidence folds keep their summary only');
   assert.equal(html.includes('agent-prompt"'), false, 'no prompt, and no empty fold');
+  // D199: no prompt box, so no copy button. D203: the page's one script stays for its in-page links, by its hash.
+  assert.equal(/class="copy"/.test(html), false);
+  assert.equal((html.match(/<script/g) ?? []).length, 1);
+  assert.ok(html.includes(`<script>${PAGE_SCRIPT}</script>`) && html.includes(`script-src '${PAGE_SCRIPT_HASH}'`));
   assert.ok(reportModel(session, report, repoFacts()).tiers.must_act.some((item) => item.agentPrompt));
 });
 
@@ -342,12 +370,14 @@ test('D144: the .md folds each prompt as a fence after the item\'s visible lines
     const at = md.indexOf(`<a name="item-${item.n}"></a>`);
     const end = md.indexOf('<a name="item-', at + 1);
     const own = md.slice(at, end > 0 ? end : undefined);
-    const fold = `<details><summary>${W.fold}</summary>\n\n${W.voice}\n\n\`\`\`\n${agentPromptText(item.agentPrompt)}\n\`\`\`\n\n`
+    // D199: no note on the prompt's voice; the fence is the fold's one block (GitHub shows its copy button).
+    const fold = `<details><summary>${W.fold}</summary>\n\n\`\`\`\n${agentPromptText(item.agentPrompt)}\n\`\`\`\n\n`
       + '</details>';
     assert.ok(own.includes(fold), `item ${item.n}`);
     assert.ok(own.indexOf(fold) < own.indexOf('<details><summary>Evidence'), `item ${item.n}`);
   }
   // The terminal (`agentPrompts` false): no prompt, no notice that the report was shortened, and nothing else moves.
+  assert.equal(md.includes('In this prompt,'), false);
   const terminal = renderReportMarkdown(session, report, { agentPrompts: false });
   assert.equal(terminal.includes(W.fold), false);
   assert.equal(terminal.includes(REPORT_TRIM_WORDS.mdShortened), false);
@@ -366,7 +396,71 @@ test('D144, D161: the snapshots are pinned by their sha256, so any move of them 
   // item's Where keeps its run's line too, and the command as the CLI's usage says it) moved report.md once more
   // (D167's first build: report.md 5016914a…). D169 (0.3.0-beta.10: the report model's version, and on the page the
   // code review's fact under its heading) moved both once more (eb9eab3f: report.md 242275cb…, the page f4d99d56…).
+  // 0.3.0-beta.11 (the report model's version; D182: the paragraph on how the code review works, which names no
+  // folder; D185: the shortfall of the ask done only in part labelled by its role, "The change shows:", not "What is
+  // missing:") moved both once more (be2fb44d: report.md b0d502c3…, the page e28e20a6…). D193 (the page's tabs, its
+  // panels and its new stylesheet) moved the page alone (6fe6c9fa: the page cbb2d058…); report.md is 6fe6c9fa's, byte
+  // for byte. D194 (one list of decisions, one pointer line, heads led by their quote) moved both once more (7cfe0c84:
+  // report.md 33aba599…, the page 194b241d…). D195 (the page's type and status pills and its key column) moved the page
+  // alone (6829939b: the page 6be9b473…); report.md is 6829939b's, byte for byte. D196 (the tabs as radios, the header's
+  // tiles, the asks bar) moved the page alone once more (2c02f900: the page, D195's). D197 (chips, run and claim marks)
+  // moved it once more (c0af4fab: the page, D196's). D198 (rows, the asks checklist) moved it once more (ffe8b612: the
+  // page, D197's). D199 (the prompt's box and its copy button, the tabs' stats, and no tier's reason, voice note, coverage
+  // line or could-not-verify note) moved both once more (75ed3ebd: report.md 47fdd352…, the page 0e7a7230…); its review
+  // round moved both again (the session review's rows that no reader reads under its own part in the .md; on the page,
+  // the asks' stats one a state and the decisions tile a label: report.md 5254f753…, the page a7a77947…); its review
+  // round's second pass: What Sonah could not check names the done ask whose row cites only the agent's words (a 7th
+  // fact, both), and on the page the copy buttons hidden until the script shows them and named once they have copied
+  // (the script and its hash with them), each ask row's line wrapped, the decision head's arrow as text, and the run
+  // stat as Commands and Other calls (R17) (report.md 77b4daf2…, the page e3c28116…). D200 (the precision markers as short
+  // tags; the impact and action lines say they are the code review's) moved both once more (0f84aa9c: report.md
+  // f8dd9275…, the page 2d3ac885…): in both, "Impact on you:" and "Action:" read "The code review's impact on you:" and
+  // "The code review's action:", item 27's head gains its tag "Asked: not checked", ask 3's row "Agent's word only",
+  // ask 5's row "Quote not checked" and "Finding withheld", and the coverage line is back (the .md under the asks' table,
+  // the page first in the fold of your messages); on the page alone, Must know's tile says "and 3 decisions", each tag's
+  // sentence is its title, and the stylesheet (translucent tabs, press feedback and its reduced motion, number tracking,
+  // the tags' look, the dead .item-head rules gone). D200's review round moved both once more (D200's first pass:
+  // report.md 743d7af3…, the page 15c7e0df…): in both, ask 5's tag "Quote not checked" reads "Cited quote not checked";
+  // in report.md the line under the asks' table is its own, "Sonah checked only the parts of your prompt that the table
+  // above lists." (it was the page's "Sonah checked only the marked parts of your message."); on the page alone, no tag
+  // has a title: each tag's sentence is a `.tip` span after its label (item 27's flag, ask 3's, and ask 5's two), an
+  // ask's tag focusable (tabindex="0"); each run of the list carries its number as its marker (`value`, runs 1 to 7);
+  // and the stylesheet (the tags positioned, the `.tip` rules hidden until hover or focus and static in print, and the
+  // tags' column spanning the row under 560px). D201 (the owner, 2026-10-31: "move claims to the top on what the agent
+  // did", "for evidence, show more details for verify cases, at least where in the code") moved both once more (9c768f57:
+  // report.md 0abb1d56…, the page 8cf6d720…): in both, item 2 (a contradicted claim) and item 14 (a contradicted
+  // written statement) each name the run their contradicting result came from, its Where gaining "run 1" (item 14:
+  // "run 2") and its evidence the line "The result came from: run 1 `redis-server --version`" (item 14: run 2 `npm
+  // test`); item 15 (the failed run passed over) gains "Its output ended with:" and that run's last two output lines,
+  // each as code; in report.md alone, the runs that other parts name gain run 1's line (now named by item 2); on the
+  // page alone, What the agent did puts the Claims tile first, the claims' chip line before the runs', and the Claims
+  // list before Files and Runs, word for word. No count, status, quote or anchor of the fixture moved. D201's review
+  // moved the page alone once more (was e0c73850…): under prefers-reduced-motion, the copy button's and the acts'
+  // summaries' press transform is none (one stylesheet rule, the page's only move); report.md did not move (the
+  // fixture's one contradicted claim has no explanation, its failed run's output is two lines, its receipts ground).
+  // D202 (the owner, 2026-10-31: "Done asks: what does it", "Short replies: context", "Decisions: their actions",
+  // "Legend and small fixes", "Form, not meaning") moved both (was f184bc84… and 58c32f68…): asks 1 and 3 say what does
+  // them (ask 1's change with its file), message 2 the agent's last words before it, decisions 28 to 32 their
+  // recorded actions (runs 4 to 6, and two calls by their tool and file; report.md lists runs 5 and 6 among the runs it
+  // names), questions 18 and 19 their "Not tied" tag (by D161's structural fact, whether or not its bound moved the
+  // tier), every impact and action line its "Form, not meaning" tag, and the legend four lines more (the page six, with
+  // the row tags' and the bar's); on the page alone, ask rows' evidence folds, the other done asks' fold, the tag
+  // sentences in the opened rows, a radio's name with its count, a 0 tile's class, the bar in its words' order, a lead
+  // quote said once, and the stylesheet (the ask fold's column, the tabs wrapped on a phone, a 0 tile, the muted flag,
+  // folds in print). No count, status, quote or anchor of the fixture moved.
+  // D204 (the coordinator's review of D202 and D203; the owner, 2026-10-31: "Your asks" everywhere, "Cut longest first",
+  // "Yes, add Back") moved both: the count line and the prompt's heading say "Your asks"; a decision shows its recorded
+  // statement from its quote on; a decision's actions name the recorder's tool, so the fixture's writes, which record
+  // none, have no line; the legend says what the two tags mean; on the page, the script adds Back and opening at a #place,
+  // the named runs fold, and the header's tiles sit four to a row on a phone. No count, status, quote or anchor moved.
+  // Its review moved the page alone (was 0d20e100…): the script writes its two entries before the page moves, keeps the
+  // browser's own scroll restoring, gives the link taken focus on Back and keeps a tab opened by hand for a reload, and
+  // a phone's tiles never split a word.
   const now = (name) => sha(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8'));
-  assert.equal(now('report.md'), 'b0d502c3f70c4de953a42b65af1232c8ec18ab319ffe970ad42f120e0d63c088');
-  assert.equal(now('session-page-report.html'), 'e28e20a6bdc018652a2677144a475cde9137e6c58d6c1dd073fc1f660efececd');
+  assert.equal(now('report.md'), '98020386d99330329b289ea098457ccaafdb5a3a8cd21954adf50df78fef31ab');
+  // D203 (the owner, 2026-10-31: "Yes, extend the script") moved the page alone (was 1e4cf68c…): its one script, renamed
+  // PAGE_SCRIPT, also follows an in-page link to its place and lets a tab's label take keyboard focus (so the policy's
+  // hash moved), and the stylesheet holds a place's room under the tab bar (more on a phone), a landed place's ring and
+  // every focus ring in the accent's ink (its review: the accent is under 3:1 on the light ground).
+  assert.equal(now('session-page-report.html'), 'fbf22094cc52a475d78d33d9e0c38d869770a29382e082df154721afc4846c51');
 });

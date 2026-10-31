@@ -44,7 +44,8 @@ test('D144: the report file holds the prompts for the agent; the report printed 
   const toTerminal = await review(t, { root, output: false });
   assert.equal(toTerminal.code, toFile.code);
   assert.ok(toTerminal.printed.includes('### Must act'), 'the report is printed');
-  for (const words of [REPORT_AGENT_PROMPT_WORDS.fold, REPORT_AGENT_PROMPT_WORDS.voice, REPORT_AGENT_PROMPT_WORDS.fix])
+  // D199: the prompt holds no voice note any more; its fold and its closing words stay off the terminal.
+  for (const words of [REPORT_AGENT_PROMPT_WORDS.fold, REPORT_AGENT_PROMPT_WORDS.fix])
     assert.equal(toTerminal.printed.includes(words), false, words);
   // Nothing else moves: the printed report is the file's, without its prompts' folds.
   const withoutPrompts = toFile.written.replace(/\n\n<details><summary>Prompt for the agent<\/summary>\n\n[\s\S]*?\n\n<\/details>/g,
@@ -58,5 +59,5 @@ test('D144: a page written with --format html holds the prompts, and so does the
   assert.ok(page.written.includes(`<summary>${REPORT_AGENT_PROMPT_WORDS.fold}`), 'the page holds the fold');
   assert.ok(page.beside.includes(`<details><summary>${REPORT_AGENT_PROMPT_WORDS.fold}</summary>`),
     'the .md beside the page holds it too');
-  assert.equal(page.printed.includes(REPORT_AGENT_PROMPT_WORDS.voice), false, 'the terminal holds none');
+  assert.equal(page.printed.includes(REPORT_AGENT_PROMPT_WORDS.fold), false, 'the terminal holds none');
 });
