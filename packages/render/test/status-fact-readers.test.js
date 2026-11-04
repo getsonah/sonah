@@ -105,7 +105,8 @@ test('status fact readers: versions moved with the bytes', () => {
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
   // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
-  assert.equal(STORY_VERSION, 'sonah.session-story/42');
+  // D207 once more (sonah.session-story/43): a file's row says what places it in the change.
+  assert.equal(STORY_VERSION, 'sonah.session-story/43');
   // M33 integration moved it once more (`sonah.session-page/4`): one version above both colliding /3s; and the
   // D64 wording once more (`sonah.session-page/5`): an upheld disclosure's words; and the judgment-first page once more
   // (`sonah.session-page/6`, D69 f); and its review once more (`sonah.session-page/7`, D69 f (g)); and D70 (b) once more
@@ -160,7 +161,9 @@ test('status fact readers: versions moved with the bytes', () => {
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
   // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
+  // D207 once more (sonah.session-page/48): a file's row says what places it in the change. D208 rides it: no colour
+  // behind quoted words.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/48');
 });
 
 test('status fact readers: an uncovered command is never listed as failed or passed; the failure listed is a proven one', () => {

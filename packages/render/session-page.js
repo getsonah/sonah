@@ -126,8 +126,10 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  one script is the prompt box's
  *  copy button and the in-page links (`PAGE_SCRIPT`, pinned by its hash in the policy, D199, D203). The legend is a fold in the footer
  *  (`REPORT_TAB_WORDS.legend`). The stylesheet: flat surfaces and hairlines with no shadow, one accent (Must act's rule,
- *  the focus ring, the quotes' marks), labels in sentence case, the system's fonts, one type scale. */
-export const PAGE_VERSION = 'sonah.session-page/47';
+ *  the focus ring, the quotes' marks), labels in sentence case, the system's fonts, one type scale. /48 (D207): the
+ *  file rows and base line the model's /11 moves. D208 rides it: no colour behind quoted words or a marked ask, only
+ *  coloured marks and the rule under the ask. */
+export const PAGE_VERSION = 'sonah.session-page/48';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
 export const PAGE_THEMES = Object.freeze(['system', 'light', 'dark']);
@@ -177,7 +179,7 @@ const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/bl
 const SHORT_ID = 12;
 const shortId = (id) => (typeof id === 'string' && id.startsWith('sha256:') ? id.slice(7, 7 + SHORT_ID) : String(id ?? ''));
 
-/** One text part of the report model, as markup: a verbatim quote in highlighted quotation marks (the cut outside them),
+/** One text part of the report model, as markup: a verbatim quote in coloured quotation marks (the cut outside them),
  *  code, a reviewer's words in `<em>` with its source's class, an in-page link, or Sonah's own words. */
 function partHtml(p) {
   if (!plain(p)) return '';
@@ -972,9 +974,8 @@ export const PAGE_CSS = `
   --muted: light-dark(#68615a, #b5aca2); --faint: light-dark(#746b62, #a39a90); --line: light-dark(#ebe8e4, #2e2823);
   --line-strong: light-dark(#d4cdc7, #463e37); --wash: light-dark(#f7f6f2, #24201b);
   --accent: light-dark(#f48d16, #f59a2e); --accent-ink: light-dark(#9a5300, #ffb45e);
-  --accent-soft: light-dark(rgba(244,141,22,.10), rgba(245,154,46,.14));
   --accent-edge: light-dark(rgba(244,141,22,.35), rgba(245,154,46,.40));
-  --add: light-dark(rgba(46,140,74,.10), rgba(90,190,120,.14)); --mark: light-dark(rgba(244,141,22,.08), rgba(245,154,46,.10));
+  --add: light-dark(rgba(46,140,74,.10), rgba(90,190,120,.14));
   --red: light-dark(#b42318, #fca5a5); --red-bg: light-dark(rgba(220,38,38,.09), rgba(248,113,113,.15));
   --amber: light-dark(#93370d, #fcd34d); --amber-bg: light-dark(rgba(217,119,6,.11), rgba(251,191,36,.14));
   --blue: light-dark(#1d4ed8, #93c5fd); --blue-bg: light-dark(rgba(37,99,235,.09), rgba(96,165,250,.15));
@@ -1007,7 +1008,6 @@ code, .mono { font-family: var(--mono); font-size: .9em; }
 .card-bar .mono { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .content { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 10px; }
 .title-words { font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
-.title-words q.said { background: none; padding: 0; }
 .meta { font-size: 13.5px; color: var(--muted); }
 .count { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; font-size: 13px;
   font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -1159,8 +1159,7 @@ button.copy.done .i-done { display: block; } button.copy.done { color: var(--gre
 .kv > .label { font-size: 11px; line-height: 1.4; letter-spacing: .05em; text-transform: uppercase; }
 .impact { font-weight: 500; } .impact > .label { color: var(--amber); } .action > .label { color: var(--blue); }
 .where code { font-size: 12.5px; padding: 1px 5px; background: var(--wash); border: 1px solid var(--line); border-radius: 4px; }
-q.said { quotes: "\\201C" "\\201D"; color: var(--ink); background: var(--accent-soft); border-radius: 3px; padding: 0 2px;
-  box-decoration-break: clone; }
+q.said { quotes: "\\201C" "\\201D"; color: var(--ink); }
 q.said::before, q.said::after { color: var(--accent-ink); font-weight: 600; }
 q.said code { font: inherit; }
 a.gh { font-size: 12.5px; color: var(--muted); }
@@ -1210,7 +1209,7 @@ h4.label { margin-top: 10px; }
 .message-block { padding: 12px 0; border-top: 1px solid var(--line); }
 .message-block:first-child { border-top: none; padding-top: 0; }
 .message { font-size: 15px; line-height: 1.65; white-space: pre-wrap; }
-mark.ask { background: var(--mark); color: inherit; border-bottom: 2px solid var(--accent-edge); padding: 1px 0; }
+mark.ask { background: none; color: inherit; border-bottom: 2px solid var(--accent-edge); padding: 1px 0; }
 mark.ask > small { display: inline-block; font: 500 12px/1.5 var(--sans); background: var(--wash);
   border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 6px; margin-right: 4px; white-space: nowrap; }
 mark.ask.s-notDone, mark.ask.s-partly, mark.ask.s-doneCode, mark.ask.s-notCheckedCode { border-bottom-color: var(--accent); }

@@ -2380,6 +2380,7 @@ function shellWrites(cmd, cwd, home = null) {
       if (cat) hits.push({ p: cat.path, how: 'heredoc', heredoc: { index: cat.heredoc, word: cat.path,
         append: cat.append, delim: lexed.heredocs[cat.heredoc].delim } });
       for (const p of sedTargets(part.tokens)) hits.push({ p, how: 'sed -i' });
+      hits.push(...moveTargets(part.tokens));
     }
     for (const { re, g, how } of part.tokens ? LEXED_FORMS : SHELL_WRITES) {
       const m = t.match(re);
@@ -2409,13 +2410,17 @@ function shellWrites(cmd, cwd, home = null) {
   // hid a whole UI rewrite from the ledger and turned "update the ui" into a false unmet
   // (verified on this codebase's own session, 2026-09-02). The file APIs are formal syntax, so
   // the detection is code: literal paths, plus one-hop simple-variable resolution within the
-  // same script text. Scanned over the WHOLE command (assignment and call live on different lines).
-  const strVars = new Map();
-  for (const m of text.matchAll(/\b([A-Za-z_]\w*)\s*=\s*(['"])([^'"\n]+\.\w{1,6})\2/g)) strVars.set(m[1], m[3]);
+  // same script text. Scanned over the WHOLE command (assignment and call live on different lines). D207's second review:
+  // a name is read by the path assigned to it nearest before the call (`scriptLiterals`, `boundPaths`), never by its last
+  // one anywhere in the command.
+  const literals = scriptLiterals(text);
   const scriptForms = [
     { re: /\bopen\(\s*(['"])([^'"\n]+)\1\s*,\s*(['"])[wa]b?\3/g, lit: 2, how: 'script open(w)' },
     { re: /\bopen\(\s*([A-Za-z_]\w*)\s*,\s*(['"])[wa]b?\2/g, var: 1, how: 'script open(w)' },
     { re: /\bwriteFile(?:Sync)?\(\s*(['"])([^'"\n]+)\1/g, lit: 2, how: 'script writeFile' },
+    // D207 (a false NONE, independently checked): the path in a one-hop variable, as `open()` reads it. A `writeFile`
+    // takes its data after the path, so the variable is followed by a comma; `writeFile(path.join(…))` is no such form.
+    { re: /\bwriteFile(?:Sync)?\(\s*([A-Za-z_]\w*)\s*,/g, var: 1, how: 'script writeFile' },
     { re: /\bwrite_text\(/g, skip: true },
   ];
   // A script runs in the directory its command ran in: a relative path it writes is resolved against the `cd` before
@@ -2428,8 +2433,7 @@ function shellWrites(cmd, cwd, home = null) {
   };
   for (const f of scriptForms) {
     if (f.skip) continue;
-    for (const m of text.matchAll(f.re)) {
-      const raw = f.lit ? m[f.lit] : strVars.get(m[f.var]);
+    for (const m of text.matchAll(f.re)) for (const raw of f.lit ? [m[f.lit]] : boundPaths(literals, m[f.var], m.index)) {
       if (!raw || !SOURCE_EXT.test(raw)) continue;
       const at = raw.startsWith('/') ? '' : dirAt(m.index);
       const abs = at ? posix.normalize(`${at}/${raw}`) : '';
@@ -2443,6 +2447,29 @@ function shellWrites(cmd, cwd, home = null) {
   // state the record does not hold, so the body is not claimed for it.
   return [...found].map(([path, v]) => ({ path, how: v.how, abs: v.abs,
     ...(v.heredoc && writes.get(path) === 1 ? { heredoc: v.heredoc } : {}) }));
+}
+
+/**
+ * D207's second review: each quoted path a command's scripts assign to a name, in the text's order: `{ at, name, path }`
+ * for `name = 'docs/x.md'` (a plain `=`, never a property's, a comparison's or a compound one's). Syntax only; nothing is
+ * evaluated.
+ */
+function scriptLiterals(text) {
+  return [...text.matchAll(/(?<![\w.$])([A-Za-z_]\w*)\s*=\s*(['"])([^'"\n]+\.\w{1,6})\2/g)]
+    .map((m) => ({ at: m.index, name: m[1], path: m[3] }));
+}
+/**
+ * D207's second review: the paths a name holds where a call stands (`at`), by `scriptLiterals`: the one assigned nearest
+ * before the call, as straight-line code holds it, never the last one anywhere in the command (a name assigned again after
+ * the call, or a later script's own name, wrote no such path). When none comes before the call, as in a function defined
+ * before its callers assign the name (`def sub(p, a, b): ... open(p, 'w')`, then `p = 'x.md'; sub(p, …)`), each path the
+ * command assigns to it. A binding that is no quoted path (`p = join(…)`, a parameter, a loop's name) is not read: on
+ * real recordings those names stand as often in the code a script writes as data, and reading them lost true writes.
+ */
+function boundPaths(literals, name, at) {
+  const named = literals.filter((l) => l.name === name);
+  const before = named.filter((l) => l.at < at).at(-1);
+  return before ? [before.path] : named.map((l) => l.path);
 }
 
 const SHELL_PROGRAM = /^(?:bash|sh|zsh|dash|ksh)$/;
@@ -2875,6 +2902,45 @@ function sedTargets(tokens) {
     k = j;
   }
   return files;
+}
+
+/** D207 (a false NONE, independently checked): the programs that write their last operand, by name: `mv` and `cp`. */
+const MOVE_PROGRAM = /(?:^|\/)(mv|cp)$/;
+/** D207: an option that names the target folder or takes a word of its own (`-t DIR`, `-S SUFFIX`, GNU's long forms):
+ *  which word is the target is then not read. */
+const MOVE_WORD_OPTION = /^(?:-[A-Za-z]*[tS]|--(?:target-directory|suffix)(?:=|$))/;
+/**
+ * D207: the file a lexed `mv` or `cp` writes: its target, read from its words, when the command is in a command's place
+ * (`commandHeads`), unquoted, and names exactly one source and one target. Options end at `--`; a redirection and its word
+ * are no operand; a word option (`MOVE_WORD_OPTION`) or any word the lexer does not read as a plain word names nothing.
+ * Several sources move into a folder, which no source extension names, so they are not read here. The target is placed as
+ * every other shell write is (`dir`, `shellSpelling`). The source a `mv` leaves is no write here.
+ */
+function moveTargets(tokens) {
+  const hits = [];
+  for (const head of commandHeads(tokens)) {
+    const program = head.quoted ? null : MOVE_PROGRAM.exec(head.word);
+    if (!program) continue;
+    const operands = [];
+    let options = true, read = true;
+    for (let j = tokens.indexOf(head) + 1; j < tokens.length; j++) {
+      const t = tokens[j];
+      if (t.op !== undefined) {
+        if (COMMAND_STARTS.has(t.op)) break;
+        j++;   // a redirection: its target word is no operand
+        continue;
+      }
+      if (typeof t.word !== 'string' || t.heredoc !== undefined) { read = false; break; }
+      if (options && t.word === '--') { options = false; continue; }
+      if (options && t.word.length > 1 && t.word.startsWith('-')) {
+        if (MOVE_WORD_OPTION.test(t.word)) { read = false; break; }
+        continue;
+      }
+      operands.push(t.word);
+    }
+    if (read && operands.length === 2) hits.push({ p: operands[1], how: program[1] });
+  }
+  return hits;
 }
 
 const LEX_FAILED = Symbol('lex failed');

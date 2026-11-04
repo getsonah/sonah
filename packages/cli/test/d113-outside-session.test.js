@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { readCodeSnapshot, snapshotTexts } from '../src/code-snapshot.js';
 import { runSessionReviewCommand, codeSnapshotLine, CODE_SNAPSHOT_WORDS } from '../src/session-review-command.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeChangedOutsideLine, codeOutsideSeenLine,
-  codeReceiptFound, withheldWhy, CODE_REPORT_LIMITS } from '../../evidence/src/code-report.js';
+  codeReceiptFound, withheldWhy, CODE_REPORT_LIMITS, outsideKeyOf } from '../../evidence/src/code-report.js';
 import { codeChangeTally, CODE_TALLY_GROUPS, OUTSIDE_SESSION_WORDS } from '../../evidence/src/code-pass.js';
 import { askCodeLinks } from '../../evidence/src/ask-code-links.js';
 import { ATTENTION_WORDS } from '../../evidence/src/review.js';
@@ -32,6 +32,8 @@ import { CODE_FILES, CODE_TEXT, PARSE_QUOTE, buildCodeSession, codeJudge, holds,
   dossierItems, accountsHold, sha256, readsEveryFile, SYNTHETIC_RUN } from './code-pass-fixture.js';
 
 const W = CODE_REPORT_WORDS;
+/** D207's review of real reports: what holds of `n` files outside the evaluated session, by what the base shows. */
+const whyOf = (base, n) => W.outsideWhy[outsideKeyOf(base)](n);
 const START = '2030-01-01T00:00:00.000Z';
 const BASE_PARSE = CODE_FILES['src/parse.js'].replace('split(",")', 'split(";")');
 const T1 = { turn: 'T1' };
@@ -107,7 +109,8 @@ async function reviewIn(t, { root, recording, session, judge, at = null, argv = 
   return { code, calls, out, written: await readFile(output, 'utf8'), report, dir };
 }
 /** The story's text with Markdown's escapes taken out. */
-const plainText = (md) => md.replace(/\\(.)/g, '$1');
+// D207's review of real reports: and the .md's escaped angle brackets (the way out names `<branch>`).
+const plainText = (md) => md.replace(/\\(.)/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 /** The ask's words a trace step of the code review may quote (the person's root instruction). */
 const ASK_QUOTE = 'add a parse function that returns [] for empty input';
 const OPEN_AWAY = 'SYNTHETIC_OPEN_AWAY: the later doc names no version';
@@ -162,7 +165,8 @@ test('D113 amended: the files outside the evaluated session are read apart and g
     ['docs/later.md', 'unrecorded_change', false, 'added'], ['lib/old.js', 'unrecorded_change', false, 'modified']]);
   assert.ok(!snapshotTexts(snapshot).some((text) => text.includes('SYNTHETIC_LATER_DOC')), 'never in the change');
   // The terminal's dry-run line: tagged, and given to the code review apart from the change.
-  assert.ok(codeSnapshotLine(snapshot).includes(CODE_SNAPSHOT_WORDS.changedOutside(2, true)), codeSnapshotLine(snapshot));
+  assert.ok(codeSnapshotLine(snapshot).includes(CODE_SNAPSHOT_WORDS.changedOutside(2, true, whyOf(snapshot.base, 2))),
+    codeSnapshotLine(snapshot));
   assert.ok(CODE_SNAPSHOT_WORDS.changedOutside(2, true).includes(OUTSIDE_SESSION_WORDS));
 
   const seen = [];
@@ -229,9 +233,10 @@ test('D113 amended: the files outside the evaluated session are read apart and g
 
   // The .md, the page and the terminal: each such file and each finding or question on one, tagged.
   const text = plainText(run.written);
-  assert.ok(text.includes(`${W.outsideFiles(['docs/later.md', 'lib/old.js'])}.`), text);
+  // D207's review of real reports: what holds of them, by the record, and the way to a branch's changes.
+  assert.ok(text.includes(W.outsideFiles(['docs/later.md', 'lib/old.js'], 0, whyOf(pass.base, 2), true)), text);
   assert.ok(text.includes(W.outsideSeen([['whole', 2]], 0)), text);
-  assert.ok(text.includes(REPORT_DID_WORDS.outsideSession(2)), 'the files list');
+  assert.ok(text.includes(REPORT_DID_WORDS.outsideSession(2, whyOf(pass.base, 2))), 'the files list');
   assert.match(text, /^- `docs\/later\.md` · new · \+1 −0 · outside the evaluated session → item \d+$/m);
   assert.match(text, /^- `lib\/old\.js` · changed · \+2 −1 · outside the evaluated session → item \d+$/m);
   // An item's head, its words in emphasis (Markdown, or HTML in a fold), then the marker.
@@ -282,7 +287,8 @@ test('D113 amended: the files outside the evaluated session are read apart and g
     'one tag an item on them');
   assert.ok(!page.includes(`<span class="scope">${REPORT_ITEM_WORDS.outsideSession}</span>`), 'no sentence as the tag');
   assert.ok(page.includes(`<p class="count-outside">${REPORT_COUNT_WORDS.outside(2)}</p>`), 'the page\'s count');
-  assert.ok(page.includes(`<p class="note">${escapeHtml(REPORT_DID_WORDS.outsideSession(2))}</p>`), 'the page\'s files list');
+  assert.ok(page.includes(`<p class="note">${escapeHtml(REPORT_DID_WORDS.outsideSession(2, whyOf(pass.base, 2)))}</p>`),
+    'the page\'s files list');
   // D199: a files row's separators are spans of their own (hidden, kept in the text), so the page is read as text.
   const pageText = page.replace(/<[^>]*>/g, '');
   assert.equal(pageText.split(` · ${W.outsideTag}`).length - 1, 4,
@@ -443,7 +449,7 @@ test('D113 amended: the reuse dry run counts the block of the files outside the 
   assert.equal(Number(kb?.[1]), Math.ceil((Buffer.byteLength(review.system, 'utf8')
     + Buffer.byteLength(review.prompt, 'utf8')) / 1024), dry.out);
   // Its snapshot line: given apart only if there is room for them (their block gives way first).
-  assert.ok(dry.out.includes(CODE_SNAPSHOT_WORDS.changedOutside(2, true)), dry.out);
+  assert.ok(dry.out.includes(CODE_SNAPSHOT_WORDS.changedOutside(2, true, whyOf(first.report.codePass.base, 2))), dry.out);
   assert.ok(CODE_SNAPSHOT_WORDS.changedOutside(2, true).endsWith(' If there is room in the code review\'s input, Sonah '
     + 'gives them to the code review apart from the change.'));
 });
@@ -456,14 +462,17 @@ test('D113 amended: with no change of the session\'s own to review, no code revi
     { id: 'C2', kind: 'commentary', blob: 'final', phase: 'final', ...T1 }]);
   const snapshot = await readCodeSnapshot(session, { root, maxBytes: 1_000_000, recording });
   assert.equal(snapshot.outsideFiles.length, 2, 'read');
-  assert.ok(codeSnapshotLine(snapshot).includes(CODE_SNAPSHOT_WORDS.changedOutside(2, false)), 'not given');
+  assert.ok(codeSnapshotLine(snapshot).includes(CODE_SNAPSHOT_WORDS.changedOutside(2, false, whyOf(snapshot.base, 2))),
+    'not given');
   const run = await reviewIn(t, { root, recording, session, judge: codeJudge() });
   assert.deepEqual(run.calls.filter((r) => /^code-/.test(r.label)), [], 'no code review call');
   assert.equal(run.report.codePass.outsideFiles, undefined);
   const text = plainText(run.written);
-  assert.ok(text.includes(`${W.changedOutside(['docs/later.md', 'lib/old.js'])}.`), text);
+  // D207's review of real reports: with no change of its own, the first screen names the way out, not this line.
+  const base = run.report.codePass.base;
+  assert.ok(text.includes(W.changedOutside(['docs/later.md', 'lib/old.js'], 0, whyOf(base, 2), false)), text);
   assert.ok(text.includes(W.noWrite), text);
-  assert.ok(text.includes(REPORT_DID_WORDS.outsideSession(2)), 'the files list');
+  assert.ok(text.includes(REPORT_DID_WORDS.outsideSession(2, whyOf(base, 2))), 'the files list');
   assert.match(text, /^- `docs\/later\.md` · outside the evaluated session$/m);
   // The page's row the same: its path and the tag, no type with no record of the file (D199: a row of columns, its
   // separator a hidden span kept in the text).
@@ -483,13 +492,14 @@ test('D113 amended: the files list names the first files outside the evaluated s
   const run = await reviewIn(t, { root, recording, session, judge: codeJudge() });
   const text = plainText(run.written);
   const lines = text.split('\n');
-  const lead = lines.indexOf(REPORT_DID_WORDS.outsideSession(bound + 2));
+  const leadWords = REPORT_DID_WORDS.outsideSession(bound + 2, whyOf(run.report.codePass.base, bound + 2));
+  const lead = lines.indexOf(leadWords);
   assert.ok(lead >= 0, text);
   const rows = lines.slice(lead + 1).filter((line) => line.trim()).slice(0, bound + 1);
   assert.deepEqual(rows.slice(0, bound), Object.keys(later).slice(0, bound).map((p) => `- \`${p}\` · ${W.outsideTag}`));
   assert.equal(rows[bound], REPORT_DID_WORDS.moreFiles(2));
   const { html: page } = sessionPage(session, run.report, {});
-  const [, away] = page.split(`<p class="note">${escapeHtml(REPORT_DID_WORDS.outsideSession(bound + 2))}</p>`);
+  const [, away] = page.split(`<p class="note">${escapeHtml(leadWords)}</p>`);
   // D199: a files row's separator is a hidden span kept in the text.
   assert.ok(away.startsWith(`<ul class="files"><li><code>docs/n00.md</code><span class="sep"> · </span>`
     + `<span>${W.outsideTag}</span></li>`), away.slice(0, 200));
@@ -535,11 +545,15 @@ test('D113 amended readers: the line of the files outside the evaluated session 
 test('D113 amended docs: TROUBLESHOOTING explains the line of the files outside the evaluated session and the item marker; PRIVACY says they are sent apart and left out first', async () => {
   const flat = (text) => text.replace(/\s+/g, ' ');
   const trouble = await readFile(new URL('../../../docs/TROUBLESHOOTING.md', import.meta.url), 'utf8');
-  const row = trouble.split('\n').find((line) => line.startsWith('  | files that changed outside this session\'s '
-    + 'recorded writes are outside the evaluated session |'));
+  // D207's review of real reports: the row quotes the page's words on a record of D207's code step, and the earlier ones.
+  const row = trouble.split('\n').find((line) => line.startsWith('  | files are outside the evaluated session (a report '
+    + 'from before these words: "files that changed outside this session\'s recorded writes are outside the evaluated '
+    + 'session") |'));
   assert.ok(row, 'the row of the line when the code review was given them');
   assert.ok(W.outsideFiles(['a.md']).startsWith('1 file that changed outside this session\'s recorded writes is outside '
-    + 'the evaluated session'), 'the row names the words the page prints');
+    + 'the evaluated session'), 'the row names the words the page prints on an earlier record');
+  assert.ok(W.outsideFiles(['a.md'], 0, W.outsideWhy.window(1)).startsWith('1 file is outside the evaluated session'),
+    'and on a record of D207\'s code step');
   assert.ok(row.includes(REPORT_ITEM_WORDS.outsideSession), row);
   const privacy = flat(await readFile(new URL('../../../docs/PRIVACY.md', import.meta.url), 'utf8'));
   assert.ok(privacy.includes('Sonah leaves out whole parts (first the files outside the evaluated session, then the '

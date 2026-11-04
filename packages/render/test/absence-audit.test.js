@@ -316,7 +316,19 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // failed run's whole command and a decision's statement from its quote on (3 other); the legend of the code review's
   // lines' tag and of the untied tag (2 sonah); the page's sentence for the runs listed apart goes with its fold
   // (1 sonah out); its review: the label of a command its bound still cuts (1 other). + [0, 1, 4].
-  assert.deepEqual(AUDIT_CLASSES.map(count), [99, 565, 510]);
+  // D207, a change decided by evidence and --code-base: 6 sonah in (the terminal's head by evidence and its line of a named
+  // base, the report's line of a named base, that no file differs from it, the paths outside the working directory that
+  // differ from it, and the row of a file placed by time alone); 5 other in (the rows of a file in a commit the session
+  // made and in the change by the base, and the three fixes of a base that git cannot find, that shares no commit with
+  // HEAD, or with no repository around the working folder: the person's own machine). Read again: the base lines, with
+  // what places each file; the first screen's reasons `no_write` (absence, its proof unchanged), `no_seen_write` and
+  // `no_written_change`, and `noWrittenChange`, with the way to review a whole branch; the review's usage (other).
+  // D207's two reviews: 2 sonah (the head with nothing in the change, a named base's reason), 5 other.
+  // D207's review of real reports: 3 absence in (what holds of every file outside the evaluated session, by what the
+  // record shows: no recorded write changed them, an absence, beside what Sonah found); 2 sonah in (a review that saw the
+  // whole change, short only by a check, on the page and on the terminal). Read again: the lines and the terminal's
+  // sentences of those files, the files list's lead, and the code step's line (other: a review call for each part).
+  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 575, 520]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
@@ -344,7 +356,9 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // proofs of the sentences they abbreviate) and 2 more row sentences (the done ask on the agent's words, and nothing
   // cited, as tags). Its review round: the unrun write's tag out (it says what Sonah did), the long prompt's fold of the
   // done asks on the agent's word in (a row sentence).
-  assert.deepEqual([proved - rows, rows, held], [96, 10, 3]);
+  // D207's review of real reports: 3 more, by the recorded writes' search (what holds of every file outside the evaluated
+  // session: that no recorded write changed them).
+  assert.deepEqual([proved - rows, rows, held], [99, 10, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

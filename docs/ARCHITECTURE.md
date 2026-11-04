@@ -95,7 +95,12 @@ The code step, on by default with the `claude-cli` backend, runs after step 9 on
 `cli/src/code-snapshot.js` reads, before any call, the change the session made (git's list and patches from the
 session's start commit, or the recorded edits with no git history) and the state of each repository it reads (a hash
 of every file git lists), and gives evidence a repository reader (any file of those repositories, now or at their start
-commit).
+commit). A path that differs is part of the change by the first that holds (`placedByOf`, `CODE_PLACED_BY`): a recorded
+write could have changed it; it is in a commit whose first line a recorded action holds by that commit's time; or it
+last changed in the recording's window, outside a wait, and was not committed when the session's recorded work ended
+(`recordedWorkEnd`: its newest row the slicer labels thought, action or observation, never a row the recorder wrote
+after it, and the human's newest only where the agent has none). Every other path
+is outside the evaluated session. `--code-base` names the base as a merge base, and then git's list is the change.
 `evidence/src/code-context.js` lays out the change and the session dossier. `evidence/src/code-pass.js` sends the
 review agent's request, checks each item it answers by shape and grounds every quote by string search through the
 reader, sends one repair for what fails, then one checking agent per finding and one for its questions, and decides

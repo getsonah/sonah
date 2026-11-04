@@ -57,7 +57,8 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   COMPACTION_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace, UNITS_LEFT_OUT_REASON,
   UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, TRUTH_ONLY_REFUTATION, TRUTH_ONLY_KIND,
-  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS, BETA11_READER_VERSIONS }
+  profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS, BETA11_READER_VERSIONS,
+  PLACED_VERSIONS, PLACED_READER_VERSIONS, profileBeforePlaced }
   from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
   verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
@@ -245,7 +246,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.ok(GAP_CODES.includes('code_step_backend'));
   assert.deepEqual(CODE_DIFF_STATES, ['recorded', 'unrecorded_change', 'base_unknown', 'withheld', 'unreadable']);
   assert.deepEqual(CODE_DIFF_BASES, ['git', 'recorded_edits']);
-  assert.deepEqual(CODE_START_COMMIT_SOURCES, ['recorded', 'reflog', 'commit_date']);
+  assert.deepEqual(CODE_START_COMMIT_SOURCES, ['recorded', 'reflog', 'commit_date', 'merge_base']);
+  assert.deepEqual(ledger.CODE_PLACED_BY, ['write', 'commit', 'time', 'base']);
+  assert.equal(CODE_PASS_PROFILE.placedBy, ledger.CODE_PLACED_BY);
   assert.deepEqual(CODE_CHANGE_TYPES, ['added', 'modified', 'deleted']);
   for (const list of [CODE_FILE_STATES, CODE_PASS_LENSES, CODE_FINDING_KINDS, CODE_VERIFY_VERDICTS, CODE_REFUTATION_REASONS,
     CODE_WITHHELD_REASONS, CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS, CODE_VOID_CAUSES, CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES, CODE_FOOTER_KINDS,
@@ -267,15 +270,18 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // untouched. D109: the snapshot /12 (a recorded write outside the working directory classed by where it lies).
   // D113 and D114 (0.3.0-beta.5): the snapshot /13 (the session's own change), the pass /13 and the checking agents /4
   // (the listed asks), each one link after 0.3.0-beta.4's. D152 (0.3.0-beta.9): the checking agents /5 (the check
-  // judges truth only), one link after 0.3.0-beta.5's /4.
-  assert.equal(CODE_SNAPSHOT_VERSION, 'sonah.code-snapshot/13');
-  assert.equal(CODE_PASS_VERSION, 'sonah.code-pass/13');
+  // judges truth only), one link after 0.3.0-beta.5's /4. D207: the snapshot /14 and the pass /14 (a path is part of the
+  // change by what shows it is the session's), one link after 0.3.0-beta.5's /13.
+  assert.equal(CODE_SNAPSHOT_VERSION, 'sonah.code-snapshot/14');
+  assert.equal(CODE_PASS_VERSION, 'sonah.code-pass/14');
+  assert.deepEqual(PLACED_VERSIONS, { snapshot: { before: SESSION_CHANGE_VERSIONS.snapshot.after, after: CODE_SNAPSHOT_VERSION },
+    pass: { before: LISTED_ASKS_VERSIONS.pass.after, after: CODE_PASS_VERSION } });
   assert.equal(CODE_VERIFY_VERSION, 'sonah.code-verify/5');
   assert.deepEqual(TRUTH_ONLY_VERSIONS.verify, { before: LISTED_ASKS_VERSIONS.verify.after, after: CODE_VERIFY_VERSION });
   assert.deepEqual(SESSION_CHANGE_VERSIONS.snapshot, { before: WHERE_IT_LIES_VERSIONS.snapshot.after,
-    after: CODE_SNAPSHOT_VERSION });
+    after: 'sonah.code-snapshot/13' });
   assert.deepEqual([LISTED_ASKS_VERSIONS.pass, LISTED_ASKS_VERSIONS.verify], [{ before: ONE_BOUND_VERSIONS.pass.after,
-    after: CODE_PASS_VERSION }, { before: PREMISE_VERSIONS.verify.after, after: 'sonah.code-verify/4' }]);
+    after: 'sonah.code-pass/13' }, { before: PREMISE_VERSIONS.verify.after, after: 'sonah.code-verify/4' }]);
   assert.deepEqual(PREMISE_VERSIONS.verify, { before: CLEANUP_VERSIONS.verify.after, after: 'sonah.code-verify/3' });
   assert.equal(CODE_VERIFY_PASSES, 1);
   assert.deepEqual(ONE_BOUND_VERSIONS.pass, { before: REFUSED_AFTER_EDIT_VERSIONS.pass.after, after: 'sonah.code-pass/12' });
@@ -364,8 +370,12 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual(BETA11_READER_VERSIONS.page.before, AGENT_PROMPT_READER_VERSIONS.page.after);
   // D194: and the story once more, one link after 0.3.0-beta.7's.
   assert.deepEqual(BETA11_READER_VERSIONS.story.before, AGENT_PROMPT_READER_VERSIONS.story.after);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [BETA11_READER_VERSIONS.page.after,
-    BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.model.after]);
+  // D207: each once more (PLACED_READER_VERSIONS), one link after 0.3.0-beta.11's: a file's row says what places it in
+  // the change. D208 rides the page's: no colour behind quoted words.
+  assert.deepEqual([PLACED_READER_VERSIONS.page.before, PLACED_READER_VERSIONS.story.before, PLACED_READER_VERSIONS.model.before],
+    [BETA11_READER_VERSIONS.page.after, BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.model.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [PLACED_READER_VERSIONS.page.after,
+    PLACED_READER_VERSIONS.story.after, PLACED_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.
@@ -437,7 +447,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // D98 moved the snapshot version alone: rendered back (`profileBeforeOneReading`, which every older render-back
   // applies first, and which renders back every later link first: the owner's answers' code-pass/11 among them), the
   // release check's member.
-  assert.equal(current.codePass.pass, LISTED_ASKS_VERSIONS.pass.after);
+  // D207 moved the pass and the snapshot once more: rendered back first (`profileBeforePlaced`).
+  assert.equal(current.codePass.pass, PLACED_VERSIONS.pass.after);
+  assert.equal(profileBeforePlaced(current).codePass.pass, LISTED_ASKS_VERSIONS.pass.after);
   assert.deepEqual(profileBeforeOneReading(current), { challenge: { version: CITED_WHOLE_VERSIONS.challenge.before },
     codePass: { ...beforeMerge, repairUnchecked: REPAIR_MERGE_UNCHECKED.before, snapshot: 'sonah.code-snapshot/10',
       pass: REFUSED_AFTER_EDIT_VERSIONS.pass.before } });
@@ -462,7 +474,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.deepEqual([current.codePass.verify, current.codePass.refutations.includes(TRUTH_ONLY_REFUTATION),
     current.codePass.trace.breaks, current.codePass.tie, Object.hasOwn(current.codePass.triage.kinds, TRUTH_ONLY_KIND)],
   [TRUTH_ONLY_VERSIONS.verify.after, false, 4, { rule: 'leads-from-or-grounded-breaks' }, true]);
-  const { tie: _tie, trace: { breaks: _breaks, ...traceBefore }, ...withoutTie } = current.codePass;
+  // D206 added the index member; `profileBeforeTruthOnly` takes it out first (`profileBeforeIndex`). D207 moved the
+  // snapshot's and the pass's versions, `placedBy`, `merge_base` and the units' order; before that (`profileBeforePlaced`).
+  const { tie: _tie, index: _index, trace: { breaks: _breaks, ...traceBefore }, ...withoutTie } = profileBeforePlaced(current).codePass;
   const { [TRUTH_ONLY_KIND]: _open, ...kindsBefore } = current.codePass.triage.kinds;
   assert.deepEqual(truthBack, { ...current, codePass: { ...withoutTie, verify: TRUTH_ONLY_VERSIONS.verify.before,
     refutations: [...current.codePass.refutations, TRUTH_ONLY_REFUTATION], trace: traceBefore,

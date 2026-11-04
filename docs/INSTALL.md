@@ -227,14 +227,33 @@ sonah review --code-repo ~/code/app --format html --output ~/review.html
 
 `DIR` is the repository's folder, or any folder in it; give `--code-repo` once for each repository. Sonah reads it as if
 the session had written there: its change runs from the commit where it stood when the session started, and holds the
-files that a recorded write could have changed there and the files whose last change came while the session ran (each
-marked as written by no recorded edit). The other files that differ there are outside the evaluated session. When the
+files that a recorded write could have changed there, the files in a commit the session made, and the files whose last
+change came while the session ran and that were not committed when the agent stopped (each of those two marked as written by no
+recorded edit). The other files that differ there are outside the evaluated session. When the
 repository holds a file of the change, the code review and its checks read that folder too. The report names the
 repository with its count of files. A folder that is not there, or that no git repository holds, stops the review
 before anything is read or sent (`code_repo_not_found`, `code_repo_not_git`). The repository that holds the session's
 working directory is read by its own rule already, so giving it changes nothing that Sonah reads; the report says that
 you gave it. When no code was reviewed after all, the reason says what Sonah found in the repositories that you gave.
 Without `--code-repo`, nothing changes.
+
+### A whole branch, whoever wrote it
+
+The code review reads the change that the recording shows to be the session's. To review all that a branch changed under
+the working folder instead, name the branch to compare with:
+
+```sh
+sonah review --code-base main --format html --output ~/review.html
+```
+
+The change runs from where that branch and yours meet (git's merge base) to the files as they are now, and holds every
+tracked file that differs under the working directory; in a folder of a larger repository, what differs elsewhere stays
+out and is counted. The report says that you named this base, so the change can hold
+work that is not this session's. Untracked files keep the usual rule, and another repository keeps its own start commit.
+Give the option once; it is not used with `--no-code-pass` or `--code-repo`. A name that git cannot find, a branch that
+shares no commit with yours, or a working folder that no git repository holds stops the review before anything is sent
+(`code_base_not_found`, `code_base_no_merge_base`, `code_base_not_git`), as does a review that does not run the code review
+(`code_base_no_code_step`). Without `--code-base`, nothing changes.
 
 ### What the review prints
 
@@ -448,8 +467,9 @@ and the API do not, so this stop never fires there). When one is reached Sonah p
 (...)` and exits `3`; run the same command to continue.
 
 Running a review again (for example after the session continued) reuses every stored answer whose request is
-unchanged and asks only what is new or failed. A review that did not complete still writes its page, so give the rerun
-a new `--output` name. Only one review of a recording runs at a time.
+unchanged and asks only what is new or failed. The code review's requests hold what the session review found, so when
+that changes, every code review request is new and is asked again. A review that did not complete still writes its page,
+so give the rerun a new `--output` name. Only one review of a recording runs at a time.
 
 ## Link commits to sessions
 
@@ -685,10 +705,15 @@ The code step (on unless you run `sonah config code-pass off` or add `--no-code-
 review) also reviews the code, the way a reviewer reviews a pull request, with the session review beside it. It runs
 with the `claude-cli` backend only. After the session review, Sonah reads the change the session made: each file that
 differs from the commit the session started from (read with git, which writes nothing; with no git history to start
-from, the session's own recorded edits) that a recorded write of the session could have changed, or whose last change
-came while the session ran (a file git shows changed that no recorded edit wrote is then marked so), with its lines
-before and after. A file that differs but changed outside both (a later commit, a file already changed when the session
-began) is outside the evaluated session: it is never part of the change, the report names it apart with those words, and
+from, the session's own recorded edits), with its lines before and after, by the first of these that holds: a recorded
+write of the session could have changed it; a commit the session made changed it (a commit whose message's first line is in
+a command of the session or its helper agents, typed by the time of that commit; a merge only for the files it
+changed itself, not for those it brought in); or its last change came while the
+session ran and it was not committed when the agent stopped. A file in either of the last two is marked as written by
+no recorded edit, and one in the last says that it may not be the session's. On a Codex recording, the time between the
+end of the agent's turn and your next message does not count as while the session ran. A file that differs and meets none
+of these (a commit by other hands, a later commit, a file already changed when the session began) is outside the evaluated
+session: it is never part of the change, the report names it apart with those words, and
 when the change holds a file to review the review agent is given it too, after the change and apart from it (the first
 part left out when the request is too large). A finding about such a file is marked "outside the evaluated session" and
 never tied to your asks or the agent's claims. A broken contract, a broken rule or a contradicted claim that a line the
@@ -719,8 +744,9 @@ the files the session wrote elsewhere in the repository (the other paths that di
 agents may still read the whole repository. A file the session wrote in another git repository, such as a sibling
 worktree, is part of the change too (since 0.3.0-beta.5), after the repository's files: its change runs from the commit
 where that repository stood when the session began, by the same rule as yours, and a file there that no recorded write
-of the session touched is part of it only when its last change came while the session ran (the other files that differ
-there are named apart, outside the evaluated session). Such a repository counts only when a file the session wrote there
+of the session touched is part of it only when a commit the session made changed it, or its last change came while the
+session ran and it was not committed when the agent stopped (the other files that differ there are named apart,
+outside the evaluated session). Such a repository counts only when a file the session wrote there
 is there now and differs from that commit; the agents may read each such repository too. For a repository that you give
 with `--code-repo`, see "A repository that the recording does not show the session changing". A file the session wrote
 outside the working directory, in a folder that no git repository holds (a notes or temporary folder), is not reviewed:
@@ -748,9 +774,10 @@ are kept per model.
 Cursor sessions are read only when you pass their path
 (`ls -t ~/.cursor/projects/*/agent-transcripts/*.jsonl | head -1`), and a Cursor recording can omit tool outputs, so a
 review of it can check less. Optional stops, off by default: `--max-calls N`, `--max-input-bytes N`,
-`--stop-at-utilization U`. Running the same review again reuses stored answers and costs nothing; a review that did not
-complete asks again only what failed (it still wrote its page, so give the rerun a new `--output` name).
-`sonah review --help` lists every review option.
+`--stop-at-utilization U`. Running the same review again reuses stored answers and costs nothing. A review that did not
+complete asks again what failed (it still wrote its page, so give the rerun a new `--output` name). A stored answer is
+reused only for the same input, and the code review's input holds what the session review found: when the rerun
+changes that, the code review is asked again in whole. `sonah review --help` lists every review option.
 
 ## What Sonah does and does not do
 
@@ -780,7 +807,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.11`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.12`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been
@@ -807,14 +834,17 @@ can change between betas.
   (`~`), or relative to the working directory or to such a folder. It does not follow other changes of folder, such as a
   `cd` to a folder that the command does not name, `pushd`, a subshell, another shell or a script's own change of
   folder, and it does not see a path that a script builds or what a script file writes. Such a change is reviewed only
-  in a git repository that the review reads, when the file's last change came while the session ran. If the session
-  changed no other file that Sonah reviews, the first lines say that no code was reviewed. Check such a repository
-  yourself with `git status` and `git diff`, or run the review again with `--code-repo` and its folder. With
-  `--code-repo`, a file there is part of the change only when its last change came while the session ran (or a recorded
-  write could have changed it): a file that the session changed and that changed again after it, or whose last change
-  kept an older time (a copy, a move), is outside the evaluated session. When the working directory is a folder of a
-  larger repository, giving that repository changes nothing that Sonah reads: elsewhere in it, a change that Sonah does
-  not see or place stays unread, and the report says so.
+  in a git repository that the review reads, when a commit the session made changed the file, or its last change came while
+  the session ran and it was not committed when the agent stopped. A commit counts as the session's only when its
+  message's first line is in a command of the session or its helper agents. If the session changed no other file that
+  Sonah reviews, the first lines say that no code was reviewed. Check such a repository yourself with `git status` and
+  `git diff`, run the review again with `--code-repo` and its folder, or add `--code-base` and a branch to review all that
+  changed in the session's working folder since your branch met that one. With `--code-repo`, a file there is part of
+  the change by the same rule (or when a recorded write could have changed it): a file that the session changed and that
+  changed again after it, or whose last change kept an older time (a copy, a move), is outside the evaluated session
+  unless a commit the session made changed it. When the working directory is a folder of a larger repository, giving
+  that repository changes nothing that Sonah reads: elsewhere in it, a change that Sonah does not see or place stays
+  unread, and the report says so.
 - The code step reads the files as they are on this computer now. A recording from another computer, or a project
   whose files were deleted since, leaves it with nothing to read. The page and the terminal say so, and the exit code
   still follows the session review, unless you add `--code-pass`, which makes the code step's coverage count.

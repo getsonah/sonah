@@ -39,7 +39,9 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   // code-pass.js `changeRepeatsOf`), how many files that is with each repeat counted once (`distinct`, fewer than `n`;
   // the model passes it only when the rule could compare every file that could repeat, so "each" is true).
   // The count and the lines stay those of every file, as the Files section and the coverage line count them.
-  change: (n, counts = null, places = 1, distinct = n) => `a change of ${plural(n, 'file')}${Number.isSafeInteger(distinct)
+  // D207's review: `since`, the base the person named, on the first screen.
+  change: (n, counts = null, places = 1, distinct = n, since = null) => `a change of ${plural(n, 'file')}${since ? ` since ${since}`
+    : ''}${Number.isSafeInteger(distinct)
     && distinct >= 0 && distinct < n ? ` (${distinct} with each repeat counted once)` : ''}${places > 1
     ? ` in ${places} repositories or folders` : ''}${counts ? `, ${counts}` : ''}`,
   commands: (n) => plural(n, 'command'),
@@ -227,7 +229,7 @@ export const REPORT_ITEM_WORDS = Object.freeze({
   agentTold: 'The agent told you:', youSaid: 'You said:', youAsked: 'You asked:', agentDid: 'The agent did:',
   // The fold's summary names no count: a count of the fold's quotes reads as false beside the quotes an item shows open.
   evidence: 'Evidence', forExample: 'For example:',
-  codeNow: 'The code now:', codeBefore: 'The code before the session:', trace: 'How the code gets there:',
+  codeNow: 'The code now:', codeBefore: 'The code before the session:', codeBeforeNamed: 'The code at the base of the change:', trace: 'How the code gets there:',
   // D199: the facts that the tier's reason held (REPORT_TIER_WHY.refused, .tied), said as evidence once no reader shows
   // that reason: a call the item cites was refused, and the item of this review that concerns it.
   refusedCall: 'A permission rule or auto mode refused a call that this item cites.',
@@ -514,8 +516,12 @@ export const REPORT_DID_WORDS = Object.freeze({
     + `output of a command${names ? `: ${names}${more ? `, and ${more} more` : ''}` : ''}.`,
   // D113 amended: the files that changed outside this session's recorded writes, listed apart after the files above,
   // each tagged outside the evaluated session (evidence code-report.js CODE_REPORT_WORDS.outsideTag).
-  outsideSession: (n) => `${plural(n, 'file')} changed outside this session's recorded writes. ${n === 1 ? 'It is'
-    : 'They are'} outside the evaluated session.`,
+  // D207's review of real reports: on a record of D207's code step, "changed outside this session's recorded writes" was
+  // false beside the files of the change that no recorded write changed; `why` is what holds of them all (evidence
+  // code-report.js CODE_REPORT_WORDS.outsideWhy, `outsideLeadHowOf`). `why` null: an earlier record's words.
+  outsideSession: (n, why = null) => (why === null ? `${plural(n, 'file')} changed outside this session's recorded writes. ${
+    n === 1 ? 'It is' : 'They are'} outside the evaluated session.` : `${plural(n, 'file')} ${n === 1 ? 'is' : 'are'} outside `
+    + `the evaluated session. ${why}`),
   // D100 (review of A1c): what Sonah could read, never that the recording does not show it: a later record can show the
   // file's content. D98: a direct write the recorder typed as stopped is listed here too.
   unconfirmed: (n) => `Sonah could not read whether ${plural(n, 'write')} happened: ${verb(n, 'it', 'each')} stopped `
@@ -1039,7 +1045,7 @@ const each = (path, table, args) => Object.fromEntries(Object.entries(table).fla
 /** The arguments each function entry is rendered with for the linter: one and many. */
 export const STYLE_FIXTURES = Object.freeze({
   'REPORT_HEADER_WORDS.filesChanged': [[1, '+3 −1'], [4, '+30 −12']], 'REPORT_HEADER_WORDS.commands': [[1], [5]],
-  'REPORT_HEADER_WORDS.change': [[1, '+3 −1'], [110, null], [23, null, 3], [4, '+30 −12', 2],
+  'REPORT_HEADER_WORDS.change': [[1, '+3 −1'], [110, null], [23, null, 3], [4, '+30 −12', 2], [4, '+30 −12', 1, 4, 'main'],
     [104, '+3570 −962', 2, 58]],
   'REPORT_HEADER_WORDS.commit': [['1a2b3c4']], 'REPORT_HEADER_WORDS.notCommitted': [[1], [3]],
   'REPORT_HEADER_WORDS.runsAfterEdit': [[1], [3]], 'REPORT_HEADER_WORDS.results': [['2 exited with code 0, 1 failed']],
@@ -1104,7 +1110,9 @@ export const STYLE_FIXTURES = Object.freeze({
   'REPORT_PROMPT_WORDS.beforeCompaction': [[1], [2]],
   'REPORT_HEADER_WORDS.continued': [[1], [3]],
   'REPORT_DID_WORDS.askGroup': [[1]], 'REPORT_DID_WORDS.moreFiles': [[1], [4]],
-  'REPORT_DID_WORDS.outsideSession': [[1], [248]],
+  'REPORT_DID_WORDS.outsideSession': [[1], [248], [1, 'No recorded write changed it. Sonah found no change to it while '
+    + 'the agent worked that was still uncommitted when the agent stopped.'], [248, 'No recorded write changed them, and '
+    + 'Sonah found no change to them while the agent worked.']],
   'REPORT_DID_WORDS.outside': [[1, ''], [2, 'a.md, b.md'], [5, 'a.md, b.md, c.md', 2]], 'REPORT_DID_WORDS.unconfirmed': [[1], [2]],
   'REPORT_DID_WORDS.notInChange': [[1, ''], [2, 'a.md, b.md'], [8, 'a.md, b.md, c.md', 5]],
   'REPORT_DID_WORDS.unresolved': [[1, ''], [2, '$P/a.sh, $P/b.sh'], [11, '$P/a.sh, $P/b.sh, $(pwd)/c.md', 8]],

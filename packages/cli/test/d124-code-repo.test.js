@@ -33,6 +33,12 @@ import { CODE_TEXT, buildCodeSession, codeJudge, sha256 } from './code-pass-fixt
 
 const W = CODE_REPORT_WORDS;
 const START = '2030-01-01T00:00:00.000Z';
+/** D207: a recording of work from `start` to `end`, by Claude Code's rows: the human's message, then the agent's words (no
+ *  action). The end test reads the end of the recorded work, so a row that carries a time and no work would end nothing. */
+const workRows = (start, end) => `${[['user', start, 'do it'], ['assistant', end, [{ type: 'text', text: 'done' }]]]
+  .map(([type, timestamp, content]) => JSON.stringify({ type, timestamp, uuid: `${type}-${timestamp}`, cwd: '/repo',
+    version: '2.1.296', ...(type === 'user' ? { origin: { kind: 'human' } } : {}), message: { role: type, content } }))
+  .join('\n')}\n`;
 const END = '2030-01-02T00:00:00.000Z';
 /** Inside the session's recorded window, and after it. */
 const DURING = new Date('2030-01-01T12:00:00.000Z');
@@ -75,7 +81,7 @@ async function laksh(t) {
     'src/rate.js': 'export const rate = 0.2;\n' }, DURING);
   await put(app, { 'docs/later.md': '# Later\n\nWritten after the session.\n' }, LATER);
   const recording = join(base, 'recording.jsonl');
-  await writeFile(recording, `${JSON.stringify({ timestamp: START })}\n${JSON.stringify({ timestamp: END })}\n`);
+  await writeFile(recording, workRows(START, END));
   return { base, sandbox, app, recording };
 }
 /** A session that ran one shell command (a heredoc script that writes absolute paths it builds: no write the slicer
@@ -176,7 +182,7 @@ test('D124: a session that started in a folder of no repository and changed a re
     // outside the evaluated session named.
     const md = plainText(run.written);
     assert.ok(!md.includes('No code was reviewed.'), md);
-    assert.ok(md.includes(W.placeBase(app, commit, 2, 2)), md);
+    assert.ok(md.includes(W.placeBase(app, commit, 2, 2, { commit: 0, time: 2 })), md);
     assert.ok(md.includes(join(app, 'docs/later.md')), md);
     assert.ok(run.out.includes('It also reads one other folder that holds files of the change.'), run.out);
     assert.ok(!run.out.includes('No code was reviewed.'), run.out);
@@ -186,8 +192,8 @@ test('D124: a session that started in a folder of no repository and changed a re
     extra: ['--dry-run', '--code-repo', app] });
   assert.deepEqual([dry.code, dry.calls], [0, []]);
   assert.ok(dry.out.includes(`2 of the paths lie in ${app}, a git repository whose change runs from its commit `
-    + `${commit.slice(0, 12)}. The change holds 2 files there. 1 more path changed there outside this session's recorded `
-    + 'writes'), dry.out);
+    + `${commit.slice(0, 12)}. The change holds 2 files there. 1 more path there is outside the evaluated session. `
+    + W.outsideWhy.commit(1)), dry.out);
 });
 
 test('D124: a given repository with nothing that changed while the session ran is named with its count; the files '
@@ -283,7 +289,7 @@ async function mono(t, changed) {
   for (const args of [['init', '-q', '-b', 'main'], ['add', '-A'], ['commit', '-q', '-m', 'base']]) git(top, ...args);
   await put(top, { [changed]: 'export const changed = 2;\n' }, DURING);
   const recording = join(base, 'recording.jsonl');
-  await writeFile(recording, `${JSON.stringify({ timestamp: START })}\n${JSON.stringify({ timestamp: END })}\n`);
+  await writeFile(recording, workRows(START, END));
   return { top, cwd, recording };
 }
 const pageText = (session, report, folder) => renderSessionPage(session, report, { folder }).replace(/<[^>]+>/g, ' ')
@@ -378,7 +384,8 @@ test('D124: a folder that is not there, a file, a folder in no git working tree 
   assert.equal(relative.code, 0, relative.err);
   assert.deepEqual(relative.read[0][1].codeRepos, [app]);
   // The codes are closed: each one the review prints by name, each with its own fix.
-  assert.deepEqual(CODE_REPO_PROBLEMS, ['code_repo_not_found', 'code_repo_not_git']);
+  assert.deepEqual(CODE_REPO_PROBLEMS, ['code_repo_not_found', 'code_repo_not_git', 'code_base_not_found',
+    'code_base_no_merge_base', 'code_base_not_git', 'code_base_no_code_step']);
   for (const problem of CODE_REPO_PROBLEMS) {
     assert.ok(CLI_SAFE_ERROR_CODES.includes(problem), problem);
     assert.ok(Object.hasOwn(REVIEW_FIX_WORDS, problem), problem);

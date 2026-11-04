@@ -332,6 +332,11 @@ export const ABSENCE_REGISTRY = Object.freeze({
     // code review was given them, and what it saw of them.
     'CODE_REPORT_WORDS.outsideTag': Object.freeze({ recorded_writes_search: 'recording' }),
     'CODE_REPORT_WORDS.outsideFiles': Object.freeze({ recorded_writes_search: 'recording' }),
+    // D207's review of real reports: what holds of every file outside the evaluated session; its absence is that no
+    // recorded write changed them (the rest is what Sonah found).
+    'CODE_REPORT_WORDS.outsideWhy.commit': Object.freeze({ recorded_writes_search: 'recording' }),
+    'CODE_REPORT_WORDS.outsideWhy.end': Object.freeze({ recorded_writes_search: 'recording' }),
+    'CODE_REPORT_WORDS.outsideWhy.window': Object.freeze({ recorded_writes_search: 'recording' }),
     'CODE_REPORT_WORDS.outsideSeen': Object.freeze({ recorded_writes_search: 'recording' }),
     // D113 amended (its review): why an ask not met or a claim the code contradicts on such a file is withheld.
     'CODE_REPORT_WORDS.outsideTie.ask_not_met': Object.freeze({ recorded_writes_search: 'recording' }),
@@ -663,13 +668,25 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.unseenShown': ['sonah', 'f42685c26fabc998'],
     // D117: read again, with the working directory's repository named when another place holds files of the change.
     'CODE_REPORT_WORDS.base': ['sonah', 'c822344514905d00'],
-    'CODE_REPORT_WORDS.ownBase': ['sonah', '34db175ff75586f8'],
+    // D207's second review (read 2026-11-03): a file placed by time alone was not committed when the agent stopped, the
+    // end the rule reads (was 1c2596234fcad310).
+    'CODE_REPORT_WORDS.ownBase': ['sonah', 'b050103821653611'],
+    'CODE_REPORT_WORDS.namedBase': ['sonah', 'cd77b7d1bef2f046'],
     // D113's review: read again with its display bound (the first names, then how many more).
     // D113 amended: read again with the tag (outside the evaluated session); the tag, the line of the files the code
     // review was given and what it saw of them, read: each states that a file is outside the evaluated session.
-    'CODE_REPORT_WORDS.changedOutside': ['absence', '71c026b0e0c6790d'],
+    // D207's review of real reports (read 2026-11-03): on a record of D207's code step, the files named first, then
+    // what holds of them all (`outsideWhy`: no recorded write changed them, an absence; the rest is what Sonah found), and
+    // where it can work the way to a branch's changes; an earlier record's words kept (were 71c026b0e0c6790d and
+    // 804bdcf5bda5f9a2).
+    'CODE_REPORT_WORDS.changedOutside': ['absence', 'e53ee5db24c6345b'],
+    // D207's second review (read 2026-11-03): no commit of the session changed them itself, as a merge counts only for
+    // what it changed itself (was babfeb4e96d34a7c).
+    'CODE_REPORT_WORDS.outsideWhy.commit': ['absence', 'c493df2a6cec400c'],
+    'CODE_REPORT_WORDS.outsideWhy.end': ['absence', '4713a0ac02c7c084'],
+    'CODE_REPORT_WORDS.outsideWhy.window': ['absence', 'eb8eb509d2382307'],
     'CODE_REPORT_WORDS.outsideTag': ['absence', '12ca066287786acf'],
-    'CODE_REPORT_WORDS.outsideFiles': ['absence', '804bdcf5bda5f9a2'],
+    'CODE_REPORT_WORDS.outsideFiles': ['absence', '782abddd202cccb0'],
     'CODE_REPORT_WORDS.outsideSeen': ['absence', '5f9ed7b88bcd966c'],
     // D113 amended (its review): why an ask not met or a claim the code contradicts, anchored in a file outside the
     // evaluated session, is withheld: each states that a file is outside the evaluated session.
@@ -677,12 +694,15 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.outsideTie.claim_false': ['absence', 'a3570bc1ce16206f'],
     // D117: each other repository or folder the session wrote to, and where the change's files lie. Merged with D113
     // amended: another repository's files named apart, read again with the tag, not reviewed or given to the code review.
-    'CODE_REPORT_WORDS.placeBase': ['sonah', 'addfb3aab0494b04'],
+    // D207's second review (read 2026-11-03): as `ownBase` (was a0c521076cdb0083).
+    'CODE_REPORT_WORDS.placeBase': ['sonah', '8d5551ff1c8e916c'],
     'CODE_REPORT_WORDS.placeEdits': ['sonah', '26b3892992616ecd'],
     // D124's review: the working folder's own repository given with --code-repo, read by its own rule (what Sonah reads).
     'CODE_REPORT_WORDS.givenHere': ['sonah', '278292d8c696480f'],
-    'CODE_REPORT_WORDS.placeChangedOutside': ['absence', '5ee730546b3240df'],
-    'CODE_REPORT_WORDS.placeOutsideFiles': ['absence', '98d3bf7b3b2c00cb'],
+    // D207's review of real reports (read 2026-11-03): as the working folder's, by that place's record (were
+    // 5ee730546b3240df and 98d3bf7b3b2c00cb).
+    'CODE_REPORT_WORDS.placeChangedOutside': ['absence', '839b44d7afc44a22'],
+    'CODE_REPORT_WORDS.placeOutsideFiles': ['absence', '87cc7f3db7ed5c8e'],
     'CODE_REPORT_WORDS.filesWhere': ['sonah', '42b944025cb6cf41'],
     'CODE_REPORT_WORDS.placeOfFile': ['other', '72b4107680247aea'],
     // D117 amended (the owner, 2026-10-18): the folders of no repository the session wrote to, which Sonah lists and did
@@ -724,9 +744,14 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.notReviewedReasons.unknown': ['sonah', '1f5667e4c3c92383'],
     'CODE_REPORT_WORDS.notReviewedFolder': ['other', '2766aafa590593bb'],
     'CODE_REPORT_WORDS.noFile': ['sonah', '4c382f7599adafe9'],
+    'CODE_REPORT_WORDS.noFileNamedBase': ['sonah', '02330fafbce7f35d'],
+    'CODE_REPORT_WORDS.notReviewedNamedBase': ['sonah', 'bc7f334b54613baa'],
     // D111's second review: it names no list, since the counts of the item-by-item check can be among the lines after it
     // (no part of what the code review did not cover); a coverage short only by those counts prints no coverage line.
     'CODE_REPORT_WORDS.coverage.partial': ['sonah', '8e100c64f9817b3d'],
+    // D207's review of real reports (read 2026-11-03): a review that saw the whole change, short only by a check of a
+    // finding or a question (what Sonah's checks gave).
+    'CODE_REPORT_WORDS.coverage.checks': ['sonah', '2cd7628b274dbbc4'],
     'CODE_REPORT_WORDS.coverage.missing': ['sonah', '81ef5276df6d9170'],
     'CODE_REPORT_WORDS.besideGroup': ['other', '61049bdadd3b9945'],
     'CODE_REPORT_WORDS.restGroup': ['other', 'ae75aede1c175917'],
@@ -882,6 +907,10 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.linesUnknown': ['sonah', '2b223e65c356d45b'],
     'CODE_REPORT_WORDS.linesOf': ['other', '7c33df025e147401'],
     'CODE_REPORT_WORDS.outsideLine': ['sonah', '59e3850475f1d81b'],
+    'CODE_REPORT_WORDS.outsideLineNamedBase': ['sonah', '73e260b39a9d6827'],
+    'CODE_REPORT_WORDS.placedRow.commit': ['other', 'cad60c8633ebf1c0'],
+    'CODE_REPORT_WORDS.placedRow.time': ['sonah', '7d949b0629059bcc'],
+    'CODE_REPORT_WORDS.placedRow.base': ['other', 'ca43994dc04f8bb9'],
     'CODE_REPORT_WORDS.homeLine': ['sonah', '66bd76737e3b9c8a'],
     'CODE_REPORT_WORDS.parts.review': ['other', '8994d23554901273'],
     'CODE_REPORT_WORDS.parts.repair': ['other', '49294791779ba4fa'],
@@ -1102,7 +1131,9 @@ export const READ_CENSUS = Object.freeze({
     // D118 (b): the paths the recording does not resolve, counted apart.
     'REPORT_DID_WORDS.unresolved': ['sonah', '6b0d0793bce1bc29'],
     // D113 amended: the files list's line of the files outside the evaluated session.
-    'REPORT_DID_WORDS.outsideSession': ['absence', '9702577551cc2d7a'],
+    // D207's review of real reports (read 2026-11-03): on a record of D207's code step, what holds of them all (was
+    // 9702577551cc2d7a).
+    'REPORT_DID_WORDS.outsideSession': ['absence', '6d649c5abae78913'],
     'REPORT_DID_WORDS.unconfirmed': ['absence', '9fc4a18fe738d4d6'],
     'REPORT_DID_WORDS.moreRuns': ['other', '0128aa317c5e8c1c'],
     'REPORT_DID_WORDS.runsCut': ['sonah', 'c366a0dc88b040d3'],
@@ -1204,7 +1235,7 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_HEADER_WORDS.review': ['other', '276c2dd1e99366ec'],
     'REPORT_HEADER_WORDS.filesChanged': ['other', '657c0f89019732e2'],
     // D178: read again with how many files that is with each repeat of another place's change counted once (a count).
-    'REPORT_HEADER_WORDS.change': ['other', 'ea014a7f3fcda7c3'],
+    'REPORT_HEADER_WORDS.change': ['other', 'ee13c332c95cff2b'],
     'REPORT_HEADER_WORDS.commands': ['other', '4253b50ef4d9cc73'],
     'REPORT_HEADER_WORDS.commit': ['other', '6c5161927a41e54e'],
     'REPORT_HEADER_WORDS.notCommitted': ['other', '35568bed5a8d89aa'],
@@ -1243,6 +1274,7 @@ export const READ_CENSUS = Object.freeze({
     'REPORT_ITEM_WORDS.forExample': ['other', '652744a2ab28954b'],
     'REPORT_ITEM_WORDS.codeNow': ['other', '3f91758b8c47624f'],
     'REPORT_ITEM_WORDS.codeBefore': ['other', '579b1e3d572c4275'],
+    'REPORT_ITEM_WORDS.codeBeforeNamed': ['other', '2dd1558638d10413'],
     'REPORT_ITEM_WORDS.trace': ['other', 'c3ef49a37b6acf62'],
     'REPORT_ITEM_WORDS.check': ['other', '2b564dc214699b51'],
     'REPORT_ITEM_WORDS.restsOn': ['other', 'c83d391afe09f06a'],
@@ -1743,17 +1775,26 @@ export const READ_CENSUS = Object.freeze({
     'ANSWER_REUSE_WORDS.code': ['other', '79cb4d6d285c6efe'],
     'CODE_PASS_NO_ROOT': ['sonah', '3f23c616ac487857'],
     'CODE_SNAPSHOT_WORDS.head': ['sonah', '432af0f902eeefda'],
+    'CODE_SNAPSHOT_WORDS.headPlaced': ['sonah', '2e9796df553a54f1'],
+    'CODE_SNAPSHOT_WORDS.headNone': ['sonah', '4e26453077ba6754'],
+    'CODE_SNAPSHOT_WORDS.branch': ['other', '088803c583a86744'],
     // D113 amended: read again with the tag, and whether the code review is given them apart. Its review: read again,
     // given only if there is room for them. D117: read again with the working directory's repository named.
-    'CODE_SNAPSHOT_WORDS.changedOutside': ['absence', '01f4a259ba5cfb0d'],
+    // D207's review of real reports (read 2026-11-03): what holds of them all, as the page says it (was 01f4a259ba5cfb0d).
+    // D207's second review (read 2026-11-03): its samples say `outsideWhy.commit`'s words (was a86fa7580a953064).
+    'CODE_SNAPSHOT_WORDS.changedOutside': ['absence', '358b75ab68b4e5a0'],
     'CODE_SNAPSHOT_WORDS.gitBase': ['sonah', 'bf43d57681959810'],
+    'CODE_SNAPSHOT_WORDS.namedBase': ['sonah', '5265e23ef79d69ca'],
     'CODE_SNAPSHOT_WORDS.noBase': ['sonah', '2c87ef6d859d2c06'],
     'CODE_SNAPSHOT_WORDS.noBaseHere': ['sonah', 'ace0f7f864666d05'],
     'CODE_SNAPSHOT_WORDS.tail': ['other', 'a435f5c9e35dfc56'],
     // D117's review: `tail` when no git repository holds the working directory: what the code review can read.
     'CODE_SNAPSHOT_WORDS.tailFolder': ['other', '7becefee61f8b74f'],
     'CODE_SNAPSHOT_WORDS.place': ['other', '15a7f354aab82b15'],
-    'CODE_SNAPSHOT_WORDS.placeChangedOutside': ['absence', '134aa6b504759137'],
+    // D207's review of real reports (read 2026-11-03): as `changedOutside`, by that place's snapshot (was
+    // 134aa6b504759137).
+    // D207's second review (read 2026-11-03): as `changedOutside` (was 42ee434fb27af01a).
+    'CODE_SNAPSHOT_WORDS.placeChangedOutside': ['absence', 'a449f2ec8da72eb4'],
     // D117's review: read again with the working directory named when no repository holds it; how many of the places
     // the agents read, a count code computes (`agentsRead`).
     'CODE_SNAPSHOT_WORDS.tailPlaces': ['other', 'bafaf1c66039bb38'],
@@ -1773,7 +1814,9 @@ export const READ_CENSUS = Object.freeze({
     // D111 (F3b): read again with its new sentence, the accounting's calls: a count of calls, no negative fact. Its review
     // read it again with the items named by the kinds in scope: no negative fact. D117's review: read again with the
     // other folders its agents read (a count) and the working directory named when no repository holds it.
-    'CODE_STEP_WORDS.on': ['other', '5e25f6445d560ddc'],
+    // D207's review of real reports (read 2026-11-03): one review call for each part of the change, at most 50 (was
+    // 5e25f6445d560ddc).
+    'CODE_STEP_WORDS.on': ['other', '91b847a1fbf8b8e3'],
     'DRY_RUN_WORDS.nothing': ['sonah', 'edd6713d8ea12cc9'],
     'DRY_RUN_WORDS.session': ['other', '141b3885b8c797d4'],
     'DRY_RUN_WORDS.over': ['sonah', '69146f93cbeebe12'],
@@ -1815,6 +1858,10 @@ export const READ_CENSUS = Object.freeze({
     'REVIEW_FIX_WORDS.state_dir_holds_root': ['sonah', 'aca19d182531ac86'],
     'REVIEW_FIX_WORDS.code_repo_not_found': ['sonah', '53718eea0c0b309f'],
     'REVIEW_FIX_WORDS.code_repo_not_git': ['sonah', 'f389e8799a8c6003'],
+    'REVIEW_FIX_WORDS.code_base_not_found': ['other', '2675f0ca43dfbee2'],
+    'REVIEW_FIX_WORDS.code_base_no_merge_base': ['other', '21e0900796711a1d'],
+    'REVIEW_FIX_WORDS.code_base_not_git': ['other', '043dd384f3bdce7f'],
+    'REVIEW_FIX_WORDS.code_base_no_code_step': ['other', '48cd11a49844960c'],
     // D142: a session id given with --session, by its file name only. What Sonah found (`not_found`); two facts of
     // the recordings' names (`ambiguous`, `compressed`).
     'REVIEW_FIX_WORDS.session_id_not_found': ['sonah', '02b43f043e291cbe'],
@@ -1872,7 +1919,10 @@ export const READ_CENSUS = Object.freeze({
     // D111's second review: a coverage short of complete only by the items that its item-by-item check did not examine
     // in a way that Sonah could use (code-report.js `codeReviewCoverage`); Sonah's own record of that check.
     'RUN_STATE_WORDS.codePass.unaccounted': ['sonah', 'f57d928afb5bc254'],
+    // D207's review of real reports (read 2026-11-03): the whole change covered, short only by a check.
+    'RUN_STATE_WORDS.codePass.checks': ['sonah', '8211d10d7e12d796'],
     'RUN_STATE_WORDS.codePassApart': ['other', 'd1a62d94b0e56c3e'],
+    'RUN_STATE_WORDS.codePassNamed': ['other', 'db0d60a3866de9ec'],
     'RUN_STATE_WORDS.parts.session': ['other', '8c8cfc45a0a5a82e'],
     'RUN_STATE_WORDS.parts.code': ['other', '355d1adb91f7556a'],
     'RUN_STATE_WORDS.parts.codePass': ['other', '2e3f334c20a5a97c'],
@@ -1891,7 +1941,7 @@ export const READ_CENSUS = Object.freeze({
     // D172 (read 2026-10-28): the usage's opening lines say that with no path the review takes the session it runs in
     // (from inside Claude Code), else the latest one of the repository; was fa2c83253fa72038. Read again for D171's
     // option A (2026-10-29): --dry-run's help back to "send nothing", the D172 text again (was 54ed26823fbcd0c1).
-    'sessionReviewUsage': ['other', '0fb660514b7e2b55'],
+    'sessionReviewUsage': ['other', '3e5686b68178df29'],
     // D155 (read 2026-10-26): the window line's count of the decisions left out because their second check did not run.
     'WINDOW_LINE_WORDS.rechecksUnexecuted': ['sonah', 'b5bd26647c019d59'],
   }),
@@ -1904,6 +1954,7 @@ export const READ_CENSUS = Object.freeze({
     'PUBLICATION_WORDS.notCovered': ['sonah', 'dad7ed85e81be99b'],
     'PUBLICATION_WORDS.noCause': ['sonah', 'c25787f1ef5eef6c'],
     'PUBLICATION_WORDS.attention': ['other', '40337c08218e641a'],
+    'PUBLICATION_WORDS.namedBase': ['other', '994f7975ac4b3f56'],
     'PUBLICATION_WORDS.advisory': ['other', '4e96e7a292d3b360'],
     'PUBLIC_RUN_WORDS.complete': ['sonah', 'e7531b080eeec38f'],
     'PUBLIC_RUN_WORDS.incomplete': ['sonah', '612f3c0817c6eee6'],

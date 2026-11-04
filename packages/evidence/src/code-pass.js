@@ -75,6 +75,7 @@ import { MIN_QUOTE_CHARS, verifyReceipt, repairReceipt, findingIdentity, effectR
   isRead, recordedFailure } from './session.js';
 import { requestFits } from './challenge.js';
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, EVIDENCE_QUOTE_MAX, GAP_CODES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES,
+  CODE_PLACED_BY,
   CODE_CHANGE_TYPES, CODE_DIFF_STATES, CODE_PASS_LENSES, CODE_FINDING_KINDS, CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS,
   CODE_QUESTION_VERDICTS, CODE_REFUTATION_REASONS, CODE_WITHHELD_REASONS, CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS,
   CODE_VOID_CAUSES, CODE_REPAIR_UNCHECKED, CODE_REPAIR_FATES, CODE_ANSWER_SOURCES, CODE_PREMISE_SOURCES,
@@ -86,7 +87,7 @@ import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, EVIDENCE_QUOTE_MAX, GAP_CODES, C
 import { TIER_TABLE_VERSION, ITEM_KIND_TABLE, TRIAGE_LIMITS } from './triage.js';
 import { steWordCount } from './ste-count.js';
 import { displayPath, parseHunks, linesOf, diffLines, hunksMatch, rebuilds, extendHunks, recordedHunks, recordedNewRows,
-  mapRecordedRows, changedSpans, hunkRanges, renderChange, renderUnitChange, sectionBytes, codeDossier, renderDossier, dossierWords,
+  mapRecordedRows, changedSpans, hunkRanges, renderChange, renderUnitChange, FOLDED_ROW_WORDS, sectionBytes, codeDossier, renderDossier, dossierWords,
   CHANGE_ROW_WORDS, commandsAfterLastEdit, renderCommands, shownLines, shownRanges, SHOWN_SIDE_BYTES, actorOf,
   underRoot, HUNK_CONTEXT, SESSION_ACTORS, EVIDENCE_ACTORS, RECORDED_RESULT_OPERATIONS, DIFF_RECORDED, DIFF_UNRECORDED,
   DIFF_BASE_UNKNOWN, DIFF_WITHHELD, DIFF_UNREADABLE, ADDED, MODIFIED, DELETED, unresolvedShellPaths, HOME_SPELLED }
@@ -125,8 +126,12 @@ import { displayPath, parseHunks, linesOf, diffLines, hunksMatch, rebuilds, exte
  *  that differ there named apart, and read apart as D113 amended says) or a folder in no repository (its recorded
  *  edits) — and only one in a harness home or a place Sonah writes, named from the home folder or that resolves nowhere
  *  is counted (`outside_root`); the base names each other place (`places`, `placesOf`), and a file of one names it
- *  (`place`). */
-export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/13';
+ *  (`place`). /14 (D207): a path that differs from the base is part of the change by what shows it is the session's, the
+ *  first that holds: a recorded write could have changed it; it is in a commit whose first line a recorded action holds, by
+ *  that commit's time; or it last changed in the window, outside a wait, and was not committed when the agent's recorded
+ *  work ended (`placedBy`, CODE_PLACED_BY). Every other path is named apart. `--code-base` names the base instead, as the merge base
+ *  (`how: merge_base`, `namedRef`). */
+export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/14';
 /** The review agent's request (its brief, the person's words, the project files the session loaded, the change, the
  *  dossier, where it is), its contract and its one repair. /2 to /6: the lens calls and step 1 (retired). /7 (the
  *  agentic code step, D90): one review agent with Read, Grep and Glob over the repository, its method merged from
@@ -185,8 +190,13 @@ export const CODE_SNAPSHOT_VERSION = 'sonah.code-snapshot/13';
  *  lines, shown or not; no request byte moves. Inside /13 (D179, 0.3.0-beta.10): after the checks, the held findings
  *  that are one defect in several places of the change on the same bytes (`samePlacesLeads`: one key, one finding in
  *  each place) are merged into the first; it keeps its label and gains the copies' ties and `places` (each place's
- *  anchor, its own first); no request byte, answer key or profile moves. */
-export const CODE_PASS_VERSION = 'sonah.code-pass/13';
+ *  anchor, its own first); no request byte, answer key or profile moves. /14 (D207): a file's row and the outside block's
+ *  note say what places a file in the change; past the guard of units, a recorded write comes first, then a commit or a
+ *  named base, then time; a row placed by time alone folds first; and, with `--code-base`, the change block's heading, the
+ *  brief's scope sentence and the outside block say the base is the one the person named. The record keeps `placedBy` on
+ *  each file and manifest unit, and `namedRef` on the base. A request with no such row and no outside block keeps its
+ *  bytes. */
+export const CODE_PASS_VERSION = 'sonah.code-pass/14';
 /** The checking agents' requests (/1): one per finding, told to refute by tracing and to judge the title and each
  *  supporting claim; one for the held statements and the questions; a void verdict re-asked once, naming its cause.
  *  /2: the batch checking agent checks the questions alone (no statement found to hold is given any more). /3 (D110, the
@@ -235,6 +245,10 @@ export const CODE_REVIEW_ITEMS_MAX = Object.freeze({ findings: 20, questions: 20
 /** The most bytes the change block of a request may take: past it, the hunks of the files that do not fit are left out
  *  and each such file named (`clipped`). A frozen literal. */
 export const CODE_CHANGE_BLOCK_MAX_BYTES = 400_000;
+/** D206: the most bytes the table of contents of a change block may take: past it, the rows of the files a recorded
+ *  write did not change are said by folder (`indexFoldsOf`), so a long list of paths never takes the room of the hunks
+ *  (a change of about 2,350 paths left no room for any hunk). A quarter of the block's cap. A frozen literal. */
+export const CODE_INDEX_MAX_BYTES = 100_000;
 /** D149: the review units' frozen literals: the most units one review plans, a runaway guard (the units a plan holds
  *  past it are returned apart, `beyondGuard`, and their files closed `unit_cap`), and the most unit review requests in
  *  flight at once (the transport's own bound on every call stays). */
@@ -318,7 +332,7 @@ export const AGENT_RUN_FIELD = 'agentRun';
  *  vocabularies and rules. */
 export const CODE_PASS_PROFILE = Object.freeze({ snapshot: CODE_SNAPSHOT_VERSION, pass: CODE_PASS_VERSION,
   verify: CODE_VERIFY_VERSION, outcomes: CODE_CHECK_OUTCOMES, fileStates: CODE_FILE_STATES, diffBases: CODE_DIFF_BASES,
-  startCommit: CODE_START_COMMIT_SOURCES, changeTypes: CODE_CHANGE_TYPES, diffStates: CODE_DIFF_STATES,
+  startCommit: CODE_START_COMMIT_SOURCES, placedBy: CODE_PLACED_BY, changeTypes: CODE_CHANGE_TYPES, diffStates: CODE_DIFF_STATES,
   lenses: CODE_PASS_LENSES, kinds: CODE_FINDING_KINDS, verdicts: CODE_VERIFY_VERDICTS, claimVerdicts: CODE_CLAIM_VERDICTS,
   questionVerdicts: CODE_QUESTION_VERDICTS, refutations: CODE_REFUTATION_REASONS, withheld: CODE_WITHHELD_REASONS,
   withheldItems: CODE_WITHHELD_ITEMS, repairUnchecked: CODE_REPAIR_UNCHECKED,
@@ -345,7 +359,9 @@ export const CODE_PASS_PROFILE = Object.freeze({ snapshot: CODE_SNAPSHOT_VERSION
     kinds: ITEM_KIND_TABLE }),
   // D149: the review units' limits, grouping edges and the failures a unit's call is asked again for.
   units: Object.freeze({ limits: CODE_UNIT_LIMITS, edges: CODE_UNIT_EDGES, generated: CODE_GENERATED_SOURCES,
-    lockFiles: CODE_LOCK_FILE_NAMES }) });
+    lockFiles: CODE_LOCK_FILE_NAMES }),
+  // D206: the table of contents' own bound, and the order of the units past the guard (D207: by `placedBy`).
+  index: Object.freeze({ maxBytes: CODE_INDEX_MAX_BYTES, unitOrder: 'write-then-commit-and-base-then-time-past-the-guard' }) });
 /** The code pass's member as a run made with part B `on` (D106) or not: CODE_PASS_PROFILE itself for the frozen setting,
  *  else a copy naming the other, so a record always names the setting it was made under. */
 const codePassProfileOf = (on) => (on === CODE_WHOLE_FILES.on ? CODE_PASS_PROFILE
@@ -363,6 +379,7 @@ const OUTSIDE_STATES = CODE_OUTSIDE_STATES;
 const unreviewedWrite = (f) => f.diff === undefined && ((f.state === OUTSIDE_ROOT && f.inRepository === true)
   || f.state === OTHER_REPOSITORY || f.state === OUTSIDE_WRITER_ROOT);
 const [GIT_BASE, RECORDED_EDITS_BASE] = CODE_DIFF_BASES;
+const [, BY_COMMIT, BY_TIME, BY_BASE] = CODE_PLACED_BY;
 const [BUG, MISSED_CASE, WEAK_TEST, CONTRACT_BREAK, ASK_NOT_MET, RULE_BREAK, CLAIM_FALSE] = CODE_FINDING_KINDS;
 const [HOLDS, REFUTED, CANNOT_TELL] = CODE_VERIFY_VERDICTS;
 const [CLAIM_HOLDS, CLAIM_IS_FALSE] = CODE_CLAIM_VERDICTS;
@@ -622,7 +639,22 @@ export function placesOf(base) {
       && x))].sort() } : {}),
     ...(p.repository === true ? { repository: true } : {}),
     // D124: a repository the person gave with --code-repo, a place whatever the session wrote there.
-    ...(p.given === true ? { given: true } : {}) }));
+    ...(p.given === true ? { given: true } : {}),
+    // D207: git or a recording could not say, so D113's window and D206's waits alone placed its `time` files.
+    ...(p.timeByWindow === true ? { timeByWindow: true } : {}) }));
+}
+
+/** D207: whether only D113's window and D206's waits placed what no recorded write changed, in any place (`timeByWindow`):
+ *  git or a recording could not say, so no reader says what commits hold. */
+export const windowOnlyOf = (base) => plain(base) && (base.timeByWindow === true
+  || list(base.places).some((p) => plain(p) && p.timeByWindow === true));
+/**
+ * D207: the base the person named with --code-base, as they named it (`base.namedRef`: the working folder's git base runs
+ * from where it and HEAD meet), or null. Every sentence that says "start commit" branches on it, so no byte moves without
+ * the flag. Structure only. Pure.
+ */
+export function namedBaseOf(base) {
+  return plain(base) && base.kind === GIT_BASE && typeof base.namedRef === 'string' && base.namedRef ? base.namedRef : null;
 }
 
 /**
@@ -763,6 +795,8 @@ export function freezeCodeSnapshot(plan, reads, { base = null } = {}) {
     // D117: a file of a place other than the working folder's repository names it (`place`: its repository's top
     // folder, or its folder in none).
     const record = { path: entry.path, changed: entry.changed === true, recorded: entry.recorded === true,
+      // D207: how a file no recorded write could have changed is part of the change (`placedByOf`).
+      ...placedByFieldOf(entry),
       ...(plain(found) && typeof found.place === 'string' && found.place ? { place: found.place } : {}),
       // D149: a git attribute that makes it generated or vendored, or `-diff` (`gitAttribute`, read beside its git diff).
       ...(plain(found) && found.path === entry.path && GIT_ATTRIBUTE_SOURCES.includes(found.gitAttribute)
@@ -850,6 +884,9 @@ function diffOf(entry, found, head, base) {
 
 // ---- the change block ---------------------------------------------------------------------------------------------
 
+/** D207: the field that says how a file no recorded write could have changed is part of the change, only when it says it
+ *  in the closed list (CODE_PLACED_BY), so a record that holds none keeps its bytes, and its readers their words. */
+const placedByFieldOf = (x) => (CODE_PLACED_BY.includes(x?.placedBy) ? { placedBy: x.placedBy } : {});
 /** D117: a file's place's rank (`placeRanks`): 0 for the working folder's repository. */
 const rankOf = (ranks) => (f) => (typeof f?.place === 'string' && f.place ? ranks.get(f.place) ?? Infinity : 0);
 /** The differing paths, in table-of-contents order: by path, code-unit order (deterministic, as git lists them). D117:
@@ -1024,19 +1061,21 @@ const byPath = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
  *   their units come after every other: each such unit names each file's source (`generated`, in its files' order).
  * - *Order and labels.* Units in the table of contents' order of their first file (a split file's runs in hunk order),
  *   the generated and vendored ones after, labelled U1, U2, …; each unit's files in that order, and its `bytes`, its
- *   sections' sum. Past CODE_UNIT_LIMITS.units, the units are returned apart, unlabelled (`beyondGuard`).
+ *   sections' sum. Past CODE_UNIT_LIMITS.units, the units are returned apart, unlabelled (`beyondGuard`); D206: and then
+ *   the units that hold a file a recorded write changed come before the others; D207: then those that hold a file in a
+ *   commit the session made or by the base the person named, and those by time alone last.
  *
  * `{ today?, capacity, units: [{ label, paths, bytes, split?, hunks?, generated? }], unplaced: [{ path, at }],
  * beyondGuard: [{ paths, bytes, split?, hunks?, generated? }] }`. Pure.
  */
 export function planReviewUnits(files, { notes = new Map(), outside = 0, elsewhere = 0, shownAs = SAME_NAME,
-  maxBytes = CODE_CHANGE_BLOCK_MAX_BYTES, dossier = [], dossierEdge = true, coupled = [] } = {}) {
+  maxBytes = CODE_CHANGE_BLOCK_MAX_BYTES, dossier = [], dossierEdge = true, coupled = [], named = false } = {}) {
   const toc = tocOf(list(files));
   const shows = toc.filter(showsHunks);
   const cost = sectionCostOf(shownAs);
   const hunkCost = (f, i) => cost(f, [f.hunks[i]]);
   const sum = (fs) => fs.reduce((n, f) => n + cost(f), 0);
-  const room = maxBytes - tocReserveOf(toc, { notes, outside, elsewhere, shownAs });
+  const room = maxBytes - tocReserveOf(toc, { notes, outside, elsewhere, shownAs, named });
   const label = (unit, k) => ({ label: unitLabelOf(k + 1), ...unit });
   // One unit, today's: today's change block shows exactly these files at its cap.
   const fitsOne = shows.filter((f) => cost(f) <= room);
@@ -1118,7 +1157,18 @@ export function planReviewUnits(files, { notes = new Map(), outside = 0, elsewhe
   const regular = unitsOfSet(shows.filter((f) => generatedSourceOf(f) === null));
   const generated = unitsOfSet(shows.filter((f) => generatedSourceOf(f) !== null)).map((u) => ({ ...u,
     generated: u.paths.map((path) => generatedSourceOf(shows.find((f) => f.path === path))) }));
-  const units = [...regular, ...generated];
+  // D206: past the guard, the units that hold a file a recorded write changed come first, generated ones among them, so
+  // a file the session wrote is never closed `unit_cap` while one it did not write is reviewed; within the guard the
+  // order is as above. D207: then the units that hold a file by a commit the session made or by the base the person
+  // named; the units whose files are placed by time alone come last.
+  const written = new Set(shows.filter((f) => f.recorded === true).map((f) => f.path));
+  const evidenced = new Set(shows.filter((f) => f.placedBy === BY_COMMIT || f.placedBy === BY_BASE).map((f) => f.path));
+  const holdsWrite = (u) => u.paths.some((path) => written.has(path));
+  const holdsEvidence = (u) => u.paths.some((path) => evidenced.has(path));
+  const inOrder = [...regular, ...generated];
+  const units = inOrder.length > CODE_UNIT_LIMITS.units
+    ? [...inOrder.filter(holdsWrite), ...inOrder.filter((u) => !holdsWrite(u) && holdsEvidence(u)),
+      ...inOrder.filter((u) => !holdsWrite(u) && !holdsEvidence(u))] : inOrder;
   unplaced.sort((a, b) => order.get(a.path) - order.get(b.path) || a.at - b.at);
   return { capacity, units: units.slice(0, CODE_UNIT_LIMITS.units).map(label),
     unplaced, beyondGuard: units.slice(CODE_UNIT_LIMITS.units) };
@@ -1130,16 +1180,80 @@ export const unitsOf = (files, options = {}) => planReviewUnits(files, options).
  *  its type, hunks and notes (its diff state's, a drifted file's, then `notes`'s dossier keys), shown or not and why. */
 const changeEntryOf = ({ notes = new Map(), shownAs = SAME_NAME } = {}) => (f, shown, why = null) => ({
   path: shownAs(f.path), type: f.type, hunks: f.hunks ?? [], shown,
-  notes: [...(f.diff === DIFF_UNRECORDED ? [DIFF_UNRECORDED] : []), ...(f.diff === DIFF_BASE_UNKNOWN ? [DIFF_BASE_UNKNOWN]
-    : []), ...(f.drifted === true ? [DRIFTED] : [])].map((state) => ROW_NOTES[state]).concat(list(notes.get(f.path))),
+  notes: [...(f.diff === DIFF_UNRECORDED ? [PLACED_ROW_NOTES[f.placedBy] ?? ROW_NOTES[DIFF_UNRECORDED]] : []),
+    ...(f.diff === DIFF_BASE_UNKNOWN ? [ROW_NOTES[DIFF_BASE_UNKNOWN]] : []), ...(f.drifted === true ? [ROW_NOTES[DRIFTED]]
+      : [])].concat(list(notes.get(f.path))),
   why });
 /** The bytes a change block reserves first for its table of contents (`toc`), each row at its longest words, and 32
  *  bytes a row more: what its hunks may not take. D149: shared by `changeBlock` and `planReviewUnits`. */
-function tocReserveOf(toc, { notes = new Map(), outside = 0, elsewhere = 0, shownAs = SAME_NAME } = {}) {
+function tocReserveOf(toc, { notes = new Map(), outside = 0, elsewhere = 0, shownAs = SAME_NAME, named = false } = {}) {
   const entry = changeEntryOf({ notes, shownAs });
-  const longest = bytesOf(CHANGE_ROW_WORDS.clipped) >= bytesOf(CHANGE_ROW_WORDS[REQUEST_BOUND]) ? 'clipped' : REQUEST_BOUND;
-  return bytesOf(renderChange(toc.map((f) => entry(f, false, longest)), { outside, elsewhere })) + toc.length * 32;
+  const { folded, folds } = indexFoldsOf(toc, { notes, outside, elsewhere, shownAs, named });
+  return bytesOf(renderChange(toc.map((f) => ({ ...entry(f, false, LONGEST_ROW_WHY), folded: folded.has(f.path) })),
+    { outside, elsewhere, folds, named })) + (toc.length - folded.size + folds.length) * 32;
 }
+/** The row words a reserve holds for a row whose hunks are not shown: the longer of the two that can name it. */
+const LONGEST_ROW_WHY = bytesOf(CHANGE_ROW_WORDS.clipped) >= bytesOf(CHANGE_ROW_WORDS[REQUEST_BOUND]) ? 'clipped'
+  : REQUEST_BOUND;
+/** D206: no file is folded: every table of contents within CODE_INDEX_MAX_BYTES, every byte as before. */
+const NO_FOLDS = Object.freeze({ folded: new Set(), folds: Object.freeze([]) });
+/** D206: the classes of rows a table of contents over its bound folds, one more class at a time, the row least
+ *  needed first: D207: a file placed by time alone that no dossier item names; D206: a file no recorded write changed
+ *  and no dossier item names; one no recorded write changed; one no dossier item names; any. The last class always fits:
+ *  it is one row. */
+const INDEX_FOLD_CLASSES = Object.freeze([(f, noted) => f.placedBy === BY_TIME && !noted,
+  (f, noted) => f.recorded !== true && !noted, (f) => f.recorded !== true, (f, noted) => !noted, () => true]);
+/**
+ * D206: which rows of a change block's table of contents (`toc`) are said by folder, so that the table of contents stays
+ * within CODE_INDEX_MAX_BYTES whatever the change holds. Within the bound, none. Over it, the fewest classes of
+ * INDEX_FOLD_CLASSES whose rows, said by folder, bring it within the bound: each file by the folder that holds it, the
+ * deepest folders joined into their parents, a depth at a time, until the rows fit. Structure only: paths, whether a recorded write changed
+ * the file, whether a dossier item names it. `{ folded: Set of paths, folds: [{ at, n, written }] }`, the folds in
+ * code-unit order. Every path stays in the change: its record, its unit and its hunks do not depend on its row.
+ * Deterministic.
+ */
+function indexFoldsOf(toc, { notes = new Map(), outside = 0, elsewhere = 0, shownAs = SAME_NAME, named = false } = {}) {
+  const entry = changeEntryOf({ notes, shownAs });
+  const rowBytes = (f) => bytesOf(renderChange([entry(f, false, LONGEST_ROW_WHY)])) - EMPTY_INDEX_BYTES + 32;
+  const frame = bytesOf(renderChange([], { outside, elsewhere, named })) + 32;
+  const sizes = new Map(toc.map((f) => [f.path, rowBytes(f)]));
+  const whole = frame + [...sizes.values()].reduce((n, bytes) => n + bytes, 0);
+  if (whole <= CODE_INDEX_MAX_BYTES) return NO_FOLDS;
+  const foldBytes = (fold) => bytesOf(FOLDED_ROW_WORDS(fold)) + 1 + 32;
+  const foldsWithin = (fs, limit) => {
+    const by = new Map();
+    for (const f of fs) {
+      const at = dirOf(shownAs(f.path));
+      const fold = by.get(at) ?? { at, n: 0, written: 0 };
+      by.set(at, { at, n: fold.n + 1, written: fold.written + (f.recorded === true ? 1 : 0) });
+    }
+    const size = () => [...by.values()].reduce((n, fold) => n + foldBytes(fold), 0);
+    const depth = (at) => at.split('/').length;
+    const isTop = (at) => at === '.' || at === '/';
+    while (size() > limit && [...by.keys()].some((at) => !isTop(at))) {
+      // The deepest folders join their parents, all of one depth at once.
+      const deepest = [...by.keys()].filter((at) => !isTop(at)).reduce((most, at) => Math.max(most, depth(at)), 0);
+      for (const at of [...by.keys()].filter((x) => !isTop(x) && depth(x) === deepest)) {
+        const fold = by.get(at);
+        by.delete(at);
+        const parent = dirOf(at);
+        const held = by.get(parent) ?? { at: parent, n: 0, written: 0 };
+        by.set(parent, { at: parent, n: held.n + fold.n, written: held.written + fold.written });
+      }
+    }
+    return size() <= limit ? [...by.values()].sort((a, b) => byPath(a.at, b.at)) : null;
+  };
+  const noted = (f) => list(notes.get(f.path)).length > 0;
+  for (const within of INDEX_FOLD_CLASSES) {
+    const fs = toc.filter((f) => within(f, noted(f)));
+    const kept = toc.filter((f) => !within(f, noted(f))).reduce((n, f) => n + sizes.get(f.path), 0);
+    const folds = fs.length ? foldsWithin(fs, CODE_INDEX_MAX_BYTES - frame - kept) : null;
+    if (folds) return { folded: new Set(fs.map((f) => f.path)), folds };
+  }
+  return { folded: new Set(toc.map((f) => f.path)), folds: foldsWithin(toc, Infinity) };
+}
+/** The bytes of a table of contents with no row: what `indexFoldsOf` takes from a one-row render to find a row's. */
+const EMPTY_INDEX_BYTES = bytesOf(renderChange([]));
 /** What one file's diff section costs in a change block (or a run of its hunks, `hunks`), by the name it shows. */
 const sectionCostOf = (shownAs = SAME_NAME) => (f, hunks = f.hunks) => sectionBytes({ path: shownAs(f.path), type: f.type,
   hunks });
@@ -1159,13 +1273,13 @@ const sectionCostOf = (shownAs = SAME_NAME) => (f, hunks = f.hunks) => sectionBy
  * every list it returns keeps the change's own names). Deterministic.
  */
 export function changeBlock(files, { notes = new Map(), outside = 0, elsewhere = 0, maxBytes = CODE_CHANGE_BLOCK_MAX_BYTES,
-  room = Infinity, shownAs = SAME_NAME } = {}) {
+  room = Infinity, shownAs = SAME_NAME, named = false } = {}) {
   const toc = tocOf(files);
   const entry = changeEntryOf({ notes, shownAs });
   // D113: the paths that differ from the start commit that no recorded write of the session touched, counted.
-  const counts = { outside, elsewhere };
+  const counts = { outside, elsewhere, named };
   // The table of contents is in every block whatever fits: its bytes, with a row's longest words, are reserved first.
-  const reserve = tocReserveOf(toc, { notes, outside, elsewhere, shownAs });
+  const reserve = tocReserveOf(toc, { notes, outside, elsewhere, shownAs, named });
   const cost = sectionCostOf(shownAs);
   // D117: the working folder's repository's hunks first, then each other place's in the places' order; smallest first
   // within each (one place: smallest first, as before).
@@ -1185,8 +1299,10 @@ export function changeBlock(files, { notes = new Map(), outside = 0, elsewhere =
   const leftOut = toc.filter((f) => atCap.has(f.path) && !shown.has(f.path)).map((f) => f.path);
   const tooLargeAlone = new Set(bySize.filter(({ bytes }) => bytes > maxBytes - reserve).map(({ f }) => f.path));
   const alone = clipped.filter((path) => tooLargeAlone.has(path));
-  const change = renderChange(toc.map((f) => (shown.has(f.path) ? entry(f, true)
-    : entry(f, false, !showsHunks(f) ? whyNotShown(f) : atCap.has(f.path) ? REQUEST_BOUND : 'clipped'))), counts);
+  const { folded, folds } = indexFoldsOf(toc, { notes, outside, elsewhere, shownAs, named });
+  const change = renderChange(toc.map((f) => ({ ...(shown.has(f.path) ? entry(f, true)
+    : entry(f, false, !showsHunks(f) ? whyNotShown(f) : atCap.has(f.path) ? REQUEST_BOUND : 'clipped')),
+  folded: folded.has(f.path) })), { ...counts, folds });
   return { change, shown, clipped, leftOut, alone };
 }
 /**
@@ -1209,7 +1325,7 @@ export function unitChangeBlock(files, plan, k, options = {}) {
  * check of several units' items is shown. `runs`: with one unit, its split file's run (path → [from, through]).
  */
 export function unitsChangeBlock(files, plan, ks, { notes = new Map(), outside = 0, elsewhere = 0,
-  maxBytes = CODE_CHANGE_BLOCK_MAX_BYTES, room = Infinity, shownAs = SAME_NAME } = {}) {
+  maxBytes = CODE_CHANGE_BLOCK_MAX_BYTES, room = Infinity, shownAs = SAME_NAME, named = false } = {}) {
   const toc = tocOf(files);
   const chosen = ks.map((k) => plan.units[k]);
   const labelsOf = new Map();
@@ -1227,7 +1343,7 @@ export function unitsChangeBlock(files, plan, ks, { notes = new Map(), outside =
     .has(i)) } : f);
   const mine = new Set(chosen.flatMap((u) => u.paths));
   const entry = changeEntryOf({ notes, shownAs });
-  const reserve = tocReserveOf(toc, { notes, outside, elsewhere, shownAs });
+  const reserve = tocReserveOf(toc, { notes, outside, elsewhere, shownAs, named });
   const cost = sectionCostOf(shownAs);
   const rank = rankOf(placeRanks(files));
   const bySize = toc.filter((f) => mine.has(f.path)).map((f) => ({ f, bytes: cost(view(f)) }))
@@ -1248,9 +1364,11 @@ export function unitsChangeBlock(files, plan, ks, { notes = new Map(), outside =
   const ownLeft = (f) => mine.has(f.path) && !shown.has(f.path);
   const why = (f) => (ownLeft(f) ? (atCap.has(f.path) ? REQUEST_BOUND : 'clipped') : !showsHunks(f) ? whyNotShown(f)
     : beyond.has(f.path) ? UNIT_CAP : 'clipped');
+  const { folded, folds } = indexFoldsOf(toc, { notes, outside, elsewhere, shownAs, named });
   const change = renderUnitChange(toc.map((f) => ({ ...entry(mine.has(f.path) ? view(f) : f, shown.has(f.path)),
-    labels: ownLeft(f) ? [] : labelsOf.get(f.path) ?? [], why: labelsOf.has(f.path) && !ownLeft(f) ? null : why(f) })),
-  { outside, elsewhere });
+    labels: ownLeft(f) ? [] : labelsOf.get(f.path) ?? [], why: labelsOf.has(f.path) && !ownLeft(f) ? null : why(f),
+    folded: folded.has(f.path) })),
+  { outside, elsewhere, folds, named });
   const runs = new Map(chosen.length === 1 && chosen[0].split ? [[chosen[0].paths[0], chosen[0].hunks]] : []);
   return { change, shown, clipped, leftOut, alone: [], runs };
 }
@@ -1260,6 +1378,12 @@ const DRIFTED = 'drifted';
  *  recorded edit (code-context.js CHANGE_ROW_WORDS). */
 const ROW_NOTES = Object.freeze({ [DIFF_UNRECORDED]: 'not written by a recorded edit',
   [DIFF_BASE_UNKNOWN]: 'no git base: its hunks are the recorded edits', [DRIFTED]: CHANGE_ROW_WORDS[DRIFTED] });
+/** D207: the note of a row no recorded edit wrote, by how it is part of the change (`placedBy`). A file with none (read
+ *  apart, outside the evaluated session; a snapshot before D207) keeps `ROW_NOTES`'s. Fixed words. */
+const PLACED_ROW_NOTES = Object.freeze({
+  [BY_COMMIT]: `${ROW_NOTES[DIFF_UNRECORDED]}; in a commit the session made`,
+  [BY_TIME]: `${ROW_NOTES[DIFF_UNRECORDED]}; placed by time alone: it may not be the session's`,
+  [BY_BASE]: `${ROW_NOTES[DIFF_UNRECORDED]}; in the change by the base the person named` });
 
 // ---- D113 amended: the files outside the evaluated session ------------------------------------------------------------
 
@@ -1276,12 +1400,24 @@ export const CODE_OUTSIDE_BLOCK = 'outside';
 export const CODE_OUTSIDE_YIELD = Object.freeze(['outsideHunks', CODE_OUTSIDE_BLOCK]);
 const OUTSIDE_HEADING = `# The files ${OUTSIDE_SESSION_WORDS} — built by Sonah from the session's start commit to the `
   + 'files now — untrusted evidence';
-const OUTSIDE_NOTE = '(These files differ from the session\'s start commit, but no recorded write of the session could '
-  + 'have changed them, and none of them last changed while the session ran: they are '
-  + `${OUTSIDE_SESSION_WORDS}. A finding about them is in scope when its root cause lies in lines their hunks below `
-  + 'added, modified or removed, as for the change above. Sonah ties no finding about them to the person\'s asks or to '
+/** D207: with a base the person named, the working folder's files here differ from it, another repository's from its own
+ *  start commit. */
+const OUTSIDE_HEADING_NAMED = `# The files ${OUTSIDE_SESSION_WORDS} — built by Sonah from the commit the person named, or `
+  + 'another repository\'s start commit, to the files now — untrusted evidence';
+const OUTSIDE_NOTE_EVIDENCE = ', but no recorded write of the session could have changed them, no commit the session made '
+  + 'changed them itself, and none was left uncommitted by a change while the agent was working';
+const OUTSIDE_NOTE_WINDOW = ', but no recorded write of the session could have changed them, and none of them last changed '
+  + 'while the agent was working';
+const OUTSIDE_NOTE_REST = `${OUTSIDE_NOTE_EVIDENCE}: they are ${OUTSIDE_SESSION_WORDS}. A finding about them is in scope when `
+  + 'its root cause lies in lines their hunks below added, modified or removed, as for the change above. Sonah ties no '
+  + 'finding about them to the person\'s asks or to '
   + 'the agent\'s claims and decisions: such a finding is never ask_not_met or claim_false, and Sonah drops the keys it '
   + 'leads from. Give no "files" entry for them.)';
+const OUTSIDE_NOTE = `(These files differ from the session's start commit${OUTSIDE_NOTE_REST}`;
+const OUTSIDE_NOTE_NAMED = '(These files differ from the commit the person named, or from another repository\'s start '
+  + `commit${OUTSIDE_NOTE_REST}`;
+/** D207's review: where git or a recording could not say (`windowOnlyOf`), no commit was read: only what the window shows. */
+const onlyWindowNote = (note) => note.replace(OUTSIDE_NOTE_EVIDENCE, OUTSIDE_NOTE_WINDOW);
 /**
  * D113 amended: the block that shows the files outside the evaluated session — the snapshot's files that git shows
  * differing from the start commit and that no recorded write of the session could have changed (cli code-snapshot.js
@@ -1290,9 +1426,11 @@ const OUTSIDE_NOTE = '(These files differ from the session\'s start commit, but 
  * leaves its hunks), with no dossier key beside a row: nothing of them ties to an item of the session. `{ text, change,
  * shown, clipped, leftOut, alone }`. Deterministic.
  */
-export function outsideBlock(files, { room = Infinity, shownAs = SAME_NAME } = {}) {
+export function outsideBlock(files, { room = Infinity, shownAs = SAME_NAME, named = false, windowOnly = false } = {}) {
   const block = changeBlock(files, { room, shownAs });
-  return { ...block, text: [OUTSIDE_HEADING, '', OUTSIDE_NOTE, '', block.change, ''].join('\n') };
+  const note = named ? OUTSIDE_NOTE_NAMED : OUTSIDE_NOTE;
+  return { ...block, text: [named ? OUTSIDE_HEADING_NAMED : OUTSIDE_HEADING, '', windowOnly ? onlyWindowNote(note) : note, '',
+    block.change, ''].join('\n') };
 }
 /** D113 amended: the kinds whose finding is itself a tie to an item of the session — an ask not met names an ask, a claim
  *  the code contradicts names a claim or decision (`findingShape`) — so they keep the session's own change as their
@@ -1446,8 +1584,9 @@ const fenced = (value) => `<<<\n${value}\n>>>`;
 export const CODE_PATH_RULES = Object.freeze({ relative: 'path is relative to the working directory',
   absolute: 'path is the file\'s absolute path' });
 const pathRule = (absolute) => (absolute === true ? CODE_PATH_RULES.absolute : CODE_PATH_RULES.relative);
+const RECEIPT_OLD_WORDS = '"old" the file before the session';
 const receiptWordsOf = (absolute) => '{path, side, startLine, endLine, quote}: side "new" quotes a file as it is now, '
-  + `"old" the file before the session (as a hunk's OLD side shows it); ${pathRule(absolute)}; startLine and endLine `
+  + `${RECEIPT_OLD_WORDS} (as a hunk's OLD side shows it); ${pathRule(absolute)}; startLine and endLine `
   + 'are that side\'s line numbers; quote is copied character for character from those lines, 4 to 120 characters, '
   + 'without the hunk-row or line-number gutter';
 
@@ -1471,6 +1610,23 @@ const PULL_CONTEXT = Object.freeze({
 /** The review agent's brief, with part B (D106) on or off: fixed text, shipped with Sonah; it holds no session text.
  *  Adapted from Pullfrog's Review mode (see the file header) and merged with Sonah's lenses. Off, it is part A's brief
  *  byte for byte (`CODE_REVIEW_SYSTEM`). D147: with `absolute`, a path is the file's absolute path (CODE_PATH_RULES). */
+/** What the review's brief says the change holds. D207: with a base the person named (`namedBaseSystem`), its own words;
+ *  any other brief keeps these, byte for byte. */
+const CHANGE_SCOPE_WORDS = `the change holds only the files a recorded write of the session changed and the files last
+changed while the session ran, whose rows say they were not written by a recorded edit`;
+const OLD_SIDE_WORDS = 'OLD the\nline\'s number before the session';
+const NAMED_OLD_SIDE_WORDS = 'OLD the\nline\'s number at the base of the change';
+const TRACE_OLD_WORDS = '"old" the file before the\n  session';
+const NAMED_TRACE_OLD_WORDS = '"old" the file at the\n  base of the change';
+const NAMED_RECEIPT_OLD_WORDS = '"old" the file at the base of the change';
+const NAMED_CHANGE_SCOPE_WORDS = `the change holds every tracked file that differs from the commit the person named and the
+files last changed while the session ran, and each row says when no recorded edit wrote its file`;
+const namedBaseSystem = (system) => system.replace(CHANGE_SCOPE_WORDS, NAMED_CHANGE_SCOPE_WORDS)
+  // D207's review: and what the old side of a hunk or a receipt is.
+  .replace(OLD_SIDE_WORDS, NAMED_OLD_SIDE_WORDS).replace(TRACE_OLD_WORDS, NAMED_TRACE_OLD_WORDS)
+  .replaceAll(RECEIPT_OLD_WORDS, NAMED_RECEIPT_OLD_WORDS);
+/** D207's review: a brief, as a request with a base the person named reads it (`where.namedBase`). */
+const briefOf = (where, system) => (where?.namedBase === true ? namedBaseSystem(system) : system);
 const reviewSystemOf = (wholeFiles, absolute) => `You review the change an AI coding agent made in one recorded session, the way an
 experienced reviewer reviews a pull request. You are an agent with three tools — Read, Grep and Glob — over the
 repository as it is now, at review time. Use them for as many turns as you need (you have at most
@@ -1482,8 +1638,7 @@ You are given the person's messages, in their own words; the person's asks, as S
 them, each keyed S1, S2, …; the project's instruction files and skill files the session
 loaded, each whole; the change (a table of contents, then every hunk as "| OLD | NEW | TYPE | code" rows: OLD the
 line's number before the session, NEW its number now, TYPE "+" added, "-" removed, " " unchanged; a path whose hunks
-are not shown says why; the change holds only the files a recorded write of the session changed and the files last
-changed while the session ran, whose rows say they were not written by a recorded edit);
+are not shown says why; ${CHANGE_SCOPE_WORDS});
 ${wholeFiles ? WHOLE_FILES_GIVEN : ''}Sonah's review of the session (the dossier): the person's asks, the agent's claims, decisions
 and changes of approach, the failures it passed over and its edits against an instruction, each keyed S1, S2, … and
 labelled by whose words it holds ("actor": person, agent or recorded; a quote of another actor's words than the item's
@@ -1848,6 +2003,10 @@ const ASKS_HEADING = '# The person\'s asks, as Sonah\'s review of the session li
   + 'evidence';
 const CHANGE_HEADING = '# The change — built by Sonah from the session\'s start commit (or its recorded edits) to the '
   + 'files now — untrusted evidence';
+/** D207: the heading of the change with a base the person named (`where.namedBase`). */
+const NAMED_CHANGE_HEADING = '# The change — built by Sonah from the commit the person named to the files now — untrusted '
+  + 'evidence';
+const changeHeadingOf = (where) => (where?.namedBase === true ? NAMED_CHANGE_HEADING : CHANGE_HEADING);
 /** The person's messages, then their asks (`words.asks`, `askListOf`): one JSON line an ask. */
 const personBlock = ({ asked, asks = [] }) => [PERSON_HEADING, '', PERSON_NOTE, '',
   ...(asked.length ? asked.map(fenced) : ['(no message of the person was recorded)']), '', ASKS_HEADING, '',
@@ -1883,8 +2042,8 @@ const WHERE_PLACES_HEAD = 'The change also holds files of these repositories and
 const WHERE_PLACES_UNREAD_HEAD = 'The change also holds files of these repositories and folders, which you cannot read:';
 const WHERE_ROOT_ABSOLUTE = 'The working directory (every relative path above is relative to it):';
 /** D149: the line that names the start-commit folder (`where.startFolder`). Fixed words. */
-const WHERE_START_FOLDER = (commit, at) => `The changed files as they were at the start commit ${commit}, each by its `
-  + `path from the repository's top folder: ${at}`;
+const WHERE_START_FOLDER = (commit, at, named = false) => `The changed files as they were at ${named ? `${commit}, the `
+  + 'commit the person named' : `the start commit ${commit}`}, each by its path from the repository\'s top folder: ${at}`;
 /** One place's line of the where block, by how its change is read. */
 const wherePlaceLine = (p) => (p.kind === GIT_BASE ? WHERE_PLACE_WORDS[GIT_BASE](p.at, p.commit)
   : WHERE_PLACE_WORDS[RECORDED_EDITS_BASE](p.at));
@@ -1902,7 +2061,8 @@ const whereBlock = (where, maxTurns) => {
     ...(typeof top === 'string' && top && top !== root ? [`The repository's top folder: ${top}`] : []),
     ...(read.length ? [WHERE_PLACES_HEAD, ...read.map(wherePlaceLine)] : []),
     ...(unread.length ? [WHERE_PLACES_UNREAD_HEAD, ...unread.map(wherePlaceLine)] : []),
-    ...(plain(where.startFolder) ? [WHERE_START_FOLDER(where.startFolder.commit, where.startFolder.at)] : []),
+    ...(plain(where.startFolder) ? [WHERE_START_FOLDER(where.startFolder.commit, where.startFolder.at,
+      where.namedBase === true)] : []),
     `You have at most ${maxTurns} turns. Begin.`].join('\n');
 };
 /** An agent request's runaway guards and where it reads: the transport's (`request.agent`). Absolute paths. D117: the
@@ -1969,6 +2129,9 @@ export const READS_NONE_WORDS = Object.freeze({
     + 'them yourself)',
   [REQUEST_BOUND]: '(the lines the session read are not shown here: they did not fit in this request; read them '
     + 'yourself)' });
+/** D207: `READS_NONE_WORDS`'s git line, with a base the person named. Fixed words. */
+const READS_NONE_NAMED = '(no line the session read is shown here: of the lines its typed reads gave, Sonah found none in a '
+  + 'file it could read unchanged since the commit the person named, other than an instruction file listed above)';
 /** Lines `from` to `through` of a text's lines (`linesOf`), each after its number and a tab, as `cat -n` and the Read
  *  tool number them (`withoutGutter` reads a quote copied with that gutter without it). */
 const numberedRows = (lines, from, through) => lines.slice(from - 1, through)
@@ -2051,7 +2214,7 @@ export function wholeFilesBlock(files, { maxBytes = CODE_WHOLE_FILES.maxBytes, r
  * CODE_SHOWN_STATES member (whole, in part or left out) and each range not shown with its reason. Deterministic.
  */
 export function readsBlock(reads, { maxBytes = CODE_WHOLE_FILES.readsMaxBytes, room = Infinity, startCommit = false,
-  shownAs = SAME_NAME } = {}) {
+  shownAs = SAME_NAME, named = false } = {}) {
   const header = (r) => `FILE ${JSON.stringify({ path: shownAs(r.path), lines: r.lines, read: r.read })}`;
   const longest = longerReason((why) => readsLeftOutLine(1, 1, why));
   const units = reads.flatMap((r, file) => {
@@ -2064,7 +2227,7 @@ export function readsBlock(reads, { maxBytes = CODE_WHOLE_FILES.readsMaxBytes, r
   const atCap = fill(maxBytes);
   const shown = shownWithin(fill, atCap, room, maxBytes);
   const why = (index) => (atCap?.has(index) ? REQUEST_BOUND : BLOCK_CAP);
-  const none = !reads.length ? READS_NONE_WORDS[startCommit === true ? GIT_BASE : RECORDED_EDITS_BASE]
+  const none = !reads.length ? named ? READS_NONE_NAMED : READS_NONE_WORDS[startCommit === true ? GIT_BASE : RECORDED_EDITS_BASE]
     : shown === null ? READS_NONE_WORDS[atCap === null ? BLOCK_CAP : REQUEST_BOUND] : null;
   const text = [READS_HEADING, '', ...(none !== null ? [none, ''] : reads.flatMap((r, file) => [header(r),
     ...units.flatMap((u, index) => (u.file !== file ? [] : shown.has(index) ? [u.shown]
@@ -2129,7 +2292,7 @@ function manifestEntryOf(f, block, wholeBlock) {
     || r?.type === ' ').length, 0);
   // D109: whether a recorded edit of the session wrote it, and, for a file whose change is the whole file, that
   // change as every line of it (when the request shows it short of whole): what the review must see of it.
-  const recorded = { recorded: f.recorded === true };
+  const recorded = { recorded: f.recorded === true, ...placedByFieldOf(f) };
   const whole = wholeChange(f) && total !== null && total > 0 ? [[1, total]] : null;
   if (!showsHunks(f)) return { path: f.path, state: NOT_SHOWN, reason: notShownReason(f), side, shown: [],
     ...before(f.type === ADDED ? 0 : null), lines: total, ...recorded };
@@ -2318,6 +2481,8 @@ export function planReviewRequest({ words, projectFiles = [], files = [], notes 
   // D147: every path the request shows, by the name `where` gives it (`shownAsOf`: absolute when more than one place
   // holds a file of the change; else itself, every byte as before).
   const shownAs = shownAsOf(where);
+  // D207: a base the person named (`namedBaseOf`), as `where` carries it.
+  const named = where?.namedBase === true;
   const dossierText = renderDossier(dossier, { shownAs });
   const commandLines = new Map();
   const byRoom = (make) => {
@@ -2338,7 +2503,7 @@ export function planReviewRequest({ words, projectFiles = [], files = [], notes 
     .includes(f.path)) && !list(unit.plan.beyondGuard).some((u) => u.paths.includes(f.path))).map((f) => f.path) : [];
   const ownPaths = own ? new Set([...own.paths, ...homeless]) : null;
   const changeOf = byRoom((room) => (own ? unitChangeBlock(files, unit.plan, unit.k, { notes, outside, elsewhere, room,
-    shownAs }) : changeBlock(files, { notes, outside, elsewhere, room, shownAs })));
+    shownAs, named }) : changeBlock(files, { notes, outside, elsewhere, room, shownAs, named })));
   // Part B's inputs (D106): the changed files to show whole (but those whose hunks the change block shows at its cap and
   // hold every line), and the session's reads but of a rule file shown whole, matched by the place its path points to.
   // D149: a generated, vendored or lock file is shown by its hunks alone, never whole, in a unit.
@@ -2350,13 +2515,14 @@ export function planReviewRequest({ words, projectFiles = [], files = [], notes 
   const rulePlaces = new Set([...rulesAtCap].map((index) => placeOf(projectFiles[index].path)));
   const reads = wholeFiles ? list(sessionReads).filter((r) => !rulePlaces.has(placeOf(r.path))) : [];
   const wholeOf = byRoom((room) => wholeFilesBlock(candidates, { room, shownAs }));
-  const readsOf = byRoom((room) => readsBlock(reads, { room, startCommit: startCommit === true, shownAs }));
+  const readsOf = byRoom((room) => readsBlock(reads, { room, startCommit: startCommit === true, shownAs, named }));
   const n = list(commands?.commands).length;
   // D113 amended: the files outside the evaluated session, in a block of their own after the session's own change, only
   // when there are any (`outsideBlock`); `outsideRoom` what the bound leaves their hunks, `outsideFrame` whether the
   // block is there at all.
   const outsideOn = (!own || unit.k === 0) && tocOf(list(outsideFiles)).length > 0;
-  const outsideOf = byRoom((room) => outsideBlock(list(outsideFiles), { room, shownAs }));
+  const outsideOf = byRoom((room) => outsideBlock(list(outsideFiles), { room, shownAs, named,
+    windowOnly: where?.windowOnly === true }));
   // `frame`: whether the request carries part B's frame (its brief, and its two blocks with their headings and fixed
   // words), which gives way as one unit only after both blocks have given way whole; without it the request is part
   // A's, byte for byte, while the manifest still says what part B left out (each of its blocks at no room).
@@ -2373,16 +2539,16 @@ export function planReviewRequest({ words, projectFiles = [], files = [], notes 
     const parts = { words: personBlock(words),
       rules: projectBlock(projectFiles, (index) => (shownRules.has(index) ? null : rulesAtCap.has(index) ? REQUEST_BOUND
         : BLOCK_CAP), shownAs),
-      change: [CHANGE_HEADING, '', block.change, ''], dossier: [DOSSIER_HEADING, '', dossierText, ''],
+      change: [changeHeadingOf(where), '', block.change, ''], dossier: [DOSSIER_HEADING, '', dossierText, ''],
       commands: [renderCommands(commands, { from, lines: commandLines, shownAs }), ''],
       where: [`${whereBlock(where, CODE_AGENT_LIMITS.review.maxTurns)}${tail}`],
       ...(frame ? { wholeFiles: [whole.text, ''], reads: [read.text, ''] } : {}),
       ...(away ? { [CODE_OUTSIDE_BLOCK]: [away.text] } : {}) };
     const texts = Object.fromEntries(names.map((name) => [name, parts[name].join('\n')]));
-    const request = { system: `${absoluteNamesOf(where)
-      ? (frame ? CODE_BRIEFS_ABSOLUTE.reviewWholeFiles : CODE_BRIEFS_ABSOLUTE.review)
-      : frame ? CODE_REVIEW_SYSTEM_WHOLE_FILES : CODE_REVIEW_SYSTEM}${own ? CODE_UNIT_BRIEF(unit.k + 1,
-        unit.plan.units.length) : ''}`,
+    const brief = absoluteNamesOf(where) ? (frame ? CODE_BRIEFS_ABSOLUTE.reviewWholeFiles : CODE_BRIEFS_ABSOLUTE.review)
+      : frame ? CODE_REVIEW_SYSTEM_WHOLE_FILES : CODE_REVIEW_SYSTEM;
+    const request = { system: `${named ? namedBaseSystem(brief) : brief}${own ? CODE_UNIT_BRIEF(unit.k + 1,
+      unit.plan.units.length) : ''}`,
       prompt: names.map((name) => texts[name]).join('\n'), schema: CODE_REVIEW_SCHEMA,
       agent: agentOf(where, CODE_AGENT_LIMITS.review) };
     return { request, shownRules, block, from, texts, names, whole, read, outside: away };
@@ -2519,24 +2685,24 @@ export function verifierFindingOf(finding, sources = []) {
  *  (`groundFinding`'s `outsideSession`), `outside` is the block of the files outside it (`outsideBlock`'s text), shown
  *  after the change; for any other finding none, so its request is the one before this amendment byte for byte. */
 export function buildVerifyRequest({ words, change, outside = null, finding, cited = [], where }) {
-  const prompt = [...personBlock(words), CHANGE_HEADING, '', change, '',
+  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',
     ...(typeof outside === 'string' && outside ? [outside] : []),
     '# The finding to check — untrusted', '', JSON.stringify(findingShownAs(finding, shownAsOf(where))), '',
     ...(cited.length ? ['# Session text the finding quotes (the person\'s words or recorded results) — untrusted '
       + 'evidence', '', ...cited.map((s) => fenced(s.text)), ''] : []),
     whereBlock(where, CODE_AGENT_LIMITS.verify.maxTurns)].join('\n');
-  return { system: absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.verify : CODE_VERIFY_SYSTEM, prompt,
+  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.verify : CODE_VERIFY_SYSTEM), prompt,
     schema: CODE_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.verify) };
 }
 
 /** The batch checking agent's request: the questions (Q1…), each with what it concerns — the item's words only when
  *  they are the person's or a recorded result's; an agent's item by its kind and key alone. Deterministic. */
 export function buildBatchVerifyRequest({ words, change, questions, where }) {
-  const prompt = [...personBlock(words), CHANGE_HEADING, '', change, '',
+  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',
     '# The review\'s questions for the person — untrusted', '',
     ...(questions.length ? questions.map((q) => JSON.stringify(q)) : ['(none)']), '',
     whereBlock(where, CODE_AGENT_LIMITS.batch.maxTurns)].join('\n');
-  return { system: absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.batch : CODE_BATCH_VERIFY_SYSTEM, prompt,
+  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.batch : CODE_BATCH_VERIFY_SYSTEM), prompt,
     schema: CODE_BATCH_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.batch) };
 }
 
@@ -2571,10 +2737,10 @@ export function buildAccountRequest({ words, change, findings = [], questions = 
     anchor: plain(f.anchor) ? { ...f.anchor, path: shownAs(f.anchor.path) } : f.anchor,
     leadsFrom: f.leadsFrom })), ...questions.map((q) => JSON.stringify({ key: q.key, question: q.question,
     concerns: q.concerns }))];
-  const prompt = [...personBlock(words), CHANGE_HEADING, '', change, '', ACCOUNT_REVIEW_HEADING, '',
+  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '', ACCOUNT_REVIEW_HEADING, '',
     ...(review.length ? review : ['(none)']), '', ACCOUNT_ITEMS_HEADING, '', renderDossier(items, { shownAs }), '',
     whereBlock(where, CODE_AGENT_LIMITS.account.maxTurns)].join('\n');
-  return { system: absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.account : CODE_ACCOUNT_SYSTEM, prompt,
+  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.account : CODE_ACCOUNT_SYSTEM), prompt,
     schema: CODE_ACCOUNT_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.account) };
 }
 
@@ -3825,7 +3991,10 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
   // place holds a file of the change (`manyPlacesHold`), every request names a file by its absolute path.
   const placesHeld = placesHolding(base, toc);
   // D149: in a review of several units, the start-commit folder joins it once made (`startFolder`, below).
-  let where = { root, top, places: placesHeld, folders,
+  // D207: a base the person named (`namedBaseOf`): each request's heading and rows say so.
+  const baseNamed = namedBaseOf(base) !== null;
+  let where = { root, top, places: placesHeld, folders, ...(baseNamed ? { namedBase: true } : {}),
+    ...(windowOnlyOf(base) ? { windowOnly: true } : {}),
     ...(typeof realRoot === 'string' && isAbsolute(realRoot) ? { realRoot } : {}),
     absolute: toc.some((f) => isAbsolute(f.path)), ...(manyPlacesHold(toc, placesHeld) ? { absoluteNames: true } : {}) };
   // Part B (D106), only when on: what the session read of unchanged tracked files (none with no start commit: the
@@ -3836,7 +4005,7 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
   // The review request within the bound, and its manifest (`planReviewRequest`); `tail` a repair's or re-ask's note.
   // D149: the review units of the change (`planReviewUnits`), with the dossier edge, as the requests name the files.
   const unitPlan = going && toc.some(showsHunks) ? planReviewUnits(files, { notes, outside, elsewhere,
-    shownAs: shownAsOf(where), dossier }) : null;
+    shownAs: shownAsOf(where), dossier, named: baseNamed }) : null;
   // D149: each unit's commands, by the block's own rule (`commandsAfterLastEdit`) over the unit's own files that a
   // recorded edit wrote (in the first unit, with the files no unit holds, which it may show whole): those recorded after
   // the earliest last edit of them, and every command before them whose recorded text holds the name the code step gives
@@ -3890,14 +4059,14 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
   const planOf = (tail = '', unit = null) => planReviewRequest({ words, projectFiles, files, notes, outside, elsewhere,
     dossier, commands: unit ? commandsOfUnit(unit.k) : commands, where, bound, tail, wholeFiles: wholeFiles === true,
     sessionReads, startCommit, outsideFiles: outsideIn, ...(unit ? { unit } : {}) });
-  const plan = going ? planOf() : { request: null, change: changeBlock(files, { notes, outside, elsewhere }).change,
+  const plan = going ? planOf() : { request: null, change: changeBlock(files, { notes, outside, elsewhere, named: baseNamed }).change,
     shown: new Set(),
     clipped: [], leftOut: [], outside: null, manifest: null };
   const { change, shown, clipped, leftOut } = plan;
   // D113 amended: what a finding outside the evaluated session's check is shown of the files outside it: their block as
   // the review request showed it, or, when it gave way there, its table of contents alone.
   const outsideText = !outsideToc.length ? null : plan.outside?.text ?? outsideBlock(outsideIn, { room: 0,
-    shownAs: shownAsOf(where) }).text;
+    shownAs: shownAsOf(where), named: baseNamed, windowOnly: windowOnlyOf(base) }).text;
   const manifests = {};
   // D149: each request of the code review that was sent, by its label, and whether it shows a file's change: its change
   // block shows the file's hunks, or part B shows the file whole with none of its hunks' rows on the earlier side left
@@ -4243,7 +4412,8 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
       const blockOf = (ks) => {
         const key = ks.join(',');
         if (!blocks.has(key)) blocks.set(key, (ks.length === 1 ? byTag.get(unitPlan.units[ks[0]].label)?.planned?.change
-          : null) ?? unitsChangeBlock(files, unitPlan, ks, { notes, outside, elsewhere, shownAs: shownAsOf(where) })
+          : null) ?? unitsChangeBlock(files, unitPlan, ks, { notes, outside, elsewhere, shownAs: shownAsOf(where),
+            named: baseNamed })
           .change);
         return blocks.get(key);
       };
@@ -4561,7 +4731,7 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
     const rows = counted ? list(f.hunks).flatMap((h) => list(h.rows)) : [];
     // D149: in a review of several units, a generated or vendored file's source (`generatedSourceOf`).
     const generated = Array.isArray(manifests.units) ? generatedSourceOf(f) : null;
-    return { path: f.path, ...(typeof f.place === 'string' ? { place: f.place } : {}),
+    return { path: f.path, ...(typeof f.place === 'string' ? { place: f.place } : {}), ...placedByFieldOf(f),
       ...(f.diff !== undefined ? { type: f.type } : {}), state, ...(generated ? { generated } : {}),
       ...(f.state === 'readable' ? { sha256: f.sha256 } : {}), ...(f.diff !== undefined ? { hunks: list(f.hunks).length }
         : {}), ...(counted ? { added: rows.filter((r) => r.type === '+').length,
@@ -4646,12 +4816,10 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
   // rows they hold on the earlier side), a rule or skill file the session loaded it did
   // not see whole, or a command it was not shown (it cannot read one itself); with no review request planned, as before.
   const changeUnshown = seen === null ? toc.some((f) => !showsHunks(f)) || reviewClipped.length > 0 || unreviewed.length > 0
-    : seen.files.some((f) => !f.changeSeen) || seen.rules.some((f) => f.state !== SEEN_WHOLE) || commandsLeftOut > 0;
+    : codeChangeShortOf({ manifest, agents, agent });
   // D113 amended (its second review): a finding outside the evaluated session whose check did not run to a verdict is
   // withheld tagged, and its calls are counted apart (`outsideChecks`): it leaves the session's own coverage as it is.
-  const checksShort = withheld.some((w) => w.outsideSession !== true
-    && [VERIFY_UNEXECUTED, REQUEST_FAILED, REQUEST_TOO_LARGE].includes(w.reason))
-    || questions.some((q) => q.from === 'review' && !q.check) || failed.has(REPAIR_PART) || tooLarge.has(REPAIR_PART);
+  const checksShort = codeChecksShortOf({ withheld, questions }) || failed.has(REPAIR_PART) || tooLarge.has(REPAIR_PART);
   // F3b (D111, I10): an item in scope left not examined or missing keeps the coverage short of complete.
   const accountShort = account !== null && account.entries.some((e) => [NOT_EXAMINED, MISSING].includes(e.fate));
   const coverage = !going ? 'missing' : !files.length || empty ? (changeUnshown ? 'partial' : 'complete')
@@ -4694,6 +4862,13 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
       // D124's review: the person gave the repository that holds the working directory with --code-repo (read by its
       // own rule, never made a place again), so the readers can say so (`repositoriesGiven`).
       ...(base.given === true ? { given: true } : {}),
+      // D207: the base the person named with --code-base, and that git or a recording could not say, so D113's window and
+      // D206's waits alone placed the files marked `time`, so the readers can say each.
+      ...(namedBaseOf(base) !== null ? { namedRef: namedBaseOf(base) } : {}),
+      ...(base.timeByWindow === true ? { timeByWindow: true } : {}),
+      // D207's second review: a git repository holds the working folder, though no start commit was found there, so the
+      // readers can name --code-base where it works (code-report.js `branchWayOutOfBase`).
+      ...(base.kind === RECORDED_EDITS_BASE && base.repository === true ? { repository: true } : {}),
       // D178: the working directory's offset in its repository, so a reader can tell a file there from the same file of
       // another place (`changeRepeatsOf`). No request reads the base whole, so no request byte moves.
       ...(withinOf(base) !== null ? { within: withinOf(base) } : {}) },
@@ -4811,6 +4986,30 @@ export function runRecordOf(carrier, root = null) {
   }
   return { turns: count(run.numTurns), tools: { Read: count(tools.Read), Grep: count(tools.Grep), Glob: count(tools.Glob) },
     reads, unranged: ranged === null ? count(tools.Read) : count(run.readsUnranged), unrangedPaths, failed };
+}
+
+/**
+ * Whether the code review's view of the change fell short (the coverage's first part, `runCodePass`): a file of the change
+ * whose change it did not see on each side (`codeSeenOf`'s `changeSeen`), a rule or skill file the session loaded that it
+ * did not see whole, or a command it was not shown (it cannot read one itself). From the record's `manifest`, `agents` and
+ * `agent` alone, so a reader of the record decides as the record's coverage did (D207's review of real reports: a
+ * coverage short only by a check says so, `codeShortByChecksOf`). Null with no review request. Pure.
+ */
+export function codeChangeShortOf({ manifest, agents, agent } = {}) {
+  const seen = codeSeenOf({ manifest, agents, agent });
+  if (seen === null) return null;
+  const commands = manifest.review.sent === true && plain(manifest.review.commands) ? manifest.review.commands : null;
+  const commandsLeftOut = commands ? commands.from - 1 + (isCount(commands.unshown) ? commands.unshown : 0) : 0;
+  return seen.files.some((f) => !f.changeSeen) || seen.rules.some((f) => f.state !== SEEN_WHOLE) || commandsLeftOut > 0;
+}
+/** Whether a check of the session's own findings or of the review's questions gave no verdict (the coverage's second
+ *  part, `runCodePass`, beside the repair's calls): a finding withheld because its check did not finish, its call failed or
+ *  its input was too large to send, never one outside the evaluated session (D113 amended: counted apart); or a question of
+ *  the review with no check. From the record's `withheld` and `questions`. Pure. */
+export function codeChecksShortOf({ withheld, questions } = {}) {
+  return list(withheld).some((w) => plain(w) && w.outsideSession !== true
+    && [VERIFY_UNEXECUTED, REQUEST_FAILED, REQUEST_TOO_LARGE].includes(w.reason))
+    || list(questions).some((q) => plain(q) && q.from === 'review' && !q.check);
 }
 
 /**
@@ -4998,7 +5197,8 @@ export function codeChangeTally(codePass) {
         : entry.state === NOT_SHOWN && CODE_FILE_STATES.includes(entry.reason) ? entry.reason : SHOWN;
       return { path: x.path, group: x.state === SEEN_WHOLE && x.changeSeen !== true ? 'whole_not_before' : x.state, state,
         ...(entry.state === LEFT_OUT && CODE_LEFT_OUT_REASONS.includes(entry.reason) ? { leftOut: entry.reason } : {}),
-        recorded: typeof entry.recorded === 'boolean' ? entry.recorded : null, changeSeen: x.changeSeen === true,
+        recorded: typeof entry.recorded === 'boolean' ? entry.recorded : null, ...placedByFieldOf(entry),
+        changeSeen: x.changeSeen === true,
         ...(Array.isArray(x.lines) ? { lines: x.lines } : {}), total: x.total, checksRead: checked.has(x.path),
         ...(typeof entry.place === 'string' && entry.place ? { place: entry.place } : {}) };
     });

@@ -37,7 +37,7 @@ import { codeDossier } from '../src/code-context.js';
 import { requestBeforeListedAsks } from './m33-integration-fixture.js';
 import { TOKEN_BYTES } from '../src/windows.js';
 import { reviewInputBytes } from '../src/challenge.js';
-import { CODE_REPORT_WORDS, codeFooterLines, codeCoverageLines, codeReviewCoverage, codeQuestionsLine }
+import { CODE_REPORT_WORDS, codeFooterLines, codeCoverageLines, codeReviewCoverage, codeQuestionsLine, codeShortByChecksOf }
   from '../src/code-report.js';
 import { renderSessionPage, escapeHtml } from '../../render/session-page.js';
 import { renderReportMarkdown } from '../../render/session-story.js';
@@ -901,7 +901,9 @@ test('D111 second review: in every combination of an entry\'s end and a publishe
 test('D111 second review: the coverage line names no list and says only what the code review\'s own work left — beside the accounting\'s count when both are short, and again when the repository changed while it ran', async () => {
   assert.equal(W.coverage.partial, 'The code review did not finish every part of its work.');
   // The review's own work short (a finding's check did not answer) and the item not examined: the coverage line once,
-  // and the count in the list after the call that did not answer; the terminal says the review did not cover it all.
+  // and the count in the list after the call that did not answer. D207's review of real reports: on a record of D207's
+  // code step the review saw the whole change and only a check fell short, so both readers say that (`checks`); with the
+  // repository changed while it ran, the words before it.
   const report = ONE_ASK;
   const f = setup(report);
   const both = await run(agents({ findings: [ASK_FINDING], verify: throwing, account: askOne({ outcome: 'not_examined',
@@ -909,16 +911,21 @@ test('D111 second review: the coverage line names no list and says only what the
   assert.deepEqual([both.codePass.coverage, both.codePass.account.reviewCoverage], ['partial', 'partial']);
   const nc = reportModel(f.session, withCodePass(f.report, both)).notChecked;
   const said = (parts) => parts.map((part) => part.text).join('');
-  assert.deepEqual(nc.code.map(said).filter((line) => line === W.coverage.partial), [W.coverage.partial]);
+  assert.deepEqual(nc.code.map(said).filter((line) => [W.coverage.partial, W.coverage.checks].includes(line)),
+    [W.coverage.checks]);
   assert.deepEqual(nc.facts.filter((x) => x.group === 'code').map((x) => said(x.parts)),
     [`${W.footerKinds.failed({ count: 1, parts: [W.parts.verify] })}.`, `${W.unaccounted.ask.person(1)}.`]);
   const terminal = runStateLine({ ...withCodePass(f.report, both), codePass: { ...both.codePass, required: true } });
-  assert.ok(terminal.includes(`code review ${RUN_STATE_WORDS.codePass.partial})`), terminal);
+  assert.ok(terminal.includes(`code review ${RUN_STATE_WORDS.codePass.checks})`), terminal);
+  const moved = markSourceChanged(both.codePass);
+  assert.equal(codeCoverageLines(moved).at(-1), W.coverage.partial);
+  assert.ok(runStateLine({ ...withCodePass(f.report, both), codePass: { ...moved, required: true } })
+    .includes(`code review ${RUN_STATE_WORDS.codePass.partial})`));
   // The review's own work short and every item examined: the coverage line, no count.
   const own = await run(agents({ findings: [ASK_FINDING], verify: throwing, account: askOne({ outcome: 'breaks',
     by: 'F1' }) }), { report });
   assert.deepEqual([own.codePass.coverage, own.codePass.account.reviewCoverage], ['partial', 'partial']);
-  assert.equal(codeCoverageLines(own.codePass).at(-1), W.coverage.partial);
+  assert.equal(codeCoverageLines(own.codePass).at(-1), W.coverage.checks);
   assert.ok(!codeFooterLines({ codePass: own.codePass }).some((line) => Object.values(W.unaccounted.ask)
     .some((by) => line === by(1))));
   // Only the accounting short: no coverage line; the repository changed while the code step ran: the review's own
@@ -933,6 +940,33 @@ test('D111 second review: the coverage line names no list and says only what the
     .includes(`code review ${RUN_STATE_WORDS.codePass.partial})`));
   const examined = await run(agents(), { report });
   assert.equal(markSourceChanged(examined.codePass).account.reviewCoverage, 'partial');
+});
+
+test('D207\'s review of real reports: "covered the whole change, but some of its checks" only where the record shows the whole change seen and a check short; else the words before it', async () => {
+  const report = ONE_ASK;
+  const f = setup(report);
+  const short = (await run(agents({ findings: [ASK_FINDING], verify: throwing }), { report })).codePass;
+  assert.deepEqual([short.coverage, codeShortByChecksOf(short)], ['partial', true]);
+  assert.equal(codeCoverageLines(short).at(-1), W.coverage.checks);
+  const said = (pass) => runStateLine({ ...withCodePass(f.report, { codePass: pass }), codePass: { ...pass, required: true } });
+  assert.ok(said(short).includes(`code review ${RUN_STATE_WORDS.codePass.checks})`), said(short));
+  // Each fact the words rest on, taken away: the words before them.
+  const commands = short.manifest.review.commands;
+  for (const [why, pass] of [
+    ['an earlier record', { ...short, version: { ...short.version, pass: 'sonah.code-pass/13' } }],
+    ['a command the review was not shown', { ...short, manifest: { ...short.manifest, review: { ...short.manifest.review,
+      commands: { ...commands, from: commands.from + 1 } } } }],
+    ['the review\'s repair did not answer', { ...short, footer: [...short.footer, { kind: 'failed', part: 'repair', count: 1 }] }],
+    ['a check outside the evaluated session alone', { ...short, withheld: short.withheld.map((w) => ({ ...w,
+      outsideSession: true })) }],
+  ]) {
+    assert.equal(codeShortByChecksOf(pass), false, why);
+    assert.equal(codeCoverageLines(pass).at(-1), W.coverage.partial, why);
+    assert.ok(said(pass).includes(`code review ${RUN_STATE_WORDS.codePass.partial})`), `${why}: ${said(pass)}`);
+  }
+  // Every check answered: none of it, whatever else is short.
+  const answered = (await run(agents({ findings: [ASK_FINDING] }), { report })).codePass;
+  assert.equal(codeShortByChecksOf(answered), false);
 });
 
 test('D111 second review: the review\'s own coverage is read from the record only when the accounting\'s counts are there — else the record\'s coverage, as before the accounting', () => {

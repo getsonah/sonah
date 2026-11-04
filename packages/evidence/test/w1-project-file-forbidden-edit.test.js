@@ -112,7 +112,8 @@ test('W1 B: the versions, the contract and the brief', () => {
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
   // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
-  assert.equal(STORY_VERSION, 'sonah.session-story/42');
+  // D207 once more (sonah.session-story/43): a file's row says what places it in the change.
+  assert.equal(STORY_VERSION, 'sonah.session-story/43');
   // W4 moved it once more (sonah.session-page/27): an ask no action followed reads not done in this session.
   // D87 moved it once more (sonah.session-page/28, its /27 renumbered at the merge): a review with a code pass lists
   // what the code review found.
@@ -148,7 +149,9 @@ test('W1 B: the versions, the contract and the brief', () => {
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
   // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
+  // D207 once more (sonah.session-page/48): a file's row says what places it in the change. D208 rides it: no colour
+  // behind quoted words.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/48');
   const role = SESSION_NARRATIVE_SCHEMA.properties.forbiddenEdits.items.properties.instruction.properties.role;
   assert.deepEqual(role, { enum: ['instruction', 'project-instructions'] });
   // The brief: step 5 and its contract rule admit the file; step 3 never settles a choice on words its answer goes

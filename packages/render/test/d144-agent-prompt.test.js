@@ -457,10 +457,14 @@ test('D144, D161: the snapshots are pinned by their sha256, so any move of them 
   // browser's own scroll restoring, gives the link taken focus on Back and keeps a tab opened by hand for a reload, and
   // a phone's tiles never split a word.
   const now = (name) => sha(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8'));
-  assert.equal(now('report.md'), '98020386d99330329b289ea098457ccaafdb5a3a8cd21954adf50df78fef31ab');
+  // D207 moved each by the readers' versions alone (was 98020386… and 69e2fb87…; with the versions set back, they give
+  // those back): the synthetic report holds no file placed by a commit or by time alone.
+  assert.equal(now('report.md'), 'a393a8459fb994d5979bf3bdf548d1e475342d1710538bdee1d8a469e3e1bc84');
   // D203 (the owner, 2026-10-31: "Yes, extend the script") moved the page alone (was 1e4cf68c…): its one script, renamed
   // PAGE_SCRIPT, also follows an in-page link to its place and lets a tab's label take keyboard focus (so the policy's
   // hash moved), and the stylesheet holds a place's room under the tab bar (more on a phone), a landed place's ring and
   // every focus ring in the accent's ink (its review: the accent is under 3:1 on the light ground).
-  assert.equal(now('session-page-report.html'), 'fbf22094cc52a475d78d33d9e0c38d869770a29382e082df154721afc4846c51');
+  // The owner, 2026-11-02 ("Do not want the attached text highlighting"; was fbf22094…): a quote and an ask's mark keep
+  // their quotation marks and underline, with no colour behind the words. The stylesheet alone moved.
+  assert.equal(now('session-page-report.html'), 'cd645df99d54c685462ea44cb45d2a2099790003b590de5adb9c7c797e346c37');
 });

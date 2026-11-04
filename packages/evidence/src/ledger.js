@@ -118,8 +118,11 @@ export const RUN_FAILURE_CODES = Object.freeze([
  *  `config_invalid` (owner decision 2026-10-14): Sonah's settings file (cli/src/settings.js) cannot be read, and no
  *  `--code-pass` or `--no-code-pass` says whether the code step runs, so the review stops before it reads anything. */
 /** D124: the closed problems of a folder given with --code-repo (cli code-snapshot.js `codeRepoTop`): not there or not
- *  a folder; in no git working tree. Each is a failure code the review prints by name (CLI_SAFE_ERROR_CODES). */
-export const CODE_REPO_PROBLEMS = Object.freeze(['code_repo_not_found', 'code_repo_not_git']);
+ *  a folder; in no git working tree. D207: and of a base given with --code-base: git cannot find it; it shares no commit
+ *  with HEAD; no git repository holds the session's working folder. Each is a failure code the review prints by name
+ *  (CLI_SAFE_ERROR_CODES). */
+export const CODE_REPO_PROBLEMS = Object.freeze(['code_repo_not_found', 'code_repo_not_git', 'code_base_not_found',
+  'code_base_no_merge_base', 'code_base_not_git', 'code_base_no_code_step']);
 /** D142: the closed problems of a session id given with `sonah review --session` (cli session-id.js
  *  `resolveSessionId`): no recording's file name carries it; more than one does; the one that does is a compressed Codex
  *  rollout (`.zst`), which Sonah does not read. Each is a failure code the review prints by name. */
@@ -3505,8 +3508,18 @@ export const CODE_DIFF_BASES = Object.freeze(['git', 'recorded_edits']);
  *   recorded     the recording names it (a Codex rollout's session_meta `git.commit_hash`)
  *   reflog       the HEAD reflog entry in effect at the recording's first timestamp
  *   commit_date  the newest first-parent commit of HEAD committed at or before that timestamp (no reflog entry reaches it)
+ *   merge_base   D207: where the base the person named with --code-base and HEAD meet
  */
-export const CODE_START_COMMIT_SOURCES = Object.freeze(['recorded', 'reflog', 'commit_date']);
+export const CODE_START_COMMIT_SOURCES = Object.freeze(['recorded', 'reflog', 'commit_date', 'merge_base']);
+/**
+ * D207: how a file is part of the change, by evidence only. Closed.
+ *   write   a recorded write of the session or its helpers could have changed it
+ *   commit  it is in a commit the session made (a commit's first line lies in a recorded action made by then)
+ *   time    it last changed in the recorded window, outside a wait, and was not committed when the agent's recorded work
+ *           ended
+ *   base    it differs from the base the person named with --code-base
+ */
+export const CODE_PLACED_BY = Object.freeze(['write', 'commit', 'time', 'base']);
 /** What a differing path is, as git (or the recorded edits) say: closed. */
 export const CODE_CHANGE_TYPES = Object.freeze(['added', 'modified', 'deleted']);
 /**

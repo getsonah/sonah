@@ -26,7 +26,7 @@ import { readCodeSnapshot } from '../src/code-snapshot.js';
 import { renderSessionPage } from '../../render/session-page.js';
 import { REPORT_PROMPT_WORDS } from '../../render/report-words.js';
 import { CODE_TEXT, CODE_FILES, buildCodeSession, codeJudge, codeSession, sha256 } from './code-pass-fixture.js';
-import { textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix, textBeforeBeta11 }
+import { textBeforeAgentPrompt, textBeforeTruthOnly, textBeforeRenderFix, textBeforeBeta11, requestBeforePlaced }
   from '../../evidence/test/m33-integration-fixture.js';
 import { CODE_BRIEFS_ABSOLUTE, CODE_REVIEW_SYSTEM, CODE_REVIEW_SYSTEM_WHOLE_FILES, CODE_VERIFY_SYSTEM,
   CODE_BATCH_VERIFY_SYSTEM, CODE_ACCOUNT_SYSTEM } from '../../evidence/src/code-pass.js';
@@ -48,8 +48,8 @@ const RELATIVE_BRIEF = new Map([[CODE_BRIEFS_ABSOLUTE.review, CODE_REVIEW_SYSTEM
  *  working directory's absolute path (`<root>/…`) put back relative to it; any other request as it was. */
 const beforeAbsoluteNames = (r) => (!RELATIVE_BRIEF.has(r.system) ? r : { ...r, system: RELATIVE_BRIEF.get(r.system),
   prompt: r.prompt.split(`${r.agent.root}/`).join('') });
-/** The options `readCode` was given before D124, by name. */
-const READ_CODE_OPTIONS = ['harnessHomes', 'maxBytes', 'own', 'recording', 'root'];
+/** The options `readCode` was given before D124, by name; D206 added `activity`, which no request names. */
+const READ_CODE_OPTIONS = ['activity', 'harnessHomes', 'maxBytes', 'own', 'recording', 'root'];
 /** The package's version, which the .md's footer names (the tree before D124 named 0.3.0-beta.5). */
 const PACKAGE_VERSION = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')).version;
 
@@ -189,8 +189,10 @@ async function digestsOf(t, shape) {
   }).join('\n');
   const report = JSON.parse(await readFile(join(state, 'review', 'report.private.json'), 'utf8'));
   const absolute = calls.filter((r) => RELATIVE_BRIEF.has(r.system)).map((r) => r.label ?? null);
+  // D207 rendered back (`requestBeforePlaced`): a row's note on what places its file in the change, and the outside
+  // block's note. No other request byte of these shapes moved.
   const requests = calls.map(beforeAbsoluteNames).map((r) => JSON.stringify([r.label ?? null, r.system ?? null,
-    r.prompt ?? null, r.agent ? [r.agent.root, r.agent.addDirs] : null]));
+    r.prompt == null ? null : requestBeforePlaced(r.prompt), r.agent ? [r.agent.root, r.agent.addDirs] : null]));
   return { read: read.map(([, options]) => Object.keys(options).sort()),
     given: [JSON.stringify(report), ...requests].some((text) => text.includes('"given"')),
     requests: digest(named(requests.join('\n'))),
@@ -294,11 +296,16 @@ test('D124: without --code-repo, the requests and the report of each shape are b
     // lines' tag means where a shape has those lines, and the page's script adds Back and opening at a #place (its
     // review: the entries written before the page moves, the browser's own scroll restoring kept, the link focused on
     // Back, a tab opened by hand kept for a reload), and a phone's tiles never split a word. No request, status, count, quote or anchor moved.
-    ordinary: { requests: '3c472f0b2f284287', md: 'e91ad34d210fafaf', page: '310f1683d05c8093',
+    // D207 is rendered back above (`requestBeforePlaced`, `textBeforePlaced`, which `textBeforeBeta11` applies first): a
+    // file's row and the base line's sentence, the words to a whole branch, and the readers' versions; with them back, no
+    // request and no .md moved. D208 (the owner, 2026-11-02: no colour behind quoted words) moved the page alone, each shape
+    // alike, by five stylesheet rules (was ordinary 310f1683d05c8093, sibling 1d3ead4efc6c9d75, script 2a2082cb2c86f27d; the
+    // page with those five rules back gives them back). No .md, request, status, count, quote or anchor moved.
+    ordinary: { requests: '3c472f0b2f284287', md: 'e91ad34d210fafaf', page: '3f1ab912e7232975',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    sibling: { requests: '1d3c67aaf360cf88', md: 'b64f4fd8a797af09', page: '1d3ead4efc6c9d75',
+    sibling: { requests: '1d3c67aaf360cf88', md: 'b64f4fd8a797af09', page: '563e22762f0a505e',
       labels: ['narrative:w1', 'code-review:agent', 'code-account:1'] },
-    script: { requests: 'afe064acbf3c9007', md: '21b702a6c58bbad6', page: '2a2082cb2c86f27d',
+    script: { requests: 'afe064acbf3c9007', md: '21b702a6c58bbad6', page: '64bef5337a63a2c7',
       labels: ['narrative:w1'] },
   });
 });

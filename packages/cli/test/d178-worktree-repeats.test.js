@@ -21,6 +21,7 @@ import { changeRepeatsOf, codeChangeTally, runCodePass, CODE_PASS_PROFILE } from
 import { reportModel } from '../../render/report-model.js';
 import { REPORT_HEADER_WORDS } from '../../render/report-words.js';
 import { CODE_FILES, CODE_TEXT, buildCodeSession, codeJudge } from './code-pass-fixture.js';
+import { profileBeforeIndex } from '../../evidence/test/m33-integration-fixture.js';
 
 const START = '2030-01-01T00:00:00.000Z';
 const END = '2030-01-02T00:00:00.000Z';
@@ -122,8 +123,9 @@ test('D178: the same file written into two worktrees of one repository is counte
   assert.deepEqual(bytes(seen), bytes(plain.seen));
   assert.deepEqual(seen.map(keyOf(snapshot)), plain.seen.map(keyOf(snapshot)));
   assert.ok(seen.every((r) => !canon(r).includes('"within"')), 'no request names the fact');
-  // The code step's profile is beta.10's before D178 (commit c0cc3583), byte for byte.
-  assert.equal(createHash('sha256').update(canon(CODE_PASS_PROFILE)).digest('hex'),
+  // The code step's profile is beta.10's before D178 (commit c0cc3583), byte for byte, but for D206's index member and
+  // D207's versions and lists (`profileBeforeIndex` renders both back).
+  assert.equal(createHash('sha256').update(canon(profileBeforeIndex({ codePass: CODE_PASS_PROFILE }).codePass)).digest('hex'),
     'a5277583946e9dec230e25c4d7e158a881128294330f4193aea113943e8a5cc6');
   assert.equal(codePass.version, plain.codePass.version);
 });

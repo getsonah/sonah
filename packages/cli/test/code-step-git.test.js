@@ -194,7 +194,9 @@ test('code step git: through the CLI, the review agent\'s request carries git\'s
   const reused = /^Stored session answers: the store answers (\d+) of (\d+) session calls, with no new call\.$/m.exec(dry.out);
   assert.ok(reused && Number(reused[1]) > 0 && reused[1] === reused[2], dry.out);
   assert.match(dry.out, /^Code review: it would first send 1 call \(code-review:agent \d+ KB\)\. Then it would send one check for each finding and one for its questions\. Each 30 items would add one more call, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\.$/m);
-  assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 1 path differs\. 1 more path changed outside this session's recorded writes, so it is outside the evaluated session\. Sonah leaves it out of the change\. If there is room in the code review's input, Sonah gives it to the code review apart from the change\./);
+  // D207's review of real reports: what holds of it, by what the snapshot shows (the window alone here), and the way to a
+  // branch's changes.
+  assert.match(dry.out, /The change runs from the start commit [0-9a-f]{12} of the session \(reflog\)\. 1 path differs\. 1 more path is outside the evaluated session\. No recorded write changed it, and Sonah found no change to it while the agent worked\. Sonah leaves it out of the change\. If there is room in the code review's input, Sonah gives it to the code review apart from the change\. To review all that a branch changed in this folder, run sonah review again with --code-base <branch>\./);
   assert.match(dry.out, /^Code review: the change holds 1 path that a recorded write could have changed or that changed during the session\./m);
   assert.deepEqual(await listing(state), before, 'the dry run wrote nothing, and touched no stored answer');
   // A state with no stored answers: they are counted as asked live, still with no call.

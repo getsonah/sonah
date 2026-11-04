@@ -201,7 +201,7 @@ test('a review follows the setting, the flag overrides it, and the session part 
     for (const name of ['byDefault', 'flagOn', 'settingOn']) assert.ok(codePart(runs[name].calls).length > 0, name);
     for (const name of ['settingOff', 'flagOff']) assert.deepEqual(codePart(runs[name].calls), [], name);
     // The estimate's companion line names where the setting came from.
-    assert.match(runs.byDefault.stdout, /^Code review: on \(the default\)\. [^\n]*It adds one review call, and one check call for each finding/m);
+    assert.match(runs.byDefault.stdout, /^Code review: on \(the default\)\. [^\n]*It adds one review call for each part of the change \(at most 50\) and one check call for each finding/m);
     assert.match(runs.settingOff.stdout, /^Code review: off \(your setting, sonah config\)\. Sonah reviews only the session, and reads or sends no file\. Turn it on with --code-pass, or for every review with sonah config code-pass on\.$/m);
     assert.match(runs.flagOn.stdout, /^Code review: on \(--code-pass\)\. /m);
     assert.match(runs.settingOn.stdout, /^Code review: on \(your setting, sonah config\)\. /m);
@@ -235,7 +235,7 @@ test('a dry run says whether the step runs and roughly what it adds, and sends n
   const on = await review(t, box, { root, argv: ['--dry-run'] });
   assert.equal(on.code, 0);
   assert.deepEqual(on.calls, []);
-  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  assert.match(on.stdout, /^A review should take roughly [^\n]*\nCode review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call for each part of the change \(at most 50\) and one check call for each finding\. /m);
   assert.match(on.stdout, /^Code review: the change holds \d+ paths? that a recorded write could have changed or that changed during the session/m,
     'and what it would read');
   await assert.rejects(stat(box.env.SONAH_HOME), { code: 'ENOENT' }, 'a dry run writes no setting');
@@ -249,7 +249,7 @@ test('a dry run says whether the step runs and roughly what it adds, and sends n
   assert.match(codeStepLine({ on: true, source: 'default' }, { root: true, files: [{ path: 'a.js', diff: 'withheld' }] }),
     /It found no change to review here/);
   assert.match(codeStepLine({ on: true, source: 'config' }, { root: true, files: [{ path: 'a.js', diff: 'recorded' }] }),
-    /It adds one review call, and one check call for each finding/);
+    /It adds one review call for each part of the change \(at most 50\) and one check call for each finding/);
 });
 
 test('sonah doctor reports the setting, and an unreadable one needs attention', async (t) => {

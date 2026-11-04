@@ -36,12 +36,12 @@ import { commitRangeShape, commitSessionLines, sessionToReview, sessionsOfCommit
 import { freezeRecordings, frozenReadValid } from './frozen-read.js';
 import { createSessionReviewStore, dryRunReplay, frozenRunOf, reviewCodePass, reviewSession, sameRunIdentity }
   from './session-review.js';
-import { codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
-import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES } from '../../evidence/src/ledger.js';
-import { CODE_ACCOUNT_LIMITS, CODE_OUTSIDE_STATES, agentsRead, placesOf, foldersOf, unresolvedOf }
-  from '../../evidence/src/code-pass.js';
-import { codeReviewCoverage, codeNoChangeOf, reportNotReviewedOf, CODE_NO_CHANGE_KEYS, CODE_REPORT_WORDS,
-  CODE_REPORT_LIMITS } from '../../evidence/src/code-report.js';
+import { codeBaseCommit, codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
+import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES, CODE_PLACED_BY } from '../../evidence/src/ledger.js';
+import { CODE_ACCOUNT_LIMITS, CODE_OUTSIDE_STATES, CODE_UNIT_LIMITS, agentsRead, placesOf, foldersOf, unresolvedOf,
+  namedBaseOf, windowOnlyOf } from '../../evidence/src/code-pass.js';
+import { codeReviewCoverage, codeNoChangeOf, reportNotReviewedOf, BRANCH_WORDS, CODE_NO_CHANGE_KEYS, CODE_REPORT_WORDS,
+  CODE_REPORT_LIMITS, codeShortByChecksOf, outsideKeyOf, branchWayOutOfBase } from '../../evidence/src/code-report.js';
 import { CODE_STEP_PART, CODE_STEP_ESTIMATE_MINUTES, createReviewBudget, normalizeReviewBudget, estimateLine }
   from './review-budget.js';
 import { resolveCodePass } from './settings.js';
@@ -101,6 +101,9 @@ export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
   '  --code-repo DIR          the code review also reads the change in this git',
   '                           repository (for edits made by a script or after a',
   '                           cd). Give it once for each repository',
+  '  --code-base REF          the code review reads the change from where REF',
+  '                           and this branch meet. It can hold work that is',
+  '                           not this session\'s. It is not used with --code-repo',
   '  --format md|html         md (the default): the report for your pull request',
   '                           in Markdown. html: the HTML page, and the Markdown',
   '                           report beside it (needs --output)',
@@ -146,7 +149,7 @@ export function parseSessionReviewArgs(argv) {
     ['--timeout', 'timeoutMs'], ['--concurrency', 'concurrency'], ['--profile', 'profile'],
     ['--format', 'format'], ['--output', 'output'], ['--state-dir', 'stateDir'],
     ['--max-calls', 'maxCalls'], ['--max-input-bytes', 'maxInputBytes'], ['--stop-at-utilization', 'stopAtUtilization'],
-    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel'], ['--commits', 'commits'],
+    ['--github', 'github'], ['--pr', 'number'], ['--code-model', 'codeModel'], ['--code-base', 'codeBase'], ['--commits', 'commits'],
     ['--effort', 'effort']]);
   const seen = new Set();
   for (let i = 0; i < argv.length; i++) {
@@ -224,6 +227,12 @@ export function parseSessionReviewArgs(argv) {
   // D124: --code-repo points the code review at a repository; a review that turns the step off has no use for it.
   if (options.codeRepos !== undefined && options.codePass === false)
     throw usageError('--code-repo is not used with --no-code-pass');
+  // D207: --code-base names the base of the working folder's change, for the code review; --code-repo adds places by
+  // their own start commits. One review reads one of them.
+  if (options.codeBase !== undefined && options.codePass === false)
+    throw usageError('--code-base is not used with --no-code-pass');
+  if (options.codeBase !== undefined && options.codeRepos !== undefined)
+    throw usageError('--code-base is not used with --code-repo');
   // The PR comment's three flags go together, and only with the page it follows (the saved local page precedes the
   // confirmation). `--github` and `--pr` name the pull request to comment on and nothing else, by the GitHub client's
   // own rule (client.js `targetPath`), so a name it would refuse is refused here, before the review.
@@ -302,6 +311,14 @@ export const REVIEW_FIX_WORDS = Object.freeze({
     + 'nothing. Give the folder of the repository that the session changed.',
   code_repo_not_git: 'A folder that you gave with --code-repo is in no git repository. Sonah read and sent nothing. Give '
     + 'the folder of a git repository that the session changed, or any folder in it.',
+  // D207: a base given with --code-base (code-snapshot.js `codeBaseCommit`), resolved in the session's working folder,
+  // after the recording is read and before anything is sent.
+  code_base_not_found: 'Git cannot find it in that repository. Run git fetch, or check the name.',
+  code_base_no_merge_base: 'It shares no commit with HEAD.',
+  code_base_not_git: 'No git repository holds the session\'s working folder.',
+  // D207's review: --code-base on a review whose code review does not run (the setting, or another backend).
+  code_base_no_code_step: 'This review does not run the code review, so it cannot use --code-base. Add --code-pass, and use '
+    + 'the claude-cli backend.',
   // D182: raised after the recording is read (`loadSession`, its `Recording:` line), since the check needs its working
   // directory: so Sonah read the recording, and sent nothing.
   state_dir_holds_root: 'The --state-dir that you gave is the folder that the session worked in, or holds it. If '
@@ -413,7 +430,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'SAVED_COMMENT_WORDS.lead': [['PR comment for owner/repo#7']],
   'RUN_STATE_WORDS.parts.session': [['complete'], ['did not finish']],
   'RUN_STATE_WORDS.parts.code': [['read every file']], 'RUN_STATE_WORDS.parts.codePass': [['covered the whole change']],
-  'RUN_STATE_WORDS.how': [['initial']],
+  'RUN_STATE_WORDS.how': [['initial']], 'RUN_STATE_WORDS.codePassNamed': [['main', 0], ['origin/main', 2], ['main', 1]],
   'RUN_STATE_WORDS.line': [['complete', ['session review complete', 'code review covered the whole change'], '']],
   ...Object.fromEntries(['off', 'gated'].map((key) => [`CODE_STEP_WORDS.${key}`, [['the default'],
     ['--code-pass']]])),
@@ -421,12 +438,27 @@ export const STYLE_FIXTURES = Object.freeze({
   'CODE_STEP_WORDS.on': [['the default'], ['--code-pass'], ['the default', 1], ['--code-pass', 3], ['the default', 0, false],
     ['the default', 2, false]],
   'CODE_SNAPSHOT_WORDS.head': [[3, 2, 'outside_root ×1'], [1, 1, '']],
-  'CODE_SNAPSHOT_WORDS.changedOutside': [[1], [248], [1, true], [248, true]],
+  'CODE_SNAPSHOT_WORDS.headPlaced': [[9, { written: 2, commit: 4, time: 3 }, 8, 'outside_root ×1'],
+    [1, { written: 0, commit: 1, time: 0 }, 1, ''], [1, { written: 1, commit: 0, time: 0 }, 1, ''],
+    [12, { written: 3, time: 2, base: 7 }, 12, ''], [1, { written: 0, time: 0, base: 1 }, 1, ''],
+    [3, { written: 1, commit: 1, time: 0, base: 1 }, 3, ''], [2, { written: 1, time: 1 }, 2, '']],
+  'CODE_SNAPSHOT_WORDS.changedOutside': [[1, false, 'No recorded write changed it, and Sonah found no commit of the session '
+    + 'that changed it itself. Sonah also found no change to it while the agent worked that was still uncommitted when the agent '
+    + 'stopped.'], [248, false, 'No recorded write changed them, and Sonah found no change to them while the agent worked.'],
+  [1, true, 'No recorded write changed it, and Sonah found no change to it while the agent worked.'],
+  [248, true, 'No recorded write changed them, and Sonah found no commit of the session that changed them itself. Sonah also found '
+    + 'no change to them while the agent worked that was still uncommitted when the agent stopped.']],
   'CODE_SNAPSHOT_WORDS.gitBase': [['0123456789ab', 'merge-base', 2, 1, 1], ['0123456789ab', 'recorded', 1, 0, 0],
     ['0123456789ab', 'reflog', 0, 0, 0, true]],
+  'CODE_SNAPSHOT_WORDS.namedBase': [['0123456789ab', 'main', 2, 1, 1], ['0123456789ab', 'origin/main', 1, 0, 0],
+    ['0123456789ab', 'main', 0, 0, 0, true]],
   'CODE_SNAPSHOT_WORDS.place': [[1, '/work/notes', 1], [16, '/work/notes', 15], [2, '/work/other-repo', 0, '0123456789ab'],
     [1, '/work/other-repo', 1, '0123456789ab']],
-  'CODE_SNAPSHOT_WORDS.placeChangedOutside': [[1], [12], [1, true], [12, true]],
+  'CODE_SNAPSHOT_WORDS.placeChangedOutside': [[1, false, 'No recorded write changed it, and Sonah found no change to it '
+    + 'while the agent worked.'], [12, false, 'No recorded write changed them, and Sonah found no commit of the session that '
+    + 'changed them itself. Sonah also found no change to them while the agent worked that was still uncommitted when the agent '
+    + 'stopped.'], [1, true, 'No recorded write changed it, and Sonah found no change to it while the agent worked.'],
+  [12, true, 'No recorded write changed them, and Sonah found no change to them while the agent worked.']],
   'CODE_SNAPSHOT_WORDS.tailPlaces': [[2, 2], [1, 3], [0, 2], [1, 1, false], [0, 2, false]],
   'CODE_SNAPSHOT_WORDS.folders': [[1, [['/work/notes', 1]]], [5, [['/work/notes', 3], ['/tmp/scratch', 2]]],
     [40, [['/work/notes', 3], ['/tmp/scratch', 2]], 11], [3, [['/work/notes', 2]], 1]],
@@ -439,6 +471,7 @@ export const STYLE_FIXTURES = Object.freeze({
 });
 /** "Working directory" and "settings" are technical nouns, not verbs in progress. */
 export const STYLE_ALLOW = Object.freeze({ ...Object.fromEntries(['CODE_PASS_NO_ROOT', 'CODE_SNAPSHOT_WORDS.gitBase',
+  'CODE_SNAPSHOT_WORDS.namedBase',
   'CODE_SNAPSHOT_WORDS.noBaseHere',
   'CODE_STEP_SOURCE_WORDS.config', 'REPLAY_UNREAD', 'REVIEW_FIX_WORDS.config_invalid', 'WORKING_FOLDER_WORDS.fix']
   .map((key) => [key, ['technical-noun']])) });
@@ -706,8 +739,23 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // D142: a frozen review's recordings are read by the code step as the load read them.
     const frozenEnds = frozen ? { recordingBytes: await frozen.endOf(file),
       ...(startRecording ? { startBytes: await frozen.endOf(startRecording) } : {}) } : {};
+    // D206: every recording that says when the session was working: the session's, and its helpers'.
+    const activity = !codeStep.on || backend !== 'claude-cli' ? [] : await Promise.all([
+      ...(Array.isArray(loaded.recordings) ? loaded.recordings : [file]).map((path) => ({ file: path, helper: false })),
+      ...(Array.isArray(loaded.helpers) ? loaded.helpers : []).map((path) => ({ file: path, helper: true }))]
+      .map(async (at) => ({ ...at, byteEnd: frozen ? await frozen.endOf(at.file) : null })));
+    // D207: the base given with --code-base, resolved in the session's working folder before anything is sent; one that
+    // git cannot find or that shares no commit with HEAD stops the review here.
+    let codeBase = null;
+    if (options.codeBase !== undefined) {
+      if (!codeStep.on || backend !== 'claude-cli') throw failure('code_base_no_code_step');
+      const met = await codeBaseCommit(loaded.cwd ?? null, options.codeBase);
+      if (met.problem) throw failure(met.problem);
+      codeBase = { ref: options.codeBase, commit: met.commit };
+    }
     const snapshot = !codeStep.on ? null : backend === 'claude-cli' ? await readCode(session, { root: loaded.cwd ?? null,
-      maxBytes: bound, recording: file, ...(startRecording ? { startRecording } : {}), ...frozenEnds,
+      maxBytes: bound, recording: file, ...(startRecording ? { startRecording } : {}), ...frozenEnds, activity,
+      ...(codeBase ? { codeBase } : {}),
       own: [...STATE_FOLDER_ENTRIES.map((entry) => join(resolve(state), entry)),
         resolve(sonahHome)],
       harnessHomes: harnessHomePlaces({ env, home }), ...(codeRepos.length ? { codeRepos } : {}) })
@@ -1156,7 +1204,14 @@ export const RUN_STATE_WORDS = Object.freeze({
     // published finding can follow from such an item, so never "did not cover". The items are the ones the code step's
     // line names before the review (`CODE_STEP_WORDS.on`).
     unaccounted: 'covered the whole change, but its item-by-item check did not examine every item in a way that Sonah '
-      + 'could use' }),
+      + 'could use',
+    // D207's review of real reports: short only by a check of a finding or a question, on a record of D207's code step
+    // (evidence code-report.js `codeShortByChecksOf`): `partial` read as if the change were short, of a review that saw
+    // 73 of 73 files whole.
+    checks: 'covered the whole change, but some of its checks gave no result that Sonah could use' }),
+  // D207's review: the base the person named, as the first screen says it, and what differs outside the working directory.
+  codePassNamed: (ref, outside) => `, with the base you named (${ref})${outside ? ` and ${outside} ${outside === 1 ? 'path'
+    : 'paths'} outside the working directory left out` : ''}`,
   // The release review: after a code pass short of complete that the person did not require on the command line.
   codePassApart: ', which does not change the exit code (add --code-pass to make it count)',
   // The line's parts: the session review, a pull request's code review (an earlier route), and the code step.
@@ -1200,12 +1255,15 @@ export function runStateLine(report, mode) {
     // that did not cover the change and its checks (`codeReviewCoverage`).
     const pass = gated ? 'backend' : none !== null ? none : unsent && coverage === 'missing' ? 'tooLarge'
       : coverage === 'missing' && report.codePass?.ran === true ? 'incomplete'
-        : coverage === 'partial' && codeReviewCoverage(report.codePass) === 'complete' ? 'unaccounted' : coverage;
+        : coverage === 'partial' && codeReviewCoverage(report.codePass) === 'complete' ? 'unaccounted'
+          : coverage === 'partial' && codeShortByChecksOf(report.codePass) ? 'checks' : coverage;
     // The release review (owner, 2026-10-14): a code step that ran by default or by the setting, short of complete, is
     // said plainly, with why the review still reads complete (only --code-pass makes its coverage count).
     const apart = report.codePass?.required === false && pass !== 'complete' && !CODE_NO_CHANGE_KEYS.includes(pass);
-    parts.push(RUN_STATE_WORDS.parts.codePass(`${RUN_STATE_WORDS.codePass[pass]}${apart ? RUN_STATE_WORDS.codePassApart
-      : ''}`));
+    const named = none === null && !gated ? namedBaseOf(report.codePass?.base) : null;
+    parts.push(RUN_STATE_WORDS.parts.codePass(`${RUN_STATE_WORDS.codePass[pass]}${named === null ? ''
+      : RUN_STATE_WORDS.codePassNamed(named, Number.isSafeInteger(report.codePass.base.outside) ? report.codePass.base.outside
+        : 0)}${apart ? RUN_STATE_WORDS.codePassApart : ''}`));
   }
   const how = ['initial', 'incremental', 'cached'].includes(mode) ? RUN_STATE_WORDS.how(mode) : '';
   // D118 (a): "complete" names what is missing when no code was reviewed: a session review with no code pass record, or a
@@ -1273,8 +1331,11 @@ export const CODE_STEP_WORDS = Object.freeze({
   on: (why, folders = 0, repository = true) => `Code review: on (${why}). It reviews the change with read-only access to `
     + `the whole ${repository ? 'repository' : 'working directory'} (Read, Grep, Glob).${folders > 0 ? ` It also reads ${
       folders === 1 ? 'one other folder that holds' : `${folders} other folders that hold`} files of the change.` : ''} `
-    + 'It adds one review call, and one check call for each finding. It adds one more call for each '
-    + `${CODE_ACCOUNT_LIMITS.keys} items, at most ${CODE_ACCOUNT_LIMITS.calls}. ${ACCOUNT_ITEMS_WORDS}`,
+    // D207's review of real reports: "one review call" was false of a change split into parts (D149's units): real runs
+    // made 7, 12 and 29. One review call for each part, at most CODE_UNIT_LIMITS.units.
+    + `It adds one review call for each part of the change (at most ${CODE_UNIT_LIMITS.units}) and one check call for each `
+    + `finding. It adds one more call for each ${CODE_ACCOUNT_LIMITS.keys} items, at most ${CODE_ACCOUNT_LIMITS.calls}. `
+    + ACCOUNT_ITEMS_WORDS,
 });
 export function codeStepLine({ on, source } = {}, snapshot = null) {
   const words = CODE_STEP_SOURCE_WORDS[source] ?? CODE_STEP_SOURCE_WORDS.default;
@@ -1304,6 +1365,7 @@ export const CODE_STEP_BACKEND_LINE = 'Code review: did not run. It runs only on
   + 'can read the repository.';
 
 const [GIT_BASE] = CODE_DIFF_BASES;
+const [, BY_COMMIT, BY_TIME, BY_BASE] = CODE_PLACED_BY;
 /** The dry run's line about the code pass: how many paths the change under review holds (D113: the paths the session's
  *  recorded writes could have changed), how many can be read now, the others by their closed state, where the diff
  *  starts, and how many paths differ from it that no recorded write of the session touched (left out of the change).
@@ -1315,6 +1377,23 @@ export const CODE_SNAPSHOT_WORDS = Object.freeze({
   head: (n, readable, others) => `Code review: the change holds ${n} ${n === 1 ? 'path' : 'paths'} that a recorded `
     + `write could have changed or that changed during the session. Sonah can read ${readable} of them now${others
       ? ` (not readable: ${others})` : ''}.`,
+  // D207: with a file no recorded write changed, how each path is part of the change, by its evidence. `commit` undefined
+  // where nothing read it (a base the person named reads no commit in the working folder; git or a recording that could
+  // not say); `base` counted with a base the person named.
+  headPlaced: (n, { written, commit, time, base }, readable, others) => {
+    const be = (k) => `${k} ${k === 1 ? 'is' : 'are'}`;
+    const parts = [`${be(written)} by a recorded write`, ...(commit === undefined ? [] : [`${be(commit)} in a commit the session made`]),
+      `${be(time)} by time alone`, ...(base === undefined ? [] : [`${be(base)} by the base you named`])];
+    // All four: two sentences, as one holds at most 20 words.
+    const said = parts.length === 4 ? `${parts[0]}, and ${parts[1]}. ${parts[2][0].toUpperCase()}${parts[2].slice(1)}, and ${parts[3]}`
+      : `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}`;
+    return `Code review: the change holds ${n} ${n === 1 ? 'path' : 'paths'}. ${said}. Sonah can read ${readable} of them now${
+      others ? ` (not readable: ${others})` : ''}.`;
+  },
+  // D207's review: nothing is part of the change, beside paths outside it, however they changed.
+  headNone: 'Code review: the change holds 0 paths.',
+  // D207's review: the way to a branch's changes, when there is no change to review and it can work.
+  branch: ` ${BRANCH_WORDS}`,
   // D117: with another repository or folder of the change (`here`), the sentence speaks of the working directory's
   // repository alone; each other place has its own (`place`).
   gitBase: (commit, how, differ, unrecorded, outside, here = false) => ` ${here ? 'In the repository of the working '
@@ -1322,15 +1401,23 @@ export const CODE_SNAPSHOT_WORDS = Object.freeze({
     + `session (${how}). ${differ} ${differ === 1 ? 'path differs' : 'paths differ'}${unrecorded ? `, and Sonah found no `
       + `recorded edit that wrote ${unrecorded} of them` : ''}.${outside ? ` Sonah counts ${outside} more outside the `
       + 'working directory.' : ''}`,
+  // D207: `gitBase`, with a base the person named with --code-base.
+  namedBase: (commit, ref, differ, unrecorded, outside, here = false) => ` ${here ? 'In the repository of the working '
+    + 'directory, the change' : 'The change'} runs from ${commit}, where ${ref} and this branch meet. You named this base `
+    + `with --code-base, so it can hold work that is not this session's. ${differ} ${differ === 1 ? 'path differs'
+      : 'paths differ'}${unrecorded ? `, and Sonah found no recorded edit that wrote ${unrecorded} of them` : ''}.${outside
+      ? ` Sonah counts ${outside} more outside the working directory.` : ''}`,
   // D113: the paths that differ from the start commit that no recorded write of the session touched and that did not
   // last change during the session, counted. D113 amended (2026-10-18; the owner: "tag it by outside the evaluated
   // session"): tagged in those fixed words; `given`, whether the code review is given them after the change (the change
   // holds a file to review: `codeStepAsks`). Its review: read before the request is planned, so said only as far as the
   // request's bound leaves them room (their block gives way first, code-pass.js CODE_OUTSIDE_YIELD).
-  changedOutside: (n, given = false) => ` ${n} more ${n === 1 ? 'path' : 'paths'} changed outside this session's `
-    + `recorded writes, so ${n === 1 ? 'it is' : 'they are'} outside the evaluated session. Sonah leaves `
-    + `${n === 1 ? 'it' : 'them'} out of the change.${given ? ' If there is room in the code review\'s input, Sonah gives '
-      + `${n === 1 ? 'it' : 'them'} to the code review apart from the change.` : ''}`,
+  // D207's review of real reports: "changed outside this session's recorded writes" was false beside the paths of the
+  // change that no recorded write changed; `why` is what holds of them all, as the page says it (evidence code-report.js
+  // CODE_REPORT_WORDS.outsideWhy, by `outsideKeyOf`).
+  changedOutside: (n, given = false, why = '') => ` ${n} more ${n === 1 ? 'path is' : 'paths are'} outside the evaluated `
+    + `session. ${why} Sonah leaves ${n === 1 ? 'it' : 'them'} out of the change.${given ? ' If there is room in the code '
+      + `review's input, Sonah gives ${n === 1 ? 'it' : 'them'} to the code review apart from the change.` : ''}`,
   // D100: git can fail to say for any reason: said as what Sonah could not read.
   noBase: ' Sonah could not read from git where the session started, so the change is the edits that the session '
     + 'recorded.',
@@ -1348,9 +1435,10 @@ export const CODE_SNAPSHOT_WORDS = Object.freeze({
   // D117: the paths of another git repository that differ from its base that no recorded write of the session touched
   // and that did not last change during the session, counted (as `changedOutside`, in its words: D113 amended, outside
   // the evaluated session, and `given` as there).
-  placeChangedOutside: (n, given = false) => ` ${n} more ${n === 1 ? 'path' : 'paths'} changed there outside this `
-    + `session's recorded writes, so ${n === 1 ? 'it is' : 'they are'} outside the evaluated session. Sonah leaves `
-    + `${n === 1 ? 'it' : 'them'} out of the change.${given ? ' If there is room in the code review\'s input, Sonah gives '
+  // D207's review of real reports: `why` as `changedOutside`'s, by that place's own snapshot (`outsideKeyOf`).
+  placeChangedOutside: (n, given = false, why = '') => ` ${n} more ${n === 1 ? 'path' : 'paths'} there ${n === 1 ? 'is'
+    : 'are'} outside the evaluated session. ${why} Sonah leaves ${n === 1 ? 'it' : 'them'} out of the change.${given
+      ? ' If there is room in the code review\'s input, Sonah gives '
       + `${n === 1 ? 'it' : 'them'} to the code review apart from the change.` : ''}`,
   // D117 amended (the owner, 2026-10-18: "files outside any repository are listed, not reviewed"): the folders in no git
   // repository that the session wrote to, with how many of its paths lie in each (at most
@@ -1389,9 +1477,23 @@ export function codeSnapshotLine(snapshot) {
   const commit = typeof snapshot.base?.commit === 'string' ? snapshot.base.commit.slice(0, 12) : null;
   const outside = Number.isSafeInteger(snapshot.base?.outside) && snapshot.base.outside > 0 ? snapshot.base.outside : 0;
   const elsewhere = Array.isArray(snapshot.base?.changedOutside) ? snapshot.base.changedOutside.length : 0;
+  const named = namedBaseOf(snapshot.base);
   const base = snapshot.base?.kind === GIT_BASE && commit
-    ? `${W.gitBase(commit, snapshot.base.how, differing.length, unrecorded, outside, here)}${elsewhere
-      ? W.changedOutside(elsewhere, codeStepAsks(snapshot)) : ''}` : here ? W.noBaseHere : W.noBase;
+    ? `${named !== null ? W.namedBase(commit, named, differing.length, unrecorded, outside, here)
+      : W.gitBase(commit, snapshot.base.how, differing.length, unrecorded, outside, here)}${elsewhere
+      ? W.changedOutside(elsewhere, codeStepAsks(snapshot), CODE_REPORT_WORDS.outsideWhy[outsideKeyOf(snapshot.base)](elsewhere))
+      : ''}${branchWayOutOfBase(snapshot.base) && (!codeStepAsks(snapshot) || elsewhere > 0) ? W.branch : ''}`
+    : `${here ? W.noBaseHere : W.noBase}${branchWayOutOfBase(snapshot.base) && !codeStepAsks(snapshot) ? W.branch : ''}`;
+  // D207: the head counts each way in by its evidence, once any file no recorded write changed says its own (`placedBy`).
+  const placedCount = (by) => files.filter((file) => file?.placedBy === by).length;
+  // D207's review: a commit is said where one was read: another place of a named base can hold one, and with the window
+  // alone none was read.
+  const commits = placedCount(BY_COMMIT);
+  const head = !files.length && elsewhere > 0 ? W.headNone : files.some((file) => typeof file?.placedBy === 'string')
+    ? W.headPlaced(files.length, { written: files.filter((file) => file?.recorded === true).length, time: placedCount(BY_TIME),
+      ...(commits > 0 || (named === null && !windowOnlyOf(snapshot.base)) ? { commit: commits } : {}),
+      ...(named !== null ? { base: placedCount(BY_BASE) } : {}) }, readable, others.join(', '))
+    : W.head(files.length, readable, others.join(', '));
   // D124's review: the working folder's own repository given with --code-repo, read by its own rule, as the page says it.
   const givenHere = snapshot.base?.given === true ? ` ${CODE_REPORT_WORDS.givenHere}` : '';
   // D117: the paths of each other place, by where its change runs from, and what changed there outside the session
@@ -1400,7 +1502,8 @@ export function codeSnapshotLine(snapshot) {
     const mine = files.filter((file) => file?.place === p.at);
     return `${W.place(mine.length, p.at, mine.filter((file) => typeof file?.diff === 'string').length,
       p.kind === GIT_BASE && typeof p.commit === 'string' ? p.commit.slice(0, 12) : null)}${Array.isArray(p.changedOutside)
-      && p.changedOutside.length ? W.placeChangedOutside(p.changedOutside.length, codeStepAsks(snapshot)) : ''}`;
+      && p.changedOutside.length ? W.placeChangedOutside(p.changedOutside.length, codeStepAsks(snapshot),
+        CODE_REPORT_WORDS.outsideWhy[outsideKeyOf(snapshot.base, p)](p.changedOutside.length)) : ''}`;
   }).join('');
   // The places the code review reads (code-pass.js `agentsRead`): each one that lies in the working directory, or in a
   // folder its agents read beside it (code-snapshot.js `agentFolders`), as the review's where block says them.
@@ -1416,7 +1519,7 @@ export function codeSnapshotLine(snapshot) {
     ? W.unresolved(unresolvedOf(snapshot.base)) : ''}`;
   // D122 (a review low of D117): the tail follows the places it counts ("those folders"), and the folders that no
   // repository holds and the writes not resolved, which the code review does not read, come after it.
-  return `${W.head(files.length, readable, others.join(', '))}${base}${givenHere}${places}${here
+  return `${head}${base}${givenHere}${places}${here
     ? W.tailPlaces(read, placed.length, repository) : repository ? W.tail : W.tailFolder}${writes}`;
 }
 

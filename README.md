@@ -108,6 +108,7 @@ sonah review --choose 2 --format html --output ~/second.html
 sonah review /path/to/session.jsonl --format html --output ~/review.html
 sonah review --format md --output ~/review.md         # the Markdown report only, no page
 sonah review --no-code-pass --format html --output ~/session.html   # the session only, no files read
+sonah review --code-base main --format html --output ~/branch.html  # the code review reads all the branch changed since main, in this folder
 sonah review --backend codex-cli --model gpt-6.1-sol --format html --output ~/review.html   # your codex login, the session only
 sonah skill add                                       # once; then type /sonah in Claude Code to review that session
 sonah hook add                                        # once per repository: Claude Code's commits name their session

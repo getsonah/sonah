@@ -38,7 +38,7 @@ import { PRELAUNCH_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W1_READER_
   ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
   SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, CITED_WHOLE_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 let n = 0;
@@ -505,8 +505,11 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   assert.equal(BETA11_READER_VERSIONS.page.before, AGENT_PROMPT_READER_VERSIONS.page.after);
   // (And the story once more by D194, 0.3.0-beta.11: one list of decisions, heads led by their quote.)
   assert.equal(BETA11_READER_VERSIONS.story.before, AGENT_PROMPT_READER_VERSIONS.story.after);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [BETA11_READER_VERSIONS.story.after,
-    BETA11_READER_VERSIONS.page.after]);
+  // (And both once more by D207: PLACED_READER_VERSIONS, a file's row says what places it in the change.)
+  assert.deepEqual([PLACED_READER_VERSIONS.story.before, PLACED_READER_VERSIONS.page.before],
+    [BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.page.after]);
+  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [PLACED_READER_VERSIONS.story.after,
+    PLACED_READER_VERSIONS.page.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

@@ -513,11 +513,11 @@ export const UNIT_ROW_WORDS = (labels) => (labels.length === 1 ? labels[0] : `${
  * it; the counted rows as `renderChange`'s; then `---` and the sections of this unit's files (`sectionLines`), in the
  * table of contents' order. `entries`: `{ path, type, labels, why, notes, hunks, shown }`. Pure.
  */
-export function renderUnitChange(entries, { outside = 0, elsewhere = 0 } = {}) {
+export function renderUnitChange(entries, { outside = 0, elsewhere = 0, folds = [], named = false } = {}) {
   const rows = list(entries);
-  const counted = [...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : []),
-    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere)] : [])];
-  const toc = [`## Files (${rows.length})`, ...rows.map((entry) => {
+  const counted = [...list(folds).map(FOLDED_ROW_WORDS), ...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside, named)] : []),
+    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere, named)] : [])];
+  const toc = [`## Files (${rows.length})`, ...rows.filter((entry) => entry.folded !== true).map((entry) => {
     const notes = list(entry.notes).filter((n) => typeof n === 'string' && n).map((n) => ` · ${n}`).join('');
     return list(entry.labels).length ? `- ${entry.path} · ${entry.type} · ${UNIT_ROW_WORDS(entry.labels)}${notes}`
       : `- ${entry.path} · ${entry.type} · ${CHANGE_ROW_WORDS[entry.why] ?? CHANGE_ROW_WORDS[WITHHELD]}${notes}`;
@@ -525,18 +525,26 @@ export function renderUnitChange(entries, { outside = 0, elsewhere = 0 } = {}) {
   const out = rows.filter((entry) => entry.shown).flatMap((entry) => sectionLines(entry));
   return `${toc.join('\n')}${out.join('\n')}`;
 }
+/** D206: what the table of contents says of the files of one folder it does not list one by one (code-pass.js
+ *  `indexFoldsOf`): where they lie, how many they are and how many of them a recorded write changed. Fixed words. */
+export const FOLDED_ROW_WORDS = ({ at, n, written }) => `- ${at} · ${n} ${n === 1 ? 'file' : 'files'} not listed one by `
+  + `one, ${written > 0 ? `${written} written by a recorded edit` : 'none written by a recorded edit'}; the hunks of those this `
+  + 'request shows are below; read the others yourself';
 /** What the table of contents says, by count only, of the paths git shows differing from the start commit outside the
- *  working directory (git's lists stop at it). Fixed words. */
-export const OUTSIDE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
-  + 'commit outside the working directory: not part of the change reviewed';
+ *  working directory (git's lists stop at it). D207: `named`, from the commit the person named with --code-base. Fixed
+ *  words. */
+export const OUTSIDE_ROW_WORDS = (n, named = false) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from `
+  + `${named ? 'the commit the person named' : 'the start commit'} outside the working directory: not part of the change `
+  + 'reviewed';
 /** D113: what the table of contents says, by count only, of the paths in the working directory that differ from the
  *  start commit and that no recorded write of the session touched (cli code-snapshot.js `sessionsOwnChange`): they
  *  changed outside this session's recorded writes and are no part of the change. D113 amended (the owner, 2026-10-18:
  *  "tag it by outside the evaluated session"): they are outside the evaluated session, said in those fixed words, and the
- *  review request may show them in a block of their own after the change (code-pass.js `outsideBlock`). Fixed words. */
-export const ELSEWHERE_ROW_WORDS = (n) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from the start `
-  + 'commit in the working directory, changed outside this session\'s recorded writes: outside the evaluated session, '
-  + 'not part of this change';
+ *  review request may show them in a block of their own after the change (code-pass.js `outsideBlock`). D207: `named`, as
+ *  `OUTSIDE_ROW_WORDS`. Fixed words. */
+export const ELSEWHERE_ROW_WORDS = (n, named = false) => `- and ${n} more ${n === 1 ? 'path differs' : 'paths differ'} from `
+  + `${named ? 'the commit the person named' : 'the start commit'} in the working directory, changed outside this `
+  + 'session\'s recorded writes: outside the evaluated session, not part of this change';
 
 const pad = (n) => (n === null || n === undefined ? '    ' : String(n).padStart(4, ' '));
 /** One hunk row as Pullfrog formats it: `| OLD | NEW | TYPE | code`. */
@@ -566,27 +574,29 @@ export const sectionBytes = (entry) => sectionLines(entry).reduce((sum, line) =>
  * The change block (Pullfrog's format, adapted): `## Files (N)`, one row per differing path — `- path → lines a-b ·
  * type` when the block shows its hunks (a-b: the lines of this block they occupy, counted from the `## Files` line as
  * line 1), else the path with why not — each row's `notes` after it (the dossier keys whose events touch the path, …),
- * never removing or reordering a row; then, by count only, the paths git shows differing outside the working directory
+ * never removing or reordering a row; D206: an entry marked `folded` has no row of its own, and `folds` says those files
+ * by folder (FOLDED_ROW_WORDS); N still counts every path; then, by count only, the paths git shows differing outside the working directory
  * (`outside`, OUTSIDE_ROW_WORDS) and (D113) those in it that changed outside this session's recorded writes
  * (`elsewhere`, ELSEWHERE_ROW_WORDS); then `---` and each shown file's section (`sectionLines`). `entries`: `{ path,
  * type, hunks, shown, notes, why }` in table-of-contents order; `shown` false lists the path by `why` (a CHANGE_ROW_WORDS
  * key). Pure.
  */
-export function renderChange(entries, { outside = 0, elsewhere = 0 } = {}) {
+export function renderChange(entries, { outside = 0, elsewhere = 0, folds = [], named = false } = {}) {
   const rows = list(entries);
-  const counted = [...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside)] : []),
-    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere)] : [])];
+  const listed = rows.filter((entry) => entry.folded !== true);
+  const counted = [...list(folds).map(FOLDED_ROW_WORDS), ...(outside > 0 ? [OUTSIDE_ROW_WORDS(outside, named)] : []),
+    ...(elsewhere > 0 ? [ELSEWHERE_ROW_WORDS(elsewhere, named)] : [])];
   const placed = rows.filter((entry) => entry.shown);
   const out = [];
   const ranges = new Map();
-  let at = 1 + rows.length + counted.length + 2 + 1;
+  let at = 1 + listed.length + counted.length + 2 + 1;
   for (const entry of placed) {
     const lines = sectionLines(entry);
     ranges.set(entry.path, [at, at + lines.length - 1]);
     out.push(...lines);
     at += lines.length;
   }
-  const toc = [`## Files (${rows.length})`, ...rows.map((entry) => {
+  const toc = [`## Files (${rows.length})`, ...listed.map((entry) => {
     const range = ranges.get(entry.path);
     const notes = list(entry.notes).filter((n) => typeof n === 'string' && n).map((n) => ` · ${n}`).join('');
     return range ? `- ${entry.path} → lines ${range[0]}-${range[1]} · ${entry.type}${notes}`

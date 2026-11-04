@@ -688,7 +688,7 @@ test('D97 (23): who said what — the code review\'s and the session review\'s w
   const given = reportModel(session, {}, { title: 'Rate limits' }).header.title;
   assert.deepEqual([given.text, given.quoted, given.cut, given.parts.map((p) => [p.text, p.by, p.quote])],
     ['Rate limits', false, false, [['Rate limits', 'sonah', false]]]);
-  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/10 · commit 1111111$/);
+  assert.match(model.footer.provenance, /^Sonah 0\.9\.0 · sonah\.report-model\/11 · commit 1111111$/);
 });
 
 test('D97 (1): the triage contract\'s fixture (a) gives every item kind but two left listed, and every bound', async () => {

@@ -29,7 +29,7 @@ import { AGENTIC_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, CLEANUP_READER
   GROUNDING_CAUSE_READER_VERSIONS, SEEN_READER_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
   ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COMPACTION_READER_VERSIONS,
-  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS }
+  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS }
   from '../../evidence/test/m33-integration-fixture.js';
 /** D197: the page's marks on a run's outcome and a claim's status read back as plain words, so these checks read them. */
 const asWords = (html) => html.replace(/<span class="out o-[^"]*">([^<]*)<\/span>/g, '$1')
@@ -923,7 +923,10 @@ test('agentic code step: the page and the story moved once, one link after the r
   // and one list of decisions with heads led by their quote.
   assert.deepEqual([BETA11_READER_VERSIONS.page.before, BETA11_READER_VERSIONS.story.before],
     [AGENT_PROMPT_READER_VERSIONS.page.after, AGENT_PROMPT_READER_VERSIONS.story.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [BETA11_READER_VERSIONS.page.after, BETA11_READER_VERSIONS.story.after]);
+  // D207: each once more (PLACED_READER_VERSIONS), one link after those: a file's row says what places it in the change.
+  assert.deepEqual([PLACED_READER_VERSIONS.page.before, PLACED_READER_VERSIONS.story.before],
+    [BETA11_READER_VERSIONS.page.after, BETA11_READER_VERSIONS.story.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION], [PLACED_READER_VERSIONS.page.after, PLACED_READER_VERSIONS.story.after]);
   // D126 and D127 meet D129 in the same move (the beta.6 integration): 0.3.0-beta.6 moves each reader once.
   assert.deepEqual(COST_READER_VERSIONS, COMPACTION_READER_VERSIONS);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it

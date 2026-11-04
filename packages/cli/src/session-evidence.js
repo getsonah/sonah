@@ -202,6 +202,12 @@ const recordingsOfLedger = new WeakMap();
 export function continuedRecordingsOf(ledger) {
   return ledger !== null && typeof ledger === 'object' ? recordingsOfLedger.get(ledger) ?? null : null;
 }
+/** D206: the helper recordings a loaded session linked (each by its path), so the code step can tell when a helper was
+ *  working (code-snapshot.js `sessionWaits`). Kept beside the ledger, never on it. */
+const helpersOfLedger = new WeakMap();
+export function helperRecordingsOf(ledger) {
+  return ledger !== null && typeof ledger === 'object' ? helpersOfLedger.get(ledger) ?? [] : [];
+}
 
 /** Returns bounded, validated evidence (redact). No model or network. A fresh context rechecks growing files. D90 (owner
  *  decision 2026-10-15, privacy is not a design constraint): every recording of the lineage is sliced and kept as
@@ -600,12 +606,17 @@ export async function loadSessionEvidence(files, { cwd, outcomes, recordingRoots
   const cut = follow && files.length === 1 ? await continuedLineage(files[0], frozen ? { frozen } : {}) : null;
   const rootFiles = cut ? cut.files : files;
   if (cut) outcomes = await outcomesFor(rootFiles);
-  for (const file of rootFiles) { const path = await canonical(file); if (path) state.visited.add(path); }
+  const rootPaths = new Set();
+  for (const file of rootFiles) {
+    const path = await canonical(file);
+    if (path) { state.visited.add(path); rootPaths.add(path); }
+  }
   // D142: each root recording's end at the start (null, read whole, for one that was not there then or is shorter
   // now: it cannot be read as it was).
   const ends = frozen ? await Promise.all(rootFiles.map((file) => frozen.endOf(file))) : null;
   const root = await readNode(rootFiles, 0, false, null, false, cut, ends);
   censusOf.set(root, state.census);
   if (cut) recordingsOfLedger.set(root, [...rootFiles]);
+  helpersOfLedger.set(root, [...state.visited].filter((file) => !rootPaths.has(file)));
   return root;
 }

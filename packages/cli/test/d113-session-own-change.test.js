@@ -21,13 +21,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readCodeSnapshot, sessionsOwnChange, snapshotTexts } from '../src/code-snapshot.js';
 import { runSessionReviewCommand, RUN_STATE_WORDS, runStateLine } from '../src/session-review-command.js';
-import { CODE_REPORT_WORDS, CODE_REPORT_LIMITS, codeBaseLine, codeChangedOutsideLine, codeCoverageLines }
+import { CODE_REPORT_WORDS, CODE_REPORT_LIMITS, BRANCH_WORDS, codeBaseLine, codeChangedOutsideLine, codeCoverageLines }
   from '../../evidence/src/code-report.js';
 import { sessionChangeOf } from '../../evidence/src/code-pass.js';
 import { CODE_FILES, CODE_TEXT, buildCodeSession, codeJudge, sha256 } from './code-pass-fixture.js';
 
 const W = CODE_REPORT_WORDS;
 const START = '2030-01-01T00:00:00.000Z';
+/** D207: a recording of work from `start` to `end`, by Claude Code's rows: the human's message, then the agent's words (no
+ *  action). The end test reads the end of the recorded work, so a row that carries a time and no work would end nothing. */
+const workRows = (start, end) => `${[['user', start, 'do it'], ['assistant', end, [{ type: 'text', text: 'done' }]]]
+  .map(([type, timestamp, content]) => JSON.stringify({ type, timestamp, uuid: `${type}-${timestamp}`, cwd: '/repo',
+    version: '2.1.296', ...(type === 'user' ? { origin: { kind: 'human' } } : {}), message: { role: type, content } }))
+  .join('\n')}\n`;
 const BASE_PARSE = CODE_FILES['src/parse.js'].replace('split(",")', 'split(";")');
 const T1 = { turn: 'T1' };
 
@@ -99,7 +105,7 @@ async function reviewIn(t, { root, recording, session, judge = codeJudge() }) {
  *  no write that Sonah can read beside shell commands. */
 const NO_CHANGE_KEYS = Object.freeze(['noWrite', 'noWrittenChange', 'noFile', 'noSeenWrite']);
 /** The story's text with Markdown's escapes taken out. */
-const plainText = (md) => md.replace(/\\(.)/g, '$1');
+const plainText = (md) => md.replace(/\\(.)/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 // ---- the invariant, over generated inputs ---------------------------------------------------------------------------
 
@@ -188,8 +194,14 @@ test('D113: a repository that moved after the session — the change is the sess
     [['docs/later.md', 'lib/old.js'], 1]);
   const text = plainText(run.written);
   assert.ok(text.includes(W.ownBase(run.report.codePass.base.commit)), text);
-  assert.ok(text.includes('2 files that changed outside this session\'s recorded writes are outside the evaluated '
-    + 'session: docs/later.md, lib/old.js.'), text);
+  // D207's review of real reports: what holds of them all, on this record, and the way to a branch's changes. No commit
+  // stood at the end of the recorded work (the repository's history began after it), so the window alone placed them.
+  assert.equal(run.report.codePass.base.timeByWindow, true);
+  assert.ok(text.includes(`2 files are outside the evaluated session: docs/later.md, lib/old.js. ${W.outsideWhy.window(2)} `
+    + BRANCH_WORDS), text);
+  // The files list's lead too.
+  assert.ok(text.includes(`2 files are outside the evaluated session. ${W.outsideWhy.window(2)}`), text);
+  assert.equal(text.includes('changed outside this session\'s recorded writes'), false, text);
   assert.ok(text.includes('1 file changed after the session\'s last recorded edit, so Sonah cannot tell whether all of '
     + 'its lines are the agent\'s: src/parse.js'), text);
   assert.ok(text.includes('The change covers 1 file.'), text);
@@ -208,7 +220,7 @@ test('D113: a file a command of the session changed, with no recorded write, sta
   const dir = await mkdtemp(join(tmpdir(), 'sonah-d113-rec-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const recording = join(dir, 'recording.jsonl');
-  await writeFile(recording, `${JSON.stringify({ timestamp: START })}\n${JSON.stringify({ timestamp: END })}\n`);
+  await writeFile(recording, workRows(START, END));
   await utimes(join(root, 'package.json'), new Date('2030-01-01T00:05:00Z'), new Date('2030-01-01T00:05:00Z'));
   await utimes(join(root, 'docs', 'later.md'), new Date('2030-01-02T00:00:00Z'), new Date('2030-01-02T00:00:00Z'));
   const session = sessionWriting('s-d113-window', [['src/parse.js', 'body']]);
@@ -218,14 +230,16 @@ test('D113: a file a command of the session changed, with no recorded write, sta
   assert.deepEqual([snapshot.base.changedOutside, snapshot.base.written], [['docs/later.md'], 1]);
   const run = await reviewIn(t, { root, recording, session });
   const review = run.calls.find((r) => r.label === 'code-review:agent');
-  assert.match(review.prompt, /^- package\.json → lines \d+-\d+ · modified · not written by a recorded edit$/m);
+  // D207: its recording holds no action, so no commit is the session's, and it was not committed when the recording ended.
+  assert.match(review.prompt, /^- package\.json → lines \d+-\d+ · modified · not written by a recorded edit; placed by time alone: it may not be the session's$/m);
   assert.match(review.prompt, /^- and 1 more path differs from the start commit in the working directory, changed outside this session's recorded writes: outside the evaluated session, not part of this change$/m);
   const text = plainText(run.written);
-  assert.ok(text.includes(W.ownBase(run.report.codePass.base.commit, 1, 2)), text);
-  assert.ok(text.includes('No recorded write of the session changed 1 of its 2 files. That file last changed while the '
-    + 'session ran.'), text);
-  assert.ok(text.includes('1 file that changed outside this session\'s recorded writes is outside the evaluated '
-    + 'session: docs/later.md.'), text);
+  assert.ok(text.includes(W.ownBase(run.report.codePass.base.commit, 1, 2, false, { commit: 0, time: 1 })), text);
+  assert.ok(text.includes('No recorded write of the session changed 1 of its 2 files. Sonah places 1 by time alone: changed '
+    + 'during the recording and not committed when the agent stopped. It may not be the session\'s.'), text);
+  // D207's review of real reports: git and the recording could say, so what holds of it names commits too.
+  assert.ok(text.includes(`1 file is outside the evaluated session: docs/later.md. ${W.outsideWhy.commit(1)} `
+    + BRANCH_WORDS), text);
   assert.ok(text.includes('The change covers 2 files.'), text);
 });
 
@@ -243,8 +257,9 @@ test('D113: a session with no recorded write, in a repository that moved — no 
   assert.match(run.out, /^Code review: on \(--code-pass\)\. It reviews the change with read-only access to the whole repository\. It found no change to review here, so it adds no call\./m);
   const text = plainText(run.written);
   assert.ok(text.includes(W.noWrite), text);
-  assert.ok(text.includes('Sonah did not review 2 files that changed outside this session\'s recorded writes. They '
-    + 'are outside the evaluated session: docs/later.md, src/parse.js.'), text);
+  // D207's review of real reports: with no change of its own, the first screen names the way to a branch's changes.
+  assert.ok(text.includes('Sonah did not review 2 files outside the evaluated session: docs/later.md, src/parse.js. '
+    + W.outsideWhy.window(2)), text);
   assert.ok(!text.includes(W.noFile), 'never that no file differs');
   // D113's review: the terminal's line says what the page says — no write that could have changed a file — never that
   // Sonah found no changed file here (two files differ).
@@ -267,8 +282,8 @@ test('D113: writes only where the code review does not read (the deviation shape
   assert.deepEqual(run.report.codePass.footer, [{ kind: 'outside_root', count: 1, home: 1 }]);
   const text = plainText(run.written);
   assert.ok(text.includes(W.noWrittenChange), text);
-  assert.ok(text.includes('Sonah did not review 1 file that changed outside this session\'s recorded writes. It is '
-    + 'outside the evaluated session: docs/later.md.'), text);
+  assert.ok(text.includes(`Sonah did not review 1 file outside the evaluated session: docs/later.md. ${W.outsideWhy.window(1)}`),
+    text);
   assert.ok(text.includes('1 path that the session wrote to in a coding agent\'s home folder, in Sonah\'s own folders or '
     + 'under a name from your '
     + 'home folder, which Sonah counts but did not review'), text);
@@ -388,10 +403,16 @@ test('D113 review invariant: over generated records, the terminal\'s line says t
 test('D113 review docs/TROUBLESHOOTING.md: the row of the files named apart keeps the page\'s bound and names the session\'s own moves and deletes among them; each why of the terminal\'s empty change is explained', async () => {
   const doc = await readFile(new URL('../../../docs/TROUBLESHOOTING.md', import.meta.url), 'utf8');
   const flat = (text) => text.replace(/\s+/g, ' ');
-  const row = doc.split('\n').find((line) => line.startsWith('  | Sonah did not review files that changed outside'));
+  // D207's review of real reports: the row quotes the page's words now, and names the earlier report's.
+  const row = doc.split('\n').find((line) => line.startsWith('  | Sonah did not review files outside the evaluated session'));
   assert.ok(row, 'the row of the files named apart');
   assert.ok(row.includes(`the first ${CODE_REPORT_LIMITS.changedOutsideNames}, then how many more`), row);
-  assert.ok(row.includes('A file that a command of the session deleted or moved'), row);
+  // D207: a plain mv or cp of one source to one target is a recorded write of the target, so the row names only the moves
+  // that Sonah does not read as a write (slicer d207-write-shapes.test.js), and --code-base brings in a tracked one alone.
+  assert.ok(row.includes('A file that a command of the session deleted, or moved in a way that Sonah does not read as a '
+    + 'write (such as `git mv`, or a `mv` that names only the folder it moves into;'), row);
+  assert.ok(row.includes('give the base with `--code-base`, which brings them in when git tracks them.'), row);
+  assert.equal(row.includes('deleted or moved (a moved file keeps its old time'), false, 'a plain mv is a recorded write');
   assert.ok(!row.includes('their last change did not come while the session ran'), 'false for a moved or deleted file');
   const at = doc.indexOf('**`Sonah\'s review: ... code review had no change to review, because ...`**');
   assert.ok(at >= 0, 'the terminal line\'s entry');

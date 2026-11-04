@@ -2071,9 +2071,9 @@ const RESULTS_AFTER_EDIT = Object.freeze({ now: 'Results of the commands after t
  *  evidence: it is rendered back by the tests that hold one): the fold's results line said as the header's
  *  ("Results: "), every fact said "list them" (or "list it"). And the version it names set back
  *  (`BETA11_READER_VERSIONS`). Text only, as literals. It applies first, before `textBeforeRenderFix` and
- *  `textBeforeTruthOnly`. */
+ *  `textBeforeTruthOnly`. D207: it applies `textBeforePlaced` first. */
 export function textBeforeBeta11(text) {
-  let out = String(text).replaceAll(RESULTS_AFTER_EDIT.now, RESULTS_AFTER_EDIT.before)
+  let out = textBeforePlaced(text).replaceAll(RESULTS_AFTER_EDIT.now, RESULTS_AFTER_EDIT.before)
     .replaceAll(RESULTS_AFTER_EDIT.now.replace("'", '&#39;'), RESULTS_AFTER_EDIT.before)
     .replace(/The claims under What the agent did (?:list \d+ of them|do not list them)\./g,
       'The claims under What the agent did list them.')
@@ -2171,10 +2171,85 @@ export const TRUTH_ONLY_VERSIONS = Object.freeze({
 });
 export const TRUTH_ONLY_REFUTATION = 'not_against_goal';
 export const TRUTH_ONLY_KIND = 'code_finding_open';
-/** A run profile with D152's versions, tokens and members rendered back to D149's; anything else untouched.
- *  `profileBeforeUnits` applies it first. */
-export function profileBeforeTruthOnly(profile) {
+/**
+ * D207: a path differing from the base is part of the change by what shows it is the session's (`CODE_PLACED_BY`), and
+ * the person can name a base (`--code-base`, `merge_base`). The snapshot's and the pass's versions moved once each from
+ * 0.3.0-beta.11's, with the session run profile's code-pass member. Rendered back (`profileBeforePlaced`), D206's.
+ */
+export const PLACED_VERSIONS = Object.freeze({
+  snapshot: Object.freeze({ before: 'sonah.code-snapshot/13', after: 'sonah.code-snapshot/14' }),
+  pass: Object.freeze({ before: 'sonah.code-pass/13', after: 'sonah.code-pass/14' }),
+});
+/** D207: the readers it moved, once each from 0.3.0-beta.11: a file's row says what places it in the change, and the code
+ *  review's base line says how many each way. D208 (the owner, 2026-11-02): the page's stylesheet rides the page's move:
+ *  no colour behind quoted words. */
+export const PLACED_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/10', after: 'sonah.report-model/11' }),
+  page: Object.freeze({ before: 'sonah.session-page/47', after: 'sonah.session-page/48' }),
+  story: Object.freeze({ before: 'sonah.session-story/42', after: 'sonah.session-story/43' }),
+});
+/** D207: the units' order past the guard as D206 said it, a literal: this file imports no module under test. */
+const INDEX_UNIT_ORDER_BEFORE = 'recorded-first-past-the-guard';
+/** D207: a run profile with its code-pass member's versions set back, its `placedBy` list out, `merge_base` out of its
+ *  start commit sources and the units' order as D206 said it, so D206's; anything else untouched. `profileBeforeIndex`
+ *  applies it first. */
+export function profileBeforePlaced(profile) {
   const copy = structuredClone(profile);
+  const member = copy?.codePass;
+  if (member && typeof member === 'object' && member.snapshot === PLACED_VERSIONS.snapshot.after) {
+    member.snapshot = PLACED_VERSIONS.snapshot.before;
+    member.pass = PLACED_VERSIONS.pass.before;
+    delete member.placedBy;
+    member.startCommit = member.startCommit.filter((source) => source !== 'merge_base');
+    member.index.unitOrder = INDEX_UNIT_ORDER_BEFORE;
+  }
+  return copy;
+}
+/** D207: what a request said of a file no recorded write changed, now and before, for a request with no `--code-base`: the
+ *  row notes (`PLACED_ROW_NOTES`) and the outside block's note. As literals: this file imports no module under test. */
+const PLACED_REQUEST_WORDS = Object.freeze([
+  Object.freeze({ now: 'not written by a recorded edit; in a commit the session made', before: 'not written by a recorded edit' }),
+  Object.freeze({ now: 'not written by a recorded edit; placed by time alone: it may not be the session\'s',
+    before: 'not written by a recorded edit' }),
+  Object.freeze({ now: ', no commit the session made changed them itself, and none was left uncommitted by a change while the agent '
+    + 'was working: they are ',
+  before: ', and none of them last changed while the agent was working: they are ' }),
+]);
+/** D207: a request's text as D206 sent it, with no `--code-base`. Text only, as literals. */
+export function requestBeforePlaced(text) {
+  let out = String(text);
+  for (const { now, before } of PLACED_REQUEST_WORDS) out = out.replaceAll(now, before);
+  return out;
+}
+/** D207: a report .md or page as 0.3.0-beta.11's readers wrote it, with no `--code-base`: a file's row with no word on what
+ *  places it in the change, the base lines' sentence on those files as it was, and no way to a whole branch in a reason.
+ *  And the version it names set back (`PLACED_READER_VERSIONS`). D208's stylesheet is not rendered back. Text only, as
+ *  literals. `textBeforeBeta11` applies it first. */
+export function textBeforePlaced(text) {
+  let out = String(text)
+    .replace(/Sonah places 1 by time alone: changed during the recording(?: and not committed when the agent stopped)?\. It may not be the session(?:'|&#39;)s\./g,
+      'That file last changed while the session ran.')
+    .replace(/Sonah places \d+ by time alone: changed during the recording(?: and not committed when the agent stopped)?\. They may not be the session(?:'|&#39;)s\./g,
+      'Each of them last changed while the session ran.')
+    .replace(/\. To review a whole branch, run sonah review again with --code-base (?:&lt;|<)branch(?:&gt;|>)/g, '')
+    .replace(/<span class="sep"> · <\/span><span>placed by time alone: it may not be the session&#39;s<\/span>/g, '')
+    .replace(/placed by time alone: it may not be the session(?:'|&#39;)s, /g, '')
+    .replace(/ · placed by time alone: it may not be the session's/g, '');
+  for (const { before, after } of Object.values(PLACED_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
+/** D206: a run profile without its code-pass member's `index` (the table of contents' own bound and the units' order past
+ *  the guard), so D152's; anything else untouched. `profileBeforeTruthOnly` applies it first. D207: it applies
+ *  `profileBeforePlaced` first. */
+export function profileBeforeIndex(profile) {
+  const copy = profileBeforePlaced(profile);
+  if (copy?.codePass && typeof copy.codePass === 'object') delete copy.codePass.index;
+  return copy;
+}
+/** A run profile with D152's versions, tokens and members rendered back to D149's; anything else untouched.
+ *  `profileBeforeUnits` applies it first. D206: it applies `profileBeforeIndex` first. */
+export function profileBeforeTruthOnly(profile) {
+  const copy = profileBeforeIndex(profile);
   const member = copy?.codePass;
   if (member && typeof member === 'object' && member.verify === TRUTH_ONLY_VERSIONS.verify.after) {
     member.verify = TRUTH_ONLY_VERSIONS.verify.before;

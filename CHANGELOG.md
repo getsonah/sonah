@@ -1,5 +1,103 @@
 # Changelog
 
+## 0.3.0-beta.12 (2026-11-04)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+The code review now places a file in the session's change by what shows it is the session's: a recorded write, a commit
+the session made, or a change while the agent worked that was still uncommitted when it stopped, which the report marks
+as placed by time alone. A file that other hands committed during a long recording, such as one that a pull brought in,
+is now outside the evaluated session, and `sonah review --code-base <branch>` instead reviews all that your branch
+changed in the working folder since it met that branch. In a change of many files, the list of its files no longer takes
+the room of the changes, and a file that the agent moves or copies with `mv` or `cp` is now read as a write. On the
+review page, quoted words and your marked asks no longer have a colour behind them.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay, except in three cases. For a session in which the agent moved or copied a file with
+`mv` or `cp`, or a script of the agent's wrote a file whose name a variable holds, Sonah asks again for the parts of the
+session review that change, and for the code review in whole when that file is part of the session's change or what the
+session review finds changes. For a session whose change holds, or held before this beta, a file that no recorded write
+changed, or so many files that Sonah now names some of them by folder, Sonah asks again for the code review in whole.
+For any other session with files outside the evaluated session, Sonah asks again for the part of the code review that
+shows them. In each case, where the session's change now holds no file, Sonah runs no code review on it. Commands, the
+page and the files under `~/.sonah` can still change between betas.
+
+### The files of the session's change
+
+The code review reviews the change that the recording shows to be the session's. A file that differs from the commit
+where the session started is now part of it by the first of these that holds: a recorded write of the session could have
+changed it; a commit the session made changed it, that is a commit whose message's first line is in a command of the
+session or its helper agents, typed by the time of that commit (a merge only for the files it changed itself, not for
+those it brought in); or its last change came while the agent worked and it was not committed when the agent stopped.
+Before, a file that no recorded write changed was part of the change whenever its last change came between the
+recording's first and last rows, so on a recording of days the code review could review what a pull, a build or another
+session changed while the agent waited, and leave out a file that a commit of the session changed, when the file's last
+change came after the recording. A file in a commit the session made now stays in the change whatever its time.
+
+The time the agent worked now ends at its own or its helper agents' last recorded row of work, not at a later row, such
+as one that the recorder wrote days after the last command. On a Codex recording, the time between the end of the
+agent's turn and your next message does not count as while the agent worked. The report's line on the change counts the
+files in commits the session made and those that Sonah places by time alone, and each file placed by time alone says
+that it may not be the session's; the terminal counts them too. The other files that differ are outside the evaluated
+session, and the line that names them now says what holds of them all, such as "No recorded write changed them, and
+Sonah found no commit of the session that changed them itself." A session whose change held only files that now fall
+outside it has no change of its own: Sonah runs no code review on it, and the reason names `--code-base` where it can be
+used. Otherwise, for a session whose change holds, or held before this beta, a file that no recorded write changed,
+Sonah asks again for the code review in whole; for any other session with files outside the evaluated session, for the
+part of the code review that shows them. The rest of its stored answers replay.
+
+### A whole branch, with `--code-base`
+
+`sonah review --code-base <branch>` reviews all that your branch changed in the working folder since it met that branch,
+whoever wrote it. The change runs from where that branch and yours meet (git's merge base) to the files as they are now,
+and holds every tracked file that differs under the working directory; in a folder of a larger repository, what differs
+elsewhere stays out and is counted. The report's first screen says that the change is since that branch, the report and
+the terminal say that you named this base, so the change can hold work that is not this session's, and the report counts
+how many of its files a recorded write could have changed. Untracked files keep the usual rule, and another repository
+keeps its own start commit. Give the option once; it is not used with `--no-code-pass` or `--code-repo`. A name that git
+cannot find, a branch that shares no commit with yours, a working folder that no git repository holds, or a review that
+does not run the code review stops the review before anything is sent (`code_base_not_found`, `code_base_no_merge_base`,
+`code_base_not_git`, `code_base_no_code_step`). When no code was reviewed because Sonah found no change that the session
+wrote, the reason now names this option where it can be used, and so does the line on the files outside the evaluated
+session. Without `--code-base`, the code review reviews the session's own change, as above.
+
+### A change of many files
+
+The code review is given the list of the change's files beside their changes. In a change of thousands of files, that
+list could take all the room, so that no change was shown and even a short script was left out as too large. The list
+now has a bound of its own: past it, Sonah names some of the files by folder, with their counts, beginning with those
+that no recorded write changed. Every file stays counted, and its change is shown where it fits. In a change of more
+than 50 parts, the parts that hold a file that a recorded write changed are now reviewed first, then those that hold a
+file in a commit the session made, then the rest; before, the parts past 50 were left out in the list's order, so a file
+that the agent wrote could be left out while one that it did not write was reviewed. For a change of so many files that
+Sonah now names some of them by folder, Sonah asks again for the code review in whole.
+
+### Writes that Sonah now reads
+
+A file that the agent's shell command moves or copies with `mv` or `cp`, from one source to one target, is now read as a
+write of that target. A script's `writeFile` or `writeFileSync` whose path is in a variable is now read as a write of
+that path, as `open()` with a variable already was, and such a variable now holds the path assigned to it nearest before
+the call, not the last one anywhere in the command. Before, such a file could look unwritten, so the code review could
+place it outside the evaluated session. For a session that holds such a write, Sonah asks again for the parts of the
+review that the write changes; the rest of its stored answers replay.
+
+### What the code review's lines say
+
+The terminal's `Code review: on` line now says that the code review adds one review call for each part of the change (at
+most 50) and one check call for each finding, where it said one review call. A code review that saw the whole change,
+but some of whose checks gave no result that Sonah could use, now says so in the terminal ("covered the whole change,
+but some of its checks gave no result that Sonah could use") and in the code review's fold on the page and in the .md,
+where the terminal said that it did not cover all of the change and its checks. INSTALL and TROUBLESHOOTING now say that
+a stored answer is reused only for the same input, and that the code review's input holds what the session review found,
+so when that changes, the code review is asked again in whole. Nothing that Sonah sends changes, so your stored answers
+still replay.
+
+### Quotes on the page
+
+On the review page, quoted words and the asks marked in your messages no longer have a colour behind them: a quote keeps
+its coloured quotation marks, and a marked ask its line under it. Nothing that Sonah sends changes, so your stored
+answers still replay.
+
 ## 0.3.0-beta.11 (2026-10-31)
 
 This beta is experimental, and we want to hear how the report reads for you.

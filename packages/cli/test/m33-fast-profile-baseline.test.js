@@ -68,7 +68,8 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   profileBeforeAccount, ONE_ITEM_VERSIONS, profileBeforeOneItem, SESSION_CHANGE_VERSIONS, profileBeforeSessionChange,
   LISTED_ASKS_VERSIONS, profileBeforeListedAsks, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace,
-  UNITS_LEFT_OUT_REASON, UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, profileBeforeTruthOnly }
+  UNITS_LEFT_OUT_REASON, UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, profileBeforeTruthOnly,
+  profileBeforeIndex, profileBeforePlaced }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1497,9 +1498,32 @@ const MOVED_BY_D152 = Object.freeze({
     combined: MOVED_BY_D145.runProfile.combined },
   sessionProfileDigest: '8e4a8ee899ad97cb55ae3f7ea524b2e9833002a765a474248a1f3eba7d30d653',
 });
-/** What the code sends now: D122 (d)'s, in D145's order, under D152's run profiles. */
-const CURRENT = Object.freeze({ ...withMoves(BEFORE_D145, MOVED_BY_D145.cases), runProfile: MOVED_BY_D152.runProfile,
-  sessionProfileDigest: MOVED_BY_D152.sessionProfileDigest });
+/**
+ * D206 (m33-integration-fixture.js `profileBeforeIndex`): the values that moved from D152's — the session-only run profile
+ * alone, by its code-pass member's `index` (the table of contents' own bound, the units' order past the guard). No
+ * case's request moved (no case runs the code step), and the combined profile did not move. Rendered back, D152's.
+ */
+const MOVED_BY_D206 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': 'cc98a2e0b609f31fdb7e2d56cee7ed1ab29fdf48fb645c6199d6aee9ee2f23ff',
+    combined: MOVED_BY_D145.runProfile.combined },
+  sessionProfileDigest: 'cc98a2e0b609f31fdb7e2d56cee7ed1ab29fdf48fb645c6199d6aee9ee2f23ff',
+});
+/**
+ * D207 (m33-integration-fixture.js `profileBeforePlaced`): the values that moved from D206's — the session-only run profile
+ * alone, by its code-pass member's versions (`sonah.code-snapshot/14`, `sonah.code-pass/14`), `placedBy`, `merge_base` and
+ * the units' order past the guard. No case's request moved (no case runs the code step), and the combined profile did not
+ * move. Rendered back, D206's.
+ */
+const MOVED_BY_D207 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '327a0bd21ad65b75a3eac817bcdffe8f5c0664ac571ca648630055affdb095a5',
+    combined: MOVED_BY_D145.runProfile.combined },
+  sessionProfileDigest: '327a0bd21ad65b75a3eac817bcdffe8f5c0664ac571ca648630055affdb095a5',
+});
+/** What the code sends now: D122 (d)'s, in D145's order, under D207's run profiles. */
+const CURRENT = Object.freeze({ ...withMoves(BEFORE_D145, MOVED_BY_D145.cases), runProfile: MOVED_BY_D207.runProfile,
+  sessionProfileDigest: MOVED_BY_D207.sessionProfileDigest });
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
  *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
  *  `modulesBeforeSkim`). */
@@ -2077,8 +2101,13 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // void causes (`receipt_path_ambiguous`); rendered back (`profileBeforeReceiptPlace`), D122 (d)'s.
     // D149 moved it once more by its left-out reasons (`unit_cap`), triage errors (`file_not_in_unit`) and units
     // member; rendered back (`profileBeforeUnits`), D147's. D152 moved it once more by the check judging truth only
-    // (code-verify/5, the tier table /4, the tie member); rendered back (`profileBeforeTruthOnly`), D149's.
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_D152.runProfile[scope], scope);
+    // (code-verify/5, the tier table /4, the tie member); rendered back (`profileBeforeTruthOnly`), D149's. D206 moved it
+    // once more by the `index` member; rendered back (`profileBeforeIndex`), D152's. D207 moved it once more by the
+    // snapshot's and the pass's versions, `placedBy`, `merge_base` and the units' order; rendered back
+    // (`profileBeforePlaced`), D206's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_D207.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforePlaced(reviewRun.runProfile(scope)))), MOVED_BY_D206.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeIndex(reviewRun.runProfile(scope)))), MOVED_BY_D152.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeTruthOnly(reviewRun.runProfile(scope)))),
       MOVED_BY_D149.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeUnits(reviewRun.runProfile(scope)))), MOVED_BY_D147.runProfile[scope],

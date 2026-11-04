@@ -25,7 +25,7 @@ import { codeSnapshotLine, codeStepLine, CODE_SNAPSHOT_WORDS, CODE_STEP_WORDS, r
   from '../src/session-review-command.js';
 import { reviewCodePass } from '../src/session-review.js';
 import { CODE_REPORT_WORDS, codeBaseLine, codeCoverageLines, codeFooterLines, codeNoChangeOf, codePlaceLines,
-  codeWritesLines } from '../../evidence/src/code-report.js';
+  codeWritesLines, outsideKeyOf } from '../../evidence/src/code-report.js';
 import { agentsRead, changeBlock, codeChangeTally, placeRanks, placesHolding, runCodePass }
   from '../../evidence/src/code-pass.js';
 import { REPORT_HEADER_WORDS } from '../../render/report-words.js';
@@ -37,6 +37,13 @@ import { CODE_FILES, CODE_TEXT, SYNTHETIC_RUN, buildCodeSession, codeJudge, hold
 const W = CODE_REPORT_WORDS;
 const START = '2030-01-01T00:00:00.000Z';
 const END = '2030-01-02T00:00:00.000Z';
+/** D207: a recording of work from `start` to `end`, by Claude Code's rows: the human's message, then the agent's words (no
+ *  action). The window and the end test end with the recorded work, so a row that carries a time and no work would end
+ *  nothing. */
+const workRows = (start, end) => `${[['user', start, 'do it'], ['assistant', end, [{ type: 'text', text: 'done' }]]]
+  .map(([type, timestamp, content]) => JSON.stringify({ type, timestamp, uuid: `${type}-${timestamp}`, cwd: '/repo',
+    version: '2.1.296', ...(type === 'user' ? { origin: { kind: 'human' } } : {}), message: { role: type, content } }))
+  .join('\n')}\n`;
 const BASE_PARSE = CODE_FILES['src/parse.js'].replace('split(",")', 'split(";")');
 const T1 = { turn: 'T1' };
 const GIT_ENV = (date) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))),
@@ -71,7 +78,7 @@ async function committed(root, files) {
 async function recordingAt(t) {
   const dir = await folder(t, 'rec');
   const file = join(dir, 'recording.jsonl');
-  await writeFile(file, `${JSON.stringify({ timestamp: START })}\n${JSON.stringify({ timestamp: END })}\n`);
+  await writeFile(file, workRows(START, END));
   return file;
 }
 /** A session that writes each of `writes` (`[path, text]`, in order), then claims and ends. */
@@ -225,8 +232,11 @@ test('D117: the session\'s change in a sibling repository is reviewed after the 
   const aBase = git(A, ['rev-parse', 'HEAD']).trim();
   assert.ok(text.includes(W.ownBase(aBase, 0, 1, true)), text);
   assert.ok(W.ownBase(aBase, 0, 1, true).startsWith('In the working directory\'s repository, the change runs from'));
+  // D207's review of real reports: what holds of the sibling's files outside, by its own record.
+  const placeB = codePass.base.places.find((p) => p.at === B);
   for (const line of [W.placeBase(B, bBase, 2),
-    `${W.placeOutsideFiles(B, [join(B, 'docs', 'draft.md'), join(B, 'docs', 'other.md')])}.`, W.filesWhere(1, null),
+    W.placeOutsideFiles(B, [join(B, 'docs', 'draft.md'), join(B, 'docs', 'other.md')], 0,
+      W.outsideWhy[outsideKeyOf(codePass.base, placeB)](2)), W.filesWhere(1, null),
     W.filesWhere(2, B), `${W.folders(1, [[C, 1]])}.`, REPORT_HEADER_WORDS.change(3, null, 2)])
     assert.ok(text.includes(line), `${line}\n${text}`);
   assert.ok(text.includes('a change of 3 files in 2 repositories or folders'), text);
@@ -255,15 +265,17 @@ test('D117: the dry run names each place of the change and where its change runs
       harnessHomes: [join(home, '.claude')] });
     const bBase = git(B, ['rev-parse', 'HEAD']).trim().slice(0, 12);
     const line = codeSnapshotLine(snapshot);
+    // D207's review of real reports: what holds of the sibling's paths outside, by its own snapshot.
+    const why = W.outsideWhy[outsideKeyOf(snapshot.base, snapshot.base.places.find((p) => p.at === B))](2);
     assert.ok(line.includes(`${CODE_SNAPSHOT_WORDS.place(2, B, 2, bBase)}${CODE_SNAPSHOT_WORDS.placeChangedOutside(2,
-      true)}`), line);
+      true, why)}`), line);
     assert.ok(line.includes(CODE_SNAPSHOT_WORDS.folders(1, [[C, 1]])), line);
     assert.ok(!line.includes(` in ${C},`), line);
     assert.ok(line.includes(CODE_SNAPSHOT_WORDS.gitBase(git(A, ['rev-parse', 'HEAD']).trim().slice(0, 12), 'reflog', 1, 0,
       0, true)), line);
     // D122 (a review low of D117): the tail follows the places it counts ("those folders"); the folders that no
     // repository holds, which the code review does not read, come after it.
-    assert.ok(line.endsWith(`${CODE_SNAPSHOT_WORDS.placeChangedOutside(2, true)}${CODE_SNAPSHOT_WORDS.tailPlaces(1, 1)}${
+    assert.ok(line.endsWith(`${CODE_SNAPSHOT_WORDS.placeChangedOutside(2, true, why)}${CODE_SNAPSHOT_WORDS.tailPlaces(1, 1)}${
       CODE_SNAPSHOT_WORDS.folders(1, [[C, 1]])}`), line);
     const alone = await readCodeSnapshot(sessionWriting('s-alone', [['src/parse.js', CODE_FILES['src/parse.js']]]),
       { root: A, maxBytes: 1_000_000, recording });

@@ -32,7 +32,13 @@
 // 2026-10-20; the --code-repo option): each git repository the person gives (`codeRepos`, `codeRepoTop`) is a place by
 // the same rules, as if the session had written there, whatever its writes there (`given` on its record); the working
 // folder's own repository stays read by its own rule, its base marked `given` (D124's review); without one, nothing here
-// moves.
+// moves. D207: a path no recorded write could have changed is part of the change by evidence: it is in a commit the session
+// made (`authoredPaths`; `placedBy` commit), or its last change lies in the window, outside a wait, and it was not committed
+// when the session's recorded work ended (`pathsAtEnd` at `recordedWorkEnd`; `placedBy` time). Any other is named apart,
+// whatever its time (`placedByOf`, in every place). When git or a recording cannot say, D113's window and D206's waits
+// decide, marked time. With a base the person named (--code-base; `codeBaseCommit`), the working folder's change runs from
+// where it and HEAD meet, and every tracked path that differs under the working directory is part of it (`placedBy` base),
+// with no authorship read; an untracked file keeps the rules above, and other places keep their own start commit.
 // The start commit is the one the recording
 // names, else the HEAD reflog entry in effect at the recording's first timestamp, else the newest first-parent commit of
 // HEAD made by then; with none (no repository, no start commit), the diff is the recorded edits (code-pass.js). Git's
@@ -81,15 +87,18 @@ import { createInterface } from 'node:readline';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { strictJson } from '../../slicer/src/strict-json.js';
 import { recordingStream } from '../../slicer/src/recording-stream.js';
+import { readSession } from '../../slicer/src/records.js';
+import { LABELS } from '../../slicer/src/labels.js';
 import { codeSnapshotPlan, freezeCodeSnapshot, mayMissEdits, placeRanks, placesHolding } from '../../evidence/src/code-pass.js';
 import { displayPath, HOME_SPELLED, underRoot, unresolvedShellPaths } from '../../evidence/src/code-context.js';
-import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES, CODE_CHANGE_TYPES, CODE_REPO_PROBLEMS }
+import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES, CODE_CHANGE_TYPES, CODE_REPO_PROBLEMS, CODE_PLACED_BY }
   from '../../evidence/src/ledger.js';
 
 const [GIT_BASE, RECORDED_EDITS_BASE] = CODE_DIFF_BASES;
-const [FROM_RECORDING, FROM_REFLOG, FROM_COMMIT_DATE] = CODE_START_COMMIT_SOURCES;
+const [FROM_RECORDING, FROM_REFLOG, FROM_COMMIT_DATE, FROM_MERGE_BASE] = CODE_START_COMMIT_SOURCES;
 const [ADDED, MODIFIED, DELETED_TYPE] = CODE_CHANGE_TYPES;
 const [, , OVERSIZE, , DELETED, OUTSIDE_ROOT, UNREADABLE] = CODE_FILE_STATES;
+const [, BY_COMMIT, BY_TIME, BY_BASE] = CODE_PLACED_BY;
 
 /** How a file is opened: read only; never through a link at the last part of its real path (one there now was put
  *  there after the path was resolved); never waiting on a FIFO or a device, whose type is refused once it is open. */
@@ -405,6 +414,23 @@ export async function codeRepoTop(dir, { git = runGit } = {}) {
 }
 
 /**
+ * D207: the base the person named with --code-base: the commit where `ref` and HEAD meet, as git says it from the session's
+ * working folder (`dir`). `ref` is read only as a revision (`--end-of-options`), never as an option. `{ commit }`, or `{
+ * problem }` (ledger.js CODE_REPO_PROBLEMS, failure codes of the review): no git repository holds `dir`; git cannot find
+ * `ref`; it shares no commit with HEAD. Reads only; never throws.
+ */
+export async function codeBaseCommit(dir, ref, { git = runGit } = {}) {
+  const [, , NOT_FOUND, NO_MERGE_BASE, NOT_GIT] = CODE_REPO_PROBLEMS;
+  const top = typeof dir === 'string' && isAbsolute(dir) ? await gitTop({ root: dir, git }) : null;
+  if (!top) return { problem: NOT_GIT };
+  const commitOf = (result) => (out(result) ?? '').trim();
+  const named = commitOf(await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { cwd: dir }));
+  if (!HASH.test(named)) return { problem: NOT_FOUND };
+  const met = commitOf(await git(['merge-base', named, 'HEAD'], { cwd: dir }));
+  return HASH.test(met) ? { commit: met } : { problem: NO_MERGE_BASE };
+}
+
+/**
  * The git base of a review under `root`: the repository's top folder, the start commit (`startCommit`) and every path
  * under the working directory that differs from it now — git's own list of tracked paths, then the untracked ones (not
  * ignored) a recorded edit names (`recorded`, as the code step names them) or whose modification time is at or after
@@ -416,14 +442,15 @@ export async function codeRepoTop(dir, { git = runGit } = {}) {
  * list against the start commit names tracked paths only) and every path a recorded edit wrote stays part of it
  * wherever it lies: Sonah never adds a file to git and never writes one the session wrote, so such a path is the
  * project's, never Sonah's (the review of the code step: a project folder named like a state folder's entry, left out
- * by its name, had its changes dropped unseen). Null when there is none.
+ * by its name, had its changes dropped unseen). D207: `codeBase`, the base the person named (`{ commit }`, `codeBaseCommit`),
+ * in place of the start commit. Null when there is none.
  */
-export async function readGitBase({ root, start, recorded = new Set(), git = runGit, own = [] }) {
+export async function readGitBase({ root, start, recorded = new Set(), git = runGit, own = [], codeBase = null }) {
   const realTop = await gitTop({ root, git });
   if (!realTop) return null;
   const realRoot = await realpath(root).catch(() => null);
   if (!realRoot) return null;
-  const found = await startCommit({ top: realTop, start, git });
+  const found = codeBase ? { commit: codeBase.commit, how: FROM_MERGE_BASE } : await startCommit({ top: realTop, start, git });
   if (!found) return null;
   const below = relative(realTop, realRoot).split(sep).join('/');
   // The working directory as git's pathspec, from the top folder: every path under it, read literally.
@@ -504,16 +531,16 @@ async function readPlaceBase({ top, start, written, git }) {
  * D117: D113's window in another git repository that is a place of the change (`isPlaceOfChange`: D117 amended, only one
  * that holds a file of the change by a recorded write), from its base `commit`: every other path that differs — git's
  * own list of tracked paths, and the untracked ones not ignored whose last change is at or after the session's start
- * (`start.at`) — is D113's rule, as in the working directory: one whose last change lies inside the session's recorded
- * window (`window`, `sessionWindow`) stays a part of the change, with no recorded write (`kept`, each named as the code
+ * (`start.at`) — is placed as in the working directory (D207, `placedByOf`, with `evidence`, `changeEvidence`): one placed
+ * stays a part of the change, with no recorded write (`kept`, each with its `placedBy` and named as the code
  * step names it: `displayPath` under `realRoot`); every other one changed outside this session's recorded writes and is
  * named apart (`changedOutside`, absolute, in code-unit order; `outsideChanges`, each with git's change of it, which
  * D113 amended reads apart: outside the evaluated session). A path in a place Sonah writes or in a coding agent's home
  * (`own`, `homes`: absolute) is neither: those stay out of every place but the working folder's repository. `{ kept,
  * changedOutside, outsideChanges }`, or null when git cannot say.
  */
-async function readPlaceWindow({ top, commit, start, written, window = null, realRoot = null, own = [], homes = [],
-  git }) {
+async function readPlaceWindow({ top, commit, start, written, window = null, evidence = null, realRoot = null, own = [],
+  homes = [], git }) {
   const listed = out(await git(['diff', '--name-status', '--no-renames', '-z', commit, '--'], { cwd: top }));
   const untracked = out(await git(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: top }));
   if (listed === null || untracked === null) return null;
@@ -531,8 +558,8 @@ async function readPlaceWindow({ top, commit, start, written, window = null, rea
   }
   const kept = [], away = new Map();
   for (const { change, mtimeMs } of others) {
-    const during = window !== null && Number.isFinite(mtimeMs) && mtimeMs >= window.start && mtimeMs <= window.end;
-    if (during) kept.push({ ...change, path: displayPath(join(top, change.gitPath), realRoot) });
+    const placedBy = placedByOf({ ...change, mtimeMs }, evidence, window);
+    if (placedBy !== null) kept.push({ ...change, placedBy, path: displayPath(join(top, change.gitPath), realRoot) });
     else if (!away.has(join(top, change.gitPath))) away.set(join(top, change.gitPath), { ...change,
       path: join(top, change.gitPath) });
   }
@@ -872,18 +899,18 @@ export function createRepositoryReader({ root, top = null, commit = null, maxByt
  * it, `{ path, recordedPath, mtimeMs }`), one is part of it when a recorded write of the session could have changed it
  * (`recordedPlan`, code-pass.js `codeSnapshotPlan`: a write, edit or delete of the session or its helpers whose effect
  * is landed or unknown) — by its name, or, when the record spelled it another way (through a link, or by another
- * spelling of the working directory), by its real place, the write's entry then named as git names it — or when its
- * file's last change lies inside the session's recorded window (`window`, `{ start, end }` in milliseconds: the
- * recording's first and last timestamps; `mtimeMs`, the file system's modification time of the path): a command of the
- * session can change a file with no write that the recording shows, so such a path stays a part of the change, with no
- * recorded write (`recorded: false`). Every other one changed outside this session's recorded writes and outside its
- * window — a later commit, a person, a tree already dirty at the start — or cannot be placed in time (a path not there
- * any more, no window): it is no part of the change and is named apart (`changedOutside`, in code-unit order; D113
- * amended: read apart by `readCodeSnapshot`, outside the evaluated session). Structure only: names, real places and
+ * spelling of the working directory), by its real place, the write's entry then named as git names it — or when D207's
+ * `placedByOf` places it (`evidence`, `changeEvidence`; `window`, `{ start, end }` in milliseconds: the recording's first
+ * timestamp and the end of its recorded work (`sessionWindow`), and D206's `window.waits`, `sessionWaits`; `mtimeMs`,
+ * the file system's modification time of the path): a command of the session can change a file with no write that the
+ * recording shows, so such a path stays a part of the change, with no recorded write (`recorded: false`) and its `placedBy`. Every other one changed outside this
+ * session's recorded writes — a commit of other hands, a person, a tree already dirty at the start — or cannot be placed
+ * (a path not there any more, no window): it is no part of the change and is named apart (`changedOutside`, in code-unit
+ * order; D113 amended: read apart by `readCodeSnapshot`, outside the evaluated session). Structure only: names, real places and
  * times, never a file's words. `{ plan, changedOutside }`, the plan's recorded entries first, then the paths kept by the
  * window, in code-unit order.
  */
-export async function sessionsOwnChange(recordedPlan, changes, { dir, window = null }) {
+export async function sessionsOwnChange(recordedPlan, changes, { dir, window = null, evidence = null }) {
   const plan = [...recordedPlan];
   const changePaths = new Set(changes.map((c) => c.path));
   const named = new Set(plan.map((e) => e.path));
@@ -896,26 +923,263 @@ export async function sessionsOwnChange(recordedPlan, changes, { dir, window = n
     const real = await realPlace(resolve(dir, entry.path));
     if (real !== null && !byPlace.has(real)) byPlace.set(real, at);
   }
-  const during = (mtimeMs) => window !== null && Number.isFinite(mtimeMs) && mtimeMs >= window.start
-    && mtimeMs <= window.end;
   const changedOutside = [], kept = [];
   for (const change of unmatched) {
     const real = byPlace.size ? await realPlace(resolve(dir, change.path)) : null;
     const at = real === null ? undefined : byPlace.get(real);
     if (at !== undefined) { byPlace.delete(real); plan[at] = { ...plan[at], path: change.path }; continue; }
-    if (during(change.mtimeMs)) kept.push({ path: change.path, recordedPath: change.recordedPath ?? change.path,
-      changed: true, recorded: false, outside: false, last: null, edits: [] });
+    const placedBy = placedByOf(change, evidence, window);
+    if (placedBy !== null) kept.push({ path: change.path, recordedPath: change.recordedPath ?? change.path,
+      changed: true, recorded: false, placedBy, outside: false, last: null, edits: [] });
     else changedOutside.push(change.path);
   }
   return { plan: [...plan, ...kept], changedOutside: changedOutside.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) };
 }
 
-/** D113: the session's recorded window, `{ start, end }` in milliseconds, from the recording's first and last timestamps
- *  (`recordingStart`, `recordingEnd`); null when either is missing or the end is before the start. */
+/** D113: the session's recorded window, `{ start, end }` in milliseconds, from the recording's first timestamp
+ *  (`recordingStart`) to the end of its recorded work (D207: `recordedWorkEnd`, else its last timestamp, `recordingEnd`);
+ *  null when either is missing or the end is before the start. */
 export const sessionWindow = (startAt, endAt) => {
   const [start, end] = [Date.parse(startAt ?? ''), Date.parse(endAt ?? '')];
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? { start, end } : null;
 };
+
+/** D206: a row the recorder itself types as the end of an agent's turn: Codex's `task_complete`. Claude Code writes none
+ *  on any of 52 long recordings measured, so its recordings name no wait. */
+const endsTurn = (row) => row?.type === 'event_msg' && row?.payload?.type === 'task_complete';
+/**
+ * D206: the waits of a session, in milliseconds, sorted: each time from a row the recorder types as the end of the agent's
+ * turn (`endsTurn`) to the next human message or recorded work, or, in the last of the session's own recordings, to its
+ * end. A row of the agent's own words never starts a wait: agents speak while their commands run. A wait that holds
+ * recorded work of any of the recordings is none, and a time a helper was active (`helper: true`, its recording's first
+ * to last timestamp) is taken out of it. `recordings`: `{ file, byteEnd?, helper? }`. A wait ends at its whole second, as
+ * a file system may keep whole seconds. Never a row's words. Empty, so nothing is excluded, when any of the recordings
+ * cannot be read or none types a turn's end. Reads the disk; writes nothing.
+ */
+export async function sessionWaits(recordings) {
+  const list = Array.isArray(recordings) ? recordings : [];
+  const lastOwn = list.reduce((last, r, at) => (r?.helper ? last : at), -1);
+  const waits = [], active = [], work = [];
+  for (const [index, { file, byteEnd = null, helper = false }] of list.entries()) {
+    if (typeof file !== 'string' || !file) return [];
+    try {
+      const { times, ends } = await rowTimes(file, byteEnd);
+      const all = [...times.values()];
+      if (helper) {
+        if (all.length) active.push({ start: all.reduce((a, b) => Math.min(a, b)), end: all.reduce((a, b) => Math.max(a, b)) });
+        continue;
+      }
+      const { records } = await readSession(file, { byteEnd });
+      const stops = new Map();
+      for (const rec of records) {
+        const parts = Array.isArray(rec.parts) ? rec.parts.map((p) => p?.label) : [];
+        const works = rec.label === 'action' || rec.label === 'observation' || parts.includes('action')
+          || parts.includes('observation');
+        if (works && times.has(rec.line)) work.push(times.get(rec.line));
+        if (works || rec.label === 'human') stops.set(rec.line, true);
+      }
+      let open = null;
+      const lines = [...new Set([...ends, ...stops.keys()])].filter((line) => times.has(line)).sort((a, b) => a - b);
+      for (const line of lines) {
+        const at = times.get(line);
+        if (stops.has(line)) {
+          if (open !== null) waits.push({ start: open, end: Math.floor(at / 1000) * 1000 });
+          open = null;
+        } else open ??= at;
+      }
+      if (open !== null && index === lastOwn && all.length)
+        waits.push({ start: open, end: Math.floor(all.reduce((a, b) => Math.max(a, b)) / 1000) * 1000 });
+    } catch { return []; }
+  }
+  const idle = waits.filter((w) => w.end > w.start && !work.some((at) => at > w.start && at < w.end));
+  return withoutActive(idle, active);
+}
+/** D206: `waits` with each `active` span taken out, sorted. */
+function withoutActive(waits, active) {
+  let left = waits;
+  for (const { start, end } of active) {
+    left = left.flatMap((w) => (end <= w.start || start >= w.end ? [w]
+      : [...(start > w.start ? [{ start: w.start, end: start }] : []), ...(end < w.end ? [{ start: end, end: w.end }] : [])]));
+  }
+  return [...left].sort((a, b) => a.start - b.start || a.end - b.end);
+}
+/** D206: each line's recorded time in a recording, by its line number (the slicer's `line`), read as the review read it;
+ *  and the lines that type a turn's end. */
+async function rowTimes(file, byteEnd) {
+  const times = new Map(), ends = [];
+  const input = recordingStream(file, byteEnd);
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  try {
+    let at = 0;
+    for await (const line of lines) {
+      at++;
+      if (!line.trim()) continue;
+      const parsed = strictJson(line);
+      const when = parsed.strict ? Date.parse(parsed.value?.timestamp ?? '') : NaN;
+      if (!Number.isFinite(when)) continue;
+      times.set(at, when);
+      if (endsTurn(parsed.value)) ends.push(at);
+    }
+  } finally { lines.close(); input.destroy(); }
+  return { times, ends };
+}
+/** D113, D206: whether a path's last change (`mtimeMs`) lies inside the session's recorded window and not in a wait
+ *  (`window.waits`, `sessionWaits`): on a recording that spans days, a file that changed after the agent's turn ended and
+ *  before the next message is not the session's. */
+function changedDuring(window, mtimeMs) {
+  if (window === null || !Number.isFinite(mtimeMs) || mtimeMs < window.start || mtimeMs > window.end) return false;
+  return !(Array.isArray(window.waits) ? window.waits : []).some((w) => mtimeMs >= w.start && mtimeMs < w.end);
+}
+
+/** D207: every string a recorded action's input holds, at any depth, in order. */
+function inputStrings(value, into = []) {
+  if (typeof value === 'string') into.push(value);
+  else if (Array.isArray(value)) for (const item of value) inputStrings(item, into);
+  else if (value && typeof value === 'object') for (const item of Object.values(value)) inputStrings(item, into);
+  return into;
+}
+/**
+ * D207: what the session's recorded actions were given, each `{ at, text }` (`at` its row's time in milliseconds, `text`
+ * the strings of its input), from every recording of `activity` (`{ file, byteEnd? }`, the session's and its helpers'), as
+ * the slicer read and labelled them: an action's own input alone, never a result or a thought. A row with no time gives
+ * nothing. Null when a recording cannot be read. Reads the disk; writes nothing; never decides by a row's words.
+ */
+export async function actionsOf(activity) {
+  return (await recordedWorkOf(activity))?.actions ?? null;
+}
+/** D207 (the end test's end): the slicer's labels of the agent's own recorded work: its words, an action, an observation.
+ *  A row the slicer labels harness (settings applied, a token count, a turn's end) or a row it keeps as no record is none
+ *  of it, whatever its time. D207's second review: nor is the human's: a message that no row of the agent's follows asked
+ *  for work that was not done, and as the end it would move the end test and the window past a commit made by hand after
+ *  the agent stopped. A human row ends the work only where the agent has no row with a time (`HUMAN_WORK`). */
+const WORK_LABELS = Object.freeze([LABELS.thought, LABELS.action, LABELS.observation]);
+/** D207's second review: what ends a session's work when no row of the agent's carries a time: the human's last message
+ *  (a recording with no action says something: it holds no commit of the session, so the end test runs). */
+const HUMAN_WORK = LABELS.human;
+/**
+ * D207: the end of the session's recorded work, as an ISO time: the newest time of a row the slicer labels as the agent's
+ * work (`WORK_LABELS`), in any recording of `activity` (the session's and its helpers', read as `actionsOf` reads them);
+ * where the agent has none, the human's newest (`HUMAN_WORK`). Not the last row that carries a time: a recorder writes rows
+ * of its own long after the work (on one Codex recording, a settings row 13 days after the last action). Null when a
+ * recording cannot be read or no such row carries a time. Reads the disk; writes nothing; never decides by a row's words.
+ */
+export async function recordedWorkEnd(activity) {
+  return (await recordedWorkOf(activity))?.end ?? null;
+}
+/** D207: `actionsOf` and `recordedWorkEnd` in one read of each recording: `{ actions, end }`, or null when a recording
+ *  cannot be read. */
+async function recordedWorkOf(activity) {
+  const actions = [];
+  let last = null, lastHuman = null;
+  for (const { file, byteEnd = null } of Array.isArray(activity) ? activity : []) {
+    if (typeof file !== 'string' || !file) return null;
+    try {
+      const { times } = await rowTimes(file, byteEnd);
+      const { records } = await readSession(file, { byteEnd });
+      for (const rec of records) {
+        if (!times.has(rec.line)) continue;
+        const at = times.get(rec.line);
+        const labels = [rec.label, ...(Array.isArray(rec.parts) ? rec.parts.map((p) => p?.label) : [])];
+        if (labels.some((label) => WORK_LABELS.includes(label)) && (last === null || at > last)) last = at;
+        if (labels.includes(HUMAN_WORK) && (lastHuman === null || at > lastHuman)) lastHuman = at;
+        const blocks = rec.raw?.message?.content;
+        if (!Array.isArray(blocks)) continue;
+        const isAction = (n) => (Array.isArray(rec.parts) ? rec.parts[n]?.label : rec.label) === LABELS.action;
+        for (const [n, block] of blocks.entries()) if (block?.type === 'tool_use' && isAction(n))
+          actions.push({ at, text: inputStrings(block.input).join('\n') });
+      }
+    } catch { return null; }
+  }
+  const end = last ?? lastHuman;
+  return { actions, end: end === null ? null : new Date(end).toISOString() };
+}
+
+/**
+ * D207's review: a commit's first line as an action can hold it. Git receives what the shell read and the action holds
+ * what was typed, so a first line with a quote, a backtick, a `$` or a backslash is also searched as the shell's grammar
+ * spells it: inside double quotes, inside single quotes, inside `$'...'`. Nothing is expanded: a first line that a shell
+ * variable built is in no action. None for an empty first line. Pure.
+ */
+function spellingsOf(subject) {
+  if (!subject) return [];
+  return [...new Set([subject, subject.replace(/["`$\\]/g, '\\$&'), subject.replaceAll("'", "'\\''"),
+    subject.replaceAll("'", `'"'"'`), subject.replace(/['\\]/g, '\\$&')])];
+}
+/**
+ * D207: the commits since `base` that the session made: a commit's message's first line, not empty, lies inside a recorded
+ * action (`actionsOf`), as it stands or as a shell spells it (`spellingsOf`), and that action's whole second is at or before
+ * the commit's committer time. A quiet commit reports nothing and a result can name any commit, so the action's input is
+ * the evidence, never a hash or a result; a subject typed only after the commit (copied from `git log`) does not count. An
+ * amended or rebased commit keeps its message and a later time. Hashes, newest first; null when git cannot say.
+ */
+export async function authoredCommits({ top, base, actions, git = runGit }) {
+  const log = out(await git(['log', '-z', '--format=%H%x00%ct%x00%B', `${base}..HEAD`], { cwd: top }));
+  if (log === null) return null;
+  const fields = log.split('\0');
+  const authored = [];
+  for (let at = 0; at + 2 < fields.length; at += 3) {
+    const [hash, seconds, message] = fields.slice(at, at + 3);
+    if (!HASH.test(hash) || !/^\d+$/.test(seconds)) return null;
+    const spellings = spellingsOf(message.split('\n')[0]);
+    if (actions.some((action) => Math.floor(action.at / 1000) <= Number(seconds)
+      && spellings.some((spelled) => action.text.includes(spelled)))) authored.push(hash);
+  }
+  return authored;
+}
+/**
+ * D207: the paths the commits the session made changed (`authoredCommits`), as git names them from the top folder. A merge
+ * gives only the paths it itself resolved (`--cc`), never what it brought in. A `Set`, or null when git cannot say.
+ */
+export async function authoredPaths({ top, base, actions, git = runGit }) {
+  const commits = await authoredCommits({ top, base, actions, git });
+  if (commits === null) return null;
+  const paths = new Set();
+  for (const commit of commits) {
+    const listed = out(await git(['diff-tree', '--root', '--cc', '--no-commit-id', '--name-only', '--no-renames', '-z', '-r',
+      commit], { cwd: top }));
+    if (listed === null) return null;
+    for (const path of names(listed)) paths.add(path);
+  }
+  return paths;
+}
+/**
+ * D207: the paths that differ now from the commit HEAD was on when the session's recorded work ended (`startCommit` at
+ * `end`, `recordedWorkEnd`), as git names them from the top folder: what was not committed by then, and anything since.
+ * A `Set`, or null when there is no such commit or git cannot say.
+ */
+export async function pathsAtEnd({ top, end, git = runGit }) {
+  const atEnd = await startCommit({ top, start: { at: end, commit: null }, git });
+  if (!atEnd) return null;
+  const listed = out(await git(['diff', '--name-only', '--no-renames', '-z', atEnd.commit], { cwd: top }));
+  return listed === null ? null : new Set(names(listed));
+}
+/** D207: the evidence that places a path with no recorded write in the repository at `top` (`placedByOf`): `{ authored,
+ *  atEnd }`, or null, when any recording or git cannot say or no row of work carries a time (`end`, `recordedWorkEnd`),
+ *  so D113's window decides. A recording with no action holds no commit of the session, and that is evidence too. Reads only. */
+async function changeEvidence({ top, base, actions, end, git }) {
+  if (!Array.isArray(actions) || typeof end !== 'string') return null;
+  const authored = await authoredPaths({ top, base, actions, git });
+  const atEnd = authored && await pathsAtEnd({ top, end, git });
+  return atEnd ? { authored, atEnd } : null;
+}
+/** D207: the evidence of a base the person named (`placedByOf`): they say what differs, so no commit or end is read. */
+export const NAMED_BASE_EVIDENCE = Object.freeze({ named: true, authored: Object.freeze(new Set()),
+  atEnd: Object.freeze(new Set()) });
+/**
+ * D207: how a path that differs from the base and that no recorded write could have changed is part of the session's
+ * change (rule 1, a recorded write, is its caller's: only it resolves real places). `change`: `{ gitPath, mtimeMs,
+ * untracked? }`. `commit`: a commit the session made holds it, whatever its time. `time`: its last change lies in the window
+ * and outside a wait (`changedDuring`), and it is untracked or differs from the commit at the end of the recorded work,
+ * as a file committed by then and not by the session is someone else's. With no `evidence` (`changeEvidence`), the window
+ * and the waits alone, marked `time`. `base`: with a base the person named (`NAMED_BASE_EVIDENCE`), a tracked path, with no
+ * authorship read; an untracked file keeps the window and the waits. Null: outside. Pure.
+ */
+export function placedByOf(change, evidence, window) {
+  if (evidence?.named === true && change.untracked !== true) return BY_BASE;
+  if (evidence?.authored.has(change.gitPath)) return BY_COMMIT;
+  if (!changedDuring(window, change.mtimeMs)) return null;
+  return !evidence || change.untracked === true || evidence.atEnd.has(change.gitPath) ? BY_TIME : null;
+}
 
 /** D113: the last timestamp a row of the recording carries (Claude Code rows and Codex lines carry an ISO `timestamp`),
  *  by structure: the end of the session's recorded window. Reads every line; never a message's words. Null when none is
@@ -1009,7 +1273,7 @@ export function namedSpellings(spellings, onDisk, changes, roots) {
  */
 export async function readCodeSnapshot(session, { root, maxBytes, recording = null, startRecording = recording,
   recordingBytes = null, startBytes = startRecording === recording ? recordingBytes : null, git = runGit, own = [],
-  harnessHomes = [], codeRepos = [] }) {
+  harnessHomes = [], codeRepos = [], activity = [{ file: recording, byteEnd: recordingBytes }], codeBase = null }) {
   const none = { root: false, plan: codeSnapshotPlan(session), files: [] };
   if (typeof root !== 'string' || !isAbsolute(root)) return none;
   const dir = resolve(root);
@@ -1032,7 +1296,8 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   const start = await recordingStart(startRecording, { byteEnd: startBytes });
   // Git is read with the plan of the spellings the disk holds: its `recorded` reaches only the untracked paths git
   // lists, each of which the disk holds, so the spellings git alone names (deleted files) never change what it lists.
-  const gitBase = await readGitBase({ root: dir, start, recorded: new Set(diskPlan.map((e) => e.path)), git, own });
+  const gitBase = await readGitBase({ root: dir, start, recorded: new Set(diskPlan.map((e) => e.path)), git, own,
+    ...(codeBase ? { codeBase } : {}) });
   const literal = namedSpellings(spellings, onDisk, gitBase?.changes, [dir, realRoot]);
   const unresolved = unresolvedShellPaths(session, { literal }).length;
   const recordedPlan = literal.length === onDisk.length ? diskPlan : codeSnapshotPlan(session, { root: dir, literal });
@@ -1042,12 +1307,35 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   // (`codeSnapshotPlan`), and those whose last change lies inside the session's recorded window. A path git shows
   // differing from the start commit that is neither is no part of it: named apart (`changedOutside`), and (D113 amended)
   // read apart below.
-  const window = gitBase ? sessionWindow(start.at, await recordingEnd(recording, { byteEnd: recordingBytes })) : null;
+  // D207 (its end): the window and the end test end where the session's recorded work ends (`recordedWorkEnd`: the newest
+  // row of work of the session or its helpers), never at a row the recorder wrote after it: on one Claude Code recording
+  // such rows came 20 days after its work, and the files others changed in that time were taken by time. When the
+  // recordings cannot say (one is unreadable, or no row of work carries a time), D113's window keeps its last timestamp.
+  const endAt = await recordingEnd(recording, { byteEnd: recordingBytes });
+  let work;
+  const workOf = async () => {
+    if (work === undefined) work = Array.isArray(activity) && activity.length ? await recordedWorkOf(activity) : null;
+    return work;
+  };
+  const windowOf = async () => sessionWindow(start.at, (await workOf())?.end ?? endAt);
+  const recordedWindow = gitBase ? await windowOf() : null;
+  // D206: and, on the recordings' own structure, not while the agent waited for the human.
+  const window = recordedWindow && { ...recordedWindow, waits: await sessionWaits(activity) };
+  // D207: what places a path no recorded write could have changed, in each repository: the same actions and the same end.
+  const evidenceIn = async (top, base) => {
+    const read = await workOf();
+    return changeEvidence({ top, base, end: read?.end ?? null, git, actions: read?.actions ?? null });
+  };
   const timed = gitBase ? await Promise.all(gitBase.changes.map(async (c) => ({ ...c,
     recordedPath: join(gitBase.top, c.gitPath), mtimeMs: recorded.has(c.path) ? null
       : await mtimeOf(join(gitBase.top, c.gitPath)) }))) : [];
-  const { plan, changedOutside } = gitBase ? await sessionsOwnChange(recordedPlan, timed, { dir, window })
-    : { plan: [...recordedPlan], changedOutside: [] };
+  const ownEvidence = !gitBase ? null : codeBase ? NAMED_BASE_EVIDENCE : await evidenceIn(gitBase.top, gitBase.commit);
+  const { plan, changedOutside } = gitBase ? await sessionsOwnChange(recordedPlan, timed, { dir, window,
+    evidence: ownEvidence }) : { plan: [...recordedPlan], changedOutside: [] };
+  // D207: only D113's window and D206's waits placed what no recorded write changed, in the change or outside it: the
+  // readers say less of it.
+  const onlyByWindow = (entries, outsideOf, evidence) => evidence === null
+    && (entries.some((e) => e.placedBy === BY_TIME) || outsideOf.length > 0);
   const types = new Map((gitBase?.changes ?? []).map((c) => [c.path, c]));
   // D109: the harness home folders by their real places (a recorded write there is never project work), and one git call
   // per folder for which repository holds a recorded write. D117: and the places Sonah writes (`own`), which stay out of
@@ -1137,9 +1425,9 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   // Each git repository's base (`readPlaceBase`). D117 amended (its second review's medium): it is a place of the change
   // only when a recorded write there resolves to a file that is there now and that differs from that base
   // (`isPlaceOfChange`); else its writes are counted (`outside_root`) and nothing in it is read, D113's window above all.
-  // In a place, D113's window as in the working directory (`readPlaceWindow`): a path that differs from that base, that
-  // no recorded write touched and whose last change lies inside the session's recorded window is a part of the change
-  // with no recorded write (`recorded: false`), after every recorded write, in code-unit order per place.
+  // In a place, as in the working directory (`readPlaceWindow`, D207's `placedByOf`): a path that differs from that base,
+  // that no recorded write touched and that the evidence places is a part of the change with no recorded write (`recorded:
+  // false`), after every recorded write, in code-unit order per place.
   const placeOf = new Map();
   // D122: whether a placed write lies in a folder the code review reads: the working directory, or its repository's top
   // folder (the agents' working directory and the folder `agentFolders` gives them first).
@@ -1165,11 +1453,15 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
       continue;
     }
     if (place.base) {
-      if (placeWindow === undefined) placeWindow = gitBase ? window : sessionWindow(start.at,
-        await recordingEnd(recording, { byteEnd: recordingBytes }));
+      if (placeWindow === undefined) {
+        const found = gitBase ? null : await windowOf();
+        placeWindow = gitBase ? window : found && { ...found, waits: await sessionWaits(activity) };
+      }
+      const evidence = await evidenceIn(place.at, place.base.commit);
       const around = await readPlaceWindow({ top: place.at, commit: place.base.commit, start, written, own,
-        homes: harnessHomes, git, window: placeWindow, realRoot });
+        homes: harnessHomes, git, window: placeWindow, realRoot, evidence });
       place.base = around === null ? null : { ...place.base, ...around };
+      place.timeByWindow = around !== null && onlyByWindow(around.kept, around.changedOutside, evidence);
     }
     for (const { entry } of place.entries) placeOf.set(entry.path, place);
     place.changes = new Map([...(place.base?.changes ?? []), ...(place.base?.kept ?? [])].map((c) => [c.path, c]));
@@ -1177,7 +1469,7 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
       if (named.has(change.path)) continue;
       named.add(change.path);
       const entry = { path: change.path, recordedPath: join(place.at, change.gitPath), changed: true, recorded: false,
-        outside: false, last: null, edits: [] };
+        placedBy: change.placedBy, outside: false, last: null, edits: [] };
       placeOf.set(entry.path, place);
       // D117's review: read only where its real place lies in that repository (a link there to a file elsewhere is not
       // read through: git's change is the link's), else named not readable.
@@ -1254,7 +1546,7 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   const placeRecords = [...places.values()].map((place) => ({ kind: place.base ? GIT_BASE : RECORDED_EDITS_BASE,
     at: place.at, ...(place.base ? { commit: place.base.commit, how: place.base.how,
       changedOutside: place.base.changedOutside } : { repository: true }), written: place.entries.length,
-    ...(place.given === true ? { given: true } : {}) }));
+    ...(place.given === true ? { given: true } : {}), ...(place.timeByWindow === true ? { timeByWindow: true } : {}) }));
   const folderRecords = [...folders].map(([at, written]) => ({ at, written }))
     .sort((a, b) => b.written - a.written || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   // D178: with a git base, `within`, the working directory's offset in its repository (posix, '' at its top folder;
@@ -1263,11 +1555,17 @@ export async function readCodeSnapshot(session, { root, maxBytes, recording = nu
   const within = gitBase ? relative(gitBase.top, realRoot).split(sep).join('/') : null;
   const base = { ...(gitBase ? { kind: GIT_BASE, commit: gitBase.commit, how: gitBase.how, outside,
     changedOutside, written, ...(within !== null && within !== '..' && !within.startsWith('../') && !isAbsolute(within)
-      ? { within } : {}) } : { kind: RECORDED_EDITS_BASE, written }),
+      ? { within } : {}) } : { kind: RECORDED_EDITS_BASE, written,
+    // D207's second review: a git repository holds the working folder, though Sonah found no commit where the session
+    // started there (a recording with no times, a history begun during the session): `--code-base` still works there.
+    ...(repository !== null ? { repository: true } : {}) }),
     ...(placeRecords.length ? { places: placeRecords } : {}), ...(folderRecords.length ? { folders: folderRecords } : {}),
     ...(unresolved > 0 ? { unresolved } : {}), ...(literal.length ? { literal } : {}),
     // D124's review: the person gave the working folder's own repository with --code-repo (read by its own rule).
-    ...(givenHere ? { given: true } : {}) };
+    ...(givenHere ? { given: true } : {}),
+    // D207: the base the person named with --code-base, as they named it; and `onlyByWindow`'s mark.
+    ...(gitBase && codeBase ? { namedRef: codeBase.ref } : {}),
+    ...(gitBase && onlyByWindow(plan, changedOutside, ownEvidence) ? { timeByWindow: true } : {}) };
   const files = freezeCodeSnapshot(finalPlan, reads, { base });
   if (base.places) base.places = orderPlaces(base.places, files);
   const stateOmits = [...own, ...harnessHomes].filter((place) => typeof place === 'string' && isAbsolute(place));

@@ -124,7 +124,9 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
   // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/47', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D207 once more (sonah.session-page/48): a file's row says what places it in the change. D208 rides it: no colour
+  // behind quoted words.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/48', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -159,7 +161,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D144 once more (sonah.session-story/41, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, and its step in the shortening order.
   // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
-  assert.equal(STORY_VERSION, 'sonah.session-story/42', 'renumbered later: /18 is D84\'s masking');
+  // D207 once more (sonah.session-story/43): a file's row says what places it in the change.
+  assert.equal(STORY_VERSION, 'sonah.session-story/43', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote

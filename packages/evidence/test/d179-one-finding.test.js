@@ -31,6 +31,7 @@ import { TRIAGE_ERRORS } from '../src/ledger.js';
 import * as fixture from '../../cli/test/code-pass-fixture.js';
 import { askCodeLinks, withAskCodeLinks } from '../src/ask-code-links.js';
 import { askRowKind } from '../src/review.js';
+import { profileBeforeIndex } from './m33-integration-fixture.js';
 import { runScenario, findingOn, triageEntry, otherBytes, HERE, THERE, COPY, SIBLING, ONE_ASK } from
   './d179-one-finding-fixture.js';
 
@@ -217,8 +218,9 @@ test('D179 (7): the anchor is read under the name its grounding read it by: the 
   assert.deepEqual(one.codePass.findings[0].anchorChanged, [2]);
 });
 
-test('D179 (8): CODE_PASS_PROFILE and TRIAGE_ERRORS are beta.10\'s before D179, byte for byte', () => {
-  assert.equal(createHash('sha256').update(canon(CODE_PASS_PROFILE)).digest('hex'),
+test('D179 (8): CODE_PASS_PROFILE and TRIAGE_ERRORS are beta.10\'s before D179, byte for byte, but for D206\'s index member '
+  + 'and D207\'s versions and lists', () => {
+  assert.equal(createHash('sha256').update(canon(profileBeforeIndex({ codePass: CODE_PASS_PROFILE }).codePass)).digest('hex'),
     'a5277583946e9dec230e25c4d7e158a881128294330f4193aea113943e8a5cc6');
   assert.deepEqual(TRIAGE_ERRORS, ['triage_key_unknown', 'triage_key_repeated', 'triage_not_item', 'file_not_in_change',
     'where_ungrounded', 'item_withheld', 'file_not_in_unit']);

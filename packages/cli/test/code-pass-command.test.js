@@ -103,7 +103,7 @@ test('D87: the session part is byte-identical with the code step on and off — 
   const all = (calls) => calls.map((r) => JSON.stringify([r.label, r.system, r.prompt])).sort();
   assert.deepEqual(all(byDefault.calls), all(on.calls), 'no flag sends what --code-pass sends');
   // D117's review: no git repository holds this working directory, so the line names the working directory.
-  assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call, and one check call for each finding\. /m);
+  assert.match(byDefault.out, /^Code review: on \(the default\)\. It reviews the change with read-only access to the whole working directory \(Read, Grep, Glob\)\. It adds one review call for each part of the change \(at most 50\) and one check call for each finding\. /m);
   // F3b (D111) and its review: the accounting's calls, counted by the items in scope, each kind named (never every claim
   // and decision).
   assert.match(byDefault.out, /check call for each finding\. It adds one more call for each 30 items, at most 4\. The items are asks, statements that the agent wrote into a file and the agent's decisions not to act\. /m);

@@ -35,12 +35,12 @@ import { statusUncovered } from '../evidence/src/status-fact.js';
 import { askSourceOf, actorOf, SESSION_ACTORS } from '../evidence/src/code-context.js';
 import { codePassFindings, codePassQuestions, codePassWithheld, codePassUnconfirmed, codePassOpen, findingConfirmed,
   premiseConfirms, premiseRuled, codeRowCheck, TRIAGE_TEXT_FIELDS, TRACE_LIMITS, CODE_OUTSIDE_STATES, codeChangeTally, sessionChangeOf,
-  placesOf, changeRepeatsOf } from '../evidence/src/code-pass.js';
+  placesOf, changeRepeatsOf, namedBaseOf } from '../evidence/src/code-pass.js';
 import { sessionCallsFact } from '../evidence/src/run-review.js';
 import { CODE_REPORT_WORDS, codeCoverageLines, codeFooterLines, codeReceiptFound, findingClaims, withheldWhy,
   codeNoFindingLine, codeStepWithheld, codeUnseenFiles, codeUnseenReadByChecks, codeQuestionsLine, codeBaseLine,
-  codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, CODE_REPORT_LIMITS,
-  codePlaceLines, codeWritesLines }
+  codeChangedOutsideLine, codeOutsideSeenLine, codeNoChangeOf, reportNotReviewedOf, notReviewedWordsOf, CODE_REPORT_LIMITS,
+  codePlaceLines, codeWritesLines, outsideLeadHowOf }
   from '../evidence/src/code-report.js';
 import { storyFacts, visible, oneLine, clip, lineWord, durationWord, failedCommandText, disclosedEdit, locateQuote,
   overlapping, withoutLeadingCd, readableRequirement, codeSpan } from './session-story.js';
@@ -171,9 +171,10 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  gap's message numbers as spans (no `gapMessages` bound); D204 adds a failed run's whole command (or its start) and a
  *  decision's statement from its quote on as evidence lines, names a decision's action by its recorded tool, adds the
  *  legend's lines of the two tags where the review has them, names the part "Your asks", and cuts a quote by its
- *  recorded characters.
+ *  recorded characters. /11 (D207): a file's row says what places it in the change (a commit the session made, time alone
+ *  or the base you named), and the code review's base line says how many each way.
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/10';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/11';
 
 /**
  * D202: a decision's recorded actions, 5, then counted (`actions`).
@@ -1856,7 +1857,9 @@ function finishItem(ctx, item) {
   const codeQuote = (r) => {
     if (!codeReceiptFound(ctx.report, r)) return;
     const code = quoted(r.quote);
-    evidence(r.side === 'old' ? REPORT_ITEM_WORDS.codeBefore : REPORT_ITEM_WORDS.codeNow, [
+    // D207's review: a quote of the old side is of the base of the change, which the person can name.
+    evidence(r.side === 'old' ? (namedBaseOf(ctx.report?.codePass?.base) !== null ? REPORT_ITEM_WORDS.codeBeforeNamed
+      : REPORT_ITEM_WORDS.codeBefore) : REPORT_ITEM_WORDS.codeNow, [
       ...(typeof r.path === 'string' ? [CODE(`${r.path}:${r.startLine}`), S(' ')] : []), CODE(code.text),
       ...(code.cut ? [S('…')] : [])]);
   };
@@ -2713,9 +2716,11 @@ function didOf(ctx) {
     files = codeFiles.map((f) => {
       const counts = Number.isSafeInteger(f.added) && Number.isSafeInteger(f.removed) ? `+${f.added} −${f.removed}`
         : storyFile.has(f.path) ? lineWord(storyFile.get(f.path).counts) : null;
-      // D117: a file of another place says where it lies, after its own state.
+      // D117: a file of another place says where it lies, after its own state. D207: and how a file no recorded write
+      // changed is part of the change (`placedBy`), after its own state.
       const state = [f.state && f.state !== 'shown' && Object.hasOwn(CODE_REPORT_WORDS.states, f.state)
-        ? CODE_REPORT_WORDS.states[f.state] : null, typeof f.place === 'string' && inRepository.has(f.place)
+        ? CODE_REPORT_WORDS.states[f.state] : null, Object.hasOwn(CODE_REPORT_WORDS.placedRow, f.placedBy ?? '')
+        ? CODE_REPORT_WORDS.placedRow[f.placedBy] : null, typeof f.place === 'string' && inRepository.has(f.place)
         ? CODE_REPORT_WORDS.placeOfFile(f.place, inRepository.get(f.place)) : null].filter(Boolean).join(', ') || null;
       const asks = Array.isArray(f.asks) ? [...new Set(f.asks.map(askOfRef).filter(Boolean))] : null;
       // A recorded write the change block does not hold lies outside the change block's repository or files: no link.
@@ -2773,7 +2778,10 @@ function didOf(ctx) {
     state: [state, CODE_REPORT_WORDS.outsideTag].filter(Boolean).join(' · '), what: null, asks: null, link: null,
     items: itemsOnPath(path) };
   });
-  const outsideSession = awayPaths.length ? { lead: REPORT_DID_WORDS.outsideSession(awayPaths.length), files: awayRows,
+  // D207's review of real reports: on a record of D207's code step, what holds of them all (`outsideLeadHowOf`).
+  const awayHow = awayPaths.length ? outsideLeadHowOf(codePass) : null;
+  const outsideSession = awayPaths.length ? { lead: REPORT_DID_WORDS.outsideSession(awayPaths.length, awayHow === null
+    ? null : CODE_REPORT_WORDS.outsideWhy[awayHow](awayPaths.length)), files: awayRows,
     more: awayPaths.length - awayRows.length } : null;
   // D123 (the beta.5 end-to-end smoke): with no file in the list, which sentence says so (REPORT_NO_FILES_KINDS), by the
   // gate every first screen reads (evidence code-report.js `reportNotReviewedOf`): no write that Sonah can read beside
@@ -3307,7 +3315,7 @@ function headerOf(ctx, prompt) {
   const folder = looked && typeof options.folder === 'string' && oneLine(options.folder)
     ? clip(oneLine(options.folder), REPORT_LIMITS.folderChars) : null;
   const noCode = notReviewed === null ? null : { reason: notReviewed,
-    words: CODE_REPORT_WORDS.notReviewed(CODE_REPORT_WORDS.notReviewedReasons[notReviewed]), folder,
+    words: notReviewedWordsOf(report?.codePass, notReviewed), folder,
     impact: null };
   // F. D199 (the owner, 2026-10-30, "All of them"): no note on why the report has no code links (D97 said it once here:
   // no GitHub remote, or a commit not pushed); a place with no link shows its path.
@@ -3397,7 +3405,9 @@ function changeSizeOf(ctx) {
   // every file (D118 c).
   const distinct = (source === CHANGE_FROM_TALLY ? changeRepeatsOf(codePass, ctx.change)?.distinct : null)
     ?? files.length;
-  return REPORT_HEADER_WORDS.change(files.length, lines, places, distinct);
+  // D207's review: and from the base the person named, when they named one.
+  return REPORT_HEADER_WORDS.change(files.length, lines, places, distinct,
+    source === CHANGE_FROM_TALLY ? namedBaseOf(codePass?.base) : null);
 }
 
 /** The commit fact (D97): the short HEAD when every counted file of the change is committed, else how

@@ -8,16 +8,32 @@
 // texts. Every choice here reads structure (which list a row is in, its index, a closed token, whether a quote is
 // literally in the span stored with it), never a word of a finding, a statement or a question.
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, CODE_WITHHELD_ITEMS, CODE_CLAIM_VERDICTS, CODE_SEEN_STATES,
-  CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, honestStatuses }
+  CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, CODE_PLACED_BY, CODE_STEP_PARTS, honestStatuses }
   from './ledger.js';
 import { codeContradictedRows, codePassFindings, codePassQuestions, codePassWithheld, codeSeenOf, codeChangeTally,
-  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven } from './code-pass.js';
+  sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven, namedBaseOf, codeChangeShortOf, codeChecksShortOf }
+  from './code-pass.js';
 import { askSourceOf } from './code-context.js';
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** D207: what the base lines say of the files no recorded write changed, by how each is part of the change: `commit` of
+ *  them in commits the session made; `time` placed by time alone. Zero counts drop. `windowOnly`: git or a recording could
+ *  not say, so the window alone placed them (the record's `timeByWindow`), and nothing is said of what was committed.
+ *  D207's second review: the end test reads what was committed when the agent's recorded work ended (cli code-snapshot.js
+ *  `recordedWorkEnd`), not when the recording's last row was written, so the words name the agent's stop. */
+const placedSentences = ({ commit = 0, time = 0, windowOnly = false }) => [
+  ...(commit > 0 ? [`${commit === 1 ? '1 is in a commit' : `${commit} are in commits`} the session made.`] : []),
+  ...(time > 0 ? [`Sonah places ${time} by time alone: changed during the recording${windowOnly ? ''
+    : ' and not committed when the agent stopped'}. ${time === 1 ? 'It' : 'They'} may not be the session's.`] : [])].join(' ');
 const SHA256 = /^[0-9a-f]{64}$/;
+const [, BY_COMMIT, BY_TIME] = CODE_PLACED_BY;
+/** D207: the way to have a branch's changes reviewed when the recording shows no change of its own, said only where it can
+ *  work (`branchWayOutOf`): it reads what differs under the working folder alone, never the whole repository. A reason
+ *  ends with its reader's full stop, a line with its own. */
+const BRANCH_REASON = 'To review all that a branch changed in this folder, run sonah review again with --code-base <branch>';
+export const BRANCH_WORDS = `${BRANCH_REASON}.`;
 const [CONTRADICTED_BY_CODE] = CODE_CHECK_OUTCOMES;
 const [CLAIM_HOLDS] = CODE_CLAIM_VERDICTS;
 const [WITHHELD_FINDING] = CODE_WITHHELD_ITEMS;
@@ -72,13 +88,24 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // write whose effect is landed or unknown), and of the files that no such write changed whose last change came while
   // the session ran (by the file system's time, inside the recording's first and last timestamps): `unrecorded` of its
   // `total` files. A file the session wrote that also changed after its last recorded edit is said by `changedSince`.
-  // D117: `here`, as `base`'s.
-  ownBase: (commit, unrecorded = 0, total = 0, here = false) => `${here ? 'In the working directory\'s repository, the '
+  // D117: `here`, as `base`'s. D207: `placed`, how those files are part of the change (`placedSentences`); a record of
+  // an earlier snapshot holds none and keeps its words.
+  ownBase: (commit, unrecorded = 0, total = 0, here = false, placed = null) => `${here ? 'In the working directory\'s repository, the '
     + `change runs from the session's start commit (${commit}) to the files now.` : 'The change runs from the commit '
     + `where the session started (${commit}) to the files as they are now.`}${unrecorded > 0 ? ` No recorded write of the session changed ${unrecorded === total
       ? (total === 1 ? 'its one file' : `any of its ${total} files`) : `${unrecorded} of its ${plural(total, 'file')}`}. `
-      + `${unrecorded === 1 ? 'That file' : 'Each of them'} last changed while the session ran.`
+      + `${placed ? placedSentences(placed) : `${unrecorded === 1 ? 'That file' : 'Each of them'} last changed while the `
+        + 'session ran.'}`
       : ' It holds only files that a recorded write of the session could have changed.'}`,
+  // D207: the base the person named with --code-base (the record's `base.namedRef`): where it and this branch meet, and
+  // that it can hold work that is not this session's. `here`, as `base`'s. `outside` (the record's `base.outside`): what
+  // differs outside the working directory, in a repository larger than it, which it does not hold.
+  namedBase: (commit, ref, written, total, here = false, outside = 0) => `${here ? 'In the working directory\'s repository, the change '
+    + `runs from ${commit}, where ${ref} and this branch meet, to the files now.` : `The change runs from ${commit}, where `
+    + `${ref} and this branch meet, to the files as they are now.`} You named this base with --code-base, so it can hold `
+    + `work that is not this session's. A recorded write could have changed ${written} of its ${plural(total, 'file')}.${
+      outside ? ` It holds only the working directory: ${plural(outside, 'more path')} ${outside === 1 ? 'differs'
+        : 'differ'} outside it.` : ''}`,
   // D113: the files that differ from the start commit that no recorded write of the session touched and whose last
   // change did not come while the session ran (or cannot be placed in time: a file not there any more), named: no part
   // of the change (a later commit, a person, a tree already dirty at the start), so "outside this session's recorded
@@ -87,17 +114,41 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // the owner: "tag it by outside the evaluated session"): said of them when no code review that answered was given them
   // (`codeChangedOutsideLine`: the session's own change held no file to review, or the review did not answer), tagged in
   // the fixed words.
-  changedOutside: (paths, more = 0) => `Sonah did not review ${plural(paths.length + more, 'file')} that changed `
-    + `outside this session's recorded writes. ${paths.length + more === 1 ? 'It is' : 'They are'} outside the evaluated `
-    + `session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`,
+  // D207's review of real reports: on a record of D207's code step (`outsideHowOf`), "changed outside this session's
+  // recorded writes" was false beside the files of the change that no recorded write changed (a commit the session made,
+  // time). Its files are named first, then what holds of them all (`why`, `outsideWhy`), then, with `way`, the way to a
+  // branch's changes (`BRANCH_WORDS`). `why` null: an earlier record's words.
+  changedOutside: (paths, more = 0, why = null, way = false) => (why === null ? `Sonah did not review `
+    + `${plural(paths.length + more, 'file')} that changed outside this session's recorded writes. ${paths.length + more
+      === 1 ? 'It is' : 'They are'} outside the evaluated session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`
+    : `Sonah did not review ${plural(paths.length + more, 'file')} outside the evaluated session: ${paths.join(', ')}${
+      more ? `, and ${more} more` : ''}. ${why}${way ? ` ${BRANCH_WORDS}` : ''}`),
+  // D207's review of real reports: what holds of every file outside the evaluated session, by what the record shows
+  // (`outsideHowOf`; cli code-snapshot.js `placedByOf`). `commit`: git and every recording could say, so no commit the
+  // session made holds such a file, and a change of it in the window was committed by the end of the recorded work.
+  // `window`: the window and the waits alone placed them (D113, D206), or a base the person named, where only an untracked
+  // file is outside. `end`: what holds of both, for a line that names files of each. What Sonah found, never more: it reads
+  // a file's last change alone. D207's second review: a merge the session made holds what it brought in, and counts only
+  // for what it changed itself (code-snapshot.js `authoredPaths`), so the words say "changed … itself", never "holds".
+  outsideWhy: Object.freeze({
+    commit: (n) => `No recorded write changed ${n === 1 ? 'it' : 'them'}, and Sonah found no commit of the session that `
+      + `changed ${n === 1 ? 'it' : 'them'} itself. Sonah also found no change to ${n === 1 ? 'it' : 'them'} while the agent `
+      + 'worked that was still uncommitted when the agent stopped.',
+    end: (n) => `No recorded write changed ${n === 1 ? 'it' : 'them'}. Sonah found no change to ${n === 1 ? 'it' : 'them'} `
+      + 'while the agent worked that was still uncommitted when the agent stopped.',
+    window: (n) => `No recorded write changed ${n === 1 ? 'it' : 'them'}, and Sonah found no change to `
+      + `${n === 1 ? 'it' : 'them'} while the agent worked.` }),
   // D113 amended: the fixed words beside a file outside the evaluated session in the files list, and beside a withheld
   // finding anchored in one (its record's `outsideSession`).
   outsideTag: 'outside the evaluated session',
   // D113 amended: the same files when the code review was given them after the session's own change and answered
   // (`codeChangedOutsideLine`), named as many as `changedOutside`; what it saw of them is `outsideSeen`'s.
-  outsideFiles: (paths, more = 0) => `${plural(paths.length + more, 'file')} that changed outside this session's `
-    + `recorded writes ${paths.length + more === 1 ? 'is' : 'are'} outside the evaluated session: `
-    + `${paths.join(', ')}${more ? `, and ${more} more` : ''}`,
+  // D207's review of real reports: `why` and `way` as `changedOutside`'s.
+  outsideFiles: (paths, more = 0, why = null, way = false) => (why === null ? `${plural(paths.length + more, 'file')} `
+    + `that changed outside this session's recorded writes ${paths.length + more === 1 ? 'is' : 'are'} outside the `
+    + `evaluated session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`
+    : `${plural(paths.length + more, 'file')} ${paths.length + more === 1 ? 'is' : 'are'} outside the evaluated session: `
+      + `${paths.join(', ')}${more ? `, and ${more} more` : ''}. ${why}${way ? ` ${BRANCH_WORDS}` : ''}`),
   // D113 amended: the one tally's part of the files outside the evaluated session (code-pass.js `codeChangeTally`'s
   // `outside`), by its groups as `files` says the session's own change's, summing to the files `outsideFiles` counts.
   outsideSeen: (seen, unseen) => (seen.length ? `${seen.map(([group, n], at) => `${at === 0 ? 'Of the files outside '
@@ -109,11 +160,13 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // working folder's repository, with where its change runs from (code-pass.js `placesOf`): a git repository, from the
   // commit where it stood when the session started (the working folder's rule, `startCommit`); a git repository with no
   // such commit, or a folder in none, the edits the session recorded. `n` the files of the change there (the one tally's),
-  // `unrecorded` of them no recorded write of the session changed (D113's window, as `ownBase` says it).
-  placeBase: (at, commit, n, unrecorded = 0) => `In ${at}, the change runs from the session's start commit there `
+  // `unrecorded` of them no recorded write of the session changed (D113's window, as `ownBase` says it). D207: `placed`,
+  // as `ownBase`'s.
+  placeBase: (at, commit, n, unrecorded = 0, placed = null) => `In ${at}, the change runs from the session's start commit there `
     + `(${commit}) to the files now. The change holds ${plural(n, 'file')} there.${unrecorded
       > 0 ? ` No recorded write of the session changed ${unrecorded === n ? (n === 1 ? 'that file' : 'any of them')
-        : `${unrecorded} of them`}. ${unrecorded === 1 ? 'That file' : 'Each of them'} last changed while the session ran.`
+        : `${unrecorded} of them`}. ${placed ? placedSentences(placed) : `${unrecorded === 1 ? 'That file' : 'Each of them'} `
+        + 'last changed while the session ran.'}`
       : ''}`,
   placeEdits: (at, n, repository = false) => `In ${at}, the change is the edits that the session recorded to `
     + `${plural(n, 'file')}.${repository ? ' Sonah could not read from git where the session started there.' : ''}`,
@@ -126,12 +179,18 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // D117: the files of another git repository that differ from its base and that no recorded write of the session
   // touched: no part of the change, named (as `changedOutside`, bounded the same way, and in its words: D113 amended,
   // outside the evaluated session; `placeOutsideFiles` when the code review was given them and answered).
-  placeChangedOutside: (at, paths, more = 0) => `In ${at}, Sonah did not review ${plural(paths.length + more, 'file')} `
-    + `that changed outside this session's recorded writes. ${paths.length + more === 1 ? 'It is' : 'They are'} outside `
-    + `the evaluated session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`,
-  placeOutsideFiles: (at, paths, more = 0) => `In ${at}, ${plural(paths.length + more, 'file')} that changed outside `
-    + `this session's recorded writes ${paths.length + more === 1 ? 'is' : 'are'} outside the evaluated session: `
-    + `${paths.join(', ')}${more ? `, and ${more} more` : ''}`,
+  // D207's review of real reports: `why` as `changedOutside`'s, by that place's own record (`outsideHowOf`). The way to a
+  // branch's changes is the working folder's alone.
+  placeChangedOutside: (at, paths, more = 0, why = null) => (why === null ? `In ${at}, Sonah did not review `
+    + `${plural(paths.length + more, 'file')} that changed outside this session's recorded writes. ${paths.length + more
+      === 1 ? 'It is' : 'They are'} outside the evaluated session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`
+    : `In ${at}, Sonah did not review ${plural(paths.length + more, 'file')} outside the evaluated session: `
+      + `${paths.join(', ')}${more ? `, and ${more} more` : ''}. ${why}`),
+  placeOutsideFiles: (at, paths, more = 0, why = null) => (why === null ? `In ${at}, ${plural(paths.length + more, 'file')} `
+    + `that changed outside this session's recorded writes ${paths.length + more === 1 ? 'is' : 'are'} outside the `
+    + `evaluated session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}`
+    : `In ${at}, ${plural(paths.length + more, 'file')} ${paths.length + more === 1 ? 'is' : 'are'} outside the evaluated `
+      + `session: ${paths.join(', ')}${more ? `, and ${more} more` : ''}. ${why}`),
   // D117: where a file of another place lies, as the files list of what the agent did names it: a git repository by its
   // top folder, or a folder in none.
   placeOfFile: (at, repository) => (repository ? `in the git repository ${at}` : `in ${at}, which no git repository `
@@ -224,6 +283,9 @@ export const CODE_REPORT_WORDS = Object.freeze({
   // D100: with no git base the change is the recorded edits only: said as what Sonah found.
   noFile: 'The code review had no change to review. Sonah found no file in the working directory that differs from where '
     + 'the session started.',
+  // D207: `noFile`, with a base the person named. No way out again: they gave it.
+  noFileNamedBase: 'The code review had no change to review. Sonah found no tracked file in the working directory that '
+    + 'differs from the base that you named.',
   // D118 (a), the owner's go of 2026-10-18 ("cool go for it"; the dogfood's DF2): the first screen's sentence when the
   // code step reviewed no code (`codeNotReviewedOf`), the same on every reader (the page, the Markdown report, the PR
   // comment, the terminal): the owner's fixed words, then the one closed reason (ledger.js CODE_NOT_REVIEWED_REASONS).
@@ -255,12 +317,19 @@ export const CODE_REPORT_WORDS = Object.freeze({
     none_seen: 'the code review saw none of the files of the change',
     // D122 (a review low of D118): a record an earlier code step wrote before it kept the request's manifest.
     unknown: 'this review was saved by an earlier version of Sonah, which did not record why' }),
+  // D207's review: `no_file` with a base the person named, where an untracked file can still be named apart
+  // (`notReviewedWordsOf`). Its reason stays `no_file`.
+  notReviewedNamedBase: 'Sonah found no tracked file in the folder that differs from the base that you named',
   notReviewedFolder: (folder) => `Folder: ${folder}`,
   // The coverage line, by the code review's own coverage (`codeReviewCoverage`). D111's second review: `partial` names no
   // list, since the lines after it can include the counts of the item-by-item check (a published finding can follow
   // from a counted item, so they are no part of what the code review did not cover), and since the page shows those
   // lines above it. A coverage short of complete only by those counts prints no coverage line: the counts say it.
+  // D207's review of real reports: on a record of D207's code step whose change the review saw whole and short only by a
+  // check of a finding or a question (`codeShortByChecksOf`), `checks`: "did not finish every part" read as if the change
+  // were short.
   coverage: Object.freeze({ partial: 'The code review did not finish every part of its work.',
+    checks: 'The code review covered the whole change, but some of its checks gave no result that Sonah could use.',
     missing: 'The code review did not finish. The list below shows what it did not cover.' }),
   besideGroup: 'Beside what the session review found', restGroup: 'Other problems that the code review found',
   questionsGroup: 'Open questions for you',
@@ -520,6 +589,14 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + `cannot tell whether all of ${paths.length === 1 ? 'its' : 'their'} lines are the agent's: ${paths.join(', ')}`,
   outsideLine: (n) => `${plural(n, 'path')} outside the working directory also ${n === 1 ? 'differs' : 'differ'} from `
     + 'where the session started, which Sonah did not review or name',
+  // D207: `outsideLine`, with a base the person named.
+  outsideLineNamedBase: (n) => `${plural(n, 'path')} outside the working directory also ${n === 1 ? 'differs' : 'differ'} `
+    + 'from the base that you named, which Sonah did not review or name',
+  // D207: the fixed words beside a file of the change in the files list, by how it is part of the change (the record's
+  // `placedBy`): none for a recorded write, or for a record of an earlier snapshot.
+  placedRow: Object.freeze({ commit: 'in a commit the session made',
+    time: 'placed by time alone: it may not be the session\'s',
+    base: 'in the change by the base you named: it may not be the agent\'s' }),
   // A report of an earlier code step: the repository was the home folder or held it.
   homeLine: (n) => `The repository is your home folder, so Sonah read only the files that the session changed or read.${n
     > 0 ? ` Sonah did not read, name or send ${plural(n, 'other path')} that ${n === 1 ? 'differs' : 'differ'} from `
@@ -565,7 +642,8 @@ export const STYLE_KINDS = Object.freeze({
     'label'])),
   ...Object.fromEntries(['withheldReasons', 'outsideTie', 'unrepairedReasons', 'unrepaired', 'refutations', 'causes',
     'kinds', 'lenses', 'states', 'footerKinds', 'unaccounted', 'changedSince', 'changedOutside', 'outsideFiles',
-    'outsideTag', 'placeChangedOutside', 'placeOutsideFiles', 'placeOfFile', 'outsideLine', 'parts',
+    'outsideTag', 'placeChangedOutside', 'placeOutsideFiles', 'placeOfFile', 'outsideLine', 'outsideLineNamedBase',
+    'placedRow', 'parts',
     'rowKinds', 'seenInPart',
     'hunksOnly', 'wholeNotBefore', 'rulesInPart', 'rulesNotSeen', 'linesUnknown', 'rulesLinesUnknown', 'linesOf',
     'seenGroups', 'unseenShown', 'notReviewedReasons', 'notReviewedFolder']
@@ -576,19 +654,40 @@ export const STYLE_FIXTURES = Object.freeze({
   'CODE_REPORT_WORDS.base': [['0123456789ab'], [null], ['0123456789ab', 3, 248], ['0123456789ab', 248, 248],
     ['0123456789ab', 0, 2, true], [null, 0, 0, true]],
   'CODE_REPORT_WORDS.ownBase': [['0123456789ab'], ['0123456789ab', 1, 3], ['0123456789ab', 2, 2],
-    ['0123456789ab', 1, 1], ['0123456789ab', 0, 2, true], ['0123456789ab', 1, 3, true]],
-  'CODE_REPORT_WORDS.changedOutside': [[['docs/a.md']], [['docs/a.md', 'src/b.js']], [['docs/a.md', 'src/b.js'], 238]],
-  'CODE_REPORT_WORDS.outsideFiles': [[['docs/a.md']], [['docs/a.md', 'src/b.js']], [['docs/a.md', 'src/b.js'], 238]],
+    ['0123456789ab', 1, 1], ['0123456789ab', 0, 2, true], ['0123456789ab', 1, 3, true],
+    ['0123456789ab', 1, 3, false, { commit: 1 }], ['0123456789ab', 2, 3, false, { commit: 2 }],
+    ['0123456789ab', 1, 3, false, { time: 1 }], ['0123456789ab', 2, 3, true, { time: 2 }],
+    ['0123456789ab', 7, 9, false, { commit: 4, time: 3 }], ['0123456789ab', 2, 3, false, { time: 2, windowOnly: true }],
+    ['0123456789ab', 1, 3, false, { time: 1, windowOnly: true }]],
+  'CODE_REPORT_WORDS.namedBase': [['0123456789ab', 'main', 2, 3], ['0123456789ab', 'origin/main', 0, 1],
+    ['0123456789ab', 'main', 0, 1, false, 2], ['0123456789ab', 'main', 1, 1, false, 1],
+    ['0123456789ab', 'main', 2, 3, true]],
+  'CODE_REPORT_WORDS.changedOutside': [[['docs/a.md']], [['docs/a.md', 'src/b.js']], [['docs/a.md', 'src/b.js'], 238],
+    [['docs/a.md'], 0, 'No recorded write changed it, and Sonah found no change to it while the agent worked.'],
+    [['docs/a.md', 'src/b.js'], 238, 'No recorded write changed them, and Sonah found no change to them while the agent '
+      + 'worked.', true]],
+  'CODE_REPORT_WORDS.outsideFiles': [[['docs/a.md']], [['docs/a.md', 'src/b.js']], [['docs/a.md', 'src/b.js'], 238],
+    [['docs/a.md'], 0, 'No recorded write changed it, and Sonah found no change to it while the agent worked.'],
+    [['docs/a.md', 'src/b.js'], 238, 'No recorded write changed them, and Sonah found no change to them while the agent '
+      + 'worked.', true]],
+  'CODE_REPORT_WORDS.outsideWhy.commit': [[1], [3]], 'CODE_REPORT_WORDS.outsideWhy.end': [[1], [3]],
+  'CODE_REPORT_WORDS.outsideWhy.window': [[1], [3]],
   'CODE_REPORT_WORDS.outsideSeen': [[[['whole', 2]], 0], [[['whole', 1], ['hunks_only', 3]], 2], [[], 4],
     [[['in_part', 1]], 1]],
   'CODE_REPORT_WORDS.placeBase': [['/work/other-repo', '0123456789ab', 1], ['/work/other-repo', '0123456789ab', 3],
     ['/work/other-repo', '0123456789ab', 1, 1], ['/work/other-repo', '0123456789ab', 3, 3],
-    ['/work/other-repo', '0123456789ab', 3, 1], ['/work/other-repo', '0123456789ab', 4, 2]],
+    ['/work/other-repo', '0123456789ab', 3, 1], ['/work/other-repo', '0123456789ab', 4, 2],
+    ['/work/other-repo', '0123456789ab', 1, 1, { commit: 1 }], ['/work/other-repo', '0123456789ab', 4, 3, { commit: 2, time: 1 }],
+    ['/work/other-repo', '0123456789ab', 3, 2, { time: 2, windowOnly: true }]],
   'CODE_REPORT_WORDS.placeEdits': [['/work/notes', 1], ['/work/notes', 4], ['/work/new-repo', 2, true]],
   'CODE_REPORT_WORDS.placeChangedOutside': [['/work/other-repo', ['/work/other-repo/a.md']],
-    ['/work/other-repo', ['/work/other-repo/a.md', '/work/other-repo/b.js'], 12]],
+    ['/work/other-repo', ['/work/other-repo/a.md', '/work/other-repo/b.js'], 12],
+    ['/work/other-repo', ['/work/other-repo/a.md', '/work/other-repo/b.js'], 12, 'No recorded write changed them, and '
+      + 'Sonah found no change to them while the agent worked.']],
   'CODE_REPORT_WORDS.placeOutsideFiles': [['/work/other-repo', ['/work/other-repo/a.md']],
-    ['/work/other-repo', ['/work/other-repo/a.md', '/work/other-repo/b.js'], 12]],
+    ['/work/other-repo', ['/work/other-repo/a.md', '/work/other-repo/b.js'], 12],
+    ['/work/other-repo', ['/work/other-repo/a.md'], 0, 'No recorded write changed it, and Sonah found no change to it while '
+      + 'the agent worked.']],
   'CODE_REPORT_WORDS.placeOfFile': [['/work/other-repo', true], ['/work/notes', false]],
   'CODE_REPORT_WORDS.filesWhere': [[3, null], [1, null, 0, false], [2, '/work/other-repo', 1], [1, '/work/notes', 1],
     [4, '/work/notes', 4], [5, null, 2]],
@@ -635,6 +734,7 @@ export const STYLE_FIXTURES = Object.freeze({
   'CODE_REPORT_WORDS.footerKinds.source_changed': [[]],
   'CODE_REPORT_WORDS.changedSince': [[['src/a.js']], [['src/a.js', 'src/b.js']]],
   'CODE_REPORT_WORDS.outsideLine': [[1], [3]],
+  'CODE_REPORT_WORDS.outsideLineNamedBase': [[1], [3]],
   'CODE_REPORT_WORDS.homeLine': [[0], [1], [2]],
   'CODE_REPORT_WORDS.notPublished': [[3, 0], [0, 1], [1, 2], [0, 0, 1], [2, 1, 3]],
   'CODE_REPORT_WORDS.notReviewed': [['Sonah found no changed file in the folder'],
@@ -642,8 +742,8 @@ export const STYLE_FIXTURES = Object.freeze({
   'CODE_REPORT_WORDS.notReviewedFolder': [['/work/project']],
 });
 /** "Working directory" and "checking passes" are technical nouns, not verbs in progress. */
-export const STYLE_ALLOW = Object.freeze({ ...Object.fromEntries(['noRoot', 'noFile', 'noWrittenChange', 'outsideLine',
-  'filesWhere',
+export const STYLE_ALLOW = Object.freeze({ ...Object.fromEntries(['noRoot', 'noFile', 'noFileNamedBase', 'noWrittenChange',
+  'outsideLine', 'outsideLineNamedBase', 'filesWhere',
   'states.outside_root',
   'states.outside_writer_root',
   'parts.check_challenge', 'parts.finding_challenge'].map((key) => [`CODE_REPORT_WORDS.${key}`, ['technical-noun']])),
@@ -849,7 +949,8 @@ export function codeFooterLines(report, { session = null } = {}) {
     if (kind === FOOTER_WITHHELD) lines.push(...codeSeenLines(pass));
   }
   const outside = pass?.base?.outside;
-  if (Number.isSafeInteger(outside) && outside > 0) lines.push(W.outsideLine(outside));
+  if (Number.isSafeInteger(outside) && outside > 0)
+    lines.push(namedBaseOf(pass.base) !== null ? W.outsideLineNamedBase(outside) : W.outsideLine(outside));
   if (pass?.base?.homeRepository === true)
     lines.push(W.homeLine(Number.isSafeInteger(pass.base.unrecorded) && pass.base.unrecorded > 0 ? pass.base.unrecorded : 0));
   // F3b (D111): the items in scope that the item-by-item check did not examine in a way that Sonah could use, one line
@@ -957,12 +1058,36 @@ export function codeBaseLine(pass) {
   // D117: with files of the change in another repository or folder, the line speaks of the working directory's
   // repository alone (`here`), counting its files; none when it holds none (each other place has its own line).
   const elsewhere = placesOf(pass.base).filter((p) => filesOfPlace(pass, tally, p.at) > 0).length > 0;
-  const own = elsewhere && tally !== null ? tally.units.filter((u) => typeof u.place !== 'string') : tally?.units ?? [];
+  // D207's review: with no review request (a change none of whose lines could be shown, one too large to send), the
+  // record's files of the change there, by the same words.
+  const own = rowsOfChange(pass, tally, elsewhere ? null : undefined);
   if (elsewhere && filesOfPlace(pass, tally, null) === 0) return null;
+  // D207: a base the person named: every row with no `placedBy` is a recorded write's.
+  const named = namedBaseOf(pass.base);
+  if (named !== null && commit) return W.namedBase(commit, named, own.filter((r) => r.recorded !== false).length, own.length,
+    elsewhere, Number.isSafeInteger(pass.base.outside) ? pass.base.outside : 0);
   const [unrecorded, total] = commit ? [own.filter((u) => u.recorded === false).length, own.length] : [0, 0];
   if (commit && Array.isArray(sessionChangeOf(pass.base).changedOutside))
-    return W.ownBase(commit, unrecorded, total, elsewhere);
+    return W.ownBase(commit, unrecorded, total, elsewhere, placedCountsOf(own, pass.base.timeByWindow === true));
   return W.base(commit, unrecorded, total, elsewhere);
+}
+
+/** The rows of the change `codeBaseLine` and `codePlaceLines` count, in one place (`at`, a place's folder; null for the
+ *  working directory's repository; undefined for all): the one tally's, or with no review request the record's files of the
+ *  change there, each a recorded write's unless a `placedBy` says otherwise (an earlier record holds none). */
+function rowsOfChange(pass, tally, at) {
+  const here = (x) => at === undefined || (typeof x?.place === 'string' ? x.place : null) === at;
+  return tally !== null ? tally.units.filter(here) : list(pass?.files).filter((f) => plain(f) && typeof f.type === 'string'
+    && here(f)).map((f) => ({ path: f.path, place: f.place, placedBy: f.placedBy, recorded: !CODE_PLACED_BY.includes(f.placedBy) }));
+}
+
+/** D207: how the files of `units` no recorded write changed are part of the change (`placedSentences`); null when one of
+ *  them does not say (`placedBy`): a record of an earlier snapshot, which keeps its words. */
+function placedCountsOf(units, windowOnly = false) {
+  const others = units.filter((u) => u.recorded === false);
+  return others.length && others.every((u) => CODE_PLACED_BY.includes(u.placedBy))
+    ? { commit: others.filter((u) => u.placedBy === BY_COMMIT).length, time: others.filter((u) => u.placedBy === BY_TIME).length,
+      windowOnly } : null;
 }
 
 /** D117: how many files of the change lie in one place (`at`, a place's folder; null for the working directory's
@@ -1000,14 +1125,17 @@ export function codePlaceLines(pass) {
   const given = outsideTally(pass) !== null;
   return [...here, ...places.flatMap((p) => {
     const n = empty ? 0 : filesOfPlace(pass, tally, p.at);
-    const unrecorded = tally !== null ? tally.units.filter((u) => u.place === p.at && u.recorded === false).length : 0;
+    const mine = rowsOfChange(pass, tally, p.at);
+    const unrecorded = mine.filter((u) => u.recorded === false).length;
     const named = list(p.changedOutside).slice(0, CODE_REPORT_LIMITS.changedOutsideNames);
     // D124: a repository the person gave with --code-repo is named with its count, none included, so the person learns
     // what Sonah found there.
-    return [...(n === 0 && p.given !== true ? [] : p.kind === 'git' ? [W.placeBase(p.at, p.commit, n, unrecorded)]
+    return [...(n === 0 && p.given !== true ? [] : p.kind === 'git' ? [W.placeBase(p.at, p.commit, n, unrecorded,
+      placedCountsOf(mine, p.timeByWindow === true))]
       : [W.placeEdits(p.at, n, p.repository === true)]),
     ...(named.length ? [(given ? W.placeOutsideFiles : W.placeChangedOutside)(p.at, named.map((x) => clipPath(x)),
-      list(p.changedOutside).length - named.length)] : [])];
+      list(p.changedOutside).length - named.length, outsideHowOf(pass, p) === null ? null
+        : W.outsideWhy[outsideHowOf(pass, p)](list(p.changedOutside).length))] : [])];
   })];
 }
 
@@ -1054,8 +1182,13 @@ export function codeChangedOutsideLine(pass) {
   const paths = list(sessionChangeOf(pass.base).changedOutside);
   const names = paths.slice(0, CODE_REPORT_LIMITS.changedOutsideNames);
   if (!paths.length) return null;
+  // D207's review of real reports: on a record of D207's code step, what holds of them all, and, where it can work and no
+  // first screen's reason names it already (a change of the session's own to review), the way to a branch's changes.
+  const how = outsideHowOf(pass);
+  const why = how === null ? null : W.outsideWhy[how](paths.length);
+  const way = why !== null && branchWayOutOf(pass) && codeNoChangeOf(pass) === null;
   return (outsideTally(pass) !== null ? W.outsideFiles : W.changedOutside)(names.map((p) => clipPath(p)),
-    paths.length - names.length);
+    paths.length - names.length, why, way);
 }
 
 /** D113 amended: what the code review saw of the files outside the evaluated session, by the one tally's part of them
@@ -1098,6 +1231,8 @@ export function codeNoChangeOf(pass) {
   if (!empty) return null;
   const own = sessionChangeOf(pass.base);
   if (!Number.isSafeInteger(own.written)) return NO_CHANGE_FILE;
+  // D207: a base the person named holds every tracked path that differs, so none does: no way out to name.
+  if (namedBaseOf(pass.base) !== null) return NO_CHANGE_FILE;
   // D123: no recorded write, but the session ran a shell command (the record's `unseenEdits`, code-pass.js
   // `mayMissEdits`): a script's writes are none that Sonah sees, so never `noWrite`.
   if (own.written === 0) return pass.unseenEdits === true ? NO_CHANGE_SEEN_WRITE : NO_CHANGE_WRITE;
@@ -1117,6 +1252,80 @@ const beforeManifest = (pass) => {
   const version = /^sonah\.code-pass\/(\d+)$/.exec(typeof pass?.version?.pass === 'string' ? pass.version.pass : '');
   return version !== null && Number(version[1]) < MANIFEST_SINCE;
 };
+/** D207: the code step's version that began to name --code-base and to say what places a file in the change. An earlier
+ *  record keeps its words. */
+const NAMED_BASE_SINCE = 14;
+/** D207: whether the record is of a code step at or after `NAMED_BASE_SINCE` (its `version.pass`). Pure. */
+const placedRecordOf = (pass) => {
+  const version = /^sonah\.code-pass\/(\d+)$/.exec(typeof pass?.version?.pass === 'string' ? pass.version.pass : '');
+  return version !== null && Number(version[1]) >= NAMED_BASE_SINCE;
+};
+/** D207: whether the way to a branch's changes (`BRANCH_WORDS`) can work for this record: its working folder lies in a git
+ *  repository, no base was named yet, and its code step knew the option (`branchWayOutOfBase` for the rest). Pure. */
+export function branchWayOutOf(pass) {
+  return plain(pass?.base) && branchWayOutOfBase(pass.base) && placedRecordOf(pass);
+}
+/** D207's second review: `branchWayOutOf` of a base, read from a record or a snapshot just made: a git repository holds
+ *  the working folder (a git base, or the recorded edits where it holds no start commit: `repository`), no base was named,
+ *  and no repository was given with --code-repo (`repositoriesGiven`), as the command does not take --code-base with it.
+ *  Pure. */
+export function branchWayOutOfBase(base) {
+  return plain(base) && (base.kind === 'git' || (base.kind === 'recorded_edits' && base.repository === true))
+    && namedBaseOf(base) === null && !repositoriesGiven(base);
+}
+/** D207's review of real reports: the keys of CODE_REPORT_WORDS.outsideWhy, by what the record shows (`outsideHowOf`). */
+const [OUTSIDE_BY_COMMIT, OUTSIDE_BY_END, OUTSIDE_BY_WINDOW] = Object.keys(CODE_REPORT_WORDS.outsideWhy);
+/**
+ * D207's review of real reports: what holds of the files outside the evaluated session of the working folder (`place`
+ * null) or of another place (a `placesOf` entry), as CODE_REPORT_WORDS.outsideWhy says it (cli code-snapshot.js
+ * `placedByOf`): `window` where only D113's window and D206's waits placed its files (the record's `timeByWindow`), or, in
+ * the working folder, with a base the person named (only an untracked file is outside there, placed by the window alone);
+ * else `commit`. Null on an earlier record (`placedRecordOf`), whose sentences keep their words. Structure only. Pure.
+ */
+export function outsideHowOf(pass, place = null) {
+  return !placedRecordOf(pass) || !plain(pass?.base) ? null : outsideKeyOf(pass.base, place);
+}
+/** D207's review of real reports: `outsideHowOf`'s key for a base of D207's code snapshot or record (the terminal reads a
+ *  snapshot it has just made, cli session-review-command.js `codeSnapshotLine`). Pure. */
+export function outsideKeyOf(base, place = null) {
+  if (place !== null) return plain(place) && place.timeByWindow === true ? OUTSIDE_BY_WINDOW : OUTSIDE_BY_COMMIT;
+  return plain(base) && (base.timeByWindow === true || namedBaseOf(base) !== null) ? OUTSIDE_BY_WINDOW : OUTSIDE_BY_COMMIT;
+}
+/** D207's review of real reports: `outsideHowOf` of every place that holds a file outside the evaluated session, for the
+ *  one line that names them all (the files list's, report-model.js): their one key, or `end` where they differ, which holds
+ *  of both. Null on an earlier record or with no such file. Pure. */
+export function outsideLeadHowOf(pass) {
+  const ways = new Set([...(list(sessionChangeOf(pass?.base).changedOutside).length ? [outsideHowOf(pass)] : []),
+    ...placesOf(pass?.base).filter((p) => p.kind === 'git' && p.changedOutside.length).map((p) => outsideHowOf(pass, p))]);
+  if (!ways.size || ways.has(null)) return null;
+  return ways.size === 1 ? [...ways][0] : OUTSIDE_BY_END;
+}
+/** D207's review of real reports: the parts of the code step (`CODE_STEP_PARTS`) whose failed or too large call leaves the
+ *  review's own answer short, the review and its repair; and three CODE_FOOTER_KINDS members, named by value as above. */
+const [REVIEW_STEP, REPAIR_STEP] = CODE_STEP_PARTS;
+const FOOTER_FAILED = 'failed';
+const FOOTER_TOO_LARGE = 'too_large';
+const FOOTER_SOURCE_CHANGED = 'source_changed';
+/**
+ * D207's review of real reports: whether a record of D207's code step (`placedRecordOf`) is short of complete only by a
+ * check — the review saw the whole change (code-pass.js `codeChangeShortOf`, the record's own test, false), its call and
+ * its repair's answered (no failed or too large call of either in the footer), the repository did not change while it
+ * ran (no `source_changed` in the footer: what it read may mix two states, code-pass.js `markSourceChanged`), and a check
+ * of a finding or a question gave no verdict (code-pass.js `codeChecksShortOf`); the item-by-item check may be short too. The terminal said it "did not
+ * cover all of the change and its checks" of a review that saw 73 of 73 files whole. False on an earlier record, with no
+ * review request, a review that did not answer, or one short only by the item-by-item check (`codeReviewCoverage`: its
+ * own words). Structure only. Pure.
+ */
+export function codeShortByChecksOf(pass) {
+  if (!placedRecordOf(pass) || pass?.ran !== true || pass.coverage !== 'partial' || codeReviewCoverage(pass) !== 'partial')
+    return false;
+  const tally = codeChangeTally(pass);
+  if (tally === null || tally.sent !== true || tally.answered !== true) return false;
+  if (codeChangeShortOf({ manifest: pass.manifest, agents: pass.agents, agent: pass.agent }) !== false) return false;
+  if (footerEntries(pass.footer).some((e) => e.kind === FOOTER_SOURCE_CHANGED
+    || ([FOOTER_FAILED, FOOTER_TOO_LARGE].includes(e.kind) && [REVIEW_STEP, REPAIR_STEP].includes(e.part)))) return false;
+  return codeChecksShortOf({ withheld: pass.withheld, questions: pass.questions });
+}
 /** `codeNoChangeOf`'s key, as a reason of CODE_NOT_REVIEWED_REASONS. */
 const NO_CHANGE_REASON = Object.freeze({ [NO_CHANGE_WRITE]: NO_WRITE, [NO_CHANGE_SEEN_WRITE]: NO_SEEN_WRITE,
   [NO_CHANGE_WRITTEN]: NO_WRITTEN_CHANGE, [NO_CHANGE_FILE]: NO_FILE });
@@ -1150,6 +1359,17 @@ export function codeNotReviewedOf(pass) {
   if (tally.sent !== true) return NOT_SENT;
   if (tally.answered !== true) return NO_ANSWER;
   return tally.groups.not_seen.length === tally.total ? NONE_SEEN : null;
+}
+
+/**
+ * D118 (a): the first screen's sentence for a closed `reason` (`reportNotReviewedOf`) of the record `pass`. D207: a reason of
+ * no change of the session's own names the way to a branch's changes where it can work (`branchWayOutOf`); a named base
+ * where only an untracked file differs says so. The closed reason stays the record's. Pure.
+ */
+export function notReviewedWordsOf(pass, reason) {
+  if (reason === NO_FILE && namedBaseOf(pass?.base) !== null) return W.notReviewed(W.notReviewedNamedBase);
+  return W.notReviewed(`${W.notReviewedReasons[reason]}${[NO_WRITE, NO_SEEN_WRITE, NO_WRITTEN_CHANGE].includes(reason)
+    && branchWayOutOf(pass) ? `. ${BRANCH_REASON}` : ''}`);
 }
 
 /**
@@ -1231,8 +1451,10 @@ export function codeCoverageLines(pass) {
   }
   // D113 (its review): a change with no file to review, by the session's own change (`codeNoChangeOf`).
   const none = codeNoChangeOf(pass);
-  if (none !== null) return [W[none]];
-  const own = codeReviewCoverage(pass);
+  if (none !== null) return [none === NO_CHANGE_FILE && namedBaseOf(pass.base) !== null ? W.noFileNamedBase
+    : none === NO_CHANGE_WRITTEN && branchWayOutOf(pass) ? `${W[none]} ${BRANCH_WORDS}` : W[none]];
+  // D207's review of real reports: a coverage short only by a check, on a record of D207's code step, says so.
+  const own = codeShortByChecksOf(pass) ? 'checks' : codeReviewCoverage(pass);
   const coverage = Object.hasOwn(W.coverage, own) ? [W.coverage[own]] : [];
   const tally = (rest) => Object.keys(W.states).map((state) => [state, rest.filter((f) => f.state === state).length])
     .filter(([, n]) => n > 0).map(([state, n]) => `${n} ${W.states[state]}`).join(', ');

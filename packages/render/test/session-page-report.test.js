@@ -133,7 +133,9 @@ test('D97, D131: the page is the report model in its order — header, count lin
   // D144 once more (sonah.session-page/46, 0.3.0-beta.7): the prompt for the agent under an item that leads in Must
   // act, folded, in a block that one click selects.
   // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/47');
+  // D207 once more (sonah.session-page/48): a file's row says what places it in the change. D208 rides it: no colour
+  // behind quoted words.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/48');
 });
 
 test('D97 (13), D199, D203: the page is inert: one CSP, one script only by its hash, no resource; the only link out is a validated GitHub permalink', () => {
@@ -501,21 +503,21 @@ test('ported (D69 f (g) finding 10): every text colour holds 4.5:1 on its backgr
   const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const lum = (rgb) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-  const blend = (fg, a, bg) => fg.map((c, i) => c * a + bg[i] * (1 - a));
   // D193: each token is one light-dark() pair; a theme is its side of every pair.
   const pair = (name) => new RegExp(`--${name}: light-dark\\((#[0-9a-f]{6}|rgba\\([^)]*\\)), (#[0-9a-f]{6}|rgba\\([^)]*\\))\\)`)
     .exec(PAGE_CSS);
   const token = (side, name) => pair(name)[side];
-  const rgba = (value) => { const [r0, g, b, a] = value.slice(5, -1).split(',').map(Number); return [[r0 / 255, g / 255, b / 255], a]; };
   for (const block of [1, 2]) {
     const card = hex(token(block, 'card')), wash = hex(token(block, 'wash'));
     const backs = [card, wash];
-    for (const tint of ['accent-soft', 'mark']) { const [c, a] = rgba(token(block, tint)); backs.push(blend(c, a, card)); }
     for (const name of ['faint', 'muted', 'ink', 'accent-ink'])
       for (const back of backs) assert.ok(ratio(hex(token(block, name)), back) >= 4.5, `${name} ${ratio(hex(token(block, name)), back).toFixed(2)}`);
   }
   // The accent itself only draws borders and marks, never text.
   assert.doesNotMatch(PAGE_CSS, /[;{]\s*color: var\(--accent\);/);
+  // The owner, 2026-11-02: no colour behind quoted words: a quote keeps its marks, an ask's mark its underline.
+  assert.doesNotMatch(PAGE_CSS, /q\.said \{[^}]*background/);
+  assert.match(PAGE_CSS, /mark\.ask \{ background: none;/);
 });
 
 test('ported (D69 page audit): the rules the page no longer reads stay gone', async () => {

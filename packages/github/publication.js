@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { canonicalJson } from '../evidence/contracts/index.js';
 import { PUBLIC_STATUSES, honestStatuses, reviewRunState } from '../evidence/src/ledger.js';
 import { coverageCauses, COVERAGE_SENTENCE, attentionSummary } from '../evidence/src/review.js';
-import { CODE_REPORT_WORDS, reportNotReviewedOf } from '../evidence/src/code-report.js';
+import { notReviewedWordsOf, reportNotReviewedOf } from '../evidence/src/code-report.js';
+import { namedBaseOf } from '../evidence/src/code-pass.js';
 import { fail } from './errors.js';
 import { request, targetPath, listPages } from './client.js';
 import { isOid, freeze, checkMetadata } from './reader.js';
@@ -45,6 +46,9 @@ export const PUBLICATION_WORDS = Object.freeze({
   notCovered: (sentences) => `Not covered: ${sentences.join(' · ')}.`,
   noCause: 'Not covered: the report declares partial session coverage but names no cause.',
   attention: 'What needs your attention:',
+  // D207's review: the person named the base of the code review with --code-base; the comment names no ref.
+  namedBase: 'The person named the base of the code review with --code-base. The change can hold work that is not this '
+    + 'session\'s.',
   advisory: 'This is an advisory COMMENT review. It does not approve the change or allow a merge. Read it before you '
     + 'share it.',
 });
@@ -87,8 +91,8 @@ function attentionStatement(report) {
 function noCodeStatement(report) {
   // D122: one definition with the report model and the terminal (`reportNotReviewedOf`).
   const reason = reportNotReviewedOf(report);
-  return reason === null ? ''
-    : `${escapePublicText(CODE_REPORT_WORDS.notReviewed(CODE_REPORT_WORDS.notReviewedReasons[reason]))}\n\n`;
+  if (reason !== null) return `${escapePublicText(notReviewedWordsOf(report.codePass, reason))}\n\n`;
+  return namedBaseOf(report.codePass?.base) === null ? '' : `${escapePublicText(PUBLICATION_WORDS.namedBase)}\n\n`;
 }
 
 /**
