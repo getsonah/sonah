@@ -115,7 +115,8 @@ test('G2: the vocabularies, the version and the labels', () => {
     assert.ok(Object.isFrozen(list));
   // One bump for the new request (the re-ask's fixed words); no request sent before moved.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/39');
   assert.equal(windowOfLabel('narrative:w2:reanchor:3'), 2, 'a re-ask belongs to its window (F226)');
   assert.equal(windowOfLabel('challenge:w2:reanchor:b1:p1'), 2);
   assert.equal(windowOfLabel('challenge:w2:reanchor-column:b1:p1'), 2);
@@ -143,6 +144,10 @@ test('G2: a choice not to act its existence check refuted is re-asked once, with
   assert.ok(!reask.prompt.includes(n.plan.id), 'events are named by the window\'s aliases');
   assert.deepEqual(record(report), recordOf({ existence: { upheld: 1 }, challenged: { upheld: 1 } }));
   assert.deepEqual(windowIncompleteReasons(report.windowResults[0]), [], 'the window is complete');
+  // D212: it starts from W1 A's existence check alone, whose record holds what was asked and nothing more; no re-ask of
+  // W1 A's is sent.
+  assert.deepEqual(report.windowResults[0].recolumn, { refuted: 1, existence: outcomes({ refuted: 1 }) });
+  assert.deepEqual(seen.filter((request) => /:recolumn/.test(request.label)), []);
 });
 
 test('G2: an upheld re-ask is published as a choice not to act, on the agent\'s own words', async (t) => {

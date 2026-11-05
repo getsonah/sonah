@@ -779,7 +779,9 @@ test('a review: stdout, the requests and the .md are the same with and without a
       const withNewer = await reviewIn(dir, { format, updateNotice: newer });
       for (const [name, run] of [['none', none], ['newer', withNewer]]) {
         assert.equal(run.code, without.code, `${format} ${name}`);
-        assert.deepEqual(run.sent, without.sent, `${format} ${name}: the requests, byte for byte`);
+        // The same requests, byte for byte, in any order: a window's challenge passes are in flight together, so which
+        // reaches the transport first is the scheduler's (seen under the full suite's load: p3 before p2).
+        assert.deepEqual([...run.sent].sort(), [...without.sent].sort(), `${format} ${name}: the requests, byte for byte`);
         assert.equal(run.stdout, without.stdout, `${format} ${name}: stdout, byte for byte`);
         assert.equal(run.stderr, without.stderr, `${format} ${name}: the command itself writes no notice`);
         assert.equal(run.md, without.md, `${format} ${name}: the .md never carries it`);

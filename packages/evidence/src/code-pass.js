@@ -74,12 +74,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { MIN_QUOTE_CHARS, verifyReceipt, repairReceipt, findingIdentity, effectReader, ACTION_EFFECTS, CHANGING_EFFECTS,
   isRead, recordedFailure } from './session.js';
 import { requestFits } from './challenge.js';
+import { appendedRequest, continuedRequest, staggerSharedParts } from './prompt-parts.js';
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, EVIDENCE_QUOTE_MAX, GAP_CODES, CODE_DIFF_BASES, CODE_START_COMMIT_SOURCES,
   CODE_PLACED_BY,
   CODE_CHANGE_TYPES, CODE_DIFF_STATES, CODE_PASS_LENSES, CODE_FINDING_KINDS, CODE_VERIFY_VERDICTS, CODE_CLAIM_VERDICTS,
   CODE_QUESTION_VERDICTS, CODE_REFUTATION_REASONS, CODE_WITHHELD_REASONS, CODE_WITHHELD_ITEMS, CODE_ITEM_ERRORS,
   CODE_VOID_CAUSES, CODE_REPAIR_UNCHECKED, CODE_REPAIR_FATES, CODE_ANSWER_SOURCES, CODE_PREMISE_SOURCES,
   CODE_REVIEW_TERMINALS, CODE_DOSSIER_KINDS, CODE_DOSSIER_MOVES, CODE_FOOTER_KINDS, CODE_STEP_PARTS, CODE_STEP_BACKEND_GAP,
+  CODE_STEP_WAITS_GAP,
   CODE_SHOWN_STATES, CODE_LEFT_OUT_REASONS, CODE_SEEN_STATES, CODE_READ_FAILURES, CODE_ACCOUNT_SCOPE,
   CODE_ACCOUNT_OUTCOMES, CODE_ACCOUNT_FATES, CODE_ACCOUNT_MISSING, REQUIREMENT_STATUSES, ASK_CODE_HOLDS_REASONS,
   REASKABLE_JUDGE_CODES, personsProjectFile, TRIAGE_LEVELS, TRIAGE_ERRORS, ASK_CODE_ATTENTION_LINKS,
@@ -415,6 +417,10 @@ const [SEEN_WHOLE, SEEN_IN_PART, SEEN_HUNKS_ONLY, NOT_SEEN, LINES_UNKNOWN] = COD
 const [REVIEW_PART, REPAIR_PART, VERIFY_PART, BATCH_PART, ACCOUNT_PART] = CODE_STEP_PARTS;
 const [, , , , , CODE_UNREVIEWABLE, , , , , , , SOURCE_CHANGED] = GAP_CODES;
 const CODE_STEP_BACKEND = CODE_STEP_BACKEND_GAP;
+/** The gates that stop the step before it asks anything, each kept as its gap in the record: the review's backend
+ *  (`code_step_backend`), and (D210) a session review that running the same command again can finish (`code_step_waits`,
+ *  cli session-review.js `codeStepWaits`). */
+export const CODE_STEP_GATES = Object.freeze([CODE_STEP_BACKEND, CODE_STEP_WAITS_GAP]);
 /** The kinds whose finding may anchor outside the change when one code step of its trace quotes a changed line: a
  *  broken contract, a broken rule, or a claim the code contradicts, elsewhere (a stale doc, a caller). */
 const ANCHOR_ANYWHERE = Object.freeze([CONTRACT_BREAK, RULE_BREAK, CLAIM_FALSE]);
@@ -522,14 +528,15 @@ export const quoteOverlaps = (source, quote, anchor) => quoteLineRanges(source, 
  * the reply's candidates (null for a reply the contract refuses), and each failed candidate is replaced by the one reply
  * candidate whose `identity` is its own. The repair is used only when every reply candidate replaced exactly one failed
  * one. `{ usable, replacements }` — replacements by index. A failed call, an unfitting request or an unusable reply
- * leaves every candidate as it was.
+ * leaves every candidate as it was. D211: the repair keeps `request`'s cuts and adds one at its end
+ * (prompt-parts.js `appendedRequest`); no byte moves.
  */
 export async function receiptRepairOnce({ judge, request, label, note, failed, readRepaired, identity,
   fits = requestFits }) {
   const none = { usable: false, replacements: new Map() };
   try {
-    const repairRequest = { ...request, prompt: `${request.prompt}${note}${JSON.stringify(failed.map(({ candidate }) => candidate))}`,
-      label };
+    const repairRequest = { ...appendedRequest(request,
+      `${note}${JSON.stringify(failed.map(({ candidate }) => candidate))}`), label };
     if (!fits(repairRequest)) throw new Error('budget_exhausted');
     const offered = readRepaired(await judge(repairRequest));
     if (!Array.isArray(offered)) return none;
@@ -2681,29 +2688,40 @@ export function verifierFindingOf(finding, sources = []) {
     anchor: finding.anchor }, cited };
 }
 
+/** The part every checking agent's request of one change starts with (D211): the person's words, the change's heading
+ *  and the change block, each line of it as the request joins it. */
+const sharedCheckLines = (words, change, where) => [...personBlock(words), changeHeadingOf(where), '', change, ''];
+/** D211: the cut after `shared`, the lines a request's prompt starts with: their join and the newline that follows. */
+const cutAfter = (shared) => [shared.join('\n').length + 1];
+
 /** A finding's checking agent's request. Deterministic. D113 amended: for a finding outside the evaluated session
  *  (`groundFinding`'s `outsideSession`), `outside` is the block of the files outside it (`outsideBlock`'s text), shown
- *  after the change; for any other finding none, so its request is the one before this amendment byte for byte. */
+ *  after the change; for any other finding none, so its request is the one before this amendment byte for byte. D211:
+ *  its prompt is cut (`parts`, prompt-parts.js) after the part every checking agent's request of the change shares
+ *  (`sharedCheckLines`); no byte moves. */
 export function buildVerifyRequest({ words, change, outside = null, finding, cited = [], where }) {
-  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',
+  const shared = sharedCheckLines(words, change, where);
+  const prompt = [...shared,
     ...(typeof outside === 'string' && outside ? [outside] : []),
     '# The finding to check — untrusted', '', JSON.stringify(findingShownAs(finding, shownAsOf(where))), '',
     ...(cited.length ? ['# Session text the finding quotes (the person\'s words or recorded results) — untrusted '
       + 'evidence', '', ...cited.map((s) => fenced(s.text)), ''] : []),
     whereBlock(where, CODE_AGENT_LIMITS.verify.maxTurns)].join('\n');
   return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.verify : CODE_VERIFY_SYSTEM), prompt,
-    schema: CODE_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.verify) };
+    parts: cutAfter(shared), schema: CODE_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.verify) };
 }
 
 /** The batch checking agent's request: the questions (Q1…), each with what it concerns — the item's words only when
- *  they are the person's or a recorded result's; an agent's item by its kind and key alone. Deterministic. */
+ *  they are the person's or a recorded result's; an agent's item by its kind and key alone. Deterministic. D211: cut
+ *  as a finding's check is (`buildVerifyRequest`). */
 export function buildBatchVerifyRequest({ words, change, questions, where }) {
-  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',
+  const shared = sharedCheckLines(words, change, where);
+  const prompt = [...shared,
     '# The review\'s questions for the person — untrusted', '',
     ...(questions.length ? questions.map((q) => JSON.stringify(q)) : ['(none)']), '',
     whereBlock(where, CODE_AGENT_LIMITS.batch.maxTurns)].join('\n');
   return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.batch : CODE_BATCH_VERIFY_SYSTEM), prompt,
-    schema: CODE_BATCH_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.batch) };
+    parts: cutAfter(shared), schema: CODE_BATCH_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.batch) };
 }
 
 // ---- the accounting (F3b, D111) ---------------------------------------------------------------------------------------
@@ -2729,7 +2747,8 @@ export function accountScopeOf(dossier) {
  * An accounting agent's request (F3b, D111): the person's words and the change first — the part every batch shares, so
  * batches share a cached prefix — then the code review's findings (`F<n>`: kind, title, anchor and the keys it follows
  * from) and questions (`Q<n>`: the question and the key it concerns), then the batch's items as the dossier shows them
- * (code-context.js `renderDossier`), then where the agent is. Deterministic.
+ * (code-context.js `renderDossier`), then where the agent is. Deterministic. D211: cut as a finding's check is
+ * (`buildVerifyRequest`), after the person's words and the change.
  */
 export function buildAccountRequest({ words, change, findings = [], questions = [], items, where }) {
   const shownAs = shownAsOf(where);
@@ -2737,11 +2756,12 @@ export function buildAccountRequest({ words, change, findings = [], questions = 
     anchor: plain(f.anchor) ? { ...f.anchor, path: shownAs(f.anchor.path) } : f.anchor,
     leadsFrom: f.leadsFrom })), ...questions.map((q) => JSON.stringify({ key: q.key, question: q.question,
     concerns: q.concerns }))];
-  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '', ACCOUNT_REVIEW_HEADING, '',
+  const shared = sharedCheckLines(words, change, where);
+  const prompt = [...shared, ACCOUNT_REVIEW_HEADING, '',
     ...(review.length ? review : ['(none)']), '', ACCOUNT_ITEMS_HEADING, '', renderDossier(items, { shownAs }), '',
     whereBlock(where, CODE_AGENT_LIMITS.account.maxTurns)].join('\n');
   return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.account : CODE_ACCOUNT_SYSTEM), prompt,
-    schema: CODE_ACCOUNT_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.account) };
+    parts: cutAfter(shared), schema: CODE_ACCOUNT_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.account) };
 }
 
 const ACCOUNT_ENTRY_KEYS = Object.freeze(['key', 'outcome', 'receipts', 'by', 'finding']);
@@ -2832,7 +2852,8 @@ async function accountBatch({ n, entries, words, change, review, where, context,
     : keys.filter((key) => read.get(key).state === 'void').map((key) => ({ key, cause: read.get(key).cause,
       at: read.get(key).at }));
   if (!voids.length) return { keys, state: 'ok', answers, read };
-  const again = { ...request, prompt: `${request.prompt}${reaskNote(read === null ? [voids[0]] : voids)}` };
+  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`).
+  const again = appendedRequest(request, reaskNote(read === null ? [voids[0]] : voids));
   if (!fits(again)) {
     notSent(ACCOUNT_PART);
     if (read !== null) return { keys, state: 'ok', answers, read };
@@ -3908,7 +3929,8 @@ const refOf = (item) => (item ? { key: item.key, kind: item.kind, source: item.s
  * agents; `base` the diff's start (`{ kind, commit?, how?, outside? }`); `bound` the review's request bound
  * (review-profiles.js `requestBoundOf`). `judge` is the code step's (async `request -> answer`); every request carries a
  * label (`code-review:agent`, `code-review:repair`, `code-verify:F<n>[:reask]`, `code-verify:batch[:reask]`, and F3b's
- * `code-account:<n>[:reask]`), its schema and its agent fields. `ran` false, or `gate` (`code_step_backend`), and nothing is asked. Returns `{ codePass, checks }`:
+ * `code-account:<n>[:reask]`), its schema and its agent fields. `ran` false, or `gate` (CODE_STEP_GATES: `code_step_backend`, or
+ * D210's `code_step_waits`), and nothing is asked. Returns `{ codePass, checks }`:
  * the report member and each row's `codeCheck` by `source:index`. Never throws for a failed call: a step that could not
  * run leaves its coverage short, and the footer names it. code-pass/12 (D105): the review request is planned within
  * `bound` (`planReviewRequest`), its repair and re-ask too, each a request the step sends or, too large to send, names
@@ -3954,9 +3976,13 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
     notSent: () => { awayChecks.tooLarge++; } } : { failedCall, notSent });
   // code-pass/12 (D105): each agent request's reading record, by its label (`runRecordOf`): paths and counts only.
   const runs = new Map();
+  // D211: a checking agent's request that shares its first part with one sent before it (the checks of one change, an
+  // accounting batch of one change, a re-ask of its original) waits for that one's reply to begin
+  // (prompt-parts.js `staggerSharedParts`); every other request is sent at once, as before.
+  const send = staggerSharedParts(judge);
   const ask = async (request, label) => {
     try {
-      const answer = await judge({ ...request, label });
+      const answer = await send({ ...request, label });
       runs.set(label, runRecordOf(answer, root));
       return { ok: true, answer };
     } catch (error) { runs.set(label, runRecordOf(error, root)); return { ok: false, answer: null, error }; }
@@ -4176,7 +4202,8 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
           calls.repair++;
           stage.manifests.repair = again.manifest;
           stage.shownBy.push([labels.repair, changeShownBy(again)]);
-          reply = await ask(again.request, labels.repair);
+          // D211: cut at the request's end when it is the request and the note byte for byte (`continuedRequest`).
+          reply = await ask(continuedRequest(request, again.request), labels.repair);
           if (!usableOf(reply)) failedCall(REPAIR_PART);
         }
       }
@@ -4226,7 +4253,8 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
           calls.repair++;
           stage.manifests.repair = repairPlan.manifest;
           stage.shownBy.push([labels.repair, changeShownBy(repairPlan)]);
-          const reply = await ask(repairPlan.request, labels.repair);
+          // D211: cut at the request's end when it is the request and the note byte for byte (`continuedRequest`).
+          const reply = await ask(continuedRequest(request, repairPlan.request), labels.repair);
           if (reply.ok && plain(reply.answer)) repaired = reply.answer;
           else { failedCall(REPAIR_PART); unchecked = REPAIR_FAILED; }
         }
@@ -4841,7 +4869,7 @@ export async function runCodePass({ report, session, snapshot, repo = null, judg
       && !(f.state === CHANGED_SINCE_SESSION && reviewShown.has(f.path)));
   const since = reportFiles.filter((f) => f.state === CHANGED_SINCE_SESSION);
   const gaps = [
-    ...(gate === CODE_STEP_BACKEND ? [{ code: CODE_STEP_BACKEND, channel: 'code', scope: 'repository' }] : []),
+    ...(CODE_STEP_GATES.includes(gate) ? [{ code: gate, channel: 'code', scope: 'repository' }] : []),
     ...(declared.length ? [{ code: CODE_UNREVIEWABLE, channel: 'code', scope: 'repository', count: declared.length,
       byState: tally(CODE_FILE_STATES, declared.map((f) => f.state)) }] : []),
     ...(since.length ? [{ code: SOURCE_CHANGED, channel: 'code', scope: 'repository', count: since.length }] : []),
@@ -5632,7 +5660,8 @@ async function verifyFinding({ g, key, words, change, outside = null, sessionSou
   if (!rereadable(first)) { failedCall(VERIFY_PART); return { state: 'failed' }; }
   const read = first.ok ? readFindingVerdict(first.answer, published, context, shown) : voided(SHAPE, 'answer');
   if (read.ok) return { state: 'ok', verdict: read };
-  const again = { ...request, prompt: `${request.prompt}${reaskNote([{ key: null, cause: read.cause, at: read.at }])}` };
+  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`).
+  const again = appendedRequest(request, reaskNote([{ key: null, cause: read.cause, at: read.at }]));
   if (!fits(again)) { notSent(VERIFY_PART); return { state: 'void', cause: read.cause }; }
   calls.verifyRepeat++;
   const second = await ask(again, `code-verify:${key}:reask`);
@@ -5666,8 +5695,9 @@ async function verifyBatch({ grounded, byKey, words, change, where, context, fit
   const voids = expected.filter(({ key }) => !read.get(key).ok);
   for (const { key } of expected) if (read.get(key).ok) result.set(key, { state: 'ok', verdict: read.get(key) });
   if (!voids.length) return result;
-  const again = { ...request, prompt: `${request.prompt}${reaskNote(voids.map(({ key }) => ({ key,
-    cause: read.get(key).cause, at: read.get(key).at })))}` };
+  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`).
+  const again = appendedRequest(request, reaskNote(voids.map(({ key }) => ({ key, cause: read.get(key).cause,
+    at: read.get(key).at }))));
   let reread = null;
   if (fits(again)) {
     calls.batchRepeat++;

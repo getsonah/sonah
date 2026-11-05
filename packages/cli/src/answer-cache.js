@@ -15,7 +15,9 @@ import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readdir, rename, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { REVIEW_AGENT_TRANSPORT_VERSION, REVIEW_EFFORT, REVIEW_EFFORTS, REVIEW_TRANSPORT_VERSION, agentRequestOf,
-  agentRunRecord, isAgentRequest, reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf } from './review-judge.js';
+  agentRunRecord, isAgentRequest, resentWhole, reviewAgentKeyArgs, reviewTransportArguments, requestImagesOf }
+  from './review-judge.js';
+import { ANSWER_REPLAYED, promptCutsOf } from '../../evidence/src/prompt-parts.js';
 
 /** The record format and the key's own shape. A change to either is a new version, never read as this one.
  *  /2: the key binds the transport's own arguments (F227). */
@@ -29,6 +31,9 @@ export const ANSWER_CACHE_VERSION = 'sonah.answer-cache/2';
  * (a challenge's candidates are inside `prompt`). The backend, the model, the transport version and
  * (W3f-2 / F227) the transport's own arguments — the CLI's argv, the API's URL, version and body
  * fields — are bound beside them, so an argument changed without a version bump is a new question.
+ * D211: a request's `parts` (evidence prompt-parts.js `promptCutsOf`) cut the prompt into text blocks, the first marked
+ * for the prompt cache; the text, and its order, are the prompt's. Bound through the argv they change (the claude CLI's
+ * `--input-format stream-json`), never by their offsets: the model reads the same text wherever the cut is.
  */
 export const SENT_FIELDS = Object.freeze(['system', 'prompt']);
 /** Gain I (2026-10-13): and a request's images (`images`, review-judge.js `requestImagesOf`), when it carries any —
@@ -60,7 +65,8 @@ function agentAnswerKey(request, { backend, model, named, transportArguments, re
   const agent = agentRequestOf(request);
   if (agent === null || backend !== 'claude-cli' || typeof repoState !== 'string' || !REPO_STATE.test(repoState)
       || requestImagesOf(request)?.length !== 0) return null;
-  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema, ...named });
+  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema, ...named,
+    ...(promptCutsOf(request).length ? { parts: true } : {}) });
   if (!Array.isArray(args?.argv)) return null;
   return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_AGENT_TRANSPORT_VERSION,
     backend, model, agent: reviewAgentKeyArgs(args.argv), system: request.system, prompt: request.prompt,
@@ -86,8 +92,11 @@ export function answerKey(request, { backend, model, effort = REVIEW_EFFORT, tra
   if (isAgentRequest(request)) return agentAnswerKey(request, { backend, model, named, transportArguments, repoState });
   const images = requestImagesOf(request);
   if (images === null) return null;
-  const args = (images.length ? transportArguments({ backend, model, system: request.system, images, ...named })
-    : transportArguments({ backend, model, system: request.system, ...named })) ?? null;
+  // D211: a request in parts is asked for its arguments with `parts`, which only the claude CLI's argv carries; every
+  // other request is asked for them byte for byte as before.
+  const parted = promptCutsOf(request).length ? { parts: true } : {};
+  const args = (images.length ? transportArguments({ backend, model, system: request.system, images, ...named, ...parted })
+    : transportArguments({ backend, model, system: request.system, ...named, ...parted })) ?? null;
   return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_TRANSPORT_VERSION,
     backend, model, args, system: request.system, prompt: request.prompt,
     ...(images.length ? { [SENT_IMAGE_FIELD]: images.map((image) => [image.mediaType,
@@ -223,9 +232,13 @@ export function createAnswerCache(directory, { backend, model, effort = REVIEW_E
       await utimes(pathOf(key, occurrence), now, now).catch(() => {});
       return record.response;
     },
-    /** True when the answer was stored. A write that fails costs the next review one call, never this one. */
+    /** True when the answer was stored. A write that fails costs the next review one call, never this one. D211: an
+     *  answer the transport got by sending the request again without its parts (review-judge.js `withTransportRetry`,
+     *  `resentWhole`) is never stored: the key binds the argv of the request in parts, which did not answer it, so the
+     *  next review asks it again. */
     async put(request, response, occurrence = 0) {
       if (readOnly) return false;
+      if (resentWhole(response)) return false;
       const key = keyOf(request);
       if (key === null || !isOccurrence(occurrence) || !answerStorable(request, response)) return false;
       // D105: an agent answer is kept with its reading record, or not at all (a stored one without it is a miss).
@@ -306,6 +319,9 @@ export function createAnswerCache(directory, { backend, model, effort = REVIEW_E
  * read or wrote for a request whose label `belongs` accepts, in the order the requests were
  * DISPATCHED (never the order answers came back); `answersFor(belongs)` — `{ calls, reused }` over
  * those labels only. Both are copies, in memory only.
+ *
+ * D211: a request answered from the cache that carries an ANSWER_REPLAYED function (evidence prompt-parts.js, not
+ * enumerable) has it called once, before its answer is returned, so a caller waiting on its call knows none was made.
  */
 export function memoizeJudge(judge, cache = null, { fresh = false } = {}) {
   const asked = new Map();
@@ -330,7 +346,13 @@ export function memoizeJudge(judge, cache = null, { fresh = false } = {}) {
     const order = dispatched++;
     if (!fresh) {
       const stored = await cache.get(request, occurrence);
-      if (stored !== null) { reused++; tally(label, 'reused'); touched.push({ label, key, occurrence, order }); return stored; }
+      if (stored !== null) {
+        reused++; tally(label, 'reused'); touched.push({ label, key, occurrence, order });
+        // D211: a request that asks to be told it was answered with no call (evidence prompt-parts.js ANSWER_REPLAYED).
+        const replayed = request?.[ANSWER_REPLAYED];
+        if (typeof replayed === 'function') try { replayed(); } catch { /* the caller's signal never changes the answer */ }
+        return stored;
+      }
     }
     calls++;
     tally(label, 'calls');

@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.12",
+  "version": "0.3.0-beta.13",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
@@ -100,6 +100,7 @@
     "packages/evidence/src/ledger.js",
     "packages/evidence/src/materiality.js",
     "packages/evidence/src/prompt.js",
+    "packages/evidence/src/prompt-parts.js",
     "packages/evidence/src/receipt-repair.js",
     "packages/evidence/src/recheck.js",
     "packages/evidence/src/review-agent.js",

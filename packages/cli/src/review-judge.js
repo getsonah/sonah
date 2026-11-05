@@ -4,12 +4,14 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES, CODE_READ_FAILURES } from '../../evidence/src/ledger.js';
+import { REASKABLE_JUDGE_CODES, RETRYABLE_JUDGE_CODES, CODE_READ_FAILURES, PROMPT_PARTS_DROPPED }
+  from '../../evidence/src/ledger.js';
 import { TRANSPORT_SHORTFALL } from '../../evidence/src/run-review.js';
 import { codexExecutable, codexJudgeArgs } from './codex-model.js';
 import { claudeConfigDirForCalls } from './claude-home.js';
 import { IMAGE_BACKENDS, REQUEST_IMAGE_LIMITS } from '../../evidence/src/images.js';
-import { REPLY_BEGUN } from '../../evidence/src/challenge.js';
+import { REPLY_BEGUN, withReplyBegun } from '../../evidence/src/challenge.js';
+import { promptCutsOf, promptPartsOf } from '../../evidence/src/prompt-parts.js';
 
 // W3d-1: a transport failure also carries its closed `transportClass`. The message is the
 // code and nothing else — no stderr, no provider body, no error text reaches the thrown error.
@@ -417,6 +419,16 @@ function localTransportClass({ stop, exitCode, result }) {
 // shape (an init naming the id without the selector, attested only by the window its usage reports); no argv,
 // environment, prompt or key byte moves, so no key moves. An answer stored before was accepted under 2.1.278's rule,
 // which still holds, and replays as it was stored.
+// D210: not bumped. Every call's environment now sets FORCE_PROMPT_CACHING_5M (`claudeEnvironment`), which sets how long
+// the CLI's prompt-cache entries live and nothing the model reads: no argv, system prompt or prompt byte moves, so no key
+// moves (answer-cache.js binds the argv, never the environment), and the attestation reads the stream's init, models and
+// `modelUsage` window, never the cache's split. Measured on 2.1.311: the same reply with it and without it. An answer
+// stored before replays as it was stored (d210-prompt-cache.test.js).
+// D211: not bumped, by the rule Gain I and D160 kept: an argument the answer key binds needs no version. A request whose
+// prompt is in parts (evidence prompt-parts.js: a session's refuted-row re-asks) is one stream-json user message, one
+// text block per part, the first carrying the one cache marker, with `--input-format stream-json` in its argv, which
+// its key binds (answer-cache.js): its key moves, and its stored answer is asked once more. Its text and order are the
+// prompt's byte for byte. Every other request's argv, stdin, environment and key are byte for byte as before.
 export const REVIEW_TRANSPORT_VERSION = 'sonah.review-transport/3';
 /** The reviewer's settings: `{ backend, model, version }`, and (D160) `effort` when `options.effort` names one other
  *  than the default (reviewEffortOf), so a review at the default is set up byte for byte as before. SONAH_EFFORT is the
@@ -447,6 +459,13 @@ const CLI_DISABLE_CLAUDE_MDS_VARIABLE = 'CLAUDE_CODE_DISABLE_CLAUDE_MDS';
 export const CLI_SAFE_MODE_VARIABLE = 'CLAUDE_CODE_SAFE_MODE';
 /** D151: the claude CLI's setting for a subscription login given by environment (`claude setup-token`). */
 const CLI_OAUTH_TOKEN_VARIABLE = 'CLAUDE_CODE_OAUTH_TOKEN';
+/** D210: the claude CLI's setting that writes every prompt-cache entry of a call for five minutes, not one hour
+ *  (2.1.311, byte search of its bundle: the cache's time-to-live chooser returns `5m` first when it is set, before its
+ *  own environment, setting, agent and one-hour switches; it is a boolean setting, so `1` sets it). Without it the CLI
+ *  writes a subscriber's calls to the one-hour cache, by a flag of the server, at $4 per million tokens of Sonnet 5.5
+ *  against $2.50 for five minutes. Measured 2026-11-04 with Sonah's argv and environment: 20,408 tokens written as
+ *  `ephemeral_1h` ($0.0817) without it, 20,411 as `ephemeral_5m` ($0.0511) with it, and the same reply. */
+export const CLI_PROMPT_CACHE_5M_VARIABLE = 'FORCE_PROMPT_CACHING_5M';
 /** The names of the person's environment every claude process Sonah starts keeps as they are: the home, the user and
  *  shell, the path, the language and the network's certificate settings. */
 const CLAUDE_KEPT_NAMES = Object.freeze(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'LOGNAME', 'SHELL',
@@ -479,6 +498,11 @@ const CLAUDE_KEPT_NAMES = Object.freeze(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_A
  *   tools, as evidence, never as instructions (D151: on every call, no longer on agent requests only).
  * - D77 (H): on a challenge call only (`isChallengeRequest`), the checker's output-token limit
  *   (CHALLENGE_MAX_OUTPUT_TOKENS). The person's own CLAUDE_CODE_MAX_OUTPUT_TOKENS never reaches a call.
+ * - D210: FORCE_PROMPT_CACHING_5M (CLI_PROMPT_CACHE_5M_VARIABLE): every cache entry a call writes is kept five minutes,
+ *   not one hour. On Sonah's paid runs, a session-review request's repeats (its second and third passes, its retries),
+ *   which read the entry its first pass wrote, came at most 163 seconds after it (339 gaps, median 13), by when their
+ *   answers were stored; the code step's agent turns were not timed. What the model is sent and answers does not
+ *   change. Not on `accountOnly`: `--version` and `auth status` ask no model and write no cache.
  */
 export function claudeEnvironment(env, { request = null, accountOnly = false } = {}) {
   const kept = Object.fromEntries(CLAUDE_KEPT_NAMES.filter((k) => env[k] != null).map((k) => [k, env[k]]));
@@ -489,6 +513,7 @@ export function claudeEnvironment(env, { request = null, accountOnly = false } =
   if (accountOnly) return account;
   return { ...account, CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1', CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1',
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', [CLI_SAFE_MODE_VARIABLE]: '1', [CLI_DISABLE_CLAUDE_MDS_VARIABLE]: '1',
+    [CLI_PROMPT_CACHE_5M_VARIABLE]: '1',
     ...(isChallengeRequest(request) ? { [CLI_MAX_OUTPUT_TOKENS_VARIABLE]: String(CHALLENGE_MAX_OUTPUT_TOKENS) } : {}) };
 }
 
@@ -560,11 +585,13 @@ export function reviewCodexArgs({ model, images = [] }) {
 /** `images` (Gain I): whether the request carries images. With none the argv is byte for byte as before; with some the
  *  request is one stream-json user message on stdin (`claudeStreamInput`): `--input-format stream-json`, which the
  *  installed CLI accepts only with `--print` and `--output-format stream-json` (its own checks, and `claude --help`).
- *  `effort` (D160): the review's effort (reviewEffortOf), REVIEW_EFFORT when none is given.
+ *  `effort` (D160): the review's effort (reviewEffortOf), REVIEW_EFFORT when none is given. `parts` (D211): whether the
+ *  request's prompt is sent in parts (evidence prompt-parts.js `promptCutsOf`), which is one stream-json user message
+ *  too; a request with neither is sent with the argv byte for byte as before.
  */
-export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false }) {
+export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false, parts = false }) {
   return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',
-    ...(images ? ['--input-format', 'stream-json'] : []),
+    ...(images || parts ? ['--input-format', 'stream-json'] : []),
     '--include-partial-messages', '--tools', '', '--disable-slash-commands',
     '--setting-sources', '', '--mcp-config', '{"mcpServers":{}}', '--strict-mcp-config',
     '--no-session-persistence', '--system-prompt', system];
@@ -580,7 +607,8 @@ export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = 
 /** Its version, bound in the answer key of agent requests only (answer-cache.js); REVIEW_TRANSPORT_VERSION stays the
  *  version of every other request. A change to the agent argv, to an environment setting that changes what the agent is
  *  sent or may do, or to how its answer is read is a new version (D151 amends the rule, which named any change to the
- *  environment). /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the
+ *  environment; D211 amends it again, the owner's decision of 2026-11-05: an argv argument that the agent key binds
+ *  needs no version, as REVIEW_TRANSPORT_VERSION's rule says). /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the
  *  file's total lines, from the CLI's typed tool results (`readRanges`, `readsUnranged`), and each Read that read
  *  nothing apart (`readsFailed`), and the answer store keeps it beside the answer; no stored agent answer of /1
  *  replays. D151: not bumped (the owner's call). Safe mode on every call, and the person's CLAUDE_CONFIG_DIR and
@@ -593,7 +621,17 @@ export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = 
  *  folder asks again. D162: not bumped. The agent's answer is judged by the same widened attestation as every other
  *  claude-cli call (Claude Code 2.1.311's shape, attested by the window its usage reports); the agent argv, the
  *  environment, the system prompt and the prompt are byte for byte as before, so every stored code-step answer, accepted
- *  under 2.1.278's rule, which still holds, replays. */
+ *  under 2.1.278's rule, which still holds, replays. D210: not bumped. FORCE_PROMPT_CACHING_5M in the environment sets
+ *  how long the CLI's cache entries live: it changes neither what the agent is sent nor what it may do nor how its
+ *  answer is read, so every stored code-step answer still replays. D211: not bumped, by the rule as D211 amends it
+ *  (the owner's decision, 2026-11-05). The change to
+ *  the agent argv is `--input-format stream-json` on a request whose prompt is in parts (the code step's checking
+ *  agents, their re-asks and repairs, and a review repair that is its request and its note byte for byte), and the key
+ *  of exactly those requests binds it (`reviewAgentKeyArgs` keeps it); an answer got by resending such a request
+ *  without its parts is never stored (answer-cache.js `put`), so none of them replays an answer asked another way. A
+ *  bump would also move the key of every request sent byte for byte as before (each review agent's), and throw away
+ *  answers that are still the answers to those bytes. What the agent is sent is the same text in the same order, may
+ *  do the same, and is read the same. */
 export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/2';
 /** The tools an agent request is given (`--tools`, `--allowedTools`): it can read and search, never write or run. */
 export const AGENT_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
@@ -656,11 +694,13 @@ export function agentRequestOf(request) {
  * a prompt (`dontAsk`, `--permission-prompts none`), confined to the working directory and each `--add-dir` (`--restricted`:
  * a Read outside them, through a link included, is refused), at most `agent.maxTurns` turns, and the answer through the
  * CLI's structured output tool (`--json-schema`). No `--include-partial-messages`: nothing reads a partial message. The
- * system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs.
+ * system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs. `parts` (D211):
+ * whether the request's prompt is sent in parts, as one stream-json user message (`--input-format stream-json`, where
+ * reviewCliArgs places it); a request without is sent with the argv byte for byte as before.
  */
-export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema }) {
+export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema, parts = false }) {
   return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',
-    '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,
+    ...(parts ? ['--input-format', 'stream-json'] : []), '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,
     '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--restricted',
     ...(agent.addDirs ?? []).flatMap((dir) => ['--add-dir', dir]), '--max-turns', String(agent.maxTurns),
     '--json-schema', JSON.stringify(schema),
@@ -683,18 +723,27 @@ export function reviewAgentKeyArgs(argv) {
   return kept;
 }
 
+/** D211: the one cache marker a request in parts carries, on its first text block (the Messages API's own field, which
+ *  the claude CLI passes through from stream-json input), at its default lifetime: five minutes. */
+export const PROMPT_PART_CACHE_CONTROL = Object.freeze({ type: 'ephemeral' });
+
 /** Gain I: a request's text and images as the content of one user message, the shape both the Messages API and the
  *  CLI's stream-json input read: the prompt, then each image after a line naming it ("Image 1:", as the prompt numbers
- *  them, prompt.js `IMAGES_ATTACHED`). */
-export function imageContent(prompt, images) {
-  return [{ type: 'text', text: prompt }, ...images.flatMap((image, at) => [{ type: 'text', text: `Image ${at + 1}:` },
+ *  them, prompt.js `IMAGES_ATTACHED`). D211: `cuts` (`promptCutsOf`): the prompt as one text block per part, the first
+ *  marked PROMPT_PART_CACHE_CONTROL and no other, the images after them as before; with none, one block as before. */
+export function imageContent(prompt, images, cuts = []) {
+  const texts = cuts.length ? promptPartsOf(prompt, cuts).map((text, at) => (at === 0
+    ? { type: 'text', text, cache_control: { ...PROMPT_PART_CACHE_CONTROL } } : { type: 'text', text }))
+    : [{ type: 'text', text: prompt }];
+  return [...texts, ...images.flatMap((image, at) => [{ type: 'text', text: `Image ${at + 1}:` },
     { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } }])];
 }
 
 /** Gain I: the one stdin line of a claude-cli request with images: a stream-json user message (the shape the installed
- *  CLI's stream-json reader takes: `type` user, `message.role` user, `message.content` a list), newline-terminated. */
-export function claudeStreamInput(prompt, images) {
-  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: imageContent(prompt, images) } })}\n`;
+ *  CLI's stream-json reader takes: `type` user, `message.role` user, `message.content` a list), newline-terminated.
+ *  D211: and of one whose prompt is in parts (`cuts`), with or without images. */
+export function claudeStreamInput(prompt, images, cuts = []) {
+  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: imageContent(prompt, images, cuts) } })}\n`;
 }
 
 // W3f-2 / F227. The API transport's fixed arguments: where it sends, the API version it names, and
@@ -720,13 +769,15 @@ export function reviewApiBody({ system, prompt, model, images = [] }) {
  * The agent transport: with `agent` and `schema` (an agent request's, `agentRequestOf`), the agent argv the call is
  * spawned with (`reviewAgentCliArgs`), on claude-cli only; null on any other backend, which has no agent transport.
  * `effort` (D160): the review's, in the claude-cli argv; REVIEW_EFFORT when none is given. No other backend takes one
- * (reviewJudgeConfig refuses it there), so theirs never carries it.
+ * (reviewJudgeConfig refuses it there), so theirs never carries it. `parts` (D211): whether the request's prompt is
+ * sent in parts (`promptCutsOf`), in the claude-cli argv and the agent argv; no other transport sends parts, so theirs
+ * never moves.
  */
 export function reviewTransportArguments({ backend, model, effort = REVIEW_EFFORT, system, images = [], agent = undefined,
-  schema = undefined }) {
+  schema = undefined, parts = false }) {
   if (agent !== undefined)
-    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, effort, agent, schema }) } : null;
-  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, effort, images: images.length > 0 }) };
+    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, effort, agent, schema, parts }) } : null;
+  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, effort, images: images.length > 0, parts }) };
   if (backend === 'codex-cli') return { argv: reviewCodexArgs({ model, images }), instructions: system };
   if (backend === 'anthropic-api') {
     const { messages: omitted, ...body } = reviewApiBody({ system, prompt: '', model });
@@ -1366,7 +1417,9 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
       // D145: a request whose later passes wait for it (challenge.js REPLY_BEGUN) is told once that the model's reply has
       // begun: at the first `stream_event` line, the API's own stream that `--include-partial-messages` prints (its
       // `message_start` comes once the prompt is processed, and so cached). Read by the line's typed `type` only; the
-      // scan ends there, or at the first `assistant` or `result` line, which no reply-begun signal follows.
+      // scan ends there, or at the first `assistant` or `result` line, which no reply-begun signal follows. D211: the
+      // agent argv prints no `stream_event`, so an agent request is told at its first `assistant` line, the first turn's
+      // reply, which the CLI prints once the prompt was processed.
       let begun = typeof request?.[REPLY_BEGUN] === 'function' ? request[REPLY_BEGUN] : null, scanned = 0;
       const scanReplyBegun = () => {
         let newline;
@@ -1375,7 +1428,7 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           try { event = JSON.parse(output.slice(scanned, newline)); } catch { /* not a line this scan reads */ }
           scanned = newline + 1;
           const type = isRecord(event) ? event.type : null;
-          if (type === 'stream_event') {
+          if (type === 'stream_event' || (agent && type === 'assistant')) {
             const told = begun;
             begun = null;
             try { told(); } catch { /* the caller's signal never changes the call */ }
@@ -1395,18 +1448,21 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
         if (child) cancelGrace = stopChild(child, () => closed, () => settle(null));
       };
       // Gain I: a request with images is one stream-json user message (`claudeStreamInput`); any other, its prompt.
+      // D211: so is a request whose prompt is in parts (`promptCutsOf`), one text block per part, the first marked.
       const images = requestImagesOf(request);
+      const cuts = promptCutsOf(request);
       // D160: at the review's effort (`config.effort`, set only when it is not the default).
       const argv = agent ? reviewAgentCliArgs({ system: request.system, model: config.model, effort: config.effort, agent,
-        schema: agent.schema })
-        : reviewCliArgs({ system: request.system, model: config.model, effort: config.effort, images: images.length > 0 });
+        schema: agent.schema, parts: cuts.length > 0 })
+        : reviewCliArgs({ system: request.system, model: config.model, effort: config.effort, images: images.length > 0,
+          parts: cuts.length > 0 });
       try { child = spawnProcess('claude', argv, {
         cwd: agent ? agent.root : directory, env: claudeEnvironment(env, { request }), stdio: ['pipe', 'pipe', 'pipe'],
       }); } catch { finish({ ok: false, code: 'model_unavailable', transportClass: 'spawn_failed' }); return; }
       timer = setTimeout(() => halt('model_timeout'), callTimeoutMs);
       unregister = cancellation.register(() => halt(REVIEW_CANCELLED));
       child.stdin.on('error', () => {});
-      child.stdin.end(images.length ? claudeStreamInput(request.prompt, images) : request.prompt);
+      child.stdin.end(images.length || cuts.length ? claudeStreamInput(request.prompt, images, cuts) : request.prompt);
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk) => {
         if (stop) return;
@@ -1449,6 +1505,8 @@ async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOut
           contextWindow: reportedContextWindow(result?.modelUsage, config.model),
           // D70 review (S0): the CLI version its one init states, a SemVer normal version, or null.
           cliVersion: stream.inits === 1 ? cliVersionOf(stream.initVersions[0]) : null,
+          // D211: how many parts the prompt was sent in, only when it was sent in parts (a count).
+          ...(cuts.length ? { promptParts: cuts.length + 1 } : {}),
           // The agent transport: what the agent did (agentRunOf), on an agent call only.
           ...(agent ? { agentRun: agentRunOf(stream, result) } : {}) };
         if (stop) {
@@ -1562,6 +1620,33 @@ const MODEL_TIMEOUT = 'model_timeout';
  *  `rereadable`), so a transport retry of the identical request would be a second, unexplained one. */
 const AGENT_NOT_RETRIED = Object.freeze([MODEL_TIMEOUT, ...REASKABLE_JUDGE_CODES]);
 
+/** D211: the provider class on which a request sent in parts (evidence prompt-parts.js `promptCutsOf`) is sent once
+ *  more as one string (`withTransportRetry`): the provider refused the request as invalid. Its parts are the one thing
+ *  a request in parts sends that the same request sent whole does not (one `cache_control` marker, D211; the API refuses
+ *  a request with more than four, and the claude CLI places three of its own). */
+export const PROMPT_PARTS_REFUSED_CLASS = INVALID_REQUEST;
+/** D211: the member a request resent without its parts carries, not enumerable (so no key, byte, copy or JSON of the
+ *  request holds it): why its parts were dropped (ledger.js PROMPT_PARTS_DROPPED), which its attempt's record states
+ *  (`partsDropped`). */
+export const PARTS_DROPPED = 'partsDropped';
+const [REFUSED_IN_PARTS] = PROMPT_PARTS_DROPPED;
+/** D211: `request` sent as one string: a copy without its parts, which keeps its REPLY_BEGUN and says why. */
+function withoutParts(request, reason) {
+  const whole = { ...request };
+  delete whole.parts;
+  return Object.defineProperty(withReplyBegun(request, whole), PARTS_DROPPED, { value: reason });
+}
+/** D211: the answers got by resending a request in parts as one string (`withTransportRetry`), held by identity only, so
+ *  no member of an answer is added or changed (a model's answer may hold a member of any name). */
+const RESENT_WHOLE = new WeakSet();
+/** D211: whether `answer` was got by resending its request without its parts. The answer store keeps no such answer
+ *  (answer-cache.js `put`): its key binds the argv of the request in parts, which did not answer it. */
+export const resentWhole = (answer) => answer !== null && typeof answer === 'object' && RESENT_WHOLE.has(answer);
+const markResentWhole = (answer) => {
+  if (answer !== null && typeof answer === 'object') RESENT_WHOLE.add(answer);
+  return answer;
+};
+
 /** One retry, with the identical request, on a transport failure only. Then the failure stands:
  *  a transport that fails twice is not a blip, and a third call is a guess paid for in tokens.
  *  M33: never after a cancellation, and never after a provider class an identical request cannot
@@ -1569,17 +1654,34 @@ const AGENT_NOT_RETRIED = Object.freeze([MODEL_TIMEOUT, ...REASKABLE_JUDGE_CODES
  *  found, invalid request) — those would only spend the account's quota on the same refusal. The
  *  class is the call's one class (providerClassOf), so a stop class observed beside a retryable one
  *  is never retried either. The agent transport: nor an agent request (`isAgentRequest`) that timed out or whose reply
- *  could not be read (AGENT_NOT_RETRIED). */
+ *  could not be read (AGENT_NOT_RETRIED). D211: one exception, read from the typed class only, never the error's text:
+ *  a request sent in parts (`promptCutsOf`) that the provider refused as invalid (PROMPT_PARTS_REFUSED_CLASS) is sent
+ *  once more without them (`withoutParts`, its reason PROMPT_PARTS_DROPPED's), the same text as one string, so a CLI
+ *  that one day adds a cache marker of its own can never fail a call over Sonah's. Whichever attempt was refused so —
+ *  the first, or the identical retry after a transport failure — is resent so, once, so every attempt in parts refused
+ *  as invalid is followed by its resend; the resend's own failure stands.
+ *  The resend's answer is marked (`resentWhole`), so the answer store keeps it out. */
 export function withTransportRetry(judge) {
   return async (request) => {
-    try { return withAttempts(await judge(request), 1); }
+    let resent = false;
+    const attempt = async (asked, n) => {
+      try { return withAttempts(await judge(asked), n); }
+      catch (error) {
+        if (resent || error?.code === REVIEW_CANCELLED || error?.providerClass !== PROMPT_PARTS_REFUSED_CLASS
+          || promptCutsOf(asked).length === 0) throw error;
+        resent = true;
+        return markResentWhole(withAttempts(await judge(withoutParts(asked, REFUSED_IN_PARTS)), n + 1));
+      }
+    };
+    try { return await attempt(request, 1); }
     catch (error) {
-      if (error?.code === REVIEW_CANCELLED || NON_RETRYABLE_PROVIDER_CLASSES.includes(error?.providerClass)) throw error;
+      if (resent || error?.code === REVIEW_CANCELLED || NON_RETRYABLE_PROVIDER_CLASSES.includes(error?.providerClass))
+        throw error;
       if (!RETRYABLE_JUDGE_CODES.includes(error?.code)) throw error;
       // The agent transport: an agent call that ran out its time, or whose reply could not be read, is not asked again
       // here (AGENT_NOT_RETRIED).
       if (AGENT_NOT_RETRIED.includes(error.code) && isAgentRequest(request)) throw error;
-      return withAttempts(await judge(request), 2);
+      return attempt(request, 2);
     }
   };
 }
@@ -1661,6 +1763,8 @@ export function createReviewJudge({ config, env = process.env, spawnProcess = sp
       { env, spawnProcess, fetchImpl, timeoutMs, maxOutputBytes, cancellation, agent });
     const { json, ...metadata } = { ...attestationDefaults(), ...result };
     if (metadata.ok) delete metadata.code;
+    // D211: an attempt of a request resent without its parts (`withTransportRetry`) says why, by its closed reason.
+    if (PROMPT_PARTS_DROPPED.includes(request[PARTS_DROPPED])) metadata.partsDropped = request[PARTS_DROPPED];
     await onResult({ ...metadata, backend: config.backend, requestedModel: config.model,
       elapsedMs: Date.now() - started, inputBytes: Buffer.byteLength(request.system) + Buffer.byteLength(request.prompt) });
     if (!result.ok) throw withAgentRun(withProviderClass(failure(result.code, result.transportClass), metadata.providerClass),

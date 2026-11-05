@@ -202,6 +202,20 @@ It then prints `Review window N/M finished` as each part completes. There are no
   command line the review then reads as not complete (exit 1): run it from the project's own computer, or add
   `--no-code-pass` to review the session alone.
 
+**`Code review: did not run yet. A part of the session review did not finish, and a new run can finish it ...`**
+: A part of the session review did not finish, for a cause that the same command can fix when you run it again: a call
+  that did not answer (a usage limit, a timeout, the network, a sign-in), an answer that was not valid JSON or did not
+  match its shape, an answer with a proposal that Sonah could not check against the recording, or a check that gave no
+  usable result. The code review's input holds what the session review found, so a code review run now could be asked
+  again in whole on the run that finishes that part. So it does not run yet,
+  and Sonah makes no code-review call. The page, the Markdown and the `Sonah's review:` line say so, and the exit code
+  is the session review's own (1). Fix the cause first, as for `narrative:model_unavailable` below, then run the same
+  command again: the code review runs after the session review. With `--code-pass`, it is the same: the run that
+  finishes the session review runs the code review and counts it. A session review that two runs in a row left
+  unfinished does not hold the code review back, and a part that no rerun can finish (too large to send, or a request
+  that Sonah refuses) never does: the code review then runs, as before. A budget stop or Ctrl-C ends the run before the
+  code review in any case.
+
 **`Review could not complete: review_in_progress.`**
 : Another review of the same recording is running. Wait for it. A review that crashed leaves no lasting lock.
 
@@ -223,7 +237,7 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | What the output says | What to do |
   | --- | --- |
   | `narrative:model_unavailable` | A call failed: no login, a usage limit, a timeout or the network. Run `sonah doctor` to see which (for Codex, add `--backend codex-cli` and `--model` with the model you review with), then the same command again. `sonah doctor` does not check `--backend anthropic-api`: there, check your network, your API key and your API account's limits. With that backend, it can also mean that Sonah found no API key in `ANTHROPIC_API_KEY`; the `Sonah's review:` line then says so. Set the key, then run the same command again. |
-  | `narrative:no_json`, `narrative:schema`, `narrative:response_incomplete`, `challenge:votes_invalid`, `challenge:items_unresolved` | The model's answer could not be used. `challenge:votes_invalid` also follows a check call that failed: no login, a usage limit, a timeout, the network, or with `--backend anthropic-api` no API key in `ANTHROPIC_API_KEY`. The `Sonah's review:` line names a missing key only when the first call for a part failed for it. Fix such a cause first, as for `narrative:model_unavailable` above. Then run the same command again: only those parts of the session review are asked again. The code review's input holds what the session review found, so when their answers change it, the code review is asked again in whole. |
+  | `narrative:no_json`, `narrative:schema`, `narrative:response_incomplete`, `challenge:votes_invalid`, `challenge:items_unresolved` | The model's answer could not be used. `challenge:votes_invalid` also follows a check call that failed: no login, a usage limit, a timeout, the network, or with `--backend anthropic-api` no API key in `ANTHROPIC_API_KEY`. The `Sonah's review:` line names a missing key only when the first call for a part failed for it. Fix such a cause first, as for `narrative:model_unavailable` above. Then run the same command again: only those parts of the session review are asked again. The code review's input holds what the session review found, so when their answers change it, the code review is asked again in whole. For `narrative:no_json`, `narrative:schema`, `challenge:votes_invalid` and `challenge:items_unresolved`, the code review waits for that run instead (see `Code review: did not run yet` above). |
   | `narrative:budget` ("the request did not fit the review input budget") | That part is too large for one request. Rerunning will not help; `sonah review --dry-run` counts such parts before anything is spent. |
   | "no review windows were produced" or "no actions were recorded" | The file is not a recording Sonah can read, or the session did nothing. Check the path; `--dry-run` shows what was read. |
 
@@ -285,6 +299,7 @@ It then prints `Review window N/M finished` as each part completes. There are no
   | the code review did not answer | Run `sonah doctor`, then the same command again. |
   | the code review saw none of the files of the change | The code review answered without seeing any file. Run the same command again. |
   | this review was saved by an earlier version of Sonah, which did not record why | The review was saved before Sonah kept a record of the code review's input, so its record does not say why no request was made. Run the review again to see why. |
+  | a part of the session review did not finish, and a new run can finish it. Run the same command again, and the code review runs after the session review | A call of the session review did not answer, an answer was not valid JSON or did not match its shape, an answer held a proposal that Sonah could not check against the recording, or a check gave no usable result, and the code review waits, because the run that finishes that part could ask it again in whole (see `Code review: did not run yet` above). Fix the cause, then run the same command again. |
 
   Running the review from another folder does not change the reason: the code review reads the working directory that
   the recording names and the repositories of its change, not the folder that you run `sonah review` in. To point the

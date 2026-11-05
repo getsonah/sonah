@@ -270,14 +270,17 @@ cause by cause with its counts, is in the fold What Sonah could not check, on th
 the count line and the Must act items, how many answers it reused, and a usage line:
 
 > Review usage: 41 calls; 3112640 input bytes; input tokens ... (41/41 calls reported: ... uncached, ... written to the
-> cache, ... read from the cache); output tokens ... ; list cost $... (41/41 calls reported); wall 412000 ms;
+> cache (... for five minutes, ... for one hour), ... read from the cache); output tokens ... ; list cost $... (41/41
+> calls reported); wall 412000 ms;
 > utilization 0.57 (five-hour 0.57, seven-day 0.18); limits from first to last reading: five-hour 0.38 to 0.57,
 > seven-day 0.16 to 0.18. Code step: 12 of these calls; ...
 
 Calls count every attempt, retries included; answers reused from an earlier run cost nothing. The token figures are
 what your provider reported. The input tokens are split as the `claude` CLI reports them: those read fresh, those
-written to the cache, and those read from it (the Codex CLI reports no split). The list cost is the price that the
-`claude` CLI states for each call: what you pay depends on your own plan, and a subscription is not charged per call.
+written to the cache, and those read from it (the Codex CLI reports no split). Those written to the cache are split
+again by how long the cache keeps them, five minutes or one hour, when the `claude` CLI reports it. The list cost is
+the price that the `claude` CLI states for each call: what you pay depends on your own plan, and a subscription is not
+charged per call.
 `utilization` is how much of your Claude plan's usage limits the latest call that reported it had used, as a fraction
 (0.57 is 57%): first the highest, then each limit the `claude` CLI reported (five-hour, seven-day, and on some
 accounts seven-day with extra usage; a limit Sonah does not know by name is shown as `other limit`). Then each limit
@@ -569,9 +572,11 @@ absolute one passed as you wrote it, else `~/.claude`), the folder Sonah reads y
 `CLAUDE_CODE_OAUTH_TOKEN` when you set it (from `claude setup-token`); `sonah doctor` names which. Set
 `CLAUDE_CONFIG_DIR` as an absolute path: on macOS a relative one does not carry your keychain login into Sonah's calls.
 Each call runs in Claude Code's safe mode and loads no `CLAUDE.md` file as its instructions, and no plugin, skill or
-connector that you installed. Your organisation's managed policy still applies. On each call Claude Code updates its
-state file (`~/.claude.json` in your home folder, or `.claude.json` inside the folder `CLAUDE_CONFIG_DIR` names) and its
-plugin cache in the config folder, as in any session. With `CLAUDE_CONFIG_DIR` set, these writes now go to your folder.
+connector that you installed. Your organisation's managed policy still applies. Each call asks Claude Code to keep
+what it writes to its prompt cache for five minutes, not one hour, which costs less to write. On each call Claude Code
+updates its state file (`~/.claude.json` in your home folder, or `.claude.json` inside the folder `CLAUDE_CONFIG_DIR`
+names) and its plugin cache in the config folder, as in any session. With `CLAUDE_CONFIG_DIR` set, these writes now go
+to your folder.
 The code step's agents run in your working directory with the same environment and three read-only tools (Read, Grep and
 Glob), confined to the working directory, its repository, the other git repositories that hold a file of the change
 and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit
@@ -777,7 +782,12 @@ review of it can check less. Optional stops, off by default: `--max-calls N`, `-
 `--stop-at-utilization U`. Running the same review again reuses stored answers and costs nothing. A review that did not
 complete asks again what failed (it still wrote its page, so give the rerun a new `--output` name). A stored answer is
 reused only for the same input, and the code review's input holds what the session review found: when the rerun
-changes that, the code review is asked again in whole. `sonah review --help` lists every review option.
+changes that, the code review is asked again in whole. So when a part of the session review did not finish, and the
+same command can finish it when you run it again (a call that did not answer, an answer that was not valid JSON or did
+not match its shape, an answer with a proposal that Sonah could not check against the recording, or a check that gave
+no usable result), the code review does not run yet: it runs after the session review on the next run. A session
+review that two runs in a row left unfinished does not hold it back.
+`sonah review --help` lists every review option.
 
 ## What Sonah does and does not do
 
@@ -807,7 +817,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.12`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.13`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

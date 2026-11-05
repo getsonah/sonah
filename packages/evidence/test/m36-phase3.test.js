@@ -73,7 +73,8 @@ test('M36 phase 3: one next version of each instrument whose bytes moved; the ru
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words. D103 moved it once
   // more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes at each end.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/39');
   // D71 (S2) moved it once more (sonah.challenge/24), and D71 (S3) once more (sonah.challenge/25): the new channels (D71_CHANNELS_VERSIONS).
   // The column fix moved it once more (sonah.challenge/30): who decided a decision (FIX_COLUMN_VERSIONS).
   // W1 B moved it once more (sonah.challenge/31): the file form of the forbidden-edit proposition and its note.

@@ -51,10 +51,11 @@ const personEnv = (folder, token) => ({ ...BASE, ...NOISE, ...(folder === undefi
 /** The exact account part every claude process gets. */
 const accountEnv = (folder, token) => ({ ...BASE, ...(folder === undefined ? {} : { CLAUDE_CONFIG_DIR: folder }),
   ...(token === undefined ? {} : { CLAUDE_CODE_OAUTH_TOKEN: token }) });
-/** The exact environment of a model call: the account part and Sonah's own settings. */
+/** The exact environment of a model call: the account part and Sonah's own settings (D210: and the five-minute prompt
+ *  cache, d210-prompt-cache.test.js). */
 const callEnv = (folder, token, extra = {}) => ({ ...accountEnv(folder, token), CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
   CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CODE_SAFE_MODE: '1',
-  CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', ...extra });
+  CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', FORCE_PROMPT_CACHING_5M: '1', ...extra });
 
 /** A spawn that records each call's argv, working directory and environment, then fails the call (exit 1): only what
  *  the judge started it with is read. */

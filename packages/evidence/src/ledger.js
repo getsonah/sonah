@@ -37,11 +37,18 @@ export const FORBIDDEN_MODEL_FIELDS = Object.freeze([
 // The agentic code step (code-pass/7): `code_step_backend` is the code step not run because the review's backend is
 // not claude-cli, the one backend whose reviewer can read the repository with read-only tools (CODE_STEP_BACKEND_GAP).
 export const CODE_STEP_BACKEND_GAP = 'code_step_backend';
+// D210: `code_step_waits` is the code step not started because the session review did not finish, and running the same
+// command again can finish it (cli session-review.js `codeStepWaits`): a window whose call failed with a code an identical
+// request can answer differently (RETRYABLE_JUDGE_CODES), or one whose answer left it incomplete in a way that asking
+// again can complete (cli session-review.js ANSWER_INCOMPLETE_REASONS). The code review's requests carry what the session
+// review found, so a code step run now is asked again in whole once the rerun fills that window. Kept in the code pass's
+// own record, as `code_step_backend` is (CODE_STEP_WAITS_GAP). The last member, so every index above keeps its place.
+export const CODE_STEP_WAITS_GAP = 'code_step_waits';
 export const GAP_CODES = Object.freeze([
   'missing_child', 'ambiguous_child', 'incomplete_inventory', 'source_clipped', 'unsupported_message',
   'code_unreviewable', 'unrecorded_body', 'write_outcome_unknown', 'command_outcome_unknown', 'input_limit',
   'identity_redacted', 'identity_conflict', 'source_changed', 'source_unreadable',
-  'storage_limit', 'missing_result', 'redacted_content', CODE_STEP_BACKEND_GAP,
+  'storage_limit', 'missing_result', 'redacted_content', CODE_STEP_BACKEND_GAP, CODE_STEP_WAITS_GAP,
 ]);
 
 // Why a judge call failed, as the window failure reports it. Closed: a code outside this set is
@@ -92,6 +99,12 @@ export const RETRYABLE_JUDGE_CODES = Object.freeze([
 // challenge never adds a retry of its own. Matched by exact `code` membership only, never by an
 // error's message or any other text. Every other failure stays a check that did not run.
 export const REASKABLE_JUDGE_CODES = Object.freeze(['model_response_invalid']);
+
+// D211: why the transport sent a request whose prompt is in parts (prompt-parts.js `promptCutsOf`) once more as one
+// string (cli/src/review-judge.js `withTransportRetry`): `refused_in_parts`, the provider refused it as invalid (the
+// typed class `invalid_request`, never the error's text). An attempt so resent states it (`partsDropped`); the review's
+// usage record counts it.
+export const PROMPT_PARTS_DROPPED = Object.freeze(['refused_in_parts']);
 
 
 // M33 (C-07 "Window checkpoints and resumable session review"): why a whole review RUN ended
@@ -1181,8 +1194,9 @@ function relevanceOf(session, actionEvents, pr) {
  * is grounded like any other and published "could not tell" (column unchecked, with that reason): kept, never shown
  * stronger than its check. A Symbol, so no answer a model writes (JSON) can carry it; a refuted decision is never marked
  * (it is left out: that is not unsure). W1 A (owner decision 2026-10-13): except one refuted only on who decided it — its
- * choice upheld by its own check, and no other column upheld after the reviewer was asked once more (run-review.js
- * `recolumnedDecisions`) — marked DECISION_COLUMN_REFUTED and published "could not tell" with that reason, the same way.
+ * choice upheld by its own check (run-review.js `recolumnedDecisions`) — marked DECISION_COLUMN_REFUTED and published
+ * "could not tell" with that reason, the same way. Until D212 (owner decision 2026-11-05) the reviewer was first asked
+ * once more for another column, and the mark meant that none was upheld.
  * G2 (owner decision 2026-10-15): a choice not to act anchored anew whose choice its existence check upheld, and whose
  * check with the column its re-ask gave refuted it, is marked DECISION_COLUMN_REFUTED too; one whose check with that
  * column did not settle or did not run is marked with how it ended (UNSETTLED_CHALLENGE), as S6 marks a decision
@@ -1190,7 +1204,9 @@ function relevanceOf(session, actionEvents, pr) {
  */
 export const CHALLENGE_ENDED = Symbol('sonah.challenge-ended');
 /** W1 A: the closed reason of a decision kept "could not tell" because its check refuted who decided it and no other
- *  column held (a JUDGMENT_REASONS member; DECISION_RECOLUMN_WITHHELD counts why no other column held). */
+ *  column held (a JUDGMENT_REASONS member). D212: no other column is asked for any more; a report written before it
+ *  asked the reviewer once more, and its window's `recolumn` record counts why no other column held. G2 marks a
+ *  re-anchored choice with it when the check with its re-ask's column refuted it (`CHALLENGE_ENDED`). */
 export const DECISION_COLUMN_REFUTED = 'decision_column_refuted';
 
 export function groundDecision({ repo, session, pr, candidate, instructionHistoryComplete, upTo = null,
@@ -2039,27 +2055,17 @@ export const REQUIREMENT_UNREVIEWED_TEXT = 'the review named no ask from this me
 export const REQUIREMENT_RESTATUS_WITHHELD = Object.freeze(['request_bound', 'no_answer', 'no_row', 'ungrounded',
   'not_checked', 'same_status']);
 /**
- * W1 A (owner decision 2026-10-13): why a session-only decision the challenge refuted on who decided it — its choice
- * upheld by its own check — got no new column from its one re-ask (run-review.js `recolumnedDecisions`); it is then
- * published "could not tell" with DECISION_COLUMN_REFUTED. Counted per window; never a row's reason:
- *   request_bound   the re-ask's request does not fit the review's request bound, or there is no request to re-ask
- *   no_answer       the re-ask's call failed, or its answer is not in the narrative's shape
- *   no_row          the answer holds no readable decision row (in the response contract's shape) whose choice is the
- *                   decision's own (the same set of actions, the same stated receipt, the same notActing), or more than
- *                   one
- *   could_not_tell  the row gives neither constrainedBy nor instructionReview
- *   ungrounded      the row's column does not hold under code's checks (ledger.js `groundDecision` derives none)
- *   same_column     the row's column is the very column the challenge refuted, as code derives it
- * A new column that passed all of these is asked as its own item and published only when that check upholds it; how
- * that check ended is counted by RESOLUTION_CHALLENGE_OUTCOMES, and how the existence check ended likewise.
+ * W1 A (the review of the W1-W3 fixes: one spelling, never retyped): the members of a window's `recolumn` record, in
+ * order — `refuted` (the session-only decisions the challenge refuted on who decided them, run-review.js
+ * `recolumnedDecisions`) and `existence` (how their existence check ended, by RESOLUTION_CHALLENGE_OUTCOMES; each it
+ * upheld is published "could not tell" with DECISION_COLUMN_REFUTED). Closed.
+ * D212 (owner decision 2026-11-05) withdrew the re-ask of each upheld choice for a new column, and the check of that
+ * column. A record written before it also holds, after these two, the members of the asks it made, which no reader
+ * reads: `asked` (the re-asks sent), `withheld` (why no new column went on to its check, by count: `request_bound`,
+ * `no_answer`, `no_row`, `could_not_tell`, `ungrounded`, `same_column`) and `challenged` (how the new column's check
+ * ended, by RESOLUTION_CHALLENGE_OUTCOMES), and its window may hold that check's run (`recolumnChallenge`).
  */
-/** W1 A (the review of the W1-W3 fixes: one spelling, never retyped): the members of a window's `recolumn` record, in
- *  order — `refuted` (the decisions refuted on who decided them), `existence` (how their existence check ended, by
- *  RESOLUTION_CHALLENGE_OUTCOMES), `asked` (the re-asks sent), `withheld` (by DECISION_RECOLUMN_WITHHELD) and `challenged`
- *  (how the new column's check ended, by RESOLUTION_CHALLENGE_OUTCOMES). Closed. */
-export const DECISION_RECOLUMN_RECORD = Object.freeze(['refuted', 'existence', 'asked', 'withheld', 'challenged']);
-export const DECISION_RECOLUMN_WITHHELD = Object.freeze(['request_bound', 'no_answer', 'no_row', 'could_not_tell',
-  'ungrounded', 'same_column']);
+export const DECISION_RECOLUMN_RECORD = Object.freeze(['refuted', 'existence']);
 /**
  * G2 (owner decision 2026-10-15): a session-only choice not to act (a decision proposal with `notActing` true) that the
  * challenge refuted and whose existence check (W1 A, run-review.js `recolumnedDecisions`) refuted too is put to the
@@ -2194,9 +2200,9 @@ export const STRUGGLE_MAY_PASS_OUTCOMES = Object.freeze([...STRUGGLE_PASSING_OUT
 /** D158: the version of the session's edge maps — the struggle map (struggle.js) and the claims-against-runs join
  *  (claims.js `claimsAgainstRuns`) — stated in `report.sessionEdge` when a review builds them (off by default). */
 export const SESSION_EDGE_VERSION = 'sonah.session-edge/1';
-/** G2: why no check of who decided it was asked for a re-anchored choice its existence check upheld — the column words
- *  of DECISION_RECOLUMN_WITHHELD, the same meanings: `could_not_tell` (the row gives neither constrainedBy nor
- *  instructionReview), `ungrounded` (that column does not hold under code's checks). Such a choice is published as the
+/** G2: why no check of who decided it was asked for a re-anchored choice its existence check upheld: `could_not_tell`
+ *  (the row gives neither constrainedBy nor instructionReview), `ungrounded` (that column does not hold under code's
+ *  checks, ledger.js `groundDecision` derives none). Such a choice is published as the
  *  ledger grounds any decision whose column does not hold (`groundDecision`: "could not tell", with the ledger's own
  *  column reason), never with a check's reason. Counted per window; never a row's reason. Closed. */
 export const NOT_ACTING_REANCHOR_COLUMN_WITHHELD = Object.freeze(['could_not_tell', 'ungrounded']);
@@ -3760,9 +3766,12 @@ export const CODE_REVIEW_TERMINALS = Object.freeze(['answered', 'unusable', 'fai
  *   unknown            (D122, a review low of D118) no review request was made, and the record is one an earlier code
  *                      step wrote before it kept the request's manifest (`sonah.code-pass/12`), so it does not say why:
  *                      its code step could also drop a request too large to send then
+ *   waits              (D210) the step did not start: its gap `code_step_waits` (the session review did not finish, and
+ *                      running the same command again can finish it; the code review runs after it then)
  */
 export const CODE_NOT_REVIEWED_REASONS = Object.freeze(['step_off', 'backend', 'no_folder', 'no_write', 'no_seen_write',
-  'no_seen_write_given', 'no_written_change', 'no_file', 'none_shown', 'too_large', 'no_answer', 'none_seen', 'unknown']);
+  'no_seen_write_given', 'no_written_change', 'no_file', 'none_shown', 'too_large', 'no_answer', 'none_seen', 'unknown',
+  'waits']);
 /** The kinds of the session dossier's items (code-context.js `codeDossier`), built by code from the saved report. */
 export const CODE_DOSSIER_KINDS = Object.freeze(['ask', 'claim', 'decision', 'pivot', 'failure',
   'edit_against_instruction']);

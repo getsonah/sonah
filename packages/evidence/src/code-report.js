@@ -8,7 +8,8 @@
 // texts. Every choice here reads structure (which list a row is in, its index, a closed token, whether a quote is
 // literally in the span stored with it), never a word of a finding, a statement or a question.
 import { CODE_CHECK_OUTCOMES, CODE_FILE_STATES, CODE_WITHHELD_ITEMS, CODE_CLAIM_VERDICTS, CODE_SEEN_STATES,
-  CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, CODE_PLACED_BY, CODE_STEP_PARTS, honestStatuses }
+  CODE_ACCOUNT_ASK_SOURCES, CODE_ACCOUNT_FATES, CODE_NOT_REVIEWED_REASONS, CODE_PLACED_BY, CODE_STEP_PARTS, honestStatuses,
+  CODE_STEP_BACKEND_GAP, CODE_STEP_WAITS_GAP }
   from './ledger.js';
 import { codeContradictedRows, codePassFindings, codePassQuestions, codePassWithheld, codeSeenOf, codeChangeTally,
   sessionChangeOf, placesOf, foldersOf, unresolvedOf, repositoriesGiven, namedBaseOf, codeChangeShortOf, codeChecksShortOf }
@@ -278,7 +279,11 @@ export const CODE_REPORT_WORDS = Object.freeze({
     + 'read no file.',
   // Why the step did not run, by its gap (the report's `gaps[].code`), when it names one.
   notRun: Object.freeze({ code_step_backend: 'The code review did not run. It needs Claude Code and its read-only tools, '
-    + 'and this review used another backend.' }),
+    + 'and this review used another backend.',
+  // D210: the session review did not finish, and running the same command again can finish it (its gap
+  // `code_step_waits`): the code review waits for that run, which then runs it.
+  code_step_waits: 'The code review did not run yet. A part of the session review did not finish, and a new run can '
+    + 'finish it. Run the same command again, and the code review runs after the session review.' }),
   // The session changed no file: the code review had no change to read, and no reader says every file was shown.
   // D100: with no git base the change is the recorded edits only: said as what Sonah found.
   noFile: 'The code review had no change to review. Sonah found no file in the working directory that differs from where '
@@ -316,7 +321,10 @@ export const CODE_REPORT_WORDS = Object.freeze({
     no_answer: 'the code review did not answer',
     none_seen: 'the code review saw none of the files of the change',
     // D122 (a review low of D118): a record an earlier code step wrote before it kept the request's manifest.
-    unknown: 'this review was saved by an earlier version of Sonah, which did not record why' }),
+    unknown: 'this review was saved by an earlier version of Sonah, which did not record why',
+    // D210: as `notRun.code_step_waits`, after "Reason: ".
+    waits: 'a part of the session review did not finish, and a new run can finish it. Run the same command again, and '
+      + 'the code review runs after the session review' }),
   // D207's review: `no_file` with a base the person named, where an untracked file can still be named apart
   // (`notReviewedWordsOf`). Its reason stays `no_file`.
   notReviewedNamedBase: 'Sonah found no tracked file in the folder that differs from the base that you named',
@@ -1244,7 +1252,10 @@ export const CODE_NO_CHANGE_KEYS = Object.freeze(['noWrite', 'noWrittenChange', 
 const [NO_CHANGE_WRITE, NO_CHANGE_WRITTEN, NO_CHANGE_FILE, NO_CHANGE_SEEN_WRITE] = CODE_NO_CHANGE_KEYS;
 
 const [STEP_OFF, NOT_RUN_BACKEND, NO_FOLDER, NO_WRITE, NO_SEEN_WRITE, NO_SEEN_WRITE_GIVEN, NO_WRITTEN_CHANGE, NO_FILE,
-  NONE_SHOWN, NOT_SENT, NO_ANSWER, NONE_SEEN, UNKNOWN_WHY] = CODE_NOT_REVIEWED_REASONS;
+  NONE_SHOWN, NOT_SENT, NO_ANSWER, NONE_SEEN, UNKNOWN_WHY, CODE_WAITS] = CODE_NOT_REVIEWED_REASONS;
+/** Why a step that did not run did not, by its gap (`gaps[].code`, code-pass.js CODE_STEP_GATES), as a reason of
+ *  CODE_NOT_REVIEWED_REASONS: the backend, or (D210) a session review that running the same command again can finish. */
+const NOT_RUN_REASON = Object.freeze({ [CODE_STEP_BACKEND_GAP]: NOT_RUN_BACKEND, [CODE_STEP_WAITS_GAP]: CODE_WAITS });
 /** D122: the code step's version that began to keep its review request's manifest (D105). A record that names an earlier
  *  one (`version.pass`) and made no review request does not say why. */
 const MANIFEST_SINCE = 12;
@@ -1334,7 +1345,7 @@ const NO_CHANGE_REASON = Object.freeze({ [NO_CHANGE_WRITE]: NO_WRITE, [NO_CHANGE
  * made no review call, or its review read no file — as one closed reason (ledger.js CODE_NOT_REVIEWED_REASONS); null when
  * it reviewed code, or when its record cannot say. The one test every first screen reads (the report model's header, the
  * terminal's run-state lines, the PR comment), so none of them disagrees with another. No code pass record: `step_off`.
- * A step that did not run: by its gap as `codeCoverageLines` says it (`backend`), else `no_folder`. A change with no file
+ * A step that did not run: by its gap as `codeCoverageLines` says it (`backend`; D210: `waits`), else `no_folder`. A change with no file
  * to review: by `codeNoChangeOf`; D124's review (its medium): `no_seen_write_given` in place of `no_seen_write` when the
  * record names a repository that the person gave with --code-repo (code-pass.js `repositoriesGiven`), whose words never
  * tell them to give one again. Else by the one tally (code-pass.js `codeChangeTally`): a request not sent
@@ -1348,8 +1359,10 @@ const NO_CHANGE_REASON = Object.freeze({ [NO_CHANGE_WRITE]: NO_WRITE, [NO_CHANGE
  */
 export function codeNotReviewedOf(pass) {
   if (!plain(pass)) return STEP_OFF;
-  if (pass.ran !== true) return list(pass.gaps).map((g) => (plain(g) ? g.code : g))
-    .some((code) => Object.hasOwn(W.notRun, code)) ? NOT_RUN_BACKEND : NO_FOLDER;
+  if (pass.ran !== true) {
+    const gate = list(pass.gaps).map((g) => (plain(g) ? g.code : g)).find((code) => Object.hasOwn(NOT_RUN_REASON, code));
+    return gate === undefined ? NO_FOLDER : NOT_RUN_REASON[gate];
+  }
   const none = codeNoChangeOf(pass);
   if (none !== null) return none === NO_CHANGE_SEEN_WRITE && repositoriesGiven(pass.base) ? NO_SEEN_WRITE_GIVEN
     : NO_CHANGE_REASON[none];

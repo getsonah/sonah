@@ -17,6 +17,7 @@ import { AGENT_PROMPT_NONE_REASONS, REPORT_ITEM_KINDS, REPORT_TIERS } from '../.
 import { ITEM_KIND_TABLE } from '../../evidence/src/triage.js';
 import { REPORT_SHAPES, reportSession, triagedReport, repoFacts } from './report-fixture.js';
 import { sessionBuilder, STORY_KEY } from './session-story-fixture.js';
+import { textBeforeWaits } from '../../evidence/test/m33-integration-fixture.js';
 
 const [MUST_ACT] = REPORT_TIERS;
 const sha = (text) => createHash('sha256').update(text).digest('hex');
@@ -459,12 +460,18 @@ test('D144, D161: the snapshots are pinned by their sha256, so any move of them 
   const now = (name) => sha(readFileSync(new URL(`./snapshots/${name}`, import.meta.url), 'utf8'));
   // D207 moved each by the readers' versions alone (was 98020386… and 69e2fb87…; with the versions set back, they give
   // those back): the synthetic report holds no file placed by a commit or by time alone.
-  assert.equal(now('report.md'), 'a393a8459fb994d5979bf3bdf548d1e475342d1710538bdee1d8a469e3e1bc84');
+  // D210 moved each once more by the readers' versions alone (was a393a845… and cd645df9…; with the versions set back,
+  // `textBeforeWaits`, they give those back): the synthetic report's code step did not wait.
+  assert.equal(now('report.md'), '7dde4569a1767744b6e44c48c1d7b531d5f6673bc1a7eb00d7279fe27d593c4e');
+  assert.equal(sha(textBeforeWaits(readFileSync(new URL('./snapshots/report.md', import.meta.url), 'utf8'))),
+    'a393a8459fb994d5979bf3bdf548d1e475342d1710538bdee1d8a469e3e1bc84');
+  assert.equal(sha(textBeforeWaits(readFileSync(new URL('./snapshots/session-page-report.html', import.meta.url),
+    'utf8'))), 'cd645df99d54c685462ea44cb45d2a2099790003b590de5adb9c7c797e346c37');
   // D203 (the owner, 2026-10-31: "Yes, extend the script") moved the page alone (was 1e4cf68c…): its one script, renamed
   // PAGE_SCRIPT, also follows an in-page link to its place and lets a tab's label take keyboard focus (so the policy's
   // hash moved), and the stylesheet holds a place's room under the tab bar (more on a phone), a landed place's ring and
   // every focus ring in the accent's ink (its review: the accent is under 3:1 on the light ground).
   // The owner, 2026-11-02 ("Do not want the attached text highlighting"; was fbf22094…): a quote and an ask's mark keep
   // their quotation marks and underline, with no colour behind the words. The stylesheet alone moved.
-  assert.equal(now('session-page-report.html'), 'cd645df99d54c685462ea44cb45d2a2099790003b590de5adb9c7c797e346c37');
+  assert.equal(now('session-page-report.html'), 'ca5f59e6172d207540af5dd63de3418b036dfd0cd2de25efa03596990f8b38dc');
 });

@@ -57,8 +57,8 @@ import { outcomesFor } from '../packages/cli/src/outcomes.js';
 import { redact } from '../packages/redact/index.js';
 import { sessionFromLedger } from '../packages/evidence/adapters/sonah-ledger.js';
 import { createAnswerCache } from '../packages/cli/src/answer-cache.js';
-import { ATTESTATION_STATES, NON_RETRYABLE_PROVIDER_CLASSES, PROVIDER_CLASSES, REPLY_SHAPES, REPLY_STOP_REASONS,
-  USAGE_TOKEN_FIELDS, attestableModel, cliVersionOf, createReviewJudge, highestUtilization, rateLimitRecordOf,
+import { ATTESTATION_STATES, NON_RETRYABLE_PROVIDER_CLASSES, PROMPT_PARTS_REFUSED_CLASS, PROVIDER_CLASSES, REPLY_SHAPES,
+  REPLY_STOP_REASONS, USAGE_TOKEN_FIELDS, attestableModel, cliVersionOf, createReviewJudge, highestUtilization, rateLimitRecordOf,
   replyShapeRecordOf, selectedContextWindow } from '../packages/cli/src/review-judge.js';
 import { CHECKPOINT_DISCARD_REASONS, SESSION_REVIEW_FAILURES, SESSION_REVIEW_STATES, createSessionReviewStore,
   reviewSession, servedModelState } from '../packages/cli/src/session-review.js';
@@ -467,8 +467,13 @@ export async function runSessionReviewHarness(options, { loadSession = loadRecor
       if (provider) providerClass[provider] = (providerClass[provider] ?? 0) + 1;
       if (ok) tally.ok++;
       attemptScope.getStore()?.push({ ok, attestation: attested });
+      // D211: an attempt sent with its prompt in parts that the provider refused as invalid is sent once more as one
+      // string by the transport (review-judge.js `withTransportRetry`, whichever attempt it was), so that refusal stops
+      // nothing; the resend's own attempt is judged as any.
+      const resentWhole = provider === PROMPT_PARTS_REFUSED_CLASS && Number.isSafeInteger(metadata?.promptParts)
+        && metadata.promptParts > 1;
       if (attested === MISMATCH) trip(ATTESTATION_TRIP);
-      else if (NON_RETRYABLE_PROVIDER_CLASSES.includes(provider)) trip(provider);
+      else if (NON_RETRYABLE_PROVIDER_CLASSES.includes(provider) && !resentWhole) trip(provider);
       // D70 review (S0): a run that asked for a window never goes on under another — an attempt that reports another
       // window, or answers and reports none, stops it before any further call (a failed attempt that reports none is
       // left to its own class).

@@ -25,7 +25,8 @@ import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalJson } from '../../evidence/contracts/canonical.js';
-import { CLI_SAFE_ERROR_CODES, RUN_FAILURE_CODES } from '../../evidence/src/ledger.js';
+import { CLI_SAFE_ERROR_CODES, CODE_STEP_WAITS_GAP, RETRYABLE_JUDGE_CODES, RUN_FAILURE_CODES }
+  from '../../evidence/src/ledger.js';
 import { NARRATIVE_SHORTFALL, TRANSPORT_SHORTFALL, WINDOW_FAILURE_CODES,
   WINDOW_INCOMPLETE_REASONS, WINDOW_STATES, planWindowRequests, rechecksToReask, runProfile, runReview,
   windowIncompleteReasons } from '../../evidence/src/run-review.js';
@@ -415,6 +416,14 @@ export function createSessionReviewStore(directory) {
     },
     writeWindow: (record) => writePrivate(windows, `${record.windowKey}.json`, JSON.stringify(record)),
     saveReport: (report) => writePrivate(directory, 'report.private.json', JSON.stringify(report)),
+    /** D210 (its review): the report this store saved last (`{ report }`), null when there is none or it cannot be
+     *  read as strict JSON. Read only, never moved. */
+    async readReport() {
+      const read = await readPrivate(join(directory, 'report.private.json'));
+      if (typeof read.text !== 'string') return { report: null };
+      const parsed = strictJson(read.text);
+      return { report: parsed.json && parsed.strict && plainObject(parsed.value) ? parsed.value : null };
+    },
     /** D129's review: every run's cost, in the order the runs ended (`{ runs }`; none when there is no record). */
     readUsageRuns: () => readUsageRunsFile(directory),
     /** D129's review: add one run's entry (`{ usage, paused, failure }`) to the store's record of what each run cost,
@@ -499,6 +508,13 @@ export async function reviewSession({ session, judge, answerCache, store, backen
   let writes = Promise.resolve();
   try {
     if (frozenRead !== null) await store.saveFrozenRead(frozenRead);
+    // D210 (its review): whether the review this folder saved before this run also left a part of the session review
+    // that running the same command again can finish (`unfinishedBefore`), read before this run saves its own. A rerun
+    // then did not finish the session review, so the code step does not wait again (`codeStepWaits`). Read from the
+    // saved report, never from a window's record: a window's record is keyed by its request's bytes, which a recording
+    // that grew between runs moves (the agent's own session under /sonah grows with every run).
+    const unfinishedBefore = typeof store.readReport === 'function'
+      && sessionReviewRerunCanFinish((await store.readReport())?.report);
     const prior = await store.readProgress();
     const attempt = (prior?.attempt ?? 0) + 1;
     // D103: the window keys bind the skim the recording's harness resolves to, as the plan below windows by it.
@@ -584,7 +600,9 @@ export async function reviewSession({ session, judge, answerCache, store, backen
         windowsReplayed: perWindow.filter((c) => c.calls === 0 && c.reused > 0).length,
         windowsLive: perWindow.filter((c) => c.calls > 0 && c.reused === 0).length,
         windowsMixed: perWindow.filter((c) => c.calls > 0 && c.reused > 0).length,
-        recordsDiscarded: ordered(CHECKPOINT_DISCARD_REASONS, discarded), stateChanged },
+        recordsDiscarded: ordered(CHECKPOINT_DISCARD_REASONS, discarded), stateChanged,
+        // D210 (its review): only when it holds, so any other review keeps its record byte for byte.
+        ...(unfinishedBefore ? { unfinishedBefore: true } : {}) },
         // D99 (F1 guard): the recorder census of the recordings this review read (session-evidence.js
         // `recorderCensusOf`): counts by closed reason and recorder version, kept in the run record only.
         ...(census !== null && typeof census === 'object' ? { recorderCensus: census } : {}),
@@ -654,6 +672,10 @@ function codeStepReader(snapshot, bound) {
  * (`--code-pass`), recorded as `codePass.required`; only then does its coverage decide whether the review is complete
  * (ledger.js `reviewRunState`).
  *
+ * D210: `waits` (`codeStepWaits` of the session review's report, the caller's): the step asks nothing, and its record
+ * says why by its gap (`code_step_waits`: `ran` false, coverage `missing`), as a step stopped by the backend does; the
+ * report is saved with it, the usage too. The backend's gate, when the snapshot has it, stays the one said.
+ *
  * D157: `codeMap` (false unless a caller passes true; no command-line flag or profile selects it): the code map of the
  * snapshot (code-map.js `readCodeMap`), read before the step's first call and recorded as `codePass.map`. An index
  * only: no request, gate or reader reads it, so with it on no request byte moves, and with it off nothing is read and
@@ -661,12 +683,17 @@ function codeStepReader(snapshot, bound) {
  */
 export async function reviewCodePass({ session, report, snapshot, judge, answerCache, store, backend,
   speedProfile = undefined, signal = null, model = null, required = true, repo = null, stateNow = null, usage = null,
-  startFolderAt = null, codeMap = false, readMap = readCodeMap }) {
+  startFolderAt = null, codeMap = false, readMap = readCodeMap, waits = false }) {
   const { name: speed } = reviewSpeedProfile(speedProfile);
   const bound = requestBoundOf(reviewSpeedProfile(speed), SESSION_ONLY, backend);
   const memo = memoizeJudge(boundedJudge(judge, () => {}, { signal, speedProfile: speed, reviewScope: SESSION_ONLY,
     backend }), answerCache);
-  const place = codeStepPlace(snapshot);
+  // D210: `waits` (`codeStepWaits`, the caller's): the session review did not finish and running the same command again
+  // can finish it, so the step asks nothing and its record keeps the gate's gap (CODE_STEP_WAITS_GAP). The snapshot's own
+  // gate (the backend) comes first.
+  const snapshotPlace = codeStepPlace(snapshot);
+  const place = waits === true && snapshotPlace.ran && snapshotPlace.gate === null
+    ? { ...snapshotPlace, gate: CODE_STEP_WAITS_GAP } : snapshotPlace;
   const reader = repo ?? codeStepReader(snapshot, bound);
   const release = await store.lock();
   // D149: the start-commit folder of a review of several units (code-snapshot.js `makeStartFolder`), under the state
@@ -996,7 +1023,8 @@ export const ANSWER_INCOMPLETE_REASONS = Object.freeze(['challenge:votes_invalid
 // W3f-2 / F226. Which window a request belongs to, by the label its builder gave it: the narrative
 // `narrative:wN` (joint `code+narrative:wN`, its one `…:receipt-repair`; M36 phase 3, D68 Q: a session-only window's
 // evidence re-ask `narrative:wN:evidence`, a later one `…:evidenceK`; S3: the re-ask of its refuted requirement K
-// `narrative:wN:restatus:K`; W1 A: the re-ask of its decision K refuted on who decided it `narrative:wN:recolumn:K`; G2:
+// `narrative:wN:restatus:K`; W1 A: the re-ask of its decision K refuted on who decided it `narrative:wN:recolumn:K`,
+// withdrawn by D212 and still read, so an answer an earlier review stored stays its window's; G2:
 // the re-ask of its choice not to act K whose existence check refuted it `narrative:wN:reanchor:K`; D153: its after-point
 // re-check of earlier windows' accusing asks `narrative:wN:recheck`), the challenges `challenge:wN:…`, and the joint
 // challenges
@@ -1016,4 +1044,45 @@ export function windowsToReask(windowResults) {
     .filter((w) => Number.isSafeInteger(w?.windowIndex)
       && windowIncompleteReasons(w).some((reason) => ANSWER_INCOMPLETE_REASONS.includes(reason)))
     .map((w) => w.windowIndex + 1));
+}
+
+/**
+ * D210. Whether running the same command again can finish this window of the session review, by its record's closed
+ * codes only: its call failed with a code that an identical request can answer differently (ledger.js
+ * RETRYABLE_JUDGE_CODES: `model_unavailable`, which a usage limit, the network or a sign-in also give, `model_timeout`
+ * and `model_response_invalid`; a failed call stored nothing, so the next run sends it), or no call failed and an answer
+ * left it incomplete in a way that asking again can complete (ANSWER_INCOMPLETE_REASONS, whose answers a finished review
+ * forgets, F226). Every other code a rerun meets again: a request too large to send (`unreviewed_scope`, and
+ * `budget_exhausted`, which in a review that saved its report is only the byte bound of `boundedJudge`, since a budget
+ * stop ends the run before its report), a refusal on this computer (`invalid_model_input`, `anthropic_key_missing`,
+ * `unsupported_backend`, `invalid_model`, `explicit_api_model_required`), and the answers an identical request gets
+ * again (`model_tool_use`, `model_output_limit`, `model_response_incomplete`, `model_turn_limit`,
+ * `model_structured_output_failed`), with the absent evidence (`grounding:relevance`, `challenge:budget_exhausted`).
+ */
+export function windowRerunCanFinish(window) {
+  const failure = window?.failure;
+  if (failure !== null && failure !== undefined) return typeof failure === 'string' && RETRYABLE_JUDGE_CODES.includes(failure);
+  return windowIncompleteReasons(window).some((reason) => ANSWER_INCOMPLETE_REASONS.includes(reason));
+}
+
+/** D210 (its review): whether some window of a report's session review did not finish and running the same command
+ *  again can finish it (`windowRerunCanFinish`). Structure only. Pure. */
+export const sessionReviewRerunCanFinish = (report) => (Array.isArray(report?.windowResults) ? report.windowResults : [])
+  .some((w) => Number.isSafeInteger(w?.windowIndex) && windowRerunCanFinish(w));
+
+/**
+ * D210. Whether the code step waits for the next run of the same command (CODE_STEP_WAITS_GAP): some window of the
+ * session review did not finish and running the same command again can finish it (`sessionReviewRerunCanFinish`), and
+ * the review this state folder saved before this run did not also leave one so (`instrument.resume.unfinishedBefore`,
+ * `reviewSession`). The code review's requests carry what the session review found, so a code step run before that
+ * window finishes is asked again in whole once it does. A session review that two runs in a row left unfinished so holds
+ * nothing back, whichever windows they were, so a window that no rerun finishes never keeps the code review from running:
+ * it runs on the run after, as before, and every later run replays it or asks it as any review does. It holds on a
+ * recording that grew between the runs too, as the agent's own session does under /sonah: a window's record is keyed by
+ * its request's bytes, the saved report is not. A budget stop (`--max-calls`, `--max-input-bytes`,
+ * `--stop-at-utilization`) and Ctrl-C end the run before its report, so the code step never started there either.
+ * Structure only. Pure.
+ */
+export function codeStepWaits(report) {
+  return report?.instrument?.resume?.unfinishedBefore !== true && sessionReviewRerunCanFinish(report);
 }

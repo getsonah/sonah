@@ -126,7 +126,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // D193 once more (sonah.session-page/47, 0.3.0-beta.11): the page's tabs and its new stylesheet.
   // D207 once more (sonah.session-page/48): a file's row says what places it in the change. D208 rides it: no colour
   // behind quoted words.
-  assert.equal(PAGE_VERSION, 'sonah.session-page/48', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
+  // D210 once more (sonah.session-page/49): a code review that waits for the run that can finish the session review.
+  assert.equal(PAGE_VERSION, 'sonah.session-page/49', 'renumbered later: /23 is D84\'s masking; /25 is W1 A\'s');
   // W1 B moved it once more (sonah.session-story/20): a project file's rule of an edit is labelled as the file's.
   // W2 moved it once more (sonah.session-story/21): the agent's own earlier text that contradicts a claim says so.
   // The review of W4 moved it once more (sonah.session-story/22): an ask no action followed says why it reads not done.
@@ -162,7 +163,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // act, folded, and its step in the shortening order.
   // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote.
   // D207 once more (sonah.session-story/43): a file's row says what places it in the change.
-  assert.equal(STORY_VERSION, 'sonah.session-story/43', 'renumbered later: /18 is D84\'s masking');
+  // D210 once more (sonah.session-story/44): a code review that waits for the run that can finish the session review.
+  assert.equal(STORY_VERSION, 'sonah.session-story/44', 'renumbered later: /18 is D84\'s masking');
   // The asks fixes moved it once more (sonah.narrative/33): S3's re-ask of a refuted requirement.
   // W1 A moved it once more (sonah.narrative/34): the re-ask of a decision refuted on who decided it.
   // The release review moved it once more (sonah.narrative/35): a project instruction file the session wrote
@@ -170,7 +172,8 @@ test('fix-column: the versions, once each, and the closed words', () => {
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/38', 'no narrative request byte moved here (/31)');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/39', 'no narrative request byte moved here (/31)');
   assert.equal(REPORT_ITEM_WORDS.referredFrom('CLAUDE.md'), 'The project instruction file CLAUDE.md says:');
 });
 

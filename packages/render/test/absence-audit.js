@@ -724,6 +724,8 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.earlierFiles': ['sonah', '970fecf82c9dad3c'],
     'CODE_REPORT_WORDS.noRoot': ['sonah', '59d9299ab34cbb0e'],
     'CODE_REPORT_WORDS.notRun.code_step_backend': ['sonah', '6a47029f8580ecc1'],
+    // D210: a code review that waits for the run that can finish the session review: Sonah's own step, said.
+    'CODE_REPORT_WORDS.notRun.code_step_waits': ['sonah', '5263c6120b312ea4'],
     // D118 (a): the first screen's no-code sentence, its closed reasons and the folder's label.
     'CODE_REPORT_WORDS.notReviewed': ['sonah', 'a922d242eef531f8'],
     'CODE_REPORT_WORDS.notReviewedReasons.step_off': ['sonah', '549d58058f1e47da'],
@@ -742,6 +744,8 @@ export const READ_CENSUS = Object.freeze({
     'CODE_REPORT_WORDS.notReviewedReasons.none_seen': ['sonah', 'effcb94a75e18648'],
     // D122 (a review low of D118): a record of an earlier code step that made no request and did not record why.
     'CODE_REPORT_WORDS.notReviewedReasons.unknown': ['sonah', '1f5667e4c3c92383'],
+    // D210: the same, as the first screen's reason.
+    'CODE_REPORT_WORDS.notReviewedReasons.waits': ['sonah', '565fdca616db76aa'],
     'CODE_REPORT_WORDS.notReviewedFolder': ['other', '2766aafa590593bb'],
     'CODE_REPORT_WORDS.noFile': ['sonah', '4c382f7599adafe9'],
     'CODE_REPORT_WORDS.noFileNamedBase': ['sonah', '02330fafbce7f35d'],
@@ -1802,6 +1806,8 @@ export const READ_CENSUS = Object.freeze({
     'CODE_SNAPSHOT_WORDS.folders': ['sonah', '88e989352effd913'],
     'CODE_SNAPSHOT_WORDS.unresolved': ['sonah', 'fd7e3fd007f3786f'],
     'CODE_STEP_BACKEND_LINE': ['sonah', 'a0be7ca2097d43b8'],
+    // D210: the terminal's line where the code step would start, the code review's own words.
+    'CODE_STEP_WAITS_LINE': ['sonah', 'c25ad4769a4a2033'],
     'CODE_STEP_SOURCE_WORDS.flag.on': ['other', 'f70ae295960f0d7f'],
     'CODE_STEP_SOURCE_WORDS.flag.off': ['other', '8e92dd161ed35a39'],
     'CODE_STEP_SOURCE_WORDS.config': ['other', '55cb2b4e424d05d5'],
@@ -1914,6 +1920,8 @@ export const READ_CENSUS = Object.freeze({
     // D123: the terminal's words of no write that Sonah can read beside shell commands, as the page says them.
     'RUN_STATE_WORDS.codePass.noSeenWrite': ['sonah', '4dc12b9f313bf799'],
     'RUN_STATE_WORDS.codePass.backend': ['sonah', '1fb79ae0b67adf57'],
+    // D210: the run-state line's words of a code review that waits.
+    'RUN_STATE_WORDS.codePass.waits': ['sonah', '8510b9955cb98239'],
     // D105: Sonah's own record of a review request it did not send, because it was too large to send.
     'RUN_STATE_WORDS.codePass.tooLarge': ['sonah', '3c6ae3b0c040980d'],
     // D111's second review: a coverage short of complete only by the items that its item-by-item check did not examine

@@ -76,7 +76,8 @@ test('D97 (snapshot): the synthetic report renders exactly its .md snapshot', ()
   // D194 once more (sonah.session-story/42, 0.3.0-beta.11): one list of decisions, heads led by their quote. D199 (the
   // same release, no version move): no tier's reason, voice note, coverage line or could-not-verify note.
   // D207 once more (sonah.session-story/43): a file's row says what places it in the change.
-  assert.equal(STORY_VERSION, 'sonah.session-story/43');
+  // D210 once more (sonah.session-story/44): a code review that waits for the run that can finish the session review.
+  assert.equal(STORY_VERSION, 'sonah.session-story/44');
 });
 
 test('D97 (1): the .md has the report model\'s sections in order, with the page\'s counts, for every report shape', () => {
@@ -465,7 +466,7 @@ test('D97: no pings — mentions, issues and bare commit hashes in recorded and 
   }
   // Sonah's own text is not wrapped: the footer's commit and the permalinks stay links.
   const text = renderReportMarkdown(session, report, repoFacts());
-  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/11', HEAD.slice(0, 7))
+  assert.match(text, new RegExp(`\\n${REPORT_FOOTER_WORDS.provenance('0.9.0', 'sonah.report-model/12', HEAD.slice(0, 7))
     .replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}  \\n`));
   assert.match(text, new RegExp(`\\nhttps://github\\.com/example-org/example-api/blob/${HEAD}/src/limiter\\.js#L2-L3\\n`));
 });

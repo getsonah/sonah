@@ -419,7 +419,8 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/39');
   const claims = prompt.NARRATIVE_SCHEMA.properties.claims.items;
   const resolvedBy = claims.properties.resolvedBy;
   assert.deepEqual(resolvedBy.type, ['object', 'null']);
@@ -454,7 +455,8 @@ test('M33 H1 the narrative prompt asks for resolvedBy only for a later same-turn
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/39');
 });
 
 test('M33 H1 the combined route asks for the same resolvedBy, and its version moved', () => {

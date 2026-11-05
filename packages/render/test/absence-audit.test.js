@@ -328,7 +328,9 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // record shows: no recorded write changed them, an absence, beside what Sonah found); 2 sonah in (a review that saw the
   // whole change, short only by a check, on the page and on the terminal). Read again: the lines and the terminal's
   // sentences of those files, the files list's lead, and the code step's line (other: a review call for each part).
-  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 575, 520]);
+  // D210, a code review that waits for the run that can finish the session review: 4 sonah in (the code review's fold,
+  // the first screen's reason, the terminal's line and the run-state words). None states an absence.
+  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 579, 520]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);

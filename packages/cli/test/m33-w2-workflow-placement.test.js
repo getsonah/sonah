@@ -544,6 +544,10 @@ const MOVED_BY_ASKS_NAME = Object.freeze({
  *  case holds no file of the code review. Rendered back (`textBeforePlaced`, which `textBeforeBeta11` applies first),
  *  D204's, byte for byte. No event, gap, request, label, window or window failure moved. */
 const MOVED_BY_PLACED = Object.freeze({ story: '717d0d5b77bbff408baa9c4c9d1597a5506eebf644f5b93265389d587dca4dcd' });
+/** D210: the story once more, as the code renders it: the readers' versions in its footer (WAITS_READER_VERSIONS); its
+ *  code step did not wait. Rendered back (`textBeforeWaits`, which `textBeforePlaced` applies first), D207's, byte for
+ *  byte. No event, gap, request, label, window or window failure moved. */
+const MOVED_BY_WAITS = Object.freeze({ story: '5adf66a4d24b2acffc539d9f3c02f9e70c56e20e4e5d25a73e5dfcc6fcc0535f' });
 test('C-01 stable event ids: a run received right after its launch, as this tree sends it — moved by the ids alone', async () => {
   const modules = { loadSessionEvidence, redact, sessionFromLedger, runReview, planWindowRequests, captureCase,
     windowNarrative, fixtureJudge, renderStory: renderReportMarkdown };
@@ -575,9 +579,11 @@ test('C-01 stable event ids: a run received right after its launch, as this tree
   // D200: and once more (MOVED_BY_TAGS), the same way.
   // D202: and once more (MOVED_BY_EVIDENCE), the same way.
   // D207: and once more (MOVED_BY_PLACED); rendered back (`textBeforePlaced`, first of all).
+  // D210: and once more (MOVED_BY_WAITS); rendered back (`textBeforeWaits`, which `textBeforePlaced` applies first).
   const asksFixes = beta6.map((c) => ({ ...c, ...MOVED_BY_AGENT_PROMPT, ...MOVED_BY_TRUTH_ONLY, ...MOVED_BY_TWO_PARTS.now,
     ...MOVED_BY_RUNS_COUNTED.now, ...MOVED_BY_RENDER_FIX, ...MOVED_BY_BETA11, ...MOVED_BY_ONE_LIST.now,
-    ...MOVED_BY_FEWER_NOTES.now, ...MOVED_BY_TAGS.now, ...MOVED_BY_EVIDENCE.now, ...MOVED_BY_ASKS_NAME.now, ...MOVED_BY_PLACED }));
+    ...MOVED_BY_FEWER_NOTES.now, ...MOVED_BY_TAGS.now, ...MOVED_BY_EVIDENCE.now, ...MOVED_BY_ASKS_NAME.now, ...MOVED_BY_PLACED,
+    ...MOVED_BY_WAITS }));
   assert.deepEqual(await captureReceivedCases({ ...modules, renderStory: (session, report) => textBeforeAgentPrompt(
     textBeforeTruthOnly(textBeforeRenderFix(textBeforeBeta11(renderReportMarkdown(session, report))))) }), beta6.map((c) => ({ ...c, ...MOVED_BY_W1, ...MOVED_BY_W2, ...MOVED_BY_W3,
     ...MOVED_BY_FIX_REVIEW })), 'as 0.3.0-beta.6 rendered them');

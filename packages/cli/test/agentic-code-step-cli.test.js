@@ -44,6 +44,9 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
+  // D211: a request in parts is one stream-json user message; its text blocks join to the prompt, as the CLI reads it.
+  if (args.includes('--input-format')) input = JSON.parse(input).message.content.filter((block) => block.type === 'text')
+    .map((block) => block.text).join('');
   const agent = valueOf('--tools') === 'Read,Grep,Glob';
   if (!agent) {
     fs.appendFileSync(${JSON.stringify(log)}, 'session\\n');

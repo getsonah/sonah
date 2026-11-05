@@ -37,8 +37,10 @@ import { PRELAUNCH_READER_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W1_READER_
   CLEANUP_READER_VERSIONS, REPORT_READER_VERSIONS, REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS,
   ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
   SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, CITED_WHOLE_VERSIONS, SEEN_READER_VERSIONS,
+  REASK_WITHDRAWN_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
-  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS }
+  ONE_ITEM_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS,
+  WAITS_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 let n = 0;
@@ -342,11 +344,13 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   assert.equal(CLEANUP_VERSIONS.challenge.before, VOID_VOTE_REASK_VERSIONS.challenge.after);
   // D103 moved the prompt and the window format once more (SKIM_VERSIONS): the skim keyed by the recording's harness.
   assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
+  // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
   assert.equal(SKIM_VERSIONS.windows.before, D71_BRIEF_VERSIONS.windows.after);
   // And the dossier (SKIM_VERSIONS: dossier): the evidence a session-only dossier shows moved as the narrative's.
   assert.equal(SKIM_VERSIONS.dossier.before, D80_VERSIONS.dossier.after);
   assert.deepEqual([PROMPT_VERSION, CHALLENGE_PROFILE.version, CHALLENGE_DOSSIER_VERSION, CODE_REVIEW_VERSION,
-    WINDOWING_VERSION], [SKIM_VERSIONS.prompt.after, CITED_WHOLE_VERSIONS.challenge.after,
+    WINDOWING_VERSION], [REASK_WITHDRAWN_VERSIONS.prompt.after, CITED_WHOLE_VERSIONS.challenge.after,
     CITED_WHOLE_VERSIONS.dossier.after, D71_BRIEF_VERSIONS.codeReview.after, SKIM_VERSIONS.windows.after]);
   // D103 moved the challenge and the dossier once more (CITED_WHOLE_VERSIONS): cited results shown whole.
   assert.equal(CITED_WHOLE_VERSIONS.challenge.before, CLEANUP_VERSIONS.challenge.after);
@@ -508,8 +512,12 @@ test('C-01: every instrument whose bytes name an event moved by its ids alone, a
   // (And both once more by D207: PLACED_READER_VERSIONS, a file's row says what places it in the change.)
   assert.deepEqual([PLACED_READER_VERSIONS.story.before, PLACED_READER_VERSIONS.page.before],
     [BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.page.after]);
-  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [PLACED_READER_VERSIONS.story.after,
-    PLACED_READER_VERSIONS.page.after]);
+  // (And both once more by D210: WAITS_READER_VERSIONS, a code review that waits for the run that can finish the session
+  // review.)
+  assert.deepEqual([WAITS_READER_VERSIONS.story.before, WAITS_READER_VERSIONS.page.before],
+    [PLACED_READER_VERSIONS.story.after, PLACED_READER_VERSIONS.page.after]);
+  assert.deepEqual([STORY_VERSION, PAGE_VERSION], [WAITS_READER_VERSIONS.story.after,
+    WAITS_READER_VERSIONS.page.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

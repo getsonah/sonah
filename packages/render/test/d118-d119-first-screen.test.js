@@ -82,6 +82,8 @@ const CASES = Object.freeze([
   // D122 (a review low of D118): no request, in a record of a code step from before the request's manifest
   // (code-pass/12), which does not say why (that step could also drop a request too large to send).
   ['unknown', withoutManifest(pass({ ...EMPTY, version: { pass: 'sonah.code-pass/8' }, files: [FILES[0]] }))],
+  // D210: the step waits for the run that can finish the session review (its gap `code_step_waits`).
+  ['waits', { ran: false, gaps: [{ code: 'code_step_waits', channel: 'code', scope: 'repository' }] }],
   [null, pass()],
 ]);
 

@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.3.0-beta.13 (2026-11-05)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+Reviews through your `claude` login can now cost less at list price. Each call asks Claude Code to keep what it writes
+to its prompt cache for five minutes, not one hour, which costs less to write. Requests that begin with the same long
+part, such as the code review's checks of one change, now send that part so that the requests after the first can read
+it from the cache instead of each writing it again. The code review no longer runs on a session review that running the
+same command again can still finish, since the run that finishes it could ask the code review again in whole. And when
+the session review's check rejects who decided one of the agent's choices, Sonah no longer asks the model a second time
+who decided it: a choice that a second check confirms the agent made now shows "Who decided: not upheld" at once.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay, except some that came through your `claude` login, whose requests are now sent in
+parts: the model is sent the same words, but Sonah asks for those answers once more. They are the answers to the code
+review's checks of its findings and of its questions, to its item-by-item check, to their second asks and to its repair
+where the repair repeats the code review's request, and to the session review's second asks about a row that its check
+rejected, unless the second ask carries an image you pasted. An answer asked once more can come back in other words, and
+then what Sonah builds from it is asked again too: the checks of a row that a second ask gave, and the code review when
+the session review's findings change. Where the second question about who decided had given a choice a new answer, and a
+check of that answer confirmed it, that choice now shows "Who decided: not upheld", so Sonah asks the code review again
+too. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+### The five-minute prompt cache
+
+Sonah's calls through your `claude` login now ask Claude Code to keep what it writes to its prompt cache for five
+minutes, not one hour, which costs less to write at list price. On the paid runs that we measured, writes to the cache
+were nearly nine tenths of the list cost, the one-hour cache costs 1.6 times as much to write, and, on the largest of
+them, the session review's repeated checks of one question, which read what the first check wrote, came less than three
+minutes after it. The answer you get is the same. The usage line at the end of a review now splits what was written to
+the cache by how long the cache keeps it, so you can see where each write went. Nothing that the model is sent changes,
+so your stored answers still replay.
+
+### A code review that waits for the session review
+
+When a part of the session review did not finish, and running the same command again can finish it, such as a call that
+a usage limit or the network stopped, the code review now waits for that run instead of running now. The code review
+reads what the session review found, so before, a review that left one part unanswered could run the code review twice:
+first, and again in whole on the run that answered that part, when that run changed what the session review found. The
+page, the Markdown and the terminal say that the code review runs after the session review when you run the same command
+again, and the exit code stays the session review's. A session review that two runs in a row left unfinished, or a part
+that no rerun can finish, such as a part too large to send, does not hold the code review back. Nothing that Sonah sends
+changes, so your stored answers still replay.
+
+### A shared part sent once
+
+Through your `claude` login, when Sonah asks the model again about rows that a check refuted, or runs the code review's
+checks of one change, the long part that those requests share is now sent as a block of its own, and the requests after
+the first start once the model has begun its answer to the first, so they can read that part from the prompt cache
+instead of each writing it again: the model is sent the same words in the same order, and the review can cost less. A
+second ask or a repair that repeats its request with a note after it can now read that request from the cache too. After
+you update, Sonah asks once more for the stored answers of these requests, except a second ask that carries an image you
+pasted.
+
+### Who decided a choice
+
+When the session review's check rejects who decided one of the agent's choices, and a second check confirms that the
+agent made the choice, the report now shows that choice with "Who decided: not upheld" at once, and Sonah no longer asks
+the model a second time who decided it. On the paid runs that we measured, that second question gave an answer that its
+own check confirmed once in 74 times, and each time it sent the model that whole part of the session again. The review
+now makes fewer calls, and every other row of the session review is the same. Where that second question had given a
+choice a new answer, and a check of that answer confirmed it, the choice now shows "Who decided: not upheld", and the
+code review, whose input says who decided each choice, is asked again.
+
 ## 0.3.0-beta.12 (2026-11-04)
 
 This beta is experimental, and we want to hear how the report reads for you.

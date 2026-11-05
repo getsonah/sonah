@@ -3,7 +3,7 @@
 // front how long it should take (`estimateLine`). Admission is separate from transport cancellation so
 // already-started answers can finish and enter the cache.
 import { performance } from 'node:perf_hooks';
-import { JUDGE_FAILURE_CODES } from '../../evidence/src/ledger.js';
+import { JUDGE_FAILURE_CODES, PROMPT_PARTS_DROPPED } from '../../evidence/src/ledger.js';
 import { RATE_LIMIT_WINDOWS, highestUtilization, rateLimitRecordOf } from './review-judge.js';
 
 export const DEFAULT_REVIEW_BUDGET = Object.freeze({ maxCalls: null, maxInputBytes: null, stopAtUtilization: null });
@@ -86,14 +86,29 @@ function inputSplitOf(metadata) {
   if (![write, read].every((value) => value === undefined || count(value))) return null;
   const split = { uncached: usage.input_tokens, cacheWrite: write ?? 0, cacheRead: read ?? 0 };
   const total = split.uncached + split.cacheWrite + split.cacheRead;
-  return count(total) ? { total, split } : null;
+  return count(total) ? { total, split, writes: cacheWritesOf(usage) } : null;
+}
+
+/** D210: the cache writes of one attempt's `usage`, split by how long the cache keeps them, as the API and the claude
+ *  CLI report them in `usage.cache_creation`: `fiveMinutes` (`ephemeral_5m_input_tokens`) and `oneHour`
+ *  (`ephemeral_1h_input_tokens`), each a count, an absent one 0; null when the usage holds no such split (an older CLI,
+ *  or a value that is not a count). Read from those two typed fields only. */
+export const CACHE_WRITE_FIELDS = Object.freeze({ fiveMinutes: 'ephemeral_5m_input_tokens',
+  oneHour: 'ephemeral_1h_input_tokens' });
+function cacheWritesOf(usage) {
+  const split = usage?.cache_creation;
+  if (split === null || typeof split !== 'object' || Array.isArray(split)) return null;
+  const [fiveMinutes, oneHour] = [split[CACHE_WRITE_FIELDS.fiveMinutes], split[CACHE_WRITE_FIELDS.oneHour]];
+  if (![fiveMinutes, oneHour].every((value) => value === undefined || count(value))
+    || (fiveMinutes === undefined && oneHour === undefined)) return null;
+  return { fiveMinutes: fiveMinutes ?? 0, oneHour: oneHour ?? 0 };
 }
 
 /** One tally of attempts: the whole review's, or the code step's part of it. */
 function createTally() {
   return { calls: 0, inputBytes: 0, inputTokens: 0, inputReportedCalls: 0, outputTokens: 0, outputReportedCalls: 0,
     uncached: 0, cacheWrite: 0, cacheRead: 0, splitReportedCalls: 0, costUsd: 0, costReportedCalls: 0,
-    firstStart: null, lastEnd: null };
+    writeFiveMinutes: 0, writeOneHour: 0, writesReportedCalls: 0, firstStart: null, lastEnd: null };
 }
 function addAttempt(tally, metadata, input) {
   if (Number.isFinite(metadata?.costUsd) && metadata.costUsd >= 0) { tally.costUsd += metadata.costUsd; tally.costReportedCalls++; }
@@ -103,18 +118,29 @@ function addAttempt(tally, metadata, input) {
       && count(tally.cacheRead + input.split.cacheRead)) {
       tally.uncached += input.split.uncached; tally.cacheWrite += input.split.cacheWrite;
       tally.cacheRead += input.split.cacheRead; tally.splitReportedCalls++;
+      // D210: and the writes by how long the cache keeps them, summed as the split is, over the calls that report them.
+      const writes = input.writes;
+      if (writes && count(tally.writeFiveMinutes + writes.fiveMinutes) && count(tally.writeOneHour + writes.oneHour)) {
+        tally.writeFiveMinutes += writes.fiveMinutes; tally.writeOneHour += writes.oneHour; tally.writesReportedCalls++;
+      }
     }
   }
   const output = metadata?.usage?.output_tokens;
   if (count(output) && count(tally.outputTokens + output)) { tally.outputTokens += output; tally.outputReportedCalls++; }
 }
-/** D129: a tally as the run record keeps it: counts and numbers only, each total null when no attempt reported it. */
+/** D129: a tally as the run record keeps it: counts and numbers only, each total null when no attempt reported it.
+ *  D210: the input split holds `cacheWrites` (`{ fiveMinutes, oneHour, reportedCalls }`: the writes by how long the
+ *  cache keeps them, over the calls that reported that) only when a call reported it, so a record of calls that report
+ *  none is byte for byte as before. `sonah.review-usage/1` keeps its number: the one reader of the record
+ *  (render report-model.js `usageRecordOf`) reads no member of the split. */
 function tallyRecord(tally) {
   const known = (total, reported) => (tally.calls === 0 || reported > 0 ? total : null);
   return { calls: tally.calls, inputBytes: tally.inputBytes,
     inputTokens: known(tally.inputTokens, tally.inputReportedCalls), inputReportedCalls: tally.inputReportedCalls,
     inputSplit: tally.splitReportedCalls > 0 ? { uncached: tally.uncached, cacheWrite: tally.cacheWrite,
-      cacheRead: tally.cacheRead, reportedCalls: tally.splitReportedCalls } : null,
+      cacheRead: tally.cacheRead, reportedCalls: tally.splitReportedCalls,
+      ...(tally.writesReportedCalls > 0 ? { cacheWrites: { fiveMinutes: tally.writeFiveMinutes,
+        oneHour: tally.writeOneHour, reportedCalls: tally.writesReportedCalls } } : {}) } : null,
     outputTokens: known(tally.outputTokens, tally.outputReportedCalls), outputReportedCalls: tally.outputReportedCalls,
     costUsd: known(Math.round(tally.costUsd * 1e6) / 1e6, tally.costReportedCalls),
     costReportedCalls: tally.costReportedCalls };
@@ -142,9 +168,15 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
   const windows = {};
   // The agent transport: attempts of agent requests (their metadata carries `agentRun`) and the turns they report.
   let agentCalls = 0, turns = 0, turnsReportedCalls = 0;
+  // D211: the attempts sent with their prompt in parts (metadata `promptParts`, a count over 1), and the attempts resent
+  // as one string, by their closed reason (metadata `partsDropped`, ledger.js PROMPT_PARTS_DROPPED).
+  let partsCalls = 0;
+  const partsResent = Object.fromEntries(PROMPT_PARTS_DROPPED.map((reason) => [reason, 0]));
   const pause = value => { reason ??= value; admission.abort(); };
   const record = (metadata, part = null) => {
     reportedCalls++;
+    if (Number.isSafeInteger(metadata?.promptParts) && metadata.promptParts > 1) partsCalls++;
+    if (PROMPT_PARTS_DROPPED.includes(metadata?.partsDropped)) partsResent[metadata.partsDropped]++;
     if (metadata?.agentRun !== null && typeof metadata?.agentRun === 'object') {
       agentCalls++;
       const reported = metadata.agentRun.numTurns;
@@ -177,11 +209,16 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
   /** D129 (C7): the review's usage as its run record keeps it (REVIEW_USAGE_VERSION): the whole review's tally, its
    *  agent calls and turns, its wall time, each usage limit's first and last reading (RATE_LIMIT_WINDOWS names, in that
    *  order; null when none reported one), and the code step's part (`code`, with its own wall time from its first call
-   *  to its last answer; null when the code step made no call). Counts and numbers only. */
+   *  to its last answer; null when the code step made no call). Counts and numbers only. D211: `promptParts`
+   *  (`{ calls, resent }`: the attempts sent with their prompt in parts, and those resent as one string by
+   *  PROMPT_PARTS_DROPPED reason) only when an attempt was either, so a review with none keeps the record byte for byte
+   *  as before; `sonah.review-usage/1` keeps its number, as with D210's split (its one reader reads no such member). */
   const usageRecord = () => {
     const limitsRead = RATE_LIMIT_WINDOWS.filter((window) => Object.hasOwn(windows, window));
+    const parted = partsCalls > 0 || Object.values(partsResent).some((n) => n > 0);
     return { version: REVIEW_USAGE_VERSION, ...tallyRecord(whole), reportedCalls, agentCalls,
-      turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null, wallMs: elapsed(),
+      turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null,
+      ...(parted ? { promptParts: { calls: partsCalls, resent: { ...partsResent } } } : {}), wallMs: elapsed(),
       windows: limitsRead.length ? Object.fromEntries(limitsRead.map((window) => [window, { ...windows[window] }])) : null,
       code: code.calls === 0 ? null : { ...tallyRecord(code),
         wallMs: code.firstStart !== null && code.lastEnd !== null ? Math.max(0, Math.round(code.lastEnd - code.firstStart))
@@ -205,10 +242,18 @@ export function createReviewBudget(options = {}, { now = () => performance.now()
       const state = usageRecord();
       const tokens = (total, reported, of, more = '') => total === null ? `not reported (0/${of} calls reported)`
         : `${total} (${reported}/${of} calls reported${more})`;
+      // D210: the writes by how long the cache keeps them, where a call reported that; the calls that did, when they are
+      // fewer than those that reported the split.
+      const writes = (split) => {
+        const by = split.cacheWrites;
+        if (!by) return '';
+        const of = by.reportedCalls === split.reportedCalls ? '' : `; ${by.reportedCalls}/${split.reportedCalls} calls reported`;
+        return ` (${by.fiveMinutes} for five minutes, ${by.oneHour} for one hour${of})`;
+      };
       // D129: the input tokens, with their split where the CLI reported one.
       const input = (tally) => tokens(tally.inputTokens, tally.inputReportedCalls, tally.calls, tally.inputSplit === null
-        ? '' : `: ${tally.inputSplit.uncached} uncached, ${tally.inputSplit.cacheWrite} written to the cache, `
-          + `${tally.inputSplit.cacheRead} read from the cache`);
+        ? '' : `: ${tally.inputSplit.uncached} uncached, ${tally.inputSplit.cacheWrite} written to the cache`
+          + `${writes(tally.inputSplit)}, ${tally.inputSplit.cacheRead} read from the cache`);
       const cost = (tally) => (tally.costUsd === null ? `not reported (0/${tally.calls} calls reported)`
         : `$${tally.costUsd.toFixed(2)} (${tally.costReportedCalls}/${tally.calls} calls reported)`);
       // The agent transport: the turns its agents took, only when an agent request ran.

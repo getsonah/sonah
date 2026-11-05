@@ -1093,6 +1093,12 @@ const MOVED_BY_ASKS_NAME = Object.freeze({ back: Object.freeze([
 const MOVED_BY_PLACED = Object.freeze([{ story: '86ed5e3bd01181572ee6f2f3de82773436de367d6114ec49a11cd87f90142275' },
   { story: 'db09898ba245e52552ae71e62246b50b65e54b275499181da8f13b2a8b946d0c' },
   { story: '45c0fe655ecc63b645ce91596eed7f30d62e23e49f53b3bdd861bb776c72b0e8' }]);
+/** D210: every story once more, as the code renders it: the readers' versions in its footer (WAITS_READER_VERSIONS); no
+ *  case's code step waited. Rendered back (`textBeforeWaits`, which `textBeforePlaced` applies first), D207's, byte for
+ *  byte. No ledger, gap, request, label, window or window failure moved. */
+const MOVED_BY_WAITS = Object.freeze([{ story: '22dabc7ba927446420492172b44b539d6aa750ddcfdb9184d40b69e31894fced' },
+  { story: 'f6c5ec2c11fc92a3704e2e01b85cda7deb33e00565e938e0e8ad564d9d32e05e' },
+  { story: '4213103df921a9ebb4bc5eec3aacfb44b0780a5d9b247f3e9ebcf9e07146dbc7' }]);
 /** D77 C (story /14, a step is one of your requests): the ONLY value that moved from S7's — the `conflicted` case's story,
  *  whose one review window holds its three requests: three steps now, one per request (each heading followed by its own
  *  step, the overview A1 -> S1 -> A2 -> S2 -> A3 -> S3, each request's rows in its own step). The other two cases hold one
@@ -1233,10 +1239,12 @@ test('C-01 stable event ids: a session with no Workflow call, or whose calls lin
   // more (MOVED_BY_ONE_LIST), which nothing renders back, as D161's. D199: and once more (MOVED_BY_FEWER_NOTES), the
   // same way. D200: and once more (MOVED_BY_TAGS), the same way. D202: and once more (MOVED_BY_EVIDENCE), the same way.
   // D207: and once more (MOVED_BY_PLACED); rendered back (`textBeforePlaced`, first of all).
+  // D210: and once more (MOVED_BY_WAITS); rendered back (`textBeforeWaits`, which `textBeforePlaced` applies first).
   const asksFixes = beta6.map((c, at) => ({ ...c, ...MOVED_BY_AGENT_PROMPT[at], ...MOVED_BY_TRUTH_ONLY[at],
     ...MOVED_BY_TWO_PARTS.now[at], ...MOVED_BY_RUNS_COUNTED.now[at], ...MOVED_BY_RENDER_FIX[at],
     ...MOVED_BY_BETA11[at], ...MOVED_BY_ONE_LIST.now[at], ...MOVED_BY_FEWER_NOTES.now[at],
-    ...MOVED_BY_TAGS.now[at], ...MOVED_BY_EVIDENCE.now[at], ...MOVED_BY_ASKS_NAME.now[at], ...MOVED_BY_PLACED[at] }));
+    ...MOVED_BY_TAGS.now[at], ...MOVED_BY_EVIDENCE.now[at], ...MOVED_BY_ASKS_NAME.now[at], ...MOVED_BY_PLACED[at],
+    ...MOVED_BY_WAITS[at] }));
   assert.deepEqual(await captureStableCases({ ...STABLE_MODULES, renderStory: (session, report) => textBeforeAgentPrompt(
     textBeforeTruthOnly(textBeforeRenderFix(textBeforeBeta11(renderReportMarkdown(session, report))))) }), beta6.map((c, at) => ({ ...c, ...MOVED_BY_W1[at], ...MOVED_BY_W2[at],
     ...MOVED_BY_W3[at], ...MOVED_BY_FIX_REVIEW[at] })), 'as 0.3.0-beta.6 rendered them');

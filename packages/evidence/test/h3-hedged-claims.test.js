@@ -35,7 +35,7 @@ import { HEDGED_CLAIMS_TEXT, HEDGED_CLAIMS_VERSIONS, beforeHedgedClaims, request
 import { beforeStatusFact } from './status-fact-fixture.js';
 import { INTEGRATION_VERSIONS, LABELS_MERGE_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_NARROW_VERSIONS, INTEGRATION_SUPPORT_SENTENCE,
   beforeIntegrationText, DISCLOSURE_WORDS_VERSIONS, WINDOWING_VERSIONS, RECORDED_FACTS_VERSIONS, FORMAT_VERSIONS, CONVERSATION_VERSIONS, D69_VERSIONS, D69_REVIEW_VERSIONS, D71_BRIEF_VERSIONS, D71_CHANNELS_VERSIONS, D71_FIX_VERSIONS, S7_VERSIONS, RELEASE_REVIEW_VERSIONS, SECOND_RELEASE_REVIEW_VERSIONS,
-  CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS } from './m33-integration-fixture.js';
+  CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, REASK_WITHDRAWN_VERSIONS } from './m33-integration-fixture.js';
 import { FIX_COLUMN_VERSIONS, ASKS_FIXES_VERSIONS, W1_VERSIONS, W2_VERSIONS, W3_VERSIONS, FIX_REVIEW_VERSIONS,
   CODE_PASS_VERSIONS, CODE_STEP_VERSIONS, CODE_STEP_REVIEW_VERSIONS, CODE_STEP_REREVIEW_VERSIONS, CODE_STEP_THIRD_REVIEW_VERSIONS, VOID_VOTE_REASK_VERSIONS, CLEANUP_VERSIONS, CITED_WHOLE_VERSIONS } from './m33-integration-fixture.js';
 import { D80_VERSIONS } from './m33-integration-fixture.js';
@@ -228,7 +228,9 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
   // D103 moved it once more (SKIM_VERSIONS: prompt): a Claude Code recording's results shown up to 12,000 bytes a side.
   assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
-  assert.equal(prompt.PROMPT_VERSION, SKIM_VERSIONS.prompt.after);
+  // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
+  assert.equal(prompt.PROMPT_VERSION, REASK_WITHDRAWN_VERSIONS.prompt.after);
   // The disclosure narrowing moved the challenge once more (DISCLOSURE_NARROW_VERSIONS: /15 -> /16).
   assert.equal(DISCLOSURE_NARROW_VERSIONS.challenge.before, INTEGRATION_VERSIONS.challenge.after);
   // Stable event ids moved it once more (/16 -> /17): a recorded session's event ids alone (C-01 event identity).
@@ -301,7 +303,8 @@ test('H3: one version bump each; the fixture names exactly the moved texts, each
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(reviewRun.runProfile('session-only').promptVersion, 'sonah.narrative/39');
   // M33 integration moved it once more (`sonah.challenge/15`): one version above every branch's own (C-05 integration).
   // The disclosure narrowing moved it once more (`sonah.challenge/16`): a disclosure item's proposition and note only.
   // Stable event ids moved it once more (`sonah.challenge/17`): every recorded event's id (C-01 event identity).

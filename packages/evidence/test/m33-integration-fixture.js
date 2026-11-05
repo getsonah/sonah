@@ -2188,13 +2188,45 @@ export const PLACED_READER_VERSIONS = Object.freeze({
   page: Object.freeze({ before: 'sonah.session-page/47', after: 'sonah.session-page/48' }),
   story: Object.freeze({ before: 'sonah.session-story/42', after: 'sonah.session-story/43' }),
 });
+/** D210: the readers it moved, once each from 0.3.0-beta.12: the first screen's reason `waits`, a code review that waits
+ *  for the run that can finish the session review. A review whose code step did not wait moves by these versions
+ *  alone, so rendered back (`textBeforeWaits`) it is D207's, byte for byte. */
+export const WAITS_READER_VERSIONS = Object.freeze({
+  model: Object.freeze({ before: 'sonah.report-model/11', after: 'sonah.report-model/12' }),
+  page: Object.freeze({ before: 'sonah.session-page/48', after: 'sonah.session-page/49' }),
+  story: Object.freeze({ before: 'sonah.session-story/43', after: 'sonah.session-story/44' }),
+});
+/** D210: a report .md or page as 0.3.0-beta.12's readers wrote it, for a review whose code step did not wait: the
+ *  versions it names set back (`WAITS_READER_VERSIONS`). Text only, as literals. `textBeforePlaced` applies it first. */
+export function textBeforeWaits(text) {
+  let out = String(text);
+  for (const { before, after } of Object.values(WAITS_READER_VERSIONS)) out = out.replaceAll(after, before);
+  return out;
+}
+/**
+ * D212 (owner decision 2026-11-05): the instrument version it moved. W1 A's re-ask of a session-only decision the
+ * challenge refuted on who decided it, whose choice its own check upheld, is withdrawn with the check of its new column
+ * (prompt.js `recolumnRequest` and its fixed words): `sonah.narrative/39`, rendered back to /38. No request byte moved:
+ * such a re-ask is no longer sent. Every run profile moves by this version alone; no reader moved.
+ */
+export const REASK_WITHDRAWN_VERSIONS = Object.freeze({
+  prompt: Object.freeze({ before: 'sonah.narrative/38', after: 'sonah.narrative/39' }),
+});
+/** D212: a run profile with its narrative version set back to D211's (`REASK_WITHDRAWN_VERSIONS`); anything else
+ *  untouched. `profileBeforePlaced` applies it first. */
+export function profileBeforeReaskWithdrawn(profile) {
+  const copy = structuredClone(profile);
+  if (copy?.promptVersion === REASK_WITHDRAWN_VERSIONS.prompt.after)
+    copy.promptVersion = REASK_WITHDRAWN_VERSIONS.prompt.before;
+  return copy;
+}
 /** D207: the units' order past the guard as D206 said it, a literal: this file imports no module under test. */
 const INDEX_UNIT_ORDER_BEFORE = 'recorded-first-past-the-guard';
 /** D207: a run profile with its code-pass member's versions set back, its `placedBy` list out, `merge_base` out of its
  *  start commit sources and the units' order as D206 said it, so D206's; anything else untouched. `profileBeforeIndex`
- *  applies it first. */
+ *  applies it first. D212: it applies `profileBeforeReaskWithdrawn` first. */
 export function profileBeforePlaced(profile) {
-  const copy = structuredClone(profile);
+  const copy = profileBeforeReaskWithdrawn(profile);
   const member = copy?.codePass;
   if (member && typeof member === 'object' && member.snapshot === PLACED_VERSIONS.snapshot.after) {
     member.snapshot = PLACED_VERSIONS.snapshot.before;
@@ -2224,9 +2256,9 @@ export function requestBeforePlaced(text) {
 /** D207: a report .md or page as 0.3.0-beta.11's readers wrote it, with no `--code-base`: a file's row with no word on what
  *  places it in the change, the base lines' sentence on those files as it was, and no way to a whole branch in a reason.
  *  And the version it names set back (`PLACED_READER_VERSIONS`). D208's stylesheet is not rendered back. Text only, as
- *  literals. `textBeforeBeta11` applies it first. */
+ *  literals. `textBeforeBeta11` applies it first. D210: it applies `textBeforeWaits` first. */
 export function textBeforePlaced(text) {
-  let out = String(text)
+  let out = textBeforeWaits(text)
     .replace(/Sonah places 1 by time alone: changed during the recording(?: and not committed when the agent stopped)?\. It may not be the session(?:'|&#39;)s\./g,
       'That file last changed while the session ran.')
     .replace(/Sonah places \d+ by time alone: changed during the recording(?: and not committed when the agent stopped)?\. They may not be the session(?:'|&#39;)s\./g,

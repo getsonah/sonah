@@ -71,7 +71,7 @@ const noLeak = (...values) => {
 const PARENT_ENV = { HOME: '/synthetic', PATH: '/bin', [VARIABLE]: '99', CLAUDE_CODE_MAX_RETRIES: '99' };
 const NARRATIVE_ENV = { HOME: '/synthetic', PATH: '/bin', CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
   CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CODE_SAFE_MODE: '1',
-  CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1' };
+  CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', FORCE_PROMPT_CACHING_5M: '1' };
 
 test('D77 the limit is one frozen number, derived from the 16-item batch bound and the model\'s ceiling', () => {
   assert.equal(CHALLENGE_MAX_OUTPUT_TOKENS, 32_768);

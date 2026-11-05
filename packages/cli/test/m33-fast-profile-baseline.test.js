@@ -69,7 +69,7 @@ import { PROFILE_TARGETS, DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCL
   LISTED_ASKS_VERSIONS, profileBeforeListedAsks, TIER_REVERT_VERSIONS, profileBeforeTierRevert,
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace,
   UNITS_LEFT_OUT_REASON, UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, profileBeforeTruthOnly,
-  profileBeforeIndex, profileBeforePlaced }
+  profileBeforeIndex, profileBeforePlaced, REASK_WITHDRAWN_VERSIONS, profileBeforeReaskWithdrawn }
   from '../../evidence/test/m33-integration-fixture.js';
 import { createHash } from 'node:crypto';
 
@@ -1521,9 +1521,20 @@ const MOVED_BY_D207 = Object.freeze({
     combined: MOVED_BY_D145.runProfile.combined },
   sessionProfileDigest: '327a0bd21ad65b75a3eac817bcdffe8f5c0664ac571ca648630055affdb095a5',
 });
-/** What the code sends now: D122 (d)'s, in D145's order, under D207's run profiles. */
-const CURRENT = Object.freeze({ ...withMoves(BEFORE_D145, MOVED_BY_D145.cases), runProfile: MOVED_BY_D207.runProfile,
-  sessionProfileDigest: MOVED_BY_D207.sessionProfileDigest });
+/**
+ * D212 (m33-integration-fixture.js `profileBeforeReaskWithdrawn`): the values that moved from D207's — both run profiles,
+ * by their narrative version alone (`sonah.narrative/39`: W1 A's re-ask for a new column is withdrawn). No case's request
+ * moved (no case's challenge refutes a decision on who decided it). Rendered back, D207's.
+ */
+const MOVED_BY_D212 = Object.freeze({
+  cases: [{}, {}, {}],
+  runProfile: { 'session-only': '1873f95e6bcf8b9e9822aa7d3ae5fb1b659578eb6882b7a8849136b7c434cbdb',
+    combined: '70988dcb4616bb65d6f91eb4c0ebf03cdef79ab0c8c9ee5e28196914a84fa8b8' },
+  sessionProfileDigest: '1873f95e6bcf8b9e9822aa7d3ae5fb1b659578eb6882b7a8849136b7c434cbdb',
+});
+/** What the code sends now: D122 (d)'s, in D145's order, under D212's run profiles. */
+const CURRENT = Object.freeze({ ...withMoves(BEFORE_D145, MOVED_BY_D145.cases), runProfile: MOVED_BY_D212.runProfile,
+  sessionProfileDigest: MOVED_BY_D212.sessionProfileDigest });
 /** A capture as an earlier link sent it, but for the re-asks of void votes the cleanup withdrew: its cases are what the
  *  code sent before D103 (a run profile rendered back moves no request; D103's own moves are rendered back by
  *  `modulesBeforeSkim`). */
@@ -1794,7 +1805,10 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     sessionProfileDigest: (...args) => sha256(canonicalJson(citedBack('session-only', ...args))) }),
   { ...CURRENT, runProfile: MOVED_BY_SKIM.runProfile, sessionProfileDigest: MOVED_BY_SKIM.sessionProfileDigest });
   assert.equal(reviewRun.runProfile('session-only').windowing.version, SKIM_VERSIONS.windows.after);
-  assert.equal(reviewRun.runProfile('combined').promptVersion, SKIM_VERSIONS.prompt.after);
+  // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt), rendered back first of all (`profileBeforePlaced`).
+  assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
+  assert.equal(reviewRun.runProfile('combined').promptVersion, REASK_WITHDRAWN_VERSIONS.prompt.after);
+  assert.equal(profileBeforeReaskWithdrawn(reviewRun.runProfile('combined')).promptVersion, SKIM_VERSIONS.prompt.after);
   // And the lean profile's dossier version (the evidence a session-only dossier shows moved as the narrative's), after the
   // D80 integration's; rendered back, the D80 integration's.
   assert.equal(SKIM_VERSIONS.dossier.before, D80_VERSIONS.dossier.after);
@@ -2018,7 +2032,10 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
     // D103 moved it once more (SKIM_VERSIONS: prompt); rendered back (`profileBeforeSkim`), G2's.
     assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
-    assert.equal(reviewRun.runProfile(scope).promptVersion, SKIM_VERSIONS.prompt.after, scope);
+    // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt); rendered back (`profileBeforeReaskWithdrawn`), D103's.
+    assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
+    assert.equal(reviewRun.runProfile(scope).promptVersion, REASK_WITHDRAWN_VERSIONS.prompt.after, scope);
+    assert.equal(profileBeforeReaskWithdrawn(reviewRun.runProfile(scope)).promptVersion, SKIM_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeSkim(reviewRun.runProfile(scope)).promptVersion, CHOICE_REANCHOR_VERSIONS.prompt.after, scope);
     assert.equal(profileBeforeChoiceReanchor(reviewRun.runProfile(scope)).promptVersion,
       SECOND_RELEASE_REVIEW_VERSIONS.prompt.after, scope);
@@ -2104,8 +2121,11 @@ test('D64 wording: every case\'s narrative requests moved by the two proposer se
     // (code-verify/5, the tier table /4, the tie member); rendered back (`profileBeforeTruthOnly`), D149's. D206 moved it
     // once more by the `index` member; rendered back (`profileBeforeIndex`), D152's. D207 moved it once more by the
     // snapshot's and the pass's versions, `placedBy`, `merge_base` and the units' order; rendered back
-    // (`profileBeforePlaced`), D206's.
-    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_D207.runProfile[scope], scope);
+    // (`profileBeforePlaced`), D206's. D212 moved both once more by the narrative version alone; rendered back
+    // (`profileBeforeReaskWithdrawn`), D207's.
+    assert.equal(sha256(canonicalJson(reviewRun.runProfile(scope))), MOVED_BY_D212.runProfile[scope], scope);
+    assert.equal(sha256(canonicalJson(profileBeforeReaskWithdrawn(reviewRun.runProfile(scope)))),
+      MOVED_BY_D207.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforePlaced(reviewRun.runProfile(scope)))), MOVED_BY_D206.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeIndex(reviewRun.runProfile(scope)))), MOVED_BY_D152.runProfile[scope], scope);
     assert.equal(sha256(canonicalJson(profileBeforeTruthOnly(reviewRun.runProfile(scope)))),

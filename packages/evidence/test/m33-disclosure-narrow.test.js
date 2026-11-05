@@ -37,10 +37,11 @@ import { DISCLOSURE_NARROW_VERSIONS, STABLE_IDS_VERSIONS, DISCLOSURE_WORDS_VERSI
   JUDGMENT_FIRST_REVIEW_READER_VERSIONS, RELEASE_REVIEW_READER_VERSIONS, RELEASE_REVIEW_VERSIONS, AGENTIC_READER_VERSIONS,
   CLEANUP_READER_VERSIONS, REPORT_MD_READER_VERSIONS, ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS,
   ABSENCE_AUDIT_READER_VERSIONS, GROUNDING_CAUSE_READER_VERSIONS,
-  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS,
+  SECOND_RELEASE_REVIEW_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, SEEN_READER_VERSIONS, REASK_WITHDRAWN_VERSIONS,
   ONE_BOUND_READER_VERSIONS, REPAIR_MERGE_READER_VERSIONS, PREMISE_READER_VERSIONS, ACCOUNT_READER_VERSIONS,
   ONE_ITEM_READER_VERSIONS, SESSION_CHANGE_READER_VERSIONS, REPORT_TRUTH_READER_VERSIONS, COMPACTION_READER_VERSIONS,
-  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS }
+  COST_READER_VERSIONS, AGENT_PROMPT_READER_VERSIONS, BETA11_READER_VERSIONS, PLACED_READER_VERSIONS,
+  WAITS_READER_VERSIONS }
   from './m33-integration-fixture.js';
 
 const zeros = Object.fromEntries(ledger.DISCLOSURE_REJECTIONS.map((reason) => [reason, 0]));
@@ -296,7 +297,9 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.equal(CHOICE_REANCHOR_VERSIONS.prompt.before, SECOND_RELEASE_REVIEW_VERSIONS.prompt.after);
   // D103 moved it once more (SKIM_VERSIONS: prompt): a Claude Code recording's results shown up to 12,000 bytes a side.
   assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
-  assert.equal(prompt.PROMPT_VERSION, SKIM_VERSIONS.prompt.after);
+  // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
+  assert.equal(prompt.PROMPT_VERSION, REASK_WITHDRAWN_VERSIONS.prompt.after);
   // M35 windowing moved it once more (WINDOWING_VERSIONS: codeReview).
   assert.equal(WINDOWING_VERSIONS.codeReview.before, DISCLOSURE_WORDS_VERSIONS.codeReview.after);
   // M36 phase 1 moved it once more (RECORDED_FACTS_VERSIONS: codeReview): the evidence it carries (D68).
@@ -402,7 +405,10 @@ test('D64 wording: both proposers ask for the statement that the agent went agai
   assert.equal(BETA11_READER_VERSIONS.story.before, AGENT_PROMPT_READER_VERSIONS.story.after);
   // D207 moves it once more (PLACED_READER_VERSIONS: a file's row says what places it in the change).
   assert.equal(PLACED_READER_VERSIONS.story.before, BETA11_READER_VERSIONS.story.after);
-  assert.equal(story.STORY_VERSION, PLACED_READER_VERSIONS.story.after);
+  // D210 moves it once more (WAITS_READER_VERSIONS: a code review that waits for the run that can finish the session
+  // review).
+  assert.equal(WAITS_READER_VERSIONS.story.before, PLACED_READER_VERSIONS.story.after);
+  assert.equal(story.STORY_VERSION, WAITS_READER_VERSIONS.story.after);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

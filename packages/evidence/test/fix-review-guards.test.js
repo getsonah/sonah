@@ -116,7 +116,8 @@ test('vocabulary: every name the W1 A, W2 and W3 code reads is its vocabulary\'s
   assert.deepEqual([SOURCE_NOT_FILE_CONTENT_CAUSE, SOURCE_REWRITTEN_CAUSE], ['source_not_file_content', 'source_rewritten']);
   assert.ok(WITHHELD_REJECTION_CAUSES.includes(SOURCE_REWRITTEN_CAUSE));
   assert.equal(RESTS_ON_REPAIRED, 'restsOnRepaired');
-  assert.deepEqual([...DECISION_RECOLUMN_RECORD], ['refuted', 'existence', 'asked', 'withheld', 'challenged']);
+  // D212: the members of the asks it withdrew (`asked`, `withheld`, `challenged`) are no longer written.
+  assert.deepEqual([...DECISION_RECOLUMN_RECORD], ['refuted', 'existence']);
   assert.ok(Object.isFrozen(DECISION_RECOLUMN_RECORD));
   assert.equal(CHANGED_SINCE_LABEL, LEDGER_CHANGED_SINCE_LABEL, 'one label, kept in the constants file');
 });

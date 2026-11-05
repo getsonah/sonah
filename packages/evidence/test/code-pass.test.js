@@ -42,7 +42,7 @@ import { ASK_CODE_WORDS, askCodeNotes } from '../src/review.js';
 import { withheldWhy } from '../src/code-report.js';
 import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CODE_PASS_PROFILE_CHOICE_REANCHOR,
   profileBeforeAgenticCodeStep, SECOND_RELEASE_REVIEW_VERSIONS, CODE_PASS_PROFILE_RELEASE_REVIEW,
-  profileBeforeSecondReleaseReview, VOID_VOTE_REASK_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS,
+  profileBeforeSecondReleaseReview, VOID_VOTE_REASK_VERSIONS, CHOICE_REANCHOR_VERSIONS, SKIM_VERSIONS, REASK_WITHDRAWN_VERSIONS,
   AGENTIC_READER_VERSIONS, CHANGED_SINCE_SHOWN_VERSIONS, profileBeforeChangedSinceShown, CLEANUP_VERSIONS,
   CITED_WHOLE_VERSIONS, profileBeforeCleanup, ONE_READING_VERSIONS, WHERE_IT_LIES_VERSIONS,
   ONE_READING_READER_VERSIONS, ABSENCE_READER_VERSIONS, ABSENCE_AUDIT_READER_VERSIONS, profileBeforeOneReading,
@@ -58,7 +58,7 @@ import { AGENTIC_CODE_STEP_VERSIONS, CODE_PASS_PROFILE_SECOND_RELEASE_REVIEW, CO
   RELATIVE_PLACE_ITEM_ERROR, profileBeforeRelativePlace, RECEIPT_PLACE_VOID_CAUSE, profileBeforeReceiptPlace, UNITS_LEFT_OUT_REASON,
   UNITS_TRIAGE_ERROR, profileBeforeUnits, TRUTH_ONLY_VERSIONS, TRUTH_ONLY_REFUTATION, TRUTH_ONLY_KIND,
   profileBeforeTruthOnly, TRUTH_ONLY_READER_VERSIONS, RENDER_FIX_READER_VERSIONS, BETA11_READER_VERSIONS,
-  PLACED_VERSIONS, PLACED_READER_VERSIONS, profileBeforePlaced }
+  PLACED_VERSIONS, PLACED_READER_VERSIONS, WAITS_READER_VERSIONS, profileBeforePlaced }
   from './m33-integration-fixture.js';
 import { CODE_FILES, CODE_TEXT, codeSession, buildCodeSession, dossierItems, reviewFinding, holds, allSound,
   verifiedFinding, batchItems, itemsEnded, fatesOf, sameFindingTwice, accountsHold, askedItems, PARSE_QUOTE as QUOTE }
@@ -312,7 +312,9 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   assert.equal(CHALLENGE_PROFILE.version, CITED_WHOLE_VERSIONS.challenge.after);
   // D103 moved the prompt once more (narrative/38, SKIM_VERSIONS): the skim keyed by the recording's harness.
   assert.equal(SKIM_VERSIONS.prompt.before, CHOICE_REANCHOR_VERSIONS.prompt.after);
-  assert.equal(PROMPT_VERSION, SKIM_VERSIONS.prompt.after);
+  // D212 moved it once more (REASK_WITHDRAWN_VERSIONS: prompt): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(REASK_WITHDRAWN_VERSIONS.prompt.before, SKIM_VERSIONS.prompt.after);
+  assert.equal(PROMPT_VERSION, REASK_WITHDRAWN_VERSIONS.prompt.after);
   // The page once more by the report model (D97, page /37), one link after the cleanup's; and the story, now the report
   // .md, by its own link (story /32).
   // D98: both once more (ONE_READING_READER_VERSIONS), one link after D97's.
@@ -374,8 +376,12 @@ test('agentic code step: the closed vocabularies and versions are exactly the me
   // the change. D208 rides the page's: no colour behind quoted words.
   assert.deepEqual([PLACED_READER_VERSIONS.page.before, PLACED_READER_VERSIONS.story.before, PLACED_READER_VERSIONS.model.before],
     [BETA11_READER_VERSIONS.page.after, BETA11_READER_VERSIONS.story.after, BETA11_READER_VERSIONS.model.after]);
-  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [PLACED_READER_VERSIONS.page.after,
-    PLACED_READER_VERSIONS.story.after, PLACED_READER_VERSIONS.model.after]);
+  // D210: each once more (WAITS_READER_VERSIONS), one link after 0.3.0-beta.12's: a code review that waits for the run
+  // that can finish the session review.
+  assert.deepEqual([WAITS_READER_VERSIONS.page.before, WAITS_READER_VERSIONS.story.before, WAITS_READER_VERSIONS.model.before],
+    [PLACED_READER_VERSIONS.page.after, PLACED_READER_VERSIONS.story.after, PLACED_READER_VERSIONS.model.after]);
+  assert.deepEqual([PAGE_VERSION, STORY_VERSION, REPORT_MODEL_VERSION], [WAITS_READER_VERSIONS.page.after,
+    WAITS_READER_VERSIONS.story.after, WAITS_READER_VERSIONS.model.after]);
   // D115 and D116 (REPORT_TRUTH_READER_VERSIONS: a row of the session review in words no wider than the field it
   // rests on, and a question's pointer only where code checked its tie), in the same move: 0.3.0-beta.5 moves each
   // reader once.

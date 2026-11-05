@@ -570,7 +570,8 @@ test('M33 C repair: the challenger judges a support item on its own, and refutes
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38', 'still one version bump');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/39', 'still one version bump');
   const built = prompt.buildNarrativePrompt({ session: supportedSession(), window: { index: 0, events: supportedSession().events } });
   const task = built.prompt.replace(built.evidencePrompt, '').replace(/\s+/g, ' ');
   assert.match(task, /A claim an earlier RESULT already contradicts takes contradictedBy, never supportedBy/);

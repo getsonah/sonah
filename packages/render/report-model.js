@@ -172,9 +172,12 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  decision's statement from its quote on as evidence lines, names a decision's action by its recorded tool, adds the
  *  legend's lines of the two tags where the review has them, names the part "Your asks", and cuts a quote by its
  *  recorded characters. /11 (D207): a file's row says what places it in the change (a commit the session made, time alone
- *  or the base you named), and the code review's base line says how many each way.
+ *  or the base you named), and the code review's base line says how many each way. /12 (D210): `header.noCode` can
+ *  give the reason `waits` (evidence ledger.js CODE_NOT_REVIEWED_REASONS): the code review did not start, because a new
+ *  run can finish the session review, after which it runs. A review whose code step did not wait moves by the version
+ *  alone.
  */
-export const REPORT_MODEL_VERSION = 'sonah.report-model/11';
+export const REPORT_MODEL_VERSION = 'sonah.report-model/12';
 
 /**
  * D202: a decision's recorded actions, 5, then counted (`actions`).

@@ -800,6 +800,8 @@ export const GAP_HEADER_CAUSE = Object.freeze({
   redacted_content: 'pr_hunks_withheld',
   // The agentic code step: kept in the code pass's own record, never among the report's gaps.
   code_step_backend: 'other_gap',
+  // D210: likewise.
+  code_step_waits: 'other_gap',
 });
 // The one code that is a fact above on one channel only: the adapter declares the asks the recorder
 // elided as an `incomplete_inventory` on the `instructions` channel, and `instructionsElided` counts

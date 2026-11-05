@@ -12,7 +12,7 @@ import { access, chmod, link, lstat, mkdir, open, readFile, realpath, rename, rm
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
+import { CLI_SAFE_ERROR_CODES, CODE_STEP_BACKEND_GAP, CODE_STEP_WAITS_GAP, GAP_CODES, JUDGE_FAILURE_CODES, REVIEW_RUN_STATES,
   RUN_FAILURE_CODES, SESSION_ID_PROBLEMS, honestStatuses, reviewRunState } from '../../evidence/src/ledger.js';
 import { WINDOW_INCOMPLETE_REASONS, planWindowRequests, SESSION_REVIEW_CLAUDE_CLI_MODEL, rechecksUnexecuted,
   sessionCallsFact } from '../../evidence/src/run-review.js';
@@ -34,8 +34,8 @@ import { discoverSessions } from './session-discovery.js';
 import { SESSION_ID_SHAPE, resolveSessionId } from './session-id.js';
 import { commitRangeShape, commitSessionLines, sessionToReview, sessionsOfCommits } from './commit-sessions.js';
 import { freezeRecordings, frozenReadValid } from './frozen-read.js';
-import { createSessionReviewStore, dryRunReplay, frozenRunOf, reviewCodePass, reviewSession, sameRunIdentity }
-  from './session-review.js';
+import { codeStepWaits, createSessionReviewStore, dryRunReplay, frozenRunOf, reviewCodePass, reviewSession,
+  sameRunIdentity } from './session-review.js';
 import { codeBaseCommit, codeRepoTop, placeHolds, readCodeSnapshot } from './code-snapshot.js';
 import { CODE_FILE_STATES, CODE_DIFF_BASES, CODE_DIFF_STATES, CODE_PLACED_BY } from '../../evidence/src/ledger.js';
 import { CODE_ACCOUNT_LIMITS, CODE_OUTSIDE_STATES, CODE_UNIT_LIMITS, agentsRead, placesOf, foldersOf, unresolvedOf,
@@ -407,7 +407,8 @@ export const STYLE_KINDS = Object.freeze({
   SESSION_ID_WORDS: 'notice',
   RUN_STATE_WORDS: 'fragment', 'RUN_STATE_WORDS.line': 'notice', CODE_STEP_SOURCE_WORDS: 'fragment',
   WINDOW_LINE_WORDS: 'fragment',
-  CODE_STEP_WORDS: 'notice', CODE_PASS_NO_ROOT: 'notice', CODE_STEP_BACKEND_LINE: 'notice', CODE_SNAPSHOT_WORDS: 'notice',
+  CODE_STEP_WORDS: 'notice', CODE_PASS_NO_ROOT: 'notice', CODE_STEP_BACKEND_LINE: 'notice', CODE_STEP_WAITS_LINE: 'notice',
+  CODE_SNAPSHOT_WORDS: 'notice',
   REPLAY_UNREAD: 'notice', REPLAY_WORDS: 'notice', DRY_RUN_WORDS: 'notice',
 });
 /** The arguments each function of a word table is rendered with for the style linter. */
@@ -892,6 +893,14 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // D87: the code pass, after the session's review and on its report; its own stored answers (`code-pass/answers`).
     if (snapshot) {
       if (!snapshot.root) stdout.write(`${snapshot.gate ? CODE_STEP_BACKEND_LINE : CODE_PASS_NO_ROOT}\n`);
+      // D210: a session review that running the same command again can finish (`codeStepWaits`): the code step asks
+      // nothing now, its record says why (`code_step_waits`), and it runs on that run, after the session review. The exit
+      // code stays the session review's own. With --code-pass too: the session review already makes the review
+      // incomplete, and the run that finishes it runs the code step and counts its coverage. D210's review: only when the
+      // step would ask (`codeStepAsks`): with no change to review it makes no call either way, so waiting saves nothing,
+      // and its record keeps the true reason (no change) rather than one that says the next run reviews code.
+      const waits = codeStepAsks(snapshot) && codeStepWaits(report);
+      if (waits) stdout.write(`${CODE_STEP_WAITS_LINE}\n`);
       // --code-model: the code step's stored answers are keyed by its own model (answer-cache.js `answerKey` binds the
       // model and the argv), so an answer one model gave is never replayed for another; and by the repository's state
       // (`repoState`), so an answer an agent gave from the repository is replayed only while it is unchanged.
@@ -909,7 +918,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
           store: createSessionReviewStore(join(state, STATE_REVIEW)),
           // D149: where a review of several units makes its start-commit folder, under the code step's own entry.
           startFolderAt: join(state, STATE_CODE_PASS, 'start-commit'),
-          ...(codeConfig ? { model: codeConfig.model } : {}), usage: () => budget.usageRecord() }));
+          ...(codeConfig ? { model: codeConfig.model } : {}), usage: () => budget.usageRecord(),
+          ...(waits ? { waits } : {}) }));
       } finally {
         signal?.removeEventListener('abort', abort);
         if (installSignals) { process.off('SIGINT', abort); process.off('SIGTERM', abort); }
@@ -1199,6 +1209,8 @@ export const RUN_STATE_WORDS = Object.freeze({
     noSeenWrite: 'had no change to review, because Sonah found no write of the session that it can read, and the '
       + 'session ran shell commands, whose writes Sonah does not yet see',
     backend: 'did not run, because it runs only on the claude-cli backend',
+    // D210: the gap `code_step_waits` (evidence session-review.js `codeStepWaits`).
+    waits: 'did not run yet: it runs after the session review on the next run',
     // F3b (D111's second review): short of complete only by the items that its item-by-item check did not examine in a
     // way that Sonah could use (evidence code-report.js `codeReviewCoverage`): every call can have answered, and a
     // published finding can follow from such an item, so never "did not cover". The items are the ones the code step's
@@ -1249,18 +1261,23 @@ export function runStateLine(report, mode) {
     // The second release review (low): a pass that ran and has no complete answer is one that did not complete, as the
     // page and the story say (`ran`), never one that was not run.
     const gated = Array.isArray(report.codePass?.gaps) && report.codePass.gaps.some((g) => g?.code === CODE_STEP_BACKEND_GAP);
+    // D210: a step that waits for the run that can finish the session review.
+    const waiting = !gated && Array.isArray(report.codePass?.gaps)
+      && report.codePass.gaps.some((g) => g?.code === CODE_STEP_WAITS_GAP);
     // D105: a review request too large to send was not sent: the review did not run, never "did not finish".
     const unsent = report.codePass?.manifest?.review?.sent === false;
     // F3b (D111's second review): a coverage short of complete only by the accounting is said as that, never as a review
     // that did not cover the change and its checks (`codeReviewCoverage`).
-    const pass = gated ? 'backend' : none !== null ? none : unsent && coverage === 'missing' ? 'tooLarge'
+    const pass = gated ? 'backend' : waiting ? 'waits' : none !== null ? none : unsent && coverage === 'missing' ? 'tooLarge'
       : coverage === 'missing' && report.codePass?.ran === true ? 'incomplete'
         : coverage === 'partial' && codeReviewCoverage(report.codePass) === 'complete' ? 'unaccounted'
           : coverage === 'partial' && codeShortByChecksOf(report.codePass) ? 'checks' : coverage;
     // The release review (owner, 2026-10-14): a code step that ran by default or by the setting, short of complete, is
     // said plainly, with why the review still reads complete (only --code-pass makes its coverage count).
-    const apart = report.codePass?.required === false && pass !== 'complete' && !CODE_NO_CHANGE_KEYS.includes(pass);
-    const named = none === null && !gated ? namedBaseOf(report.codePass?.base) : null;
+    // D210: never beside a step that waits: --code-pass would not run it now.
+    const apart = report.codePass?.required === false && pass !== 'complete' && !CODE_NO_CHANGE_KEYS.includes(pass)
+      && !waiting;
+    const named = none === null && !gated && !waiting ? namedBaseOf(report.codePass?.base) : null;
     parts.push(RUN_STATE_WORDS.parts.codePass(`${RUN_STATE_WORDS.codePass[pass]}${named === null ? ''
       : RUN_STATE_WORDS.codePassNamed(named, Number.isSafeInteger(report.codePass.base.outside) ? report.codePass.base.outside
         : 0)}${apart ? RUN_STATE_WORDS.codePassApart : ''}`));
@@ -1361,6 +1378,9 @@ export const CODE_PASS_NO_ROOT = 'Code review: did not run. Sonah could not read
   + 'so it read no file.';
 /** The agentic code step: what the CLI says when the review's backend cannot run it. D182: it prints after the
  *  recording is read, so it says only that the step did not run, and why. */
+/** D210: said where the code step would start, when it waits for the next run (`codeStepWaits`): the words of its gap
+ *  (evidence code-report.js `notRun.code_step_waits`), as the page says them. */
+export const CODE_STEP_WAITS_LINE = `Code review: ${CODE_REPORT_WORDS.notRun.code_step_waits.replace(/^The code review /, '')}`;
 export const CODE_STEP_BACKEND_LINE = 'Code review: did not run. It runs only on the claude-cli backend, whose reviewer '
   + 'can read the repository.';
 

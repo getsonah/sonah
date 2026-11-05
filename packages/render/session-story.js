@@ -113,8 +113,10 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  last output lines and the session review's own words; D202 the fold of the asks' evidence under the table, the
  *  agent's last words in a message's fold, a decision's recorded actions, the two new tags and the legend's lines; D204
  *  "Your asks" as the part's name, a failed run's whole command, a decision's statement from its quote on, and the two
- *  tags' legend lines. /43 (D207): the file rows and base line the model's /11 moves. */
-export const STORY_VERSION = 'sonah.session-story/43';
+ *  tags' legend lines. /43 (D207): the file rows and base line the model's /11 moves. /44 (D210): the first screen's
+ *  reason the model's /12 adds, a code review that waits for the run that can finish the session review; no other byte
+ *  moves but the versions. */
+export const STORY_VERSION = 'sonah.session-story/44';
 
 /** The bounds of the facts this file reads: a command's text 80 code points; a line diff's input and work; the
  *  comparisons the grouping of an earlier report's asks may make. */

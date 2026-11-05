@@ -219,7 +219,8 @@ test('M33 N: closed vocabularies in the constants place; the existing kind; the 
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(prompt.PROMPT_VERSION, 'sonah.narrative/39');
   // The disclosure narrowing moved the challenge once more (DISCLOSURE_NARROW_VERSIONS: /15 -> /16).
   assert.equal(DISCLOSURE_NARROW_VERSIONS.challenge.before, INTEGRATION_VERSIONS.challenge.after);
   // Stable event ids moved it once more (/16 -> /17): a recorded session's event ids alone (C-01 event identity).
@@ -980,7 +981,8 @@ test('M33 N bytes: a review whose answers propose nothing sends no new request, 
     // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
     // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
     // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/38');
+    // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+    assert.equal(report.windowResults[0].promptVersion, 'sonah.narrative/39');
   }
   // A combined review's answer carrying the member it was never asked for is outside its contract, exactly as before.
   const combined = await reviewRun.runReview({ session, pr: null, judge: async (request) => (request.challenge ? { votes: [] }

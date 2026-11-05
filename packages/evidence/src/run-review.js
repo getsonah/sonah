@@ -12,7 +12,7 @@ import { verifyReceipts, verifyReceipt, repairReceipt, decisionIdentity, receipt
 import { identityDigest } from '../contracts/canonical.js';
 import { requestImages, deliveredView, clearedView } from './images.js';
 import { buildChallengeDossier, challengeEvidenceOf, buildNarrativePrompt, NARRATIVE_SCHEMA, SESSION_NARRATIVE_SCHEMA, PROMPT_VERSION,
-  narrativeSchemaOf, restatusRequest, recolumnRequest, reanchorRequest, recheckRequest } from './prompt.js';
+  narrativeSchemaOf, restatusRequest, reanchorRequest, recheckRequest } from './prompt.js';
 import { reviewAgentProfile } from './review-agent.js';
 import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withheldRejection,
   withheldCauseCounts, declaredCauses, JUDGE_FAILURE_CODES, RUN_FAILURE_CODES, windowEnd,
@@ -25,7 +25,7 @@ import { buildLedger, honestStatuses, sessionCoverageFacts, coverageFrom, withhe
   CONTRADICTION_SOURCES, FAILURE_HANDLINGS, FAILURE_UNCHECKED_REASONS, FAILURE_REJECTIONS, FAILURE_ITEM_TYPE,
   FAILURE_OUTCOMES, resultOutcome, REQUIREMENT_FACTS, PROMISE_UNCHECKED_REASONS, CHALLENGE_ENDED, UNRUN_WRITE_REASON,
   quotesOnlyUnrunWrite, constraintWithSourceRole, reviewWithSourceRoles, REQUIREMENT_RESTATUS_WITHHELD,
-  DECISION_RECOLUMN_WITHHELD, DECISION_COLUMN_REFUTED, groundDecision, codeContradictionSource, SUPPORT_ASKED,
+  DECISION_COLUMN_REFUTED, groundDecision, codeContradictionSource, SUPPORT_ASKED,
   OWN_WRITTEN_SOURCE, RESTS_ON_REPAIRED, DECISION_RECOLUMN_RECORD, NOT_ACTING_REANCHOR_WITHHELD,
   NOT_ACTING_REANCHOR_COLUMN_WITHHELD, NOT_ACTING_REANCHOR_RECORD, groundingFieldsOf, GROUNDING_CAUSES,
   GROUNDING_LENGTH_CAUSES, GROUNDING_ANCHOR_CAUSES, QUOTE_PLACES, QUOTE_LIMITS, nestedReceipts, VALUE_UNCHECKED_CAUSES,
@@ -52,6 +52,7 @@ import { CHALLENGE_TIER_BOUNDS, REVIEW_SPEED_PROFILES, challengeProfileOf, dossi
   requestBoundOf, tieredChallenge } from './review-profiles.js';
 import { CODE_PASS_PROFILE } from './code-pass.js';
 import { seenInPartOfWindows, markSeenInPart } from './seen-in-part.js';
+import { staggerSharedParts } from './prompt-parts.js';
 
 /**
  * H1b. How much of a proposal the response contract does not admit a window's record keeps: the value
@@ -1797,7 +1798,7 @@ function recheckRunsOf(window) {
 
 /**
  * D155. How many decisions a review left out because their second check did not run: the window's challenge refuted
- * them, and the existence check that could have kept them (`recolumnedDecisions` step 1, `reanchoredChoices` step 2)
+ * them, and the existence check that could have kept them (`recolumnedDecisions`, `reanchoredChoices` step 2)
  * ended unexecuted for them (a call that failed after its retry or was not retried, a budget stop, or a reply that left
  * the item out, or could not be read, even after its re-ask), in a run that asking again can run (`recheckResendable`).
  * A finished review forgets that run's stored answers (`rechecksToReask`), so running the same review again asks it.
@@ -2337,9 +2338,11 @@ const [RESTATUS_BOUND, RESTATUS_NO_ANSWER, RESTATUS_NO_ROW, RESTATUS_UNGROUNDED,
  * checked"). Each session-only requirement the window's challenge refuted (`refuted`, its items as asked) is put to the
  * reviewer once more, before it is lowered: the window's kept request with the row, what each vote that refuted it said
  * and a fixed closing (prompt.js `restatusRequest`), one call per refuted ask, named `<label>:<its index>`. Every
- * re-ask is sent before any answer is read, in the items' order, so a stored answer replays it (D60). Its answer's one
- * readable requirement row whose instruction is the ask's own (the same human message and words, exactly) gives the new
- * status; the ask (`text`, `instruction`) stays the row's own. Code checks it as any row (checklist.js
+ * re-ask is built before any answer is read and sent in the items' order, so a stored answer replays it (D60); D211:
+ * the first at once, and each after it once the first one's reply has begun or its call has settled (or, when the
+ * first was answered from the store, once the next one's has: prompt-parts.js `staggerSharedParts`), so it reads the
+ * body they share from the prompt cache. Its answer's one readable requirement row whose instruction is the ask's own
+ * (the same human message and words, exactly) gives the new status; the ask (`text`, `instruction`) stays the row's own. Code checks it as any row (checklist.js
  * `checkedRequirement`), and it goes on only when it holds, is not not-checked and is not the status the challenge
  * refuted (precision: a refuted "done" is never published "done" on a second answer). Each that goes on is asked as its
  * own item (`ask`, the run the requirement was checked in: its tier, its dossier), and published only when that check
@@ -2357,6 +2360,8 @@ async function restatedRequirements({ refuted, byKey, request, aliases, judge, s
   const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
   const record = { refuted: refuted.length, asked: 0, withheld, challenged };
   const causes = zeros(GROUNDING_CAUSES);
+  // D211: the re-asks share the kept request's body (prompt.js `refutedReask`); those after the first wait for its reply.
+  const send = staggerSharedParts(judge);
   const sent = refuted.map((item) => {
     const refutations = (byKey.get(item.key)?.votes ?? []).filter((vote) => vote?.valid === true
       && vote.verdict === 'refuted');
@@ -2365,7 +2370,7 @@ async function restatedRequirements({ refuted, byKey, request, aliases, judge, s
     if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };
     record.asked++;
     let answer;
-    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }
+    try { answer = Promise.resolve(send(reask)).catch(() => undefined); }
     catch { answer = Promise.resolve(undefined); }
     return { item, answer };
   });
@@ -2726,12 +2731,9 @@ export async function recheckedRows({ session, windows, perWindow, requirements,
 }
 
 /** W1 A: the label suffix of a window's run that checks whether the agent made each choice the challenge refuted on who
- *  decided it (`challenge:wN:exists:…`), and of the run that checks the new column its re-ask gave
- *  (`challenge:wN:recolumn:…`; the re-ask itself is `narrative:wN:recolumn:K`). */
+ *  decided it (`challenge:wN:exists:…`). D212: the re-ask of such a choice for a new column (`narrative:wN:recolumn:K`)
+ *  and that column's run (`challenge:wN:recolumn:…`) are no longer sent. */
 const EXISTS_SUFFIX = ':exists';
-const RECOLUMN_SUFFIX = ':recolumn';
-const [RECOLUMN_BOUND, RECOLUMN_NO_ANSWER, RECOLUMN_NO_ROW, RECOLUMN_COULD_NOT_TELL, RECOLUMN_UNGROUNDED, RECOLUMN_SAME]
-  = DECISION_RECOLUMN_WITHHELD;
 /** W1 A: does a decision proposal say who decided it (a covering receipt, or an instruction review)? */
 const filesColumn = (candidate) => plain(candidate) && (plain(candidate.constrainedBy)
   || plain(candidate.instructionReview));
@@ -2758,59 +2760,34 @@ function withoutColumn(candidate) {
   const { constrainedBy: _column, instructionReview: _review, ...choice } = candidate;
   return choice;
 }
-/** W1 A: the choice a decision proposal names, apart from who decided it — D79's structure without its instruction
- *  receipt (`decisionStructure`): the set of its actions, its stated receipt and whether it is a choice not to act. Null
- *  when it cannot be read. */
-function choiceStructure(candidate) {
-  if (!plain(candidate) || !Array.isArray(candidate.actions) || candidate.actions.some((id) => typeof id !== 'string'))
-    return null;
-  const stated = placingReceipt(candidate.stated);
-  return stated === undefined ? null
-    : JSON.stringify([[...new Set(candidate.actions)].sort(), stated, candidate.notActing === true]);
-}
-
 /**
- * W1 A (owner decision 2026-10-13: a decision refuted only on who decided it was hidden with its choice). A session-only decision the window's challenge refuted that says who decided it (`refuted`:
- * its items as asked, each with a covering receipt or an instruction review) is no longer simply left out:
- *   1. its choice alone (`withoutColumn`) is asked as its own item, in one run (`ask(list, EXISTS_SUFFIX,
- *      existenceBounds)`), on the existence proposition (challenge.js CHECKLIST_PROPOSITIONS `decision`,
- *      `decisionNotActing`). The review of W1 A (2026-10-14): code cannot tell whether the challenge refuted the
- *      attribution or the choice itself, so the item lists what each refuting vote said (REFUTING_VOTES,
- *      `refutingVotesOf`), and the run's bounds (`existenceBounds`) are as many passes as the decision's own check used,
- *      never fewer than the decide tier's, every one of which must uphold it (unanimous), on the whole window's
- *      evidence. A choice that check does not uphold stays out, as any refuted decision: that is not unsure;
- *   2. each choice it upholds is put to the reviewer once more with what each refuting vote said (prompt.js
- *      `recolumnRequest`, one call per decision, named `<label>:<its index>`, every re-ask sent before any answer is
- *      read, so a stored answer replays it, D60). The answer's one readable decision row whose choice is the decision's
- *      own (`choiceStructure`: the same set of actions, stated receipt and notActing) gives a new column: its
- *      constrainedBy or instructionReview, on the decision's own choice (its dimension, what it chose, its value and
- *      receipts stay the decision's), each cited source given its role from the recording (ledger.js
- *      `constraintWithSourceRole`, `reviewWithSourceRoles`). It goes on only when it names one, its column grounds
- *      under code's checks (ledger.js `groundDecision`, as the window grounds its decisions) and is not the column the
- *      challenge refuted (precision: a refuted column is never published on a second answer);
- *   3. each that goes on is asked as its own item (`ask(list, RECOLUMN_SUFFIX)`, the same run), and published with that
- *      column only when that check upholds it.
- * Every other choice step 1 upheld is published "could not tell" with DECISION_COLUMN_REFUTED (CHALLENGE_ENDED). Returns
- * `recolumned`, the item's key to the candidate it publishes; `record`, the counts (DECISION_RECOLUMN_WITHHELD,
- * RESOLUTION_CHALLENGE_OUTCOMES for each check); and the two checks' own records (`existsChallenge`, `challenge`), kept
- * apart from the window's (like a support's: they never make a window incomplete), each null when nothing was asked or
- * its run failed. A failed re-ask, or a failed check of a new column (step 3), withholds only its own decision's new
- * column: the decision is still published, "could not tell". D155: a step 1 check that did not run for a decision (its
- * outcome unexecuted) withholds the whole decision, as one that does not uphold it, because the window's challenge
- * refuted it; the record counts it (`existence`), it is returned as proposed (`unexecuted`), and the report says how
- * many (`rechecksUnexecuted`). Model output is read structurally only; nothing here reads a word of it.
+ * W1 A (owner decision 2026-10-13: a decision refuted only on who decided it was hidden with its choice). A session-only
+ * decision the window's challenge refuted that says who decided it (`refuted`: its items as asked, each with a covering
+ * receipt or an instruction review) is no longer simply left out: its choice alone (`withoutColumn`) is asked as its own
+ * item, in one run (`ask(list, EXISTS_SUFFIX, existenceBounds)`), on the existence proposition (challenge.js
+ * CHECKLIST_PROPOSITIONS `decision`, `decisionNotActing`). The review of W1 A (2026-10-14): code cannot tell whether the
+ * challenge refuted the attribution or the choice itself, so the item lists what each refuting vote said
+ * (REFUTING_VOTES, `refutingVotesOf`), and the run's bounds (`existenceBounds`) are as many passes as the decision's own
+ * check used, never fewer than the decide tier's, every one of which must uphold it (unanimous), on the whole window's
+ * evidence. A choice that check does not uphold stays out, as any refuted decision: that is not unsure. Every choice it
+ * upholds is published "could not tell" with DECISION_COLUMN_REFUTED (CHALLENGE_ENDED).
+ * D212 (owner decision 2026-11-05): such a choice is no longer put to the reviewer once more for a new column, nor that
+ * column checked (`narrative:wN:recolumn:K`, `challenge:wN:recolumn:…`): measured, that re-ask gave a column its
+ * check upheld once in 74 asks. Returns `recolumned`, the item's key to the candidate it publishes; `record`, the counts
+ * (DECISION_RECOLUMN_RECORD: the decisions refuted on who decided them, and how their existence check ended, by
+ * RESOLUTION_CHALLENGE_OUTCOMES); and that check's own record (`existsChallenge`), kept apart from the window's (like
+ * a support's: it never makes a window incomplete), null when nothing was asked or its run failed. D155: a check that did
+ * not run for a decision (its outcome unexecuted) withholds the whole decision, as one that does not uphold it, because
+ * the window's challenge refuted it; the record counts it (`existence`), it is returned as proposed (`unexecuted`), and
+ * the report says how many (`rechecksUnexecuted`). G2: every choice the check refuted is returned with that check's
+ * refuting votes (`existenceRefuted`, for `reanchoredChoices`). Model output is read structurally only; nothing here
+ * reads a word of it.
  */
-async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, session, windowEnd: end, repo, pr,
-  requestBound, label, ask, existenceBounds }) {
-  const withheld = zeros(DECISION_RECOLUMN_WITHHELD);
+async function recolumnedDecisions({ refuted, byKey, ask, existenceBounds }) {
   const existence = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
-  const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);
-  const [REFUTED_MEMBER, EXISTENCE_MEMBER, ASKED_MEMBER, WITHHELD_MEMBER, CHALLENGED_MEMBER] = DECISION_RECOLUMN_RECORD;
-  const record = { [REFUTED_MEMBER]: refuted.length, [EXISTENCE_MEMBER]: existence, [ASKED_MEMBER]: 0,
-    [WITHHELD_MEMBER]: withheld, [CHALLENGED_MEMBER]: challenged };
+  const [REFUTED_MEMBER, EXISTENCE_MEMBER] = DECISION_RECOLUMN_RECORD;
+  const record = { [REFUTED_MEMBER]: refuted.length, [EXISTENCE_MEMBER]: existence };
   const recolumned = new Map();
-  // The column a decision proposal grounds to, as the window's grounding derives it (`groundNarrative`), or null.
-  const columnOf = (decision) => groundedColumn(decision, { session, repo, pr, end });
   const refutationsOf = (item) => refutingVotesIn(byKey.get(item.key));
   let existsChallenge = null;
   try {
@@ -2820,7 +2797,6 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
   } catch { existsChallenge = null; }
   const existsEnded = new Map((existsChallenge?.results ?? []).map((result) => [result.key, result]));
   if (existsChallenge) delete existsChallenge.survivors;
-  const made = [];
   // G2: and every choice the existence check refuted, with that check's refuting votes (`reanchoredChoices`).
   const existenceRefuted = [];
   // D155: and every decision that check left unexecuted, as proposed (the review counts them by identity).
@@ -2829,59 +2805,11 @@ async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, se
     const ended = existsEnded.get(`${item.key}${EXISTS_SUFFIX}`);
     const outcome = challengeOutcome(ended);
     existence[outcome]++;
-    if (outcome === UPHELD) made.push(item);
+    if (outcome === UPHELD) recolumned.set(item.key, { ...item.candidate, [CHALLENGE_ENDED]: DECISION_COLUMN_REFUTED });
     else if (outcome === REFUTED_OUTCOME) existenceRefuted.push({ item, refutations: refutingVotesIn(ended) });
     else if (outcome === UNEXECUTED) unexecuted.push(item.candidate);
   }
-  const sent = made.map((item) => {
-    const refutations = refutationsOf(item);
-    const reask = recolumnRequest({ request, row: item.candidate, refutations, aliases,
-      label: `${label}:${item.key.split(':')[1]}` });
-    if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };
-    record[ASKED_MEMBER]++;
-    let answer;
-    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }
-    catch { answer = Promise.resolve(undefined); }
-    return { item, answer };
-  });
-  const asked = [];
-  for (const { item, answer: pending } of sent) {
-    if (pending === null) { withheld[RECOLUMN_BOUND]++; continue; }
-    const answer = await pending;
-    if (!narrativeShape(answer, true)) { withheld[RECOLUMN_NO_ANSWER]++; continue; }
-    // The row for this decision: the one readable row whose choice is the decision's own (precision: never another
-    // choice's row, and two rows for it are none).
-    const own = choiceStructure(item.candidate);
-    const rows = answer.decisions.filter((row) => !unreadableIn('decisions', row, SESSION_NARRATIVE_SCHEMA)
-      && own !== null && choiceStructure(row) === own);
-    if (rows.length !== 1) { withheld[RECOLUMN_NO_ROW]++; continue; }
-    const [row] = rows;
-    if (!plain(row.constrainedBy) && !plain(row.instructionReview)) { withheld[RECOLUMN_COULD_NOT_TELL]++; continue; }
-    const candidate = { ...withoutColumn(item.candidate),
-      ...(plain(row.constrainedBy) ? { constrainedBy: constraintWithSourceRole(session, row.constrainedBy) } : {}),
-      ...(plain(row.instructionReview)
-        ? { instructionReview: reviewWithSourceRoles(session, row.instructionReview) } : {}) };
-    const column = columnOf(candidate);
-    if (column === null) { withheld[RECOLUMN_UNGROUNDED]++; continue; }
-    if (column === columnOf(item.candidate)) { withheld[RECOLUMN_SAME]++; continue; }
-    asked.push({ key: `${item.key}${RECOLUMN_SUFFIX}`, of: item.key, type: 'decision', candidate });
-  }
-  let challenge = null;
-  if (asked.length) {
-    try { challenge = await ask(asked.map(({ key, type, candidate }) => ({ key, type, candidate })), RECOLUMN_SUFFIX); }
-    catch { challenge = null; }
-    const ended = new Map((challenge?.results ?? []).map((result) => [result.key, result]));
-    for (const entry of asked) {
-      const outcome = challengeOutcome(ended.get(entry.key));
-      challenged[outcome]++;
-      if (outcome === UPHELD) recolumned.set(entry.of, entry.candidate);
-    }
-    if (challenge) delete challenge.survivors;
-  }
-  for (const item of made)
-    if (!recolumned.has(item.key))
-      recolumned.set(item.key, { ...item.candidate, [CHALLENGE_ENDED]: DECISION_COLUMN_REFUTED });
-  return { recolumned, record, existsChallenge, challenge, existenceRefuted, unexecuted };
+  return { recolumned, record, existsChallenge, existenceRefuted, unexecuted };
 }
 
 /** G2: the label suffix of a window's run that checks whether the agent made each choice not to act its re-ask
@@ -2911,7 +2839,7 @@ const sameAnchor = nestedReceipts;
  * biggest judgment, and a review can anchor it on words that do not state it (a plan sentence), which the existence
  * check then rightly refutes, so the choice was lost. Each session-only choice not to act (a decision proposal whose
  * `notActing` is true: a field, never a word) that the window's challenge refuted and whose existence check
- * (`recolumnedDecisions`, step 1) refuted too (`refuted`: `{ item, refutations }`, its item as asked and the votes of that
+ * (`recolumnedDecisions`) refuted too (`refuted`: `{ item, refutations }`, its item as asked and the votes of that
  * check that refuted it) is put to the reviewer once more, the way S3 re-asks a refuted requirement:
  *   1. the window's kept request with the row, what each refuting vote of the existence check said, and fixed words
  *      asking for the agent's own words that state the choice, or no row (prompt.js `reanchorRequest`): one call per
@@ -2954,13 +2882,15 @@ async function reanchoredChoices({ refuted, request, aliases, judge, session, wi
     [EXISTENCE_MEMBER]: existence, [COLUMN_WITHHELD_MEMBER]: columnWithheld, [CHALLENGED_MEMBER]: challenged };
   const place = { session, repo, pr, end };
   const reanchored = new Map();
+  // D211: as the requirements' re-asks (`restatedRequirements`).
+  const send = staggerSharedParts(judge);
   const sent = refuted.map(({ item, refutations }) => {
     const reask = reanchorRequest({ request, row: item.candidate, refutations, aliases,
       label: `${label}:${item.key.split(':')[1]}` });
     if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };
     record[ASKED_MEMBER]++;
     let answer;
-    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }
+    try { answer = Promise.resolve(send(reask)).catch(() => undefined); }
     catch { answer = Promise.resolve(undefined); }
     return { item, answer };
   });
@@ -3152,9 +3082,9 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
   // S3: what the re-asks of the requirements the challenge refuted came to (`restatedRequirements`), and the record of
   // the run that checked their new statuses — both null when the window's challenge refuted no requirement.
   let restatusRecord = null, restatusChallenge = null;
-  // W1 A: what became of the decisions the challenge refuted on who decided them (`recolumnedDecisions`), and the records
-  // of the runs that checked their choices and their new columns — each null when the window has none.
-  let recolumnRecord = null, recolumnExistsChallenge = null, recolumnChallenge = null;
+  // W1 A: what became of the decisions the challenge refuted on who decided them (`recolumnedDecisions`), and the record
+  // of the run that checked their choices — each null when the window has none.
+  let recolumnRecord = null, recolumnExistsChallenge = null;
   // G2: what became of the choices not to act whose existence check refuted them (`reanchoredChoices`), and the records
   // of the runs that checked their new anchors and columns — each null when the window has none.
   let reanchorRecord = null, reanchorExistsChallenge = null, reanchorChallenge = null;
@@ -3758,11 +3688,11 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
           ask: (list) => ask(list, RESTATUS_SUFFIX, bounds) }));
       }
       // W1 A (owner decision 2026-10-13): each decision the challenge refuted that says who decided it is checked on its
-      // choice alone, and a choice that check upholds is put to the reviewer once more with what the check said
-      // (`recolumnedDecisions`): published with a new column its own check upholds, else "could not tell"
-      // (DECISION_COLUMN_REFUTED). The new column's check runs as the decision's did (its tier, its dossier); the review of
-      // W1 A: the existence check is shown the refuting votes and is unanimous across as many passes as the decision's
-      // own check used, never fewer than the decide tier's, on the whole window. A choice it does not uphold stays out.
+      // choice alone (`recolumnedDecisions`), and a choice that check upholds is published "could not tell"
+      // (DECISION_COLUMN_REFUTED); D212 (owner decision 2026-11-05): it is no longer put to the reviewer once more for a
+      // new column. The review of W1 A: the existence check is shown the refuting votes and is unanimous across as many
+      // passes as the decision's own check used, never fewer than the decide tier's, on the whole window. A choice it
+      // does not uphold stays out.
       let recolumned = new Map();
       // G2 (owner decision 2026-10-15): and each choice not to act among them whose existence check refuted it is put to
       // the reviewer once more for the agent's own words that state it (`reanchoredChoices`): published only when its
@@ -3776,12 +3706,9 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
         const passes = Math.max((tiered ? CHALLENGE_TIER_BOUNDS.single : CHALLENGE_PROFILE).passes,
           CHALLENGE_TIER_BOUNDS.decide.passes);
         const existenceBounds = { passes, requiredSurvivals: passes, unanimous: true };
-        const run = await recolumnedDecisions({ refuted: columnRefuted, byKey, request, aliases, judge,
-          session: shownRecord, windowEnd: upTo, repo, pr, requestBound,
-          label: `narrative:w${window.index + 1}${RECOLUMN_SUFFIX}`,
+        const run = await recolumnedDecisions({ refuted: columnRefuted, byKey,
           ask: (list, suffix, own = bounds) => ask(list, suffix, own), existenceBounds });
-        ({ recolumned, record: recolumnRecord, existsChallenge: recolumnExistsChallenge, challenge: recolumnChallenge }
-          = run);
+        ({ recolumned, record: recolumnRecord, existsChallenge: recolumnExistsChallenge } = run);
         // D155: the decisions its check left unexecuted, for the review's count by identity (in memory only), each as
         // the window's decisions carry it (`toCandidates`, with its actor), so its identity is the one the merge reads.
         const proposed = (candidate) => {
@@ -3820,8 +3747,7 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
           lowered.set(item.key, row);
           continue;
         }
-        // W1 A: a decision refuted on who decided it, whose choice its own check upheld: published with the column its
-        // re-ask's check upheld, or "could not tell".
+        // W1 A: a decision refuted on who decided it, whose choice its own check upheld: published "could not tell".
         if (item.type === 'decision' && recolumned.has(item.key)) {
           lowered.set(item.key, recolumned.get(item.key));
           continue;
@@ -4049,11 +3975,11 @@ async function reviewWindow({ session, pr, repo, window, request, sourceMap, pro
     // S3: counts only, and the run that checked the re-asked statuses — each absent when the window's challenge refuted
     // no requirement (resp. no new status was asked), so every other window's record keeps its bytes.
     ...(restatusRecord ? { restatus: restatusRecord } : {}), ...(restatusChallenge ? { restatusChallenge } : {}),
-    // W1 A: counts only, and the runs that checked the choices and their new columns — each absent when the window's
-    // challenge refuted no decision that said who decided it (resp. nothing was asked), so every other window's record
-    // keeps its bytes.
+    // W1 A: counts only, and the run that checked the choices — each absent when the window's challenge refuted no
+    // decision that said who decided it (resp. nothing was asked), so every other window's record keeps its bytes. D212:
+    // no run checks a new column any more (`recolumnChallenge`, in a record written before it).
     ...(recolumnRecord ? { recolumn: recolumnRecord } : {}),
-    ...(recolumnExistsChallenge ? { recolumnExistsChallenge } : {}), ...(recolumnChallenge ? { recolumnChallenge } : {}),
+    ...(recolumnExistsChallenge ? { recolumnExistsChallenge } : {}),
     // G2: counts only, and the runs that checked the new anchors and their columns — each absent when the window's
     // existence check refuted no choice not to act (resp. nothing was asked), so every other window's record keeps its
     // bytes.
@@ -4791,11 +4717,10 @@ export async function runReview({ session, pr, diff = null, judge, challengeJudg
     // (each present only when there is one).
     ...(w.restatus ? { restatus: w.restatus } : {}),
     ...(w.restatusChallenge ? { restatusChallenge: w.restatusChallenge } : {}),
-    // W1 A: what became of its decisions refuted on who decided them, by count, and the runs that checked their choices
-    // and their new columns (each present only when there is one).
+    // W1 A: what became of its decisions refuted on who decided them, by count, and the run that checked their choices
+    // (each present only when there is one).
     ...(w.recolumn ? { recolumn: w.recolumn } : {}),
     ...(w.recolumnExistsChallenge ? { recolumnExistsChallenge: w.recolumnExistsChallenge } : {}),
-    ...(w.recolumnChallenge ? { recolumnChallenge: w.recolumnChallenge } : {}),
     // G2: what became of its choices not to act whose existence check refuted them, by count, and the runs that checked
     // their new anchors and columns (each present only when there is one).
     ...(w.reanchor ? { reanchor: w.reanchor } : {}),

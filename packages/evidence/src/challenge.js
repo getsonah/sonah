@@ -335,8 +335,9 @@ export const CHALLENGE_PROFILE = Object.freeze({
  * D145 (0.3.0-beta.7): the name of the function a batch's first pass request carries, not enumerable (so no key, byte,
  * copy or JSON of the request holds it), when later passes of its batch wait for it. A transport that can tell when the
  * model's reply begins calls it then, once (the claude-cli transport: at the first `stream_event` line,
- * review-judge.js); any other never calls it, and the later passes are sent when the first pass's call settles. Either
- * way they are sent after the first pass's prompt was cached, so they read it instead of each writing its own.
+ * review-judge.js; D211: an agent request's at its first `assistant` line); any other never calls it, and the later
+ * passes are sent when the first pass's call settles. Either way they are sent after the first pass's prompt was
+ * cached, so they read it instead of each writing its own.
  */
 export const REPLY_BEGUN = 'replyBegun';
 /** D145: `to` (a copy of `from`, a request) with the REPLY_BEGUN function `from` carries, when it carries one. */

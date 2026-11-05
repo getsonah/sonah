@@ -84,7 +84,8 @@ test('D71 S2: the closed vocabularies, each in one constants place, and the vers
   // (sonah.narrative/36): that file's path is compared under the working directory. G2 moved it once more
   // (sonah.narrative/37): the re-ask of a choice not to act whose existence check refuted its words.
   // D103 moved it once more (sonah.narrative/38): a Claude Code recording's results shown up to 12,000 bytes a side.
-  assert.equal(PROMPT_VERSION, 'sonah.narrative/38');
+  // D212 moved it once more (sonah.narrative/39): W1 A's re-ask for a new column is withdrawn.
+  assert.equal(PROMPT_VERSION, 'sonah.narrative/39');
   // The column fix moved it once more (sonah.session-review-agent/8): who decided a decision (FIX_COLUMN_VERSIONS).
   // P1 (the asks fixes) moved it once more (sonah.session-review-agent/9): a run refused at every attempt.
   // W1 B moved it once more (sonah.session-review-agent/10): an edit may go against a project instruction file.
