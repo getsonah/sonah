@@ -1,0 +1,10 @@
+{
+ "calls": 4,
+ "costUsd": 0.5321,
+ "model": "sonnet",
+ "by": {
+  "claude-cli": 4
+ },
+ "dropped": 2,
+ "ms": 61234
+}

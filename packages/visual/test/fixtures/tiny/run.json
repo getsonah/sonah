@@ -1,0 +1,9 @@
+{
+ "calls": 2,
+ "costUsd": 0.04,
+ "model": "sonnet",
+ "by": {
+  "stand-in": 2
+ },
+ "dropped": 0
+}

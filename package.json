@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.13",
+  "version": "0.3.0-beta.14",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
@@ -19,7 +19,7 @@
     "type": "git",
     "url": "git+https://github.com/getsonah/sonah.git"
   },
-  "license": "BUSL-1.1",
+  "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
@@ -79,6 +79,7 @@
     "packages/cli/src/settings.js",
     "packages/cli/src/skill.js",
     "packages/cli/src/update-check.js",
+    "packages/cli/src/visual-command.js",
     "packages/cli/src/workflow-agents.js",
     "packages/evidence/adapters/sonah-ledger.js",
     "packages/evidence/contracts/canonical.js",
@@ -153,6 +154,41 @@
     "packages/slicer/src/request-copies.js",
     "packages/slicer/src/records.js",
     "packages/slicer/src/strict-json.js",
-    "packages/slicer/src/workflow-runs.js"
+    "packages/slicer/src/workflow-runs.js",
+    "packages/visual/src/answers.mjs",
+    "packages/visual/src/bridge.client.js",
+    "packages/visual/src/checks.mjs",
+    "packages/visual/src/extract.mjs",
+    "packages/visual/src/graph-elk.mjs",
+    "packages/visual/src/graph-how.mjs",
+    "packages/visual/src/graph-text.mjs",
+    "packages/visual/src/graph-where.mjs",
+    "packages/visual/src/job.mjs",
+    "packages/visual/src/layout.mjs",
+    "packages/visual/src/page.client.js",
+    "packages/visual/src/page.css",
+    "packages/visual/src/parse-calls.mjs",
+    "packages/visual/src/parse-pr.mjs",
+    "packages/visual/src/parse-tree.mjs",
+    "packages/visual/src/reasons.mjs",
+    "packages/visual/src/render.mjs",
+    "packages/visual/src/requests.mjs",
+    "packages/visual/src/transport-claude.mjs",
+    "packages/visual/src/upload.mjs",
+    "packages/visual/src/vendor/THIRD_PARTY.md",
+    "packages/visual/src/vendor/elkjs/LICENSE.md",
+    "packages/visual/src/vendor/elkjs/lib/elk.bundled.cjs",
+    "packages/visual/src/vendor/tree-sitter-go/LICENSE",
+    "packages/visual/src/vendor/tree-sitter-go/tree-sitter-go.wasm.gz.hex",
+    "packages/visual/src/vendor/tree-sitter-javascript/LICENSE",
+    "packages/visual/src/vendor/tree-sitter-javascript/tree-sitter-javascript.wasm.gz.hex",
+    "packages/visual/src/vendor/tree-sitter-python/LICENSE",
+    "packages/visual/src/vendor/tree-sitter-python/tree-sitter-python.wasm.gz.hex",
+    "packages/visual/src/vendor/tree-sitter-typescript/LICENSE",
+    "packages/visual/src/vendor/tree-sitter-typescript/tree-sitter-tsx.wasm.gz.hex",
+    "packages/visual/src/vendor/tree-sitter-typescript/tree-sitter-typescript.wasm.gz.hex",
+    "packages/visual/src/vendor/web-tree-sitter/LICENSE",
+    "packages/visual/src/vendor/web-tree-sitter/web-tree-sitter.js",
+    "packages/visual/src/vendor/web-tree-sitter/web-tree-sitter.wasm.gz.hex"
   ]
 }

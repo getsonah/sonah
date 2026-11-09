@@ -66,6 +66,15 @@ async function allowedGit(git, args, cwd) {
 const text = (result) => (result?.ok && result.stdout ? result.stdout.toString('utf8') : null);
 const lines = (value) => (value ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
 
+/** The remote of a repository, from `git remote`'s names and the current branch's upstream (`origin/main`, or '' when
+ *  it has none): the upstream's remote, else origin, else the only one; null when none of these is there. */
+export function remoteOf(remotes, upstream) {
+  const names = Array.isArray(remotes) ? remotes : [];
+  const ofUpstream = names.filter((name) => (upstream ?? '').startsWith(`${name}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  return ofUpstream ?? (names.includes('origin') ? 'origin' : names.length === 1 ? names[0] : null);
+}
+
 /** Whether a remote-tracking branch of `remote` holds `commit`: true, false, or null when git could not say. */
 async function onRemote(git, top, remote, commit) {
   if (!HASH.test(commit ?? '') || typeof remote !== 'string') return null;
@@ -120,8 +129,7 @@ export async function readRepoFacts({ snapshot, codePass, git = runGit } = {}) {
   const remotes = lines(text(await allowedGit(git, ['remote'], realTop)));
   const upstream = text(await allowedGit(git, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
     realTop))?.trim() ?? '';
-  const ofUpstream = remotes.filter((name) => upstream.startsWith(`${name}/`)).sort((a, b) => b.length - a.length)[0];
-  const remote = ofUpstream ?? (remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : null);
+  const remote = remoteOf(remotes, upstream);
   if (remote === null) return { repo, github: null };
   const named = githubRemoteOf(text(await allowedGit(git, ['remote', 'get-url', remote], realTop))?.trim() ?? null);
   if (!named) return { repo, github: null };

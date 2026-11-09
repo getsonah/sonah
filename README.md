@@ -113,6 +113,8 @@ sonah review --backend codex-cli --model gpt-6.1-sol --format html --output ~/re
 sonah skill add                                       # once; then type /sonah in Claude Code to review that session
 sonah hook add                                        # once per repository: Claude Code's commits name their session
 sonah sessions --commits main..HEAD                   # the sessions behind your branch, after sonah hook add
+sonah visual                                          # a page of your branch's change, with How and Where graphs
+sonah visual main..HEAD                               # the same, for a range you name
 ```
 
 A review that stops partway resumes when you run the same command again. [Troubleshooting](docs/TROUBLESHOOTING.md)
@@ -129,6 +131,9 @@ lists the messages and exit codes.
   the session started, the lines the session read of other files and the skill files it used, as they are now, and
   what the code review's read-only agents open. Turn the code review off with `--no-code-pass`, or for every review
   with `sonah config code-pass off`.
+- **With `sonah visual`:** the change of the range, through your own `claude` login: the repository's name, the
+  commits' messages, the changed files' paths and each changed function's code with its added and removed lines. It
+  reads no recording.
 - **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics.
   Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's public registry
   for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`) and tells you
@@ -151,10 +156,7 @@ If the reviewer's provider did not run the agent, the session goes to that provi
 
 ## License
 
-Sonah is source-available under the [Business Source License 1.1](LICENSE) (BUSL-1.1). Its additional use grant lets
-individuals use it free of charge for their own work. If you use it for an organization, that organization must have
-had at most three users in the calendar month. Non-profits can use it free too. Any other organization can try it for
-30 days, once. Running it automatically, in CI for example, counts as use. The grant does not cover a competing
-offering. Each version changes to the Apache License 2.0 two years after it is first made public.
+Sonah is open source under the [MIT License](LICENSE). Anyone can use it free of charge for any purpose, at work, in a
+team of any size or in CI, and copy, change and share it, as long as copies keep its copyright and licence notice.
 
 [LICENSE](LICENSE) has the exact terms. Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

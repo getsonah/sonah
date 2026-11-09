@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0-beta.14 (2026-11-09)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+Sonah is now open source under the MIT License, and it has a new command, `sonah visual`, that draws a page of a
+branch's change with graphs of how it works and where its code sits. `sonah review`, its page and the other commands
+are the same as in 0.3.0-beta.13.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay. The package is larger, about 1.2 MB more to download and 3.3 MB more on disk: it
+now carries the code parsers and the graph layout that `sonah visual` uses, each under its own licence, which [the
+third-party notices](THIRD_PARTY_NOTICES.md) give in full. Commands, the page and the files under `~/.sonah` can still
+change between betas.
+
+### The MIT License
+
+Sonah is now open source under the MIT License. It was under the Business Source License 1.1, whose free use had
+limits. Under the MIT License anyone can use it free of charge for any purpose, at work, in a team of any size or in CI,
+and copy, change and share it, as long as copies keep its copyright and licence notice. Contributions are now made under
+the MIT License too: [Contributing](CONTRIBUTING.md) has the terms.
+
+### A page of a branch's change: `sonah visual`
+
+`sonah visual` is a new command that draws a page of a branch's change. The page says what the change does, shows How
+it works as a graph of its steps in order and Where its code sits as a graph of the changed files, their functions and
+the calls between them, and lists what you should act on or know before you decide. Run it in a repository: with no
+range, it reviews what your branch added since it left the remote's default branch, from what your repository already
+has, without fetching; `sonah visual main..HEAD` names a range yourself. It prints where it wrote the page, a file you
+open in your browser.
+
+`sonah visual` sends the change to the model through your own `claude` login: the repository's name, the commits'
+messages, the changed files' paths and line counts, and each changed function's code with its added and removed lines.
+No recording and no other file is sent, and the page makes no request when you open it. Sonah keeps the page, the
+requests and the answers in a folder under `~/.sonah/visual/`, readable by you only, so running the same command again
+for the same range reuses the answers instead of asking again. `--out` puts them in a folder you name, `--model` picks
+the model and `--replay-only` asks nothing new. [Install](docs/INSTALL.md) and [Privacy](docs/PRIVACY.md) have the
+details.
+
 ## 0.3.0-beta.13 (2026-11-05)
 
 This beta is experimental, and we want to hear how the report reads for you.

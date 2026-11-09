@@ -64,8 +64,9 @@ if (cmd === '--version' || cmd === '-v') {
   process.exit(0);
 }
 // --help is answered before any command runs. Until this line existed, `init --help` installed
-// hooks and `doctor --help` called a model. `sonah help` asks the same question.
-if (cmd === 'help' || (cmd !== 'review' && (argv.includes('--help') || argv.includes('-h')))) {
+// hooks and `doctor --help` called a model. `sonah help` asks the same question. `review` and (D216) `visual` answer
+// it themselves, with their own options, before they read anything.
+if (cmd === 'help' || (cmd !== 'review' && cmd !== 'visual' && (argv.includes('--help') || argv.includes('-h')))) {
   console.log(`${ABOUT}\n\n${usage()}`);
   process.exit(0);
 }
@@ -117,6 +118,10 @@ if (cmd === 'review') {
   const { runDoctorCommand } = await import('../src/doctor.js');
   // D171: doctor says the notice as one of its own lines (doctor.js), so it gets no stderr line.
   process.exitCode = await runDoctorCommand(argv.slice(1), withNotice);
+} else if (cmd === 'visual') {
+  // D216: one page of a branch's change, with graphs (visual-command.js); never checks for updates.
+  const { runVisualCommand } = await import('../src/visual-command.js');
+  process.exitCode = await runVisualCommand(argv.slice(1));
 } else if (cmd === 'feedback') {
   const { feedbackBundle } = await import('../src/feedback.js');
   const r = await feedbackBundle({ version: await versionText() });
@@ -172,6 +177,7 @@ function usage() {
     row('sonah config', 'show your settings'),
     row('sonah config code-pass off', 'turn the code step off (on turns it on)'),
     row('sonah config update-check off', 'turn the update check off (on turns it on)'),
+    row('sonah visual [BASE..HEAD]', 'draw a page of a branch\'s change, with graphs'),
     row('sonah feedback', 'setup facts and recording counts; no session text'),
     row('sonah slice <session.jsonl>', 'print the parsed recording as JSON, for debugging'),
     '',
@@ -189,7 +195,7 @@ function usage() {
     '  sonah doctor, Sonah asks npm\'s registry for its latest version and says',
     '  when a newer one is out. It never installs anything. sonah config',
     '  update-check off, or SONAH_NO_UPDATE_CHECK=1, turns it off.',
-    '  sonah review --help lists the review options.'].join('\n');
+    '  sonah review --help and sonah visual --help list their options.'].join('\n');
 }
 
 main().catch(fail);

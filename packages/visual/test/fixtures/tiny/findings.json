@@ -1,0 +1,11 @@
+[
+ {
+  "tier": "must-know",
+  "title": "Discount codes with no amount give zero off",
+  "oneLine": "An unknown code takes nothing off; the old flat tenth is gone.",
+  "fns": [
+   "src/price.ts#applyDiscount"
+  ],
+  "quote": "return Math.max(0, amount - discountOf(code));"
+ }
+]

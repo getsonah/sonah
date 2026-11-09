@@ -28,7 +28,9 @@ has about 4,900 tests, run in parallel: several minutes on a recent laptop, more
 
 ## Rules a change must keep
 
-- **No runtime dependencies.** Node's standard library only, in every package. Never add a package.
+- **No runtime dependencies.** Node's standard library only, in every package, except the visual review's pinned,
+  vendored parsers and layout engine (`packages/visual/src/vendor`, each recorded in its `THIRD_PARTY.md`). Never add
+  a package.
 - **The deterministic packages stay deterministic.** `packages/slicer`, `packages/redact` and `packages/render` make
   no network calls, no model calls, no clock or random reads and start no process: the same input gives the same bytes
   out. Continuous integration checks this.
@@ -38,8 +40,9 @@ has about 4,900 tests, run in parallel: several minutes on a recent laptop, more
   per-case exceptions for meaning: a change must hold across sessions, harnesses, languages and phrasings.
 - **Every quote is checked by code.** A quote the review shows must be found word for word in the recording, by string
   search. Never trust the model's word for what a session said.
-- **The model never rates itself.** No confidence or severity is accepted from a model; anything like it is computed by
-  code after the model returns.
+- **The model never rates itself.** No confidence is accepted from a model, and severity is computed by code after the
+  model returns, with two recorded exceptions: the code review may propose an item's importance, which code keeps
+  inside its kind's bounds, and `sonah visual` keeps the tier its model proposes once code checks it is one of three.
 - **Reasons are a closed vocabulary.** The codes for why something was not checked, withheld or failed are fixed lists
   in code (most in `packages/evidence/src/ledger.js`). Never build one in a prompt or inline.
 - **Doubt shows as not checked.** When the evidence does not settle a row, it is kept and shown as not checked, never
@@ -76,26 +79,17 @@ Use the pull request template. One change per pull request, with its tests, `npm
 
 ### Licensing of contributions
 
-Sonah is licensed under the Business Source License 1.1 (see [LICENSE](LICENSE)), and its author, Abhinav Soni, also
-sells commercial licences for it. So that your contribution can be part of both, by opening a pull request you agree
-to the following for everything you submit in it:
+Sonah is licensed under the MIT License (see [LICENSE](LICENSE)). By opening a pull request you agree to the following
+for everything you submit in it:
 
-1. **Copyright licence.** You grant Abhinav Soni, and his successors and assigns, a perpetual, worldwide,
-   non-exclusive, no-charge, royalty-free, irrevocable licence to reproduce, prepare derivative works of, publicly
-   display, publicly perform, sublicense and distribute your contribution and those derivative works, under any
-   licence terms, including the Business Source License, the Apache License 2.0 that each version later becomes
-   available under, and commercial licences.
-2. **Patent licence.** You grant the same people, and everyone who receives Sonah from them, a perpetual, worldwide,
-   non-exclusive, no-charge, royalty-free, irrevocable patent licence to make, use, sell, offer for sale, import and
-   otherwise transfer your contribution, alone or combined with Sonah, for any patent claims you can license that it
-   would otherwise infringe.
-3. **You keep your copyright.** This is a licence, not an assignment, and you may use your own contribution in any
+1. **The same licence.** Your contribution is licensed under the MIT License, the same terms as the rest of Sonah.
+2. **You keep your copyright.** This is a licence, not an assignment, and you may use your own contribution in any
    way you like.
-4. **You have the right to submit it.** You certify that the contribution is your original work, or that you have the
-   right to submit it under these terms, and that, if your employer or a client has rights in it, you have their
-   permission to make this grant. Record this by signing off each commit with `git commit -s`, which adds a
+3. **You have the right to submit it.** You certify that the contribution is your original work, or that you have the
+   right to submit it under the MIT License, and that, if your employer or a client has rights in it, you have their
+   permission. Record this by signing off each commit with `git commit -s`, which adds a
    `Signed-off-by: Your Name <you@example.com>` line under your real name.
-5. **No other promises.** Your contribution is provided as is, without warranties of any kind, and nobody is obliged
+4. **No other promises.** Your contribution is provided as is, without warranties of any kind, and nobody is obliged
    to merge or use it.
 
 A pull request whose commits are not signed off is not merged. If you cannot agree to these terms, say so in an issue

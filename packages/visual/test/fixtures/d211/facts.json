@@ -1,0 +1,7840 @@
+{
+ "v": 1,
+ "repo": {
+  "name": "example-service"
+ },
+ "range": {
+  "base": "20be6999f1bab92bb91fcaa3481541a0c5a32761",
+  "head": "5bcdc782583a7317dfdc2f2090ec57a0c1ac617c",
+  "commits": [
+   {
+    "sha": "5bcdc782583a7317dfdc2f2090ec57a0c1ac617c",
+    "subject": "D211: a request's shared first part is sent as its own cached block, and its siblings start once the first one's reply has begun",
+    "body": "Requests that start with the same long text, a window's refuted-row re-asks and the code step's checks of one change\nwith their re-asks and repairs, now send that text as the first block of one stream-json message, marked for Claude\nCode's prompt cache, so the others read it instead of writing it again. The model is sent the same text in the same\norder.\n\nOnly the keys of requests sent in parts move.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@example.com>\n"
+   }
+  ]
+ },
+ "stats": {
+  "files": 18,
+  "added": 1346,
+  "removed": 73,
+  "functions": 48,
+  "newFunctions": 18,
+  "changedFunctions": 30,
+  "removedFunctions": 0
+ },
+ "groups": [
+  {
+   "group": "root",
+   "files": [
+    "CHANGELOG.md",
+    "package.json"
+   ]
+  },
+  {
+   "group": "docs",
+   "files": [
+    "docs/NOTES.md",
+    "docs/notes/pullfrog/RECORDS.md"
+   ]
+  },
+  {
+   "group": "packages/cli",
+   "files": [
+    "packages/cli/src/answer-cache.js",
+    "packages/cli/src/review-budget.js",
+    "packages/cli/src/review-judge.js",
+    "packages/cli/test/agentic-code-step-cli.test.js",
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ]
+  },
+  {
+   "group": "packages/evidence",
+   "files": [
+    "packages/evidence/src/challenge.js",
+    "packages/evidence/src/code-pass.js",
+    "packages/evidence/src/ledger.js",
+    "packages/evidence/src/prompt-parts.js",
+    "packages/evidence/src/prompt.js",
+    "packages/evidence/src/run-review.js",
+    "packages/evidence/test/d211-prompt-parts-fixture.js",
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ]
+  },
+  {
+   "group": "scripts",
+   "files": [
+    "scripts/session-review.mjs"
+   ]
+  }
+ ],
+ "files": [
+  {
+   "path": "CHANGELOG.md",
+   "status": "M",
+   "role": "docs",
+   "lang": "md",
+   "added": 10,
+   "removed": 2,
+   "functions": []
+  },
+  {
+   "path": "docs/NOTES.md",
+   "status": "M",
+   "role": "record",
+   "lang": "md",
+   "added": 32,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "docs/notes/pullfrog/RECORDS.md",
+   "status": "M",
+   "role": "record",
+   "lang": "md",
+   "added": 53,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "package.json",
+   "status": "M",
+   "role": "config",
+   "lang": "json",
+   "added": 1,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "packages/cli/src/answer-cache.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 28,
+   "removed": 6,
+   "functions": [
+    "packages/cli/src/answer-cache.js#SENT_FIELDS",
+    "packages/cli/src/answer-cache.js#agentAnswerKey",
+    "packages/cli/src/answer-cache.js#answerKey",
+    "packages/cli/src/answer-cache.js#createAnswerCache",
+    "packages/cli/src/answer-cache.js#memoizeJudge"
+   ]
+  },
+  {
+   "path": "packages/cli/src/review-budget.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 14,
+   "removed": 3,
+   "functions": [
+    "packages/cli/src/review-budget.js#createReviewBudget"
+   ]
+  },
+  {
+   "path": "packages/cli/src/review-judge.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 113,
+   "removed": 29,
+   "functions": [
+    "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+    "packages/cli/src/review-judge.js#reviewCliArgs",
+    "packages/cli/src/review-judge.js#REVIEW_AGENT_TRANSPORT_VERSION",
+    "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+    "packages/cli/src/review-judge.js#PROMPT_PART_CACHE_CONTROL",
+    "packages/cli/src/review-judge.js#imageContent",
+    "packages/cli/src/review-judge.js#claudeStreamInput",
+    "packages/cli/src/review-judge.js#reviewTransportArguments",
+    "packages/cli/src/review-judge.js#callLocal",
+    "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+    "packages/cli/src/review-judge.js#PARTS_DROPPED",
+    "packages/cli/src/review-judge.js#REFUSED_IN_PARTS",
+    "packages/cli/src/review-judge.js#withoutParts",
+    "packages/cli/src/review-judge.js#RESENT_WHOLE",
+    "packages/cli/src/review-judge.js#resentWhole",
+    "packages/cli/src/review-judge.js#markResentWhole",
+    "packages/cli/src/review-judge.js#withTransportRetry",
+    "packages/cli/src/review-judge.js#createReviewJudge"
+   ]
+  },
+  {
+   "path": "packages/cli/test/agentic-code-step-cli.test.js",
+   "status": "M",
+   "role": "test",
+   "lang": "js",
+   "added": 3,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "packages/cli/test/d211-prompt-parts-transport.test.js",
+   "status": "A",
+   "role": "test",
+   "lang": "js",
+   "added": 418,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "packages/evidence/src/challenge.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 3,
+   "removed": 2,
+   "functions": [
+    "packages/evidence/src/challenge.js#REPLY_BEGUN"
+   ]
+  },
+  {
+   "path": "packages/evidence/src/code-pass.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 43,
+   "removed": 19,
+   "functions": [
+    "packages/evidence/src/code-pass.js#receiptRepairOnce",
+    "packages/evidence/src/code-pass.js#sharedCheckLines",
+    "packages/evidence/src/code-pass.js#cutAfter",
+    "packages/evidence/src/code-pass.js#buildVerifyRequest",
+    "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+    "packages/evidence/src/code-pass.js#buildAccountRequest",
+    "packages/evidence/src/code-pass.js#accountBatch",
+    "packages/evidence/src/code-pass.js#runCodePass",
+    "packages/evidence/src/code-pass.js#verifyFinding",
+    "packages/evidence/src/code-pass.js#verifyBatch"
+   ]
+  },
+  {
+   "path": "packages/evidence/src/ledger.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 6,
+   "removed": 0,
+   "functions": [
+    "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED"
+   ]
+  },
+  {
+   "path": "packages/evidence/src/prompt-parts.js",
+   "status": "A",
+   "role": "source",
+   "lang": "js",
+   "added": 150,
+   "removed": 0,
+   "functions": [
+    "packages/evidence/src/prompt-parts.js#promptCutsOf",
+    "packages/evidence/src/prompt-parts.js#promptPartsOf",
+    "packages/evidence/src/prompt-parts.js#appendedRequest",
+    "packages/evidence/src/prompt-parts.js#continuedRequest",
+    "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+    "packages/evidence/src/prompt-parts.js#sharedFirstOf",
+    "packages/evidence/src/prompt-parts.js#staggerSharedParts"
+   ]
+  },
+  {
+   "path": "packages/evidence/src/prompt.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 7,
+   "removed": 3,
+   "functions": [
+    "packages/evidence/src/prompt.js#refutedReask"
+   ]
+  },
+  {
+   "path": "packages/evidence/src/run-review.js",
+   "status": "M",
+   "role": "source",
+   "lang": "js",
+   "added": 15,
+   "removed": 6,
+   "functions": [
+    "packages/evidence/src/run-review.js#restatedRequirements",
+    "packages/evidence/src/run-review.js#recolumnedDecisions",
+    "packages/evidence/src/run-review.js#reanchoredChoices"
+   ]
+  },
+  {
+   "path": "packages/evidence/test/d211-prompt-parts-fixture.js",
+   "status": "A",
+   "role": "fixture",
+   "lang": "js",
+   "added": 160,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "packages/evidence/test/d211-prompt-parts.test.js",
+   "status": "A",
+   "role": "test",
+   "lang": "js",
+   "added": 282,
+   "removed": 0,
+   "functions": []
+  },
+  {
+   "path": "scripts/session-review.mjs",
+   "status": "M",
+   "role": "source",
+   "lang": "mjs",
+   "added": 8,
+   "removed": 3,
+   "functions": [
+    "scripts/session-review.mjs#runSessionReviewHarness"
+   ]
+  }
+ ],
+ "functions": [
+  {
+   "id": "packages/cli/src/answer-cache.js#SENT_FIELDS",
+   "path": "packages/cli/src/answer-cache.js",
+   "name": "SENT_FIELDS",
+   "kind": "value",
+   "status": "changed",
+   "line": 38,
+   "span": [
+    26,
+    38
+   ],
+   "oldLine": 33,
+   "added": 3,
+   "removed": 0,
+   "definition": "export const SENT_FIELDS = Object.freeze(['system', 'prompt']);",
+   "commentOnly": true,
+   "diff": [
+    [
+     " ",
+     null,
+     31,
+     " * (a challenge's candidates are inside `prompt`). The backend, the model, the transport version and"
+    ],
+    [
+     " ",
+     null,
+     32,
+     " * (W3f-2 / F227) the transport's own arguments — the CLI's argv, the API's URL, version and body"
+    ],
+    [
+     " ",
+     null,
+     33,
+     " * fields — are bound beside them, so an argument changed without a version bump is a new question."
+    ],
+    [
+     "+",
+     null,
+     34,
+     " * D211: a request's `parts` (evidence prompt-parts.js `promptCutsOf`) cut the prompt into text blocks, the first marked"
+    ],
+    [
+     "+",
+     null,
+     35,
+     " * for the prompt cache; the text, and its order, are the prompt's. Bound through the argv they change (the claude CLI's"
+    ],
+    [
+     "+",
+     null,
+     36,
+     " * `--input-format stream-json`), never by their offsets: the model reads the same text wherever the cut is."
+    ],
+    [
+     " ",
+     null,
+     37,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     38,
+     "export const SENT_FIELDS = Object.freeze(['system', 'prompt']);"
+    ]
+   ],
+   "callers": {
+    "count": 0,
+    "list": []
+   },
+   "tests": [],
+   "fold": "comment-only"
+  },
+  {
+   "id": "packages/cli/src/answer-cache.js#agentAnswerKey",
+   "path": "packages/cli/src/answer-cache.js",
+   "name": "agentAnswerKey",
+   "kind": "callable",
+   "status": "changed",
+   "line": 64,
+   "span": [
+    53,
+    74
+   ],
+   "oldLine": 59,
+   "added": 2,
+   "removed": 1,
+   "definition": "function agentAnswerKey(request, { backend, model, named, transportArguments, repoState }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     64,
+     "function agentAnswerKey(request, { backend, model, named, transportArguments, repoState }) {"
+    ],
+    [
+     " ",
+     null,
+     65,
+     "  const agent = agentRequestOf(request);"
+    ],
+    [
+     " ",
+     null,
+     66,
+     "  if (agent === null || backend !== 'claude-cli' || typeof repoState !== 'string' || !REPO_STATE.test(repoState)"
+    ],
+    [
+     " ",
+     null,
+     67,
+     "      || requestImagesOf(request)?.length !== 0) return null;"
+    ],
+    [
+     "-",
+     63,
+     null,
+     "  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema, ...named });"
+    ],
+    [
+     "+",
+     null,
+     68,
+     "  const args = transportArguments({ backend, model, system: request.system, agent, schema: agent.schema, ...named,"
+    ],
+    [
+     "+",
+     null,
+     69,
+     "    ...(promptCutsOf(request).length ? { parts: true } : {}) });"
+    ],
+    [
+     " ",
+     null,
+     70,
+     "  if (!Array.isArray(args?.argv)) return null;"
+    ],
+    [
+     " ",
+     null,
+     71,
+     "  return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_AGENT_TRANSPORT_VERSION,"
+    ],
+    [
+     " ",
+     null,
+     72,
+     "    backend, model, agent: reviewAgentKeyArgs(args.argv), system: request.system, prompt: request.prompt,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 82
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 92
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/answer-cache.js#answerKey",
+   "path": "packages/cli/src/answer-cache.js",
+   "name": "answerKey",
+   "kind": "callable",
+   "status": "changed",
+   "line": 88,
+   "span": [
+    76,
+    104
+   ],
+   "oldLine": 82,
+   "added": 5,
+   "removed": 2,
+   "definition": "export function answerKey(request, { backend, model, effort = REVIEW_EFFORT, transportArguments = reviewTransportArguments,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     88,
+     "export function answerKey(request, { backend, model, effort = REVIEW_EFFORT, transportArguments = reviewTransportArguments,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     92,
+     "  if (isAgentRequest(request)) return agentAnswerKey(request, { backend, model, named, transportArguments, repoState });"
+    ],
+    [
+     " ",
+     null,
+     93,
+     "  const images = requestImagesOf(request);"
+    ],
+    [
+     " ",
+     null,
+     94,
+     "  if (images === null) return null;"
+    ],
+    [
+     "-",
+     89,
+     null,
+     "  const args = (images.length ? transportArguments({ backend, model, system: request.system, images, ...named })"
+    ],
+    [
+     "-",
+     90,
+     null,
+     "    : transportArguments({ backend, model, system: request.system, ...named })) ?? null;"
+    ],
+    [
+     "+",
+     null,
+     95,
+     "  // D211: a request in parts is asked for its arguments with `parts`, which only the claude CLI's argv carries; every"
+    ],
+    [
+     "+",
+     null,
+     96,
+     "  // other request is asked for them byte for byte as before."
+    ],
+    [
+     "+",
+     null,
+     97,
+     "  const parted = promptCutsOf(request).length ? { parts: true } : {};"
+    ],
+    [
+     "+",
+     null,
+     98,
+     "  const args = (images.length ? transportArguments({ backend, model, system: request.system, images, ...named, ...parted })"
+    ],
+    [
+     "+",
+     null,
+     99,
+     "    : transportArguments({ backend, model, system: request.system, ...named, ...parted })) ?? null;"
+    ],
+    [
+     " ",
+     null,
+     100,
+     "  return createHash('sha256').update(JSON.stringify({ v: ANSWER_CACHE_VERSION, transport: REVIEW_TRANSPORT_VERSION,"
+    ],
+    [
+     " ",
+     null,
+     101,
+     "    backend, model, args, system: request.system, prompt: request.prompt,"
+    ],
+    [
+     " ",
+     null,
+     102,
+     "    ...(images.length ? { [SENT_IMAGE_FIELD]: images.map((image) => [image.mediaType,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 10,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 193
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 197
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 209
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 904
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 101
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 102
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 104
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 554
+     },
+     {
+      "path": "packages/cli/test/d145-passes-fixture.js",
+      "line": 16
+     },
+     {
+      "path": "packages/cli/test/d145-passes-fixture.js",
+      "line": 44
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "path": "packages/cli/src/answer-cache.js",
+   "name": "createAnswerCache",
+   "kind": "callable",
+   "status": "changed",
+   "line": 199,
+   "span": [
+    172,
+    303
+   ],
+   "oldLine": 190,
+   "added": 5,
+   "removed": 1,
+   "definition": "export function createAnswerCache(directory, { backend, model, effort = REVIEW_EFFORT,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     199,
+     "export function createAnswerCache(directory, { backend, model, effort = REVIEW_EFFORT,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     232,
+     "      await utimes(pathOf(key, occurrence), now, now).catch(() => {});"
+    ],
+    [
+     " ",
+     null,
+     233,
+     "      return record.response;"
+    ],
+    [
+     " ",
+     null,
+     234,
+     "    },"
+    ],
+    [
+     "-",
+     226,
+     null,
+     "    /** True when the answer was stored. A write that fails costs the next review one call, never this one. */"
+    ],
+    [
+     "+",
+     null,
+     235,
+     "    /** True when the answer was stored. A write that fails costs the next review one call, never this one. D211: an"
+    ],
+    [
+     "+",
+     null,
+     236,
+     "     *  answer the transport got by sending the request again without its parts (review-judge.js `withTransportRetry`,"
+    ],
+    [
+     "+",
+     null,
+     237,
+     "     *  `resentWhole`) is never stored: the key binds the argv of the request in parts, which did not answer it, so the"
+    ],
+    [
+     "+",
+     null,
+     238,
+     "     *  next review asks it again. */"
+    ],
+    [
+     " ",
+     null,
+     239,
+     "    async put(request, response, occurrence = 0) {"
+    ],
+    [
+     " ",
+     null,
+     240,
+     "      if (readOnly) return false;"
+    ],
+    [
+     "+",
+     null,
+     241,
+     "      if (resentWhole(response)) return false;"
+    ],
+    [
+     " ",
+     null,
+     242,
+     "      const key = keyOf(request);"
+    ],
+    [
+     " ",
+     null,
+     243,
+     "      if (key === null || !isOccurrence(occurrence) || !answerStorable(request, response)) return false;"
+    ],
+    [
+     " ",
+     null,
+     244,
+     "      // D105: an agent answer is kept with its reading record, or not at all (a stored one without it is a miss)."
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 7,
+    "list": [
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 26
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 789
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 879
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 916
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 663
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 59
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 522
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/answer-cache.js#memoizeJudge",
+   "path": "packages/cli/src/answer-cache.js",
+   "name": "memoizeJudge",
+   "kind": "callable",
+   "status": "changed",
+   "line": 326,
+   "span": [
+    305,
+    385
+   ],
+   "oldLine": 310,
+   "added": 10,
+   "removed": 1,
+   "definition": "export function memoizeJudge(judge, cache = null, { fresh = false } = {}) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     319,
+     " * read or wrote for a request whose label `belongs` accepts, in the order the requests were"
+    ],
+    [
+     " ",
+     null,
+     320,
+     " * DISPATCHED (never the order answers came back); `answersFor(belongs)` — `{ calls, reused }` over"
+    ],
+    [
+     " ",
+     null,
+     321,
+     " * those labels only. Both are copies, in memory only."
+    ],
+    [
+     "+",
+     null,
+     322,
+     " *"
+    ],
+    [
+     "+",
+     null,
+     323,
+     " * D211: a request answered from the cache that carries an ANSWER_REPLAYED function (evidence prompt-parts.js, not"
+    ],
+    [
+     "+",
+     null,
+     324,
+     " * enumerable) has it called once, before its answer is returned, so a caller waiting on its call knows none was made."
+    ],
+    [
+     " ",
+     null,
+     325,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     326,
+     "export function memoizeJudge(judge, cache = null, { fresh = false } = {}) {"
+    ],
+    [
+     " ",
+     null,
+     327,
+     "  const asked = new Map();"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     346,
+     "    const order = dispatched++;"
+    ],
+    [
+     " ",
+     null,
+     347,
+     "    if (!fresh) {"
+    ],
+    [
+     " ",
+     null,
+     348,
+     "      const stored = await cache.get(request, occurrence);"
+    ],
+    [
+     "-",
+     333,
+     null,
+     "      if (stored !== null) { reused++; tally(label, 'reused'); touched.push({ label, key, occurrence, order }); return stored; }"
+    ],
+    [
+     "+",
+     null,
+     349,
+     "      if (stored !== null) {"
+    ],
+    [
+     "+",
+     null,
+     350,
+     "        reused++; tally(label, 'reused'); touched.push({ label, key, occurrence, order });"
+    ],
+    [
+     "+",
+     null,
+     351,
+     "        // D211: a request that asks to be told it was answered with no call (evidence prompt-parts.js ANSWER_REPLAYED)."
+    ],
+    [
+     "+",
+     null,
+     352,
+     "        const replayed = request?.[ANSWER_REPLAYED];"
+    ],
+    [
+     "+",
+     null,
+     353,
+     "        if (typeof replayed === 'function') try { replayed(); } catch { /* the caller's signal never changes the answer */ }"
+    ],
+    [
+     "+",
+     null,
+     354,
+     "        return stored;"
+    ],
+    [
+     "+",
+     null,
+     355,
+     "      }"
+    ],
+    [
+     " ",
+     null,
+     356,
+     "    }"
+    ],
+    [
+     " ",
+     null,
+     357,
+     "    calls++;"
+    ],
+    [
+     " ",
+     null,
+     358,
+     "    tally(label, 'calls');"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 7,
+    "list": [
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 37
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 525
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 559
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 689
+     },
+     {
+      "path": "packages/cli/test/d145-passes-fixture.js",
+      "line": 127
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 66
+     },
+     {
+      "path": "packages/render/report-model.js",
+      "line": 3696
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-budget.js#createReviewBudget",
+   "path": "packages/cli/src/review-budget.js",
+   "name": "createReviewBudget",
+   "kind": "callable",
+   "status": "changed",
+   "line": 159,
+   "span": [
+    152,
+    284
+   ],
+   "oldLine": 159,
+   "added": 13,
+   "removed": 2,
+   "definition": "export function createReviewBudget(options = {}, { now = () => performance.now() } = {}) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     159,
+     "export function createReviewBudget(options = {}, { now = () => performance.now() } = {}) {"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     168,
+     "  const windows = {};"
+    ],
+    [
+     " ",
+     null,
+     169,
+     "  // The agent transport: attempts of agent requests (their metadata carries `agentRun`) and the turns they report."
+    ],
+    [
+     " ",
+     null,
+     170,
+     "  let agentCalls = 0, turns = 0, turnsReportedCalls = 0;"
+    ],
+    [
+     "+",
+     null,
+     171,
+     "  // D211: the attempts sent with their prompt in parts (metadata `promptParts`, a count over 1), and the attempts resent"
+    ],
+    [
+     "+",
+     null,
+     172,
+     "  // as one string, by their closed reason (metadata `partsDropped`, ledger.js PROMPT_PARTS_DROPPED)."
+    ],
+    [
+     "+",
+     null,
+     173,
+     "  let partsCalls = 0;"
+    ],
+    [
+     "+",
+     null,
+     174,
+     "  const partsResent = Object.fromEntries(PROMPT_PARTS_DROPPED.map((reason) => [reason, 0]));"
+    ],
+    [
+     " ",
+     null,
+     175,
+     "  const pause = value => { reason ??= value; admission.abort(); };"
+    ],
+    [
+     " ",
+     null,
+     176,
+     "  const record = (metadata, part = null) => {"
+    ],
+    [
+     " ",
+     null,
+     177,
+     "    reportedCalls++;"
+    ],
+    [
+     "+",
+     null,
+     178,
+     "    if (Number.isSafeInteger(metadata?.promptParts) && metadata.promptParts > 1) partsCalls++;"
+    ],
+    [
+     "+",
+     null,
+     179,
+     "    if (PROMPT_PARTS_DROPPED.includes(metadata?.partsDropped)) partsResent[metadata.partsDropped]++;"
+    ],
+    [
+     " ",
+     null,
+     180,
+     "    if (metadata?.agentRun !== null && typeof metadata?.agentRun === 'object') {"
+    ],
+    [
+     " ",
+     null,
+     181,
+     "      agentCalls++;"
+    ],
+    [
+     " ",
+     null,
+     182,
+     "      const reported = metadata.agentRun.numTurns;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     209,
+     "  /** D129 (C7): the review's usage as its run record keeps it (REVIEW_USAGE_VERSION): the whole review's tally, its"
+    ],
+    [
+     " ",
+     null,
+     210,
+     "   *  agent calls and turns, its wall time, each usage limit's first and last reading (RATE_LIMIT_WINDOWS names, in that"
+    ],
+    [
+     " ",
+     null,
+     211,
+     "   *  order; null when none reported one), and the code step's part (`code`, with its own wall time from its first call"
+    ],
+    [
+     "-",
+     206,
+     null,
+     "   *  to its last answer; null when the code step made no call). Counts and numbers only. */"
+    ],
+    [
+     "+",
+     null,
+     212,
+     "   *  to its last answer; null when the code step made no call). Counts and numbers only. D211: `promptParts`"
+    ],
+    [
+     "+",
+     null,
+     213,
+     "   *  (`{ calls, resent }`: the attempts sent with their prompt in parts, and those resent as one string by"
+    ],
+    [
+     "+",
+     null,
+     214,
+     "   *  PROMPT_PARTS_DROPPED reason) only when an attempt was either, so a review with none keeps the record byte for byte"
+    ],
+    [
+     "+",
+     null,
+     215,
+     "   *  as before; `sonah.review-usage/1` keeps its number, as with D210's split (its one reader reads no such member). */"
+    ],
+    [
+     " ",
+     null,
+     216,
+     "  const usageRecord = () => {"
+    ],
+    [
+     " ",
+     null,
+     217,
+     "    const limitsRead = RATE_LIMIT_WINDOWS.filter((window) => Object.hasOwn(windows, window));"
+    ],
+    [
+     "+",
+     null,
+     218,
+     "    const parted = partsCalls > 0 || Object.values(partsResent).some((n) => n > 0);"
+    ],
+    [
+     " ",
+     null,
+     219,
+     "    return { version: REVIEW_USAGE_VERSION, ...tallyRecord(whole), reportedCalls, agentCalls,"
+    ],
+    [
+     "-",
+     210,
+     null,
+     "      turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null, wallMs: elapsed(),"
+    ],
+    [
+     "+",
+     null,
+     220,
+     "      turns: agentCalls === 0 || turnsReportedCalls > 0 ? turns : null,"
+    ],
+    [
+     "+",
+     null,
+     221,
+     "      ...(parted ? { promptParts: { calls: partsCalls, resent: { ...partsResent } } } : {}), wallMs: elapsed(),"
+    ],
+    [
+     " ",
+     null,
+     222,
+     "      windows: limitsRead.length ? Object.fromEntries(limitsRead.map((window) => [window, { ...windows[window] }])) : null,"
+    ],
+    [
+     " ",
+     null,
+     223,
+     "      code: code.calls === 0 ? null : { ...tallyRecord(code),"
+    ],
+    [
+     " ",
+     null,
+     224,
+     "        wallMs: code.firstStart !== null && code.lastEnd !== null ? Math.max(0, Math.round(code.lastEnd - code.firstStart))"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 45
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 575
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "REVIEW_TRANSPORT_VERSION",
+   "kind": "value",
+   "status": "changed",
+   "line": 432,
+   "span": [
+    395,
+    432
+   ],
+   "oldLine": 425,
+   "added": 5,
+   "removed": 0,
+   "definition": "export const REVIEW_TRANSPORT_VERSION = 'sonah.review-transport/3';",
+   "commentOnly": true,
+   "diff": [
+    [
+     " ",
+     null,
+     424,
+     "// moves (answer-cache.js binds the argv, never the environment), and the attestation reads the stream's init, models and"
+    ],
+    [
+     " ",
+     null,
+     425,
+     "// `modelUsage` window, never the cache's split. Measured on 2.1.311: the same reply with it and without it. An answer"
+    ],
+    [
+     " ",
+     null,
+     426,
+     "// stored before replays as it was stored (d210-prompt-cache.test.js)."
+    ],
+    [
+     "+",
+     null,
+     427,
+     "// D211: not bumped, by the rule Gain I and D160 kept: an argument the answer key binds needs no version. A request whose"
+    ],
+    [
+     "+",
+     null,
+     428,
+     "// prompt is in parts (evidence prompt-parts.js: a session's refuted-row re-asks) is one stream-json user message, one"
+    ],
+    [
+     "+",
+     null,
+     429,
+     "// text block per part, the first carrying the one cache marker, with `--input-format stream-json` in its argv, which"
+    ],
+    [
+     "+",
+     null,
+     430,
+     "// its key binds (answer-cache.js): its key moves, and its stored answer is asked once more. Its text and order are the"
+    ],
+    [
+     "+",
+     null,
+     431,
+     "// prompt's byte for byte. Every other request's argv, stdin, environment and key are byte for byte as before."
+    ],
+    [
+     " ",
+     null,
+     432,
+     "export const REVIEW_TRANSPORT_VERSION = 'sonah.review-transport/3';"
+    ]
+   ],
+   "callers": {
+    "count": 8,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 17
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 57
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 100
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 449
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 605
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 607
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 611
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 766
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "comment-only"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "reviewCliArgs",
+   "kind": "callable",
+   "status": "changed",
+   "line": 592,
+   "span": [
+    585,
+    605
+   ],
+   "oldLine": 583,
+   "added": 5,
+   "removed": 3,
+   "definition": "export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false, parts = false }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     585,
+     "/** `images` (Gain I): whether the request carries images. With none the argv is byte for byte as before; with some the"
+    ],
+    [
+     " ",
+     null,
+     586,
+     " *  request is one stream-json user message on stdin (`claudeStreamInput`): `--input-format stream-json`, which the"
+    ],
+    [
+     " ",
+     null,
+     587,
+     " *  installed CLI accepts only with `--print` and `--output-format stream-json` (its own checks, and `claude --help`)."
+    ],
+    [
+     "-",
+     581,
+     null,
+     " *  `effort` (D160): the review's effort (reviewEffortOf), REVIEW_EFFORT when none is given."
+    ],
+    [
+     "+",
+     null,
+     588,
+     " *  `effort` (D160): the review's effort (reviewEffortOf), REVIEW_EFFORT when none is given. `parts` (D211): whether the"
+    ],
+    [
+     "+",
+     null,
+     589,
+     " *  request's prompt is sent in parts (evidence prompt-parts.js `promptCutsOf`), which is one stream-json user message"
+    ],
+    [
+     "+",
+     null,
+     590,
+     " *  too; a request with neither is sent with the argv byte for byte as before."
+    ],
+    [
+     " ",
+     null,
+     591,
+     " */"
+    ],
+    [
+     "-",
+     583,
+     null,
+     "export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false }) {"
+    ],
+    [
+     "+",
+     null,
+     592,
+     "export function reviewCliArgs({ system, model, effort = REVIEW_EFFORT, images = false, parts = false }) {"
+    ],
+    [
+     " ",
+     null,
+     593,
+     "  return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',"
+    ],
+    [
+     "-",
+     585,
+     null,
+     "    ...(images ? ['--input-format', 'stream-json'] : []),"
+    ],
+    [
+     "+",
+     null,
+     594,
+     "    ...(images || parts ? ['--input-format', 'stream-json'] : []),"
+    ],
+    [
+     " ",
+     null,
+     595,
+     "    '--include-partial-messages', '--tools', '', '--disable-slash-commands',"
+    ],
+    [
+     " ",
+     null,
+     596,
+     "    '--setting-sources', '', '--mcp-config', '{\"mcpServers\":{}}', '--strict-mcp-config',"
+    ],
+    [
+     " ",
+     null,
+     597,
+     "    '--no-session-persistence', '--system-prompt', system];"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 5,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 697
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 699
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 764
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 780
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1457
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#REVIEW_AGENT_TRANSPORT_VERSION",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "REVIEW_AGENT_TRANSPORT_VERSION",
+   "kind": "value",
+   "status": "changed",
+   "line": 635,
+   "span": [
+    607,
+    635
+   ],
+   "oldLine": 617,
+   "added": 11,
+   "removed": 2,
+   "definition": "export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/2';",
+   "commentOnly": true,
+   "diff": [
+    [
+     " ",
+     null,
+     607,
+     "/** Its version, bound in the answer key of agent requests only (answer-cache.js); REVIEW_TRANSPORT_VERSION stays the"
+    ],
+    [
+     " ",
+     null,
+     608,
+     " *  version of every other request. A change to the agent argv, to an environment setting that changes what the agent is"
+    ],
+    [
+     " ",
+     null,
+     609,
+     " *  sent or may do, or to how its answer is read is a new version (D151 amends the rule, which named any change to the"
+    ],
+    [
+     "-",
+     601,
+     null,
+     " *  environment). /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the"
+    ],
+    [
+     "+",
+     null,
+     610,
+     " *  environment; D211 amends it again, the owner's decision of 2026-11-05: an argv argument that the agent key binds"
+    ],
+    [
+     "+",
+     null,
+     611,
+     " *  needs no version, as REVIEW_TRANSPORT_VERSION's rule says). /2 (D105, F2 part A3): the run record also holds each Read's path, start line, line count and the"
+    ],
+    [
+     " ",
+     null,
+     612,
+     " *  file's total lines, from the CLI's typed tool results (`readRanges`, `readsUnranged`), and each Read that read"
+    ],
+    [
+     " ",
+     null,
+     613,
+     " *  nothing apart (`readsFailed`), and the answer store keeps it beside the answer; no stored agent answer of /1"
+    ],
+    [
+     " ",
+     null,
+     614,
+     " *  replays. D151: not bumped (the owner's call). Safe mode on every call, and the person's CLAUDE_CONFIG_DIR and"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     623,
+     " *  environment, the system prompt and the prompt are byte for byte as before, so every stored code-step answer, accepted"
+    ],
+    [
+     " ",
+     null,
+     624,
+     " *  under 2.1.278's rule, which still holds, replays. D210: not bumped. FORCE_PROMPT_CACHING_5M in the environment sets"
+    ],
+    [
+     " ",
+     null,
+     625,
+     " *  how long the CLI's cache entries live: it changes neither what the agent is sent nor what it may do nor how its"
+    ],
+    [
+     "-",
+     616,
+     null,
+     " *  answer is read, so every stored code-step answer still replays. */"
+    ],
+    [
+     "+",
+     null,
+     626,
+     " *  answer is read, so every stored code-step answer still replays. D211: not bumped, by the rule as D211 amends it"
+    ],
+    [
+     "+",
+     null,
+     627,
+     " *  (the owner's decision, 2026-11-05). The change to"
+    ],
+    [
+     "+",
+     null,
+     628,
+     " *  the agent argv is `--input-format stream-json` on a request whose prompt is in parts (the code step's checking"
+    ],
+    [
+     "+",
+     null,
+     629,
+     " *  agents, their re-asks and repairs, and a review repair that is its request and its note byte for byte), and the key"
+    ],
+    [
+     "+",
+     null,
+     630,
+     " *  of exactly those requests binds it (`reviewAgentKeyArgs` keeps it); an answer got by resending such a request"
+    ],
+    [
+     "+",
+     null,
+     631,
+     " *  without its parts is never stored (answer-cache.js `put`), so none of them replays an answer asked another way. A"
+    ],
+    [
+     "+",
+     null,
+     632,
+     " *  bump would also move the key of every request sent byte for byte as before (each review agent's), and throw away"
+    ],
+    [
+     "+",
+     null,
+     633,
+     " *  answers that are still the answers to those bytes. What the agent is sent is the same text in the same order, may"
+    ],
+    [
+     "+",
+     null,
+     634,
+     " *  do the same, and is read the same. */"
+    ],
+    [
+     " ",
+     null,
+     635,
+     "export const REVIEW_AGENT_TRANSPORT_VERSION = 'sonah.review-agent-transport/2';"
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 17
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 57
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 71
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "comment-only"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "reviewAgentCliArgs",
+   "kind": "callable",
+   "status": "changed",
+   "line": 701,
+   "span": [
+    691,
+    709
+   ],
+   "oldLine": 681,
+   "added": 5,
+   "removed": 3,
+   "definition": "export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema, parts = false }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     694,
+     " * a prompt (`dontAsk`, `--permission-prompts none`), confined to the working directory and each `--add-dir` (`--restricted`:"
+    ],
+    [
+     " ",
+     null,
+     695,
+     " * a Read outside them, through a link included, is refused), at most `agent.maxTurns` turns, and the answer through the"
+    ],
+    [
+     " ",
+     null,
+     696,
+     " * CLI's structured output tool (`--json-schema`). No `--include-partial-messages`: nothing reads a partial message. The"
+    ],
+    [
+     "-",
+     679,
+     null,
+     " * system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs."
+    ],
+    [
+     "+",
+     null,
+     697,
+     " * system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs. `parts` (D211):"
+    ],
+    [
+     "+",
+     null,
+     698,
+     " * whether the request's prompt is sent in parts, as one stream-json user message (`--input-format stream-json`, where"
+    ],
+    [
+     "+",
+     null,
+     699,
+     " * reviewCliArgs places it); a request without is sent with the argv byte for byte as before."
+    ],
+    [
+     " ",
+     null,
+     700,
+     " */"
+    ],
+    [
+     "-",
+     681,
+     null,
+     "export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema }) {"
+    ],
+    [
+     "+",
+     null,
+     701,
+     "export function reviewAgentCliArgs({ system, model, effort = REVIEW_EFFORT, agent, schema, parts = false }) {"
+    ],
+    [
+     " ",
+     null,
+     702,
+     "  return ['--print', '--model', model, '--effort', effort, '--output-format', 'stream-json', '--verbose',"
+    ],
+    [
+     "-",
+     683,
+     null,
+     "    '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,"
+    ],
+    [
+     "+",
+     null,
+     703,
+     "    ...(parts ? ['--input-format', 'stream-json'] : []), '--tools', AGENT_TOOLS.join(','), '--allowedTools', ...AGENT_TOOLS,"
+    ],
+    [
+     " ",
+     null,
+     704,
+     "    '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--restricted',"
+    ],
+    [
+     " ",
+     null,
+     705,
+     "    ...(agent.addDirs ?? []).flatMap((dir) => ['--add-dir', dir]), '--max-turns', String(agent.maxTurns),"
+    ],
+    [
+     " ",
+     null,
+     706,
+     "    '--json-schema', JSON.stringify(schema),"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 770
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 779
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1455
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#PROMPT_PART_CACHE_CONTROL",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "PROMPT_PART_CACHE_CONTROL",
+   "kind": "value",
+   "status": "new",
+   "line": 728,
+   "span": [
+    726,
+    728
+   ],
+   "oldLine": null,
+   "added": 3,
+   "removed": 0,
+   "definition": "export const PROMPT_PART_CACHE_CONTROL = Object.freeze({ type: 'ephemeral' });",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     726,
+     "/** D211: the one cache marker a request in parts carries, on its first text block (the Messages API's own field, which"
+    ],
+    [
+     "+",
+     null,
+     727,
+     " *  the claude CLI passes through from stream-json input), at its default lifetime: five minutes. */"
+    ],
+    [
+     "+",
+     null,
+     728,
+     "export const PROMPT_PART_CACHE_CONTROL = Object.freeze({ type: 'ephemeral' });"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 733
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 736
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "value"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#imageContent",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "imageContent",
+   "kind": "callable",
+   "status": "changed",
+   "line": 734,
+   "span": [
+    730,
+    740
+   ],
+   "oldLine": 709,
+   "added": 7,
+   "removed": 3,
+   "definition": "export function imageContent(prompt, images, cuts = []) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     730,
+     "/** Gain I: a request's text and images as the content of one user message, the shape both the Messages API and the"
+    ],
+    [
+     " ",
+     null,
+     731,
+     " *  CLI's stream-json input read: the prompt, then each image after a line naming it (\"Image 1:\", as the prompt numbers"
+    ],
+    [
+     "-",
+     708,
+     null,
+     " *  them, prompt.js `IMAGES_ATTACHED`). */"
+    ],
+    [
+     "-",
+     709,
+     null,
+     "export function imageContent(prompt, images) {"
+    ],
+    [
+     "-",
+     710,
+     null,
+     "  return [{ type: 'text', text: prompt }, ...images.flatMap((image, at) => [{ type: 'text', text: `Image ${at + 1}:` },"
+    ],
+    [
+     "+",
+     null,
+     732,
+     " *  them, prompt.js `IMAGES_ATTACHED`). D211: `cuts` (`promptCutsOf`): the prompt as one text block per part, the first"
+    ],
+    [
+     "+",
+     null,
+     733,
+     " *  marked PROMPT_PART_CACHE_CONTROL and no other, the images after them as before; with none, one block as before. */"
+    ],
+    [
+     "+",
+     null,
+     734,
+     "export function imageContent(prompt, images, cuts = []) {"
+    ],
+    [
+     "+",
+     null,
+     735,
+     "  const texts = cuts.length ? promptPartsOf(prompt, cuts).map((text, at) => (at === 0"
+    ],
+    [
+     "+",
+     null,
+     736,
+     "    ? { type: 'text', text, cache_control: { ...PROMPT_PART_CACHE_CONTROL } } : { type: 'text', text }))"
+    ],
+    [
+     "+",
+     null,
+     737,
+     "    : [{ type: 'text', text: prompt }];"
+    ],
+    [
+     "+",
+     null,
+     738,
+     "  return [...texts, ...images.flatMap((image, at) => [{ type: 'text', text: `Image ${at + 1}:` },"
+    ],
+    [
+     " ",
+     null,
+     739,
+     "    { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } }])];"
+    ],
+    [
+     " ",
+     null,
+     740,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 746
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 755
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 759
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#claudeStreamInput",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "claudeStreamInput",
+   "kind": "callable",
+   "status": "changed",
+   "line": 745,
+   "span": [
+    742,
+    747
+   ],
+   "oldLine": 716,
+   "added": 4,
+   "removed": 3,
+   "definition": "export function claudeStreamInput(prompt, images, cuts = []) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     742,
+     "/** Gain I: the one stdin line of a claude-cli request with images: a stream-json user message (the shape the installed"
+    ],
+    [
+     "-",
+     715,
+     null,
+     " *  CLI's stream-json reader takes: `type` user, `message.role` user, `message.content` a list), newline-terminated. */"
+    ],
+    [
+     "-",
+     716,
+     null,
+     "export function claudeStreamInput(prompt, images) {"
+    ],
+    [
+     "-",
+     717,
+     null,
+     "  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: imageContent(prompt, images) } })}\\n`;"
+    ],
+    [
+     "+",
+     null,
+     743,
+     " *  CLI's stream-json reader takes: `type` user, `message.role` user, `message.content` a list), newline-terminated."
+    ],
+    [
+     "+",
+     null,
+     744,
+     " *  D211: and of one whose prompt is in parts (`cuts`), with or without images. */"
+    ],
+    [
+     "+",
+     null,
+     745,
+     "export function claudeStreamInput(prompt, images, cuts = []) {"
+    ],
+    [
+     "+",
+     null,
+     746,
+     "  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: imageContent(prompt, images, cuts) } })}\\n`;"
+    ],
+    [
+     " ",
+     null,
+     747,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 586
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1450
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1465
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "reviewTransportArguments",
+   "kind": "callable",
+   "status": "changed",
+   "line": 776,
+   "span": [
+    762,
+    787
+   ],
+   "oldLine": 745,
+   "added": 6,
+   "removed": 4,
+   "definition": "export function reviewTransportArguments({ backend, model, effort = REVIEW_EFFORT, system, images = [], agent = undefined,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     769,
+     " * The agent transport: with `agent` and `schema` (an agent request's, `agentRequestOf`), the agent argv the call is"
+    ],
+    [
+     " ",
+     null,
+     770,
+     " * spawned with (`reviewAgentCliArgs`), on claude-cli only; null on any other backend, which has no agent transport."
+    ],
+    [
+     " ",
+     null,
+     771,
+     " * `effort` (D160): the review's, in the claude-cli argv; REVIEW_EFFORT when none is given. No other backend takes one"
+    ],
+    [
+     "-",
+     743,
+     null,
+     " * (reviewJudgeConfig refuses it there), so theirs never carries it."
+    ],
+    [
+     "+",
+     null,
+     772,
+     " * (reviewJudgeConfig refuses it there), so theirs never carries it. `parts` (D211): whether the request's prompt is"
+    ],
+    [
+     "+",
+     null,
+     773,
+     " * sent in parts (`promptCutsOf`), in the claude-cli argv and the agent argv; no other transport sends parts, so theirs"
+    ],
+    [
+     "+",
+     null,
+     774,
+     " * never moves."
+    ],
+    [
+     " ",
+     null,
+     775,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     776,
+     "export function reviewTransportArguments({ backend, model, effort = REVIEW_EFFORT, system, images = [], agent = undefined,"
+    ],
+    [
+     "-",
+     746,
+     null,
+     "  schema = undefined }) {"
+    ],
+    [
+     "+",
+     null,
+     777,
+     "  schema = undefined, parts = false }) {"
+    ],
+    [
+     " ",
+     null,
+     778,
+     "  if (agent !== undefined)"
+    ],
+    [
+     "-",
+     748,
+     null,
+     "    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, effort, agent, schema }) } : null;"
+    ],
+    [
+     "-",
+     749,
+     null,
+     "  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, effort, images: images.length > 0 }) };"
+    ],
+    [
+     "+",
+     null,
+     779,
+     "    return backend === 'claude-cli' ? { argv: reviewAgentCliArgs({ system, model, effort, agent, schema, parts }) } : null;"
+    ],
+    [
+     "+",
+     null,
+     780,
+     "  if (backend === 'claude-cli') return { argv: reviewCliArgs({ system, model, effort, images: images.length > 0, parts }) };"
+    ],
+    [
+     " ",
+     null,
+     781,
+     "  if (backend === 'codex-cli') return { argv: reviewCodexArgs({ model, images }), instructions: system };"
+    ],
+    [
+     " ",
+     null,
+     782,
+     "  if (backend === 'anthropic-api') {"
+    ],
+    [
+     " ",
+     null,
+     783,
+     "    const { messages: omitted, ...body } = reviewApiBody({ system, prompt: '', model });"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 4,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 18
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 79
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 88
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 200
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#callLocal",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "callLocal",
+   "kind": "callable",
+   "status": "changed",
+   "line": 1406,
+   "span": [
+    1403,
+    1553
+   ],
+   "oldLine": 1375,
+   "added": 12,
+   "removed": 5,
+   "definition": "async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOutputBytes, cancellation, agent = null }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     1406,
+     "async function callLocal(request, config, { env, spawnProcess, timeoutMs, maxOutputBytes, cancellation, agent = null }) {"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1417,
+     "      // D145: a request whose later passes wait for it (challenge.js REPLY_BEGUN) is told once that the model's reply has"
+    ],
+    [
+     " ",
+     null,
+     1418,
+     "      // begun: at the first `stream_event` line, the API's own stream that `--include-partial-messages` prints (its"
+    ],
+    [
+     " ",
+     null,
+     1419,
+     "      // `message_start` comes once the prompt is processed, and so cached). Read by the line's typed `type` only; the"
+    ],
+    [
+     "-",
+     1389,
+     null,
+     "      // scan ends there, or at the first `assistant` or `result` line, which no reply-begun signal follows."
+    ],
+    [
+     "+",
+     null,
+     1420,
+     "      // scan ends there, or at the first `assistant` or `result` line, which no reply-begun signal follows. D211: the"
+    ],
+    [
+     "+",
+     null,
+     1421,
+     "      // agent argv prints no `stream_event`, so an agent request is told at its first `assistant` line, the first turn's"
+    ],
+    [
+     "+",
+     null,
+     1422,
+     "      // reply, which the CLI prints once the prompt was processed."
+    ],
+    [
+     " ",
+     null,
+     1423,
+     "      let begun = typeof request?.[REPLY_BEGUN] === 'function' ? request[REPLY_BEGUN] : null, scanned = 0;"
+    ],
+    [
+     " ",
+     null,
+     1424,
+     "      const scanReplyBegun = () => {"
+    ],
+    [
+     " ",
+     null,
+     1425,
+     "        let newline;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1428,
+     "          try { event = JSON.parse(output.slice(scanned, newline)); } catch { /* not a line this scan reads */ }"
+    ],
+    [
+     " ",
+     null,
+     1429,
+     "          scanned = newline + 1;"
+    ],
+    [
+     " ",
+     null,
+     1430,
+     "          const type = isRecord(event) ? event.type : null;"
+    ],
+    [
+     "-",
+     1398,
+     null,
+     "          if (type === 'stream_event') {"
+    ],
+    [
+     "+",
+     null,
+     1431,
+     "          if (type === 'stream_event' || (agent && type === 'assistant')) {"
+    ],
+    [
+     " ",
+     null,
+     1432,
+     "            const told = begun;"
+    ],
+    [
+     " ",
+     null,
+     1433,
+     "            begun = null;"
+    ],
+    [
+     " ",
+     null,
+     1434,
+     "            try { told(); } catch { /* the caller's signal never changes the call */ }"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1448,
+     "        if (child) cancelGrace = stopChild(child, () => closed, () => settle(null));"
+    ],
+    [
+     " ",
+     null,
+     1449,
+     "      };"
+    ],
+    [
+     " ",
+     null,
+     1450,
+     "      // Gain I: a request with images is one stream-json user message (`claudeStreamInput`); any other, its prompt."
+    ],
+    [
+     "+",
+     null,
+     1451,
+     "      // D211: so is a request whose prompt is in parts (`promptCutsOf`), one text block per part, the first marked."
+    ],
+    [
+     " ",
+     null,
+     1452,
+     "      const images = requestImagesOf(request);"
+    ],
+    [
+     "+",
+     null,
+     1453,
+     "      const cuts = promptCutsOf(request);"
+    ],
+    [
+     " ",
+     null,
+     1454,
+     "      // D160: at the review's effort (`config.effort`, set only when it is not the default)."
+    ],
+    [
+     " ",
+     null,
+     1455,
+     "      const argv = agent ? reviewAgentCliArgs({ system: request.system, model: config.model, effort: config.effort, agent,"
+    ],
+    [
+     "-",
+     1421,
+     null,
+     "        schema: agent.schema })"
+    ],
+    [
+     "-",
+     1422,
+     null,
+     "        : reviewCliArgs({ system: request.system, model: config.model, effort: config.effort, images: images.length > 0 });"
+    ],
+    [
+     "+",
+     null,
+     1456,
+     "        schema: agent.schema, parts: cuts.length > 0 })"
+    ],
+    [
+     "+",
+     null,
+     1457,
+     "        : reviewCliArgs({ system: request.system, model: config.model, effort: config.effort, images: images.length > 0,"
+    ],
+    [
+     "+",
+     null,
+     1458,
+     "          parts: cuts.length > 0 });"
+    ],
+    [
+     " ",
+     null,
+     1459,
+     "      try { child = spawnProcess('claude', argv, {"
+    ],
+    [
+     " ",
+     null,
+     1460,
+     "        cwd: agent ? agent.root : directory, env: claudeEnvironment(env, { request }), stdio: ['pipe', 'pipe', 'pipe'],"
+    ],
+    [
+     " ",
+     null,
+     1461,
+     "      }); } catch { finish({ ok: false, code: 'model_unavailable', transportClass: 'spawn_failed' }); return; }"
+    ],
+    [
+     " ",
+     null,
+     1462,
+     "      timer = setTimeout(() => halt('model_timeout'), callTimeoutMs);"
+    ],
+    [
+     " ",
+     null,
+     1463,
+     "      unregister = cancellation.register(() => halt(REVIEW_CANCELLED));"
+    ],
+    [
+     " ",
+     null,
+     1464,
+     "      child.stdin.on('error', () => {});"
+    ],
+    [
+     "-",
+     1429,
+     null,
+     "      child.stdin.end(images.length ? claudeStreamInput(request.prompt, images) : request.prompt);"
+    ],
+    [
+     "+",
+     null,
+     1465,
+     "      child.stdin.end(images.length || cuts.length ? claudeStreamInput(request.prompt, images, cuts) : request.prompt);"
+    ],
+    [
+     " ",
+     null,
+     1466,
+     "      child.stdout.setEncoding('utf8');"
+    ],
+    [
+     " ",
+     null,
+     1467,
+     "      child.stdout.on('data', (chunk) => {"
+    ],
+    [
+     " ",
+     null,
+     1468,
+     "        if (stop) return;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1505,
+     "          contextWindow: reportedContextWindow(result?.modelUsage, config.model),"
+    ],
+    [
+     " ",
+     null,
+     1506,
+     "          // D70 review (S0): the CLI version its one init states, a SemVer normal version, or null."
+    ],
+    [
+     " ",
+     null,
+     1507,
+     "          cliVersion: stream.inits === 1 ? cliVersionOf(stream.initVersions[0]) : null,"
+    ],
+    [
+     "+",
+     null,
+     1508,
+     "          // D211: how many parts the prompt was sent in, only when it was sent in parts (a count)."
+    ],
+    [
+     "+",
+     null,
+     1509,
+     "          ...(cuts.length ? { promptParts: cuts.length + 1 } : {}),"
+    ],
+    [
+     " ",
+     null,
+     1510,
+     "          // The agent transport: what the agent did (agentRunOf), on an agent call only."
+    ],
+    [
+     " ",
+     null,
+     1511,
+     "          ...(agent ? { agentRun: agentRunOf(stream, result) } : {}) };"
+    ],
+    [
+     " ",
+     null,
+     1512,
+     "        if (stop) {"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 28
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1762
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "PROMPT_PARTS_REFUSED_CLASS",
+   "kind": "value",
+   "status": "new",
+   "line": 1627,
+   "span": [
+    1623,
+    1627
+   ],
+   "oldLine": null,
+   "added": 5,
+   "removed": 0,
+   "definition": "export const PROMPT_PARTS_REFUSED_CLASS = INVALID_REQUEST;",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1623,
+     "/** D211: the provider class on which a request sent in parts (evidence prompt-parts.js `promptCutsOf`) is sent once"
+    ],
+    [
+     "+",
+     null,
+     1624,
+     " *  more as one string (`withTransportRetry`): the provider refused the request as invalid. Its parts are the one thing"
+    ],
+    [
+     "+",
+     null,
+     1625,
+     " *  a request in parts sends that the same request sent whole does not (one `cache_control` marker, D211; the API refuses"
+    ],
+    [
+     "+",
+     null,
+     1626,
+     " *  a request with more than four, and the claude CLI places three of its own). */"
+    ],
+    [
+     "+",
+     null,
+     1627,
+     "export const PROMPT_PARTS_REFUSED_CLASS = INVALID_REQUEST;"
+    ]
+   ],
+   "callers": {
+    "count": 4,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1658
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1670
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 60
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 473
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "value"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#PARTS_DROPPED",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "PARTS_DROPPED",
+   "kind": "value",
+   "status": "new",
+   "line": 1631,
+   "span": [
+    1628,
+    1631
+   ],
+   "oldLine": null,
+   "added": 4,
+   "removed": 0,
+   "definition": "export const PARTS_DROPPED = 'partsDropped';",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1628,
+     "/** D211: the member a request resent without its parts carries, not enumerable (so no key, byte, copy or JSON of the"
+    ],
+    [
+     "+",
+     null,
+     1629,
+     " *  request holds it): why its parts were dropped (ledger.js PROMPT_PARTS_DROPPED), which its attempt's record states"
+    ],
+    [
+     "+",
+     null,
+     1630,
+     " *  (`partsDropped`). */"
+    ],
+    [
+     "+",
+     null,
+     1631,
+     "export const PARTS_DROPPED = 'partsDropped';"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1637
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1767
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "value"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#REFUSED_IN_PARTS",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "REFUSED_IN_PARTS",
+   "kind": "value",
+   "status": "new",
+   "line": 1632,
+   "span": [
+    1632,
+    1632
+   ],
+   "oldLine": null,
+   "added": 1,
+   "removed": 0,
+   "definition": "const [REFUSED_IN_PARTS] = PROMPT_PARTS_DROPPED;",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1632,
+     "const [REFUSED_IN_PARTS] = PROMPT_PARTS_DROPPED;"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1673
+     }
+    ]
+   },
+   "tests": [],
+   "fold": "value"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#withoutParts",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "withoutParts",
+   "kind": "callable",
+   "status": "new",
+   "line": 1634,
+   "span": [
+    1633,
+    1638
+   ],
+   "oldLine": null,
+   "added": 6,
+   "removed": 0,
+   "definition": "function withoutParts(request, reason) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1633,
+     "/** D211: `request` sent as one string: a copy without its parts, which keeps its REPLY_BEGUN and says why. */"
+    ],
+    [
+     "+",
+     null,
+     1634,
+     "function withoutParts(request, reason) {"
+    ],
+    [
+     "+",
+     null,
+     1635,
+     "  const whole = { ...request };"
+    ],
+    [
+     "+",
+     null,
+     1636,
+     "  delete whole.parts;"
+    ],
+    [
+     "+",
+     null,
+     1637,
+     "  return Object.defineProperty(withReplyBegun(request, whole), PARTS_DROPPED, { value: reason });"
+    ],
+    [
+     "+",
+     null,
+     1638,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1659
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1673
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#RESENT_WHOLE",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "RESENT_WHOLE",
+   "kind": "value",
+   "status": "new",
+   "line": 1641,
+   "span": [
+    1639,
+    1641
+   ],
+   "oldLine": null,
+   "added": 3,
+   "removed": 0,
+   "definition": "const RESENT_WHOLE = new WeakSet();",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1639,
+     "/** D211: the answers got by resending a request in parts as one string (`withTransportRetry`), held by identity only, so"
+    ],
+    [
+     "+",
+     null,
+     1640,
+     " *  no member of an answer is added or changed (a model's answer may hold a member of any name). */"
+    ],
+    [
+     "+",
+     null,
+     1641,
+     "const RESENT_WHOLE = new WeakSet();"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1644
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1646
+     }
+    ]
+   },
+   "tests": [],
+   "fold": "value"
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#resentWhole",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "resentWhole",
+   "kind": "callable",
+   "status": "new",
+   "line": 1644,
+   "span": [
+    1642,
+    1644
+   ],
+   "oldLine": null,
+   "added": 3,
+   "removed": 0,
+   "definition": "export const resentWhole = (answer) => answer !== null && typeof answer === 'object' && RESENT_WHOLE.has(answer);",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1642,
+     "/** D211: whether `answer` was got by resending its request without its parts. The answer store keeps no such answer"
+    ],
+    [
+     "+",
+     null,
+     1643,
+     " *  (answer-cache.js `put`): its key binds the argv of the request in parts, which did not answer it. */"
+    ],
+    [
+     "+",
+     null,
+     1644,
+     "export const resentWhole = (answer) => answer !== null && typeof answer === 'object' && RESENT_WHOLE.has(answer);"
+    ]
+   ],
+   "callers": {
+    "count": 6,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 18
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 237
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 241
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1663
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 473
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 476
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#markResentWhole",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "markResentWhole",
+   "kind": "callable",
+   "status": "new",
+   "line": 1645,
+   "span": [
+    1645,
+    1648
+   ],
+   "oldLine": null,
+   "added": 4,
+   "removed": 0,
+   "definition": "const markResentWhole = (answer) => {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     1645,
+     "const markResentWhole = (answer) => {"
+    ],
+    [
+     "+",
+     null,
+     1646,
+     "  if (answer !== null && typeof answer === 'object') RESENT_WHOLE.add(answer);"
+    ],
+    [
+     "+",
+     null,
+     1647,
+     "  return answer;"
+    ],
+    [
+     "+",
+     null,
+     1648,
+     "};"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1673
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#withTransportRetry",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "withTransportRetry",
+   "kind": "callable",
+   "status": "changed",
+   "line": 1664,
+   "span": [
+    1650,
+    1687
+   ],
+   "oldLine": 1593,
+   "added": 21,
+   "removed": 4,
+   "definition": "export function withTransportRetry(judge) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     1654,
+     " *  found, invalid request) — those would only spend the account's quota on the same refusal. The"
+    ],
+    [
+     " ",
+     null,
+     1655,
+     " *  class is the call's one class (providerClassOf), so a stop class observed beside a retryable one"
+    ],
+    [
+     " ",
+     null,
+     1656,
+     " *  is never retried either. The agent transport: nor an agent request (`isAgentRequest`) that timed out or whose reply"
+    ],
+    [
+     "-",
+     1592,
+     null,
+     " *  could not be read (AGENT_NOT_RETRIED). */"
+    ],
+    [
+     "+",
+     null,
+     1657,
+     " *  could not be read (AGENT_NOT_RETRIED). D211: one exception, read from the typed class only, never the error's text:"
+    ],
+    [
+     "+",
+     null,
+     1658,
+     " *  a request sent in parts (`promptCutsOf`) that the provider refused as invalid (PROMPT_PARTS_REFUSED_CLASS) is sent"
+    ],
+    [
+     "+",
+     null,
+     1659,
+     " *  once more without them (`withoutParts`, its reason PROMPT_PARTS_DROPPED's), the same text as one string, so a CLI"
+    ],
+    [
+     "+",
+     null,
+     1660,
+     " *  that one day adds a cache marker of its own can never fail a call over Sonah's. Whichever attempt was refused so —"
+    ],
+    [
+     "+",
+     null,
+     1661,
+     " *  the first, or the identical retry after a transport failure — is resent so, once, so every attempt in parts refused"
+    ],
+    [
+     "+",
+     null,
+     1662,
+     " *  as invalid is followed by its resend; the resend's own failure stands."
+    ],
+    [
+     "+",
+     null,
+     1663,
+     " *  The resend's answer is marked (`resentWhole`), so the answer store keeps it out. */"
+    ],
+    [
+     " ",
+     null,
+     1664,
+     "export function withTransportRetry(judge) {"
+    ],
+    [
+     " ",
+     null,
+     1665,
+     "  return async (request) => {"
+    ],
+    [
+     "-",
+     1595,
+     null,
+     "    try { return withAttempts(await judge(request), 1); }"
+    ],
+    [
+     "+",
+     null,
+     1666,
+     "    let resent = false;"
+    ],
+    [
+     "+",
+     null,
+     1667,
+     "    const attempt = async (asked, n) => {"
+    ],
+    [
+     "+",
+     null,
+     1668,
+     "      try { return withAttempts(await judge(asked), n); }"
+    ],
+    [
+     "+",
+     null,
+     1669,
+     "      catch (error) {"
+    ],
+    [
+     "+",
+     null,
+     1670,
+     "        if (resent || error?.code === REVIEW_CANCELLED || error?.providerClass !== PROMPT_PARTS_REFUSED_CLASS"
+    ],
+    [
+     "+",
+     null,
+     1671,
+     "          || promptCutsOf(asked).length === 0) throw error;"
+    ],
+    [
+     "+",
+     null,
+     1672,
+     "        resent = true;"
+    ],
+    [
+     "+",
+     null,
+     1673,
+     "        return markResentWhole(withAttempts(await judge(withoutParts(asked, REFUSED_IN_PARTS)), n + 1));"
+    ],
+    [
+     "+",
+     null,
+     1674,
+     "      }"
+    ],
+    [
+     "+",
+     null,
+     1675,
+     "    };"
+    ],
+    [
+     "+",
+     null,
+     1676,
+     "    try { return await attempt(request, 1); }"
+    ],
+    [
+     " ",
+     null,
+     1677,
+     "    catch (error) {"
+    ],
+    [
+     "-",
+     1597,
+     null,
+     "      if (error?.code === REVIEW_CANCELLED || NON_RETRYABLE_PROVIDER_CLASSES.includes(error?.providerClass)) throw error;"
+    ],
+    [
+     "+",
+     null,
+     1678,
+     "      if (resent || error?.code === REVIEW_CANCELLED || NON_RETRYABLE_PROVIDER_CLASSES.includes(error?.providerClass))"
+    ],
+    [
+     "+",
+     null,
+     1679,
+     "        throw error;"
+    ],
+    [
+     " ",
+     null,
+     1680,
+     "      if (!RETRYABLE_JUDGE_CODES.includes(error?.code)) throw error;"
+    ],
+    [
+     " ",
+     null,
+     1681,
+     "      // The agent transport: an agent call that ran out its time, or whose reply could not be read, is not asked again"
+    ],
+    [
+     " ",
+     null,
+     1682,
+     "      // here (AGENT_NOT_RETRIED)."
+    ],
+    [
+     " ",
+     null,
+     1683,
+     "      if (AGENT_NOT_RETRIED.includes(error.code) && isAgentRequest(request)) throw error;"
+    ],
+    [
+     "-",
+     1602,
+     null,
+     "      return withAttempts(await judge(request), 2);"
+    ],
+    [
+     "+",
+     null,
+     1684,
+     "      return attempt(request, 2);"
+    ],
+    [
+     " ",
+     null,
+     1685,
+     "    }"
+    ],
+    [
+     " ",
+     null,
+     1686,
+     "  };"
+    ],
+    [
+     " ",
+     null,
+     1687,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 9,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 236
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1624
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1639
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1766
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 44
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 871
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 956
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 104
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 471
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/cli/src/review-judge.js#createReviewJudge",
+   "path": "packages/cli/src/review-judge.js",
+   "name": "createReviewJudge",
+   "kind": "callable",
+   "status": "changed",
+   "line": 1740,
+   "span": [
+    1727,
+    1774
+   ],
+   "oldLine": 1658,
+   "added": 2,
+   "removed": 0,
+   "definition": "export function createReviewJudge({ config, env = process.env, spawnProcess = spawn, fetchImpl = fetch,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     1740,
+     "export function createReviewJudge({ config, env = process.env, spawnProcess = spawn, fetchImpl = fetch,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1763,
+     "      { env, spawnProcess, fetchImpl, timeoutMs, maxOutputBytes, cancellation, agent });"
+    ],
+    [
+     " ",
+     null,
+     1764,
+     "    const { json, ...metadata } = { ...attestationDefaults(), ...result };"
+    ],
+    [
+     " ",
+     null,
+     1765,
+     "    if (metadata.ok) delete metadata.code;"
+    ],
+    [
+     "+",
+     null,
+     1766,
+     "    // D211: an attempt of a request resent without its parts (`withTransportRetry`) says why, by its closed reason."
+    ],
+    [
+     "+",
+     null,
+     1767,
+     "    if (PROMPT_PARTS_DROPPED.includes(request[PARTS_DROPPED])) metadata.partsDropped = request[PARTS_DROPPED];"
+    ],
+    [
+     " ",
+     null,
+     1768,
+     "    await onResult({ ...metadata, backend: config.backend, requestedModel: config.model,"
+    ],
+    [
+     " ",
+     null,
+     1769,
+     "      elapsedMs: Date.now() - started, inputBytes: Buffer.byteLength(request.system) + Buffer.byteLength(request.prompt) });"
+    ],
+    [
+     " ",
+     null,
+     1770,
+     "    if (!result.ok) throw withAgentRun(withProviderClass(failure(result.code, result.transportClass), metadata.providerClass),"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 10,
+    "list": [
+     {
+      "path": "packages/cli/src/doctor.js",
+      "line": 11
+     },
+     {
+      "path": "packages/cli/src/doctor.js",
+      "line": 223
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 644
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 676
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 31
+     },
+     {
+      "path": "packages/cli/src/session-review-command.js",
+      "line": 524
+     },
+     {
+      "path": "packages/cli/test/agent-transport-fixture.js",
+      "line": 7
+     },
+     {
+      "path": "packages/cli/test/agent-transport-fixture.js",
+      "line": 100
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 61
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 369
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "tiny"
+  },
+  {
+   "id": "packages/evidence/src/challenge.js#REPLY_BEGUN",
+   "path": "packages/evidence/src/challenge.js",
+   "name": "REPLY_BEGUN",
+   "kind": "value",
+   "status": "changed",
+   "line": 342,
+   "span": [
+    334,
+    342
+   ],
+   "oldLine": 341,
+   "added": 3,
+   "removed": 2,
+   "definition": "export const REPLY_BEGUN = 'replyBegun';",
+   "commentOnly": true,
+   "diff": [
+    [
+     " ",
+     null,
+     335,
+     " * D145 (0.3.0-beta.7): the name of the function a batch's first pass request carries, not enumerable (so no key, byte,"
+    ],
+    [
+     " ",
+     null,
+     336,
+     " * copy or JSON of the request holds it), when later passes of its batch wait for it. A transport that can tell when the"
+    ],
+    [
+     " ",
+     null,
+     337,
+     " * model's reply begins calls it then, once (the claude-cli transport: at the first `stream_event` line,"
+    ],
+    [
+     "-",
+     338,
+     null,
+     " * review-judge.js); any other never calls it, and the later passes are sent when the first pass's call settles. Either"
+    ],
+    [
+     "-",
+     339,
+     null,
+     " * way they are sent after the first pass's prompt was cached, so they read it instead of each writing its own."
+    ],
+    [
+     "+",
+     null,
+     338,
+     " * review-judge.js; D211: an agent request's at its first `assistant` line); any other never calls it, and the later"
+    ],
+    [
+     "+",
+     null,
+     339,
+     " * passes are sent when the first pass's call settles. Either way they are sent after the first pass's prompt was"
+    ],
+    [
+     "+",
+     null,
+     340,
+     " * cached, so they read it instead of each writing its own."
+    ],
+    [
+     " ",
+     null,
+     341,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     342,
+     "export const REPLY_BEGUN = 'replyBegun';"
+    ]
+   ],
+   "callers": {
+    "count": 16,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 13
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1417
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1423
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1633
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 343
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 345
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 346
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 347
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 1636
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 1670
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js",
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": "comment-only"
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#receiptRepairOnce",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "receiptRepairOnce",
+   "kind": "callable",
+   "status": "changed",
+   "line": 534,
+   "span": [
+    525,
+    556
+   ],
+   "oldLine": 532,
+   "added": 4,
+   "removed": 3,
+   "definition": "export async function receiptRepairOnce({ judge, request, label, note, failed, readRepaired, identity,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     528,
+     " * the reply's candidates (null for a reply the contract refuses), and each failed candidate is replaced by the one reply"
+    ],
+    [
+     " ",
+     null,
+     529,
+     " * candidate whose `identity` is its own. The repair is used only when every reply candidate replaced exactly one failed"
+    ],
+    [
+     " ",
+     null,
+     530,
+     " * one. `{ usable, replacements }` — replacements by index. A failed call, an unfitting request or an unusable reply"
+    ],
+    [
+     "-",
+     530,
+     null,
+     " * leaves every candidate as it was."
+    ],
+    [
+     "+",
+     null,
+     531,
+     " * leaves every candidate as it was. D211: the repair keeps `request`'s cuts and adds one at its end"
+    ],
+    [
+     "+",
+     null,
+     532,
+     " * (prompt-parts.js `appendedRequest`); no byte moves."
+    ],
+    [
+     " ",
+     null,
+     533,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     534,
+     "export async function receiptRepairOnce({ judge, request, label, note, failed, readRepaired, identity,"
+    ],
+    [
+     " ",
+     null,
+     535,
+     "  fits = requestFits }) {"
+    ],
+    [
+     " ",
+     null,
+     536,
+     "  const none = { usable: false, replacements: new Map() };"
+    ],
+    [
+     " ",
+     null,
+     537,
+     "  try {"
+    ],
+    [
+     "-",
+     536,
+     null,
+     "    const repairRequest = { ...request, prompt: `${request.prompt}${note}${JSON.stringify(failed.map(({ candidate }) => candidate))}`,"
+    ],
+    [
+     "-",
+     537,
+     null,
+     "      label };"
+    ],
+    [
+     "+",
+     null,
+     538,
+     "    const repairRequest = { ...appendedRequest(request,"
+    ],
+    [
+     "+",
+     null,
+     539,
+     "      `${note}${JSON.stringify(failed.map(({ candidate }) => candidate))}`), label };"
+    ],
+    [
+     " ",
+     null,
+     540,
+     "    if (!fits(repairRequest)) throw new Error('budget_exhausted');"
+    ],
+    [
+     " ",
+     null,
+     541,
+     "    const offered = readRepaired(await judge(repairRequest));"
+    ],
+    [
+     " ",
+     null,
+     542,
+     "    if (!Array.isArray(offered)) return none;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 4,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 68
+     },
+     {
+      "path": "packages/evidence/src/code-review.js",
+      "line": 20
+     },
+     {
+      "path": "packages/evidence/src/code-review.js",
+      "line": 721
+     },
+     {
+      "path": "packages/evidence/src/code-review.js",
+      "line": 723
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#sharedCheckLines",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "sharedCheckLines",
+   "kind": "callable",
+   "status": "new",
+   "line": 2693,
+   "span": [
+    2691,
+    2693
+   ],
+   "oldLine": null,
+   "added": 3,
+   "removed": 0,
+   "definition": "const sharedCheckLines = (words, change, where) => [...personBlock(words), changeHeadingOf(where), '', change, ''];",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     2691,
+     "/** The part every checking agent's request of one change starts with (D211): the person's words, the change's heading"
+    ],
+    [
+     "+",
+     null,
+     2692,
+     " *  and the change block, each line of it as the request joins it. */"
+    ],
+    [
+     "+",
+     null,
+     2693,
+     "const sharedCheckLines = (words, change, where) => [...personBlock(words), changeHeadingOf(where), '', change, ''];"
+    ]
+   ],
+   "callers": {
+    "count": 4,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2701
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2703
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2718
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2759
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#cutAfter",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "cutAfter",
+   "kind": "callable",
+   "status": "new",
+   "line": 2695,
+   "span": [
+    2694,
+    2695
+   ],
+   "oldLine": null,
+   "added": 2,
+   "removed": 0,
+   "definition": "const cutAfter = (shared) => [shared.join('\\n').length + 1];",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     2694,
+     "/** D211: the cut after `shared`, the lines a request's prompt starts with: their join and the newline that follows. */"
+    ],
+    [
+     "+",
+     null,
+     2695,
+     "const cutAfter = (shared) => [shared.join('\\n').length + 1];"
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2711
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2724
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2764
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": "tiny"
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "buildVerifyRequest",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2702,
+   "span": [
+    2697,
+    2712
+   ],
+   "oldLine": 2692,
+   "added": 6,
+   "removed": 3,
+   "definition": "export function buildVerifyRequest({ words, change, outside = null, finding, cited = [], where }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2697,
+     "/** A finding's checking agent's request. Deterministic. D113 amended: for a finding outside the evaluated session"
+    ],
+    [
+     " ",
+     null,
+     2698,
+     " *  (`groundFinding`'s `outsideSession`), `outside` is the block of the files outside it (`outsideBlock`'s text), shown"
+    ],
+    [
+     "-",
+     2691,
+     null,
+     " *  after the change; for any other finding none, so its request is the one before this amendment byte for byte. */"
+    ],
+    [
+     "+",
+     null,
+     2699,
+     " *  after the change; for any other finding none, so its request is the one before this amendment byte for byte. D211:"
+    ],
+    [
+     "+",
+     null,
+     2700,
+     " *  its prompt is cut (`parts`, prompt-parts.js) after the part every checking agent's request of the change shares"
+    ],
+    [
+     "+",
+     null,
+     2701,
+     " *  (`sharedCheckLines`); no byte moves. */"
+    ],
+    [
+     " ",
+     null,
+     2702,
+     "export function buildVerifyRequest({ words, change, outside = null, finding, cited = [], where }) {"
+    ],
+    [
+     "-",
+     2693,
+     null,
+     "  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',"
+    ],
+    [
+     "+",
+     null,
+     2703,
+     "  const shared = sharedCheckLines(words, change, where);"
+    ],
+    [
+     "+",
+     null,
+     2704,
+     "  const prompt = [...shared,"
+    ],
+    [
+     " ",
+     null,
+     2705,
+     "    ...(typeof outside === 'string' && outside ? [outside] : []),"
+    ],
+    [
+     " ",
+     null,
+     2706,
+     "    '# The finding to check — untrusted', '', JSON.stringify(findingShownAs(finding, shownAsOf(where))), '',"
+    ],
+    [
+     " ",
+     null,
+     2707,
+     "    ...(cited.length ? ['# Session text the finding quotes (the person\\'s words or recorded results) — untrusted '"
+    ],
+    [
+     " ",
+     null,
+     2708,
+     "      + 'evidence', '', ...cited.map((s) => fenced(s.text)), ''] : []),"
+    ],
+    [
+     " ",
+     null,
+     2709,
+     "    whereBlock(where, CODE_AGENT_LIMITS.verify.maxTurns)].join('\\n');"
+    ],
+    [
+     " ",
+     null,
+     2710,
+     "  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.verify : CODE_VERIFY_SYSTEM), prompt,"
+    ],
+    [
+     "-",
+     2700,
+     null,
+     "    schema: CODE_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.verify) };"
+    ],
+    [
+     "+",
+     null,
+     2711,
+     "    parts: cutAfter(shared), schema: CODE_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.verify) };"
+    ],
+    [
+     " ",
+     null,
+     2712,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 3,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2716
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2751
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5654
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "buildBatchVerifyRequest",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2717,
+   "span": [
+    2714,
+    2727
+   ],
+   "oldLine": 2705,
+   "added": 5,
+   "removed": 3,
+   "definition": "export function buildBatchVerifyRequest({ words, change, questions, where }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2714,
+     "/** The batch checking agent's request: the questions (Q1…), each with what it concerns — the item's words only when"
+    ],
+    [
+     "-",
+     2704,
+     null,
+     " *  they are the person's or a recorded result's; an agent's item by its kind and key alone. Deterministic. */"
+    ],
+    [
+     "+",
+     null,
+     2715,
+     " *  they are the person's or a recorded result's; an agent's item by its kind and key alone. Deterministic. D211: cut"
+    ],
+    [
+     "+",
+     null,
+     2716,
+     " *  as a finding's check is (`buildVerifyRequest`). */"
+    ],
+    [
+     " ",
+     null,
+     2717,
+     "export function buildBatchVerifyRequest({ words, change, questions, where }) {"
+    ],
+    [
+     "-",
+     2706,
+     null,
+     "  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '',"
+    ],
+    [
+     "+",
+     null,
+     2718,
+     "  const shared = sharedCheckLines(words, change, where);"
+    ],
+    [
+     "+",
+     null,
+     2719,
+     "  const prompt = [...shared,"
+    ],
+    [
+     " ",
+     null,
+     2720,
+     "    '# The review\\'s questions for the person — untrusted', '',"
+    ],
+    [
+     " ",
+     null,
+     2721,
+     "    ...(questions.length ? questions.map((q) => JSON.stringify(q)) : ['(none)']), '',"
+    ],
+    [
+     " ",
+     null,
+     2722,
+     "    whereBlock(where, CODE_AGENT_LIMITS.batch.maxTurns)].join('\\n');"
+    ],
+    [
+     " ",
+     null,
+     2723,
+     "  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.batch : CODE_BATCH_VERIFY_SYSTEM), prompt,"
+    ],
+    [
+     "-",
+     2711,
+     null,
+     "    schema: CODE_BATCH_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.batch) };"
+    ],
+    [
+     "+",
+     null,
+     2724,
+     "    parts: cutAfter(shared), schema: CODE_BATCH_VERIFY_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.batch) };"
+    ],
+    [
+     " ",
+     null,
+     2725,
+     "}"
+    ],
+    [
+     " ",
+     null,
+     2726,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2727,
+     "// ---- the accounting (F3b, D111) ---------------------------------------------------------------------------------------"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5686
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#buildAccountRequest",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "buildAccountRequest",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2753,
+   "span": [
+    2746,
+    2765
+   ],
+   "oldLine": 2739,
+   "added": 5,
+   "removed": 3,
+   "definition": "export function buildAccountRequest({ words, change, findings = [], questions = [], items, where }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2747,
+     " * An accounting agent's request (F3b, D111): the person's words and the change first — the part every batch shares, so"
+    ],
+    [
+     " ",
+     null,
+     2748,
+     " * batches share a cached prefix — then the code review's findings (`F<n>`: kind, title, anchor and the keys it follows"
+    ],
+    [
+     " ",
+     null,
+     2749,
+     " * from) and questions (`Q<n>`: the question and the key it concerns), then the batch's items as the dossier shows them"
+    ],
+    [
+     "-",
+     2737,
+     null,
+     " * (code-context.js `renderDossier`), then where the agent is. Deterministic."
+    ],
+    [
+     "+",
+     null,
+     2750,
+     " * (code-context.js `renderDossier`), then where the agent is. Deterministic. D211: cut as a finding's check is"
+    ],
+    [
+     "+",
+     null,
+     2751,
+     " * (`buildVerifyRequest`), after the person's words and the change."
+    ],
+    [
+     " ",
+     null,
+     2752,
+     " */"
+    ],
+    [
+     " ",
+     null,
+     2753,
+     "export function buildAccountRequest({ words, change, findings = [], questions = [], items, where }) {"
+    ],
+    [
+     " ",
+     null,
+     2754,
+     "  const shownAs = shownAsOf(where);"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2756,
+     "    anchor: plain(f.anchor) ? { ...f.anchor, path: shownAs(f.anchor.path) } : f.anchor,"
+    ],
+    [
+     " ",
+     null,
+     2757,
+     "    leadsFrom: f.leadsFrom })), ...questions.map((q) => JSON.stringify({ key: q.key, question: q.question,"
+    ],
+    [
+     " ",
+     null,
+     2758,
+     "    concerns: q.concerns }))];"
+    ],
+    [
+     "-",
+     2745,
+     null,
+     "  const prompt = [...personBlock(words), changeHeadingOf(where), '', change, '', ACCOUNT_REVIEW_HEADING, '',"
+    ],
+    [
+     "+",
+     null,
+     2759,
+     "  const shared = sharedCheckLines(words, change, where);"
+    ],
+    [
+     "+",
+     null,
+     2760,
+     "  const prompt = [...shared, ACCOUNT_REVIEW_HEADING, '',"
+    ],
+    [
+     " ",
+     null,
+     2761,
+     "    ...(review.length ? review : ['(none)']), '', ACCOUNT_ITEMS_HEADING, '', renderDossier(items, { shownAs }), '',"
+    ],
+    [
+     " ",
+     null,
+     2762,
+     "    whereBlock(where, CODE_AGENT_LIMITS.account.maxTurns)].join('\\n');"
+    ],
+    [
+     " ",
+     null,
+     2763,
+     "  return { system: briefOf(where, absoluteNamesOf(where) ? CODE_BRIEFS_ABSOLUTE.account : CODE_ACCOUNT_SYSTEM), prompt,"
+    ],
+    [
+     "-",
+     2749,
+     null,
+     "    schema: CODE_ACCOUNT_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.account) };"
+    ],
+    [
+     "+",
+     null,
+     2764,
+     "    parts: cutAfter(shared), schema: CODE_ACCOUNT_SCHEMA, agent: agentOf(where, CODE_AGENT_LIMITS.account) };"
+    ],
+    [
+     " ",
+     null,
+     2765,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2821
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2835
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#accountBatch",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "accountBatch",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2832,
+   "span": [
+    2820,
+    2887
+   ],
+   "oldLine": 2817,
+   "added": 2,
+   "removed": 1,
+   "definition": "async function accountBatch({ n, entries, words, change, review, where, context, fits, ask, calls, failedCall, notSent }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2832,
+     "async function accountBatch({ n, entries, words, change, review, where, context, fits, ask, calls, failedCall, notSent }) {"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2852,
+     "    : keys.filter((key) => read.get(key).state === 'void').map((key) => ({ key, cause: read.get(key).cause,"
+    ],
+    [
+     " ",
+     null,
+     2853,
+     "      at: read.get(key).at }));"
+    ],
+    [
+     " ",
+     null,
+     2854,
+     "  if (!voids.length) return { keys, state: 'ok', answers, read };"
+    ],
+    [
+     "-",
+     2840,
+     null,
+     "  const again = { ...request, prompt: `${request.prompt}${reaskNote(read === null ? [voids[0]] : voids)}` };"
+    ],
+    [
+     "+",
+     null,
+     2855,
+     "  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`)."
+    ],
+    [
+     "+",
+     null,
+     2856,
+     "  const again = appendedRequest(request, reaskNote(read === null ? [voids[0]] : voids));"
+    ],
+    [
+     " ",
+     null,
+     2857,
+     "  if (!fits(again)) {"
+    ],
+    [
+     " ",
+     null,
+     2858,
+     "    notSent(ACCOUNT_PART);"
+    ],
+    [
+     " ",
+     null,
+     2859,
+     "    if (read !== null) return { keys, state: 'ok', answers, read };"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4516
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#runCodePass",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "runCodePass",
+   "kind": "callable",
+   "status": "changed",
+   "line": 3959,
+   "span": [
+    3925,
+    4951
+   ],
+   "oldLine": 3943,
+   "added": 9,
+   "removed": 3,
+   "definition": "export async function runCodePass({ report, session, snapshot, repo = null, judge, bound = Infinity, ran = true,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     3959,
+     "export async function runCodePass({ report, session, snapshot, repo = null, judge, bound = Infinity, ran = true,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     3976,
+     "    notSent: () => { awayChecks.tooLarge++; } } : { failedCall, notSent });"
+    ],
+    [
+     " ",
+     null,
+     3977,
+     "  // code-pass/12 (D105): each agent request's reading record, by its label (`runRecordOf`): paths and counts only."
+    ],
+    [
+     " ",
+     null,
+     3978,
+     "  const runs = new Map();"
+    ],
+    [
+     "+",
+     null,
+     3979,
+     "  // D211: a checking agent's request that shares its first part with one sent before it (the checks of one change, an"
+    ],
+    [
+     "+",
+     null,
+     3980,
+     "  // accounting batch of one change, a re-ask of its original) waits for that one's reply to begin"
+    ],
+    [
+     "+",
+     null,
+     3981,
+     "  // (prompt-parts.js `staggerSharedParts`); every other request is sent at once, as before."
+    ],
+    [
+     "+",
+     null,
+     3982,
+     "  const send = staggerSharedParts(judge);"
+    ],
+    [
+     " ",
+     null,
+     3983,
+     "  const ask = async (request, label) => {"
+    ],
+    [
+     " ",
+     null,
+     3984,
+     "    try {"
+    ],
+    [
+     "-",
+     3965,
+     null,
+     "      const answer = await judge({ ...request, label });"
+    ],
+    [
+     "+",
+     null,
+     3985,
+     "      const answer = await send({ ...request, label });"
+    ],
+    [
+     " ",
+     null,
+     3986,
+     "      runs.set(label, runRecordOf(answer, root));"
+    ],
+    [
+     " ",
+     null,
+     3987,
+     "      return { ok: true, answer };"
+    ],
+    [
+     " ",
+     null,
+     3988,
+     "    } catch (error) { runs.set(label, runRecordOf(error, root)); return { ok: false, answer: null, error }; }"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     4202,
+     "          calls.repair++;"
+    ],
+    [
+     " ",
+     null,
+     4203,
+     "          stage.manifests.repair = again.manifest;"
+    ],
+    [
+     " ",
+     null,
+     4204,
+     "          stage.shownBy.push([labels.repair, changeShownBy(again)]);"
+    ],
+    [
+     "-",
+     4185,
+     null,
+     "          reply = await ask(again.request, labels.repair);"
+    ],
+    [
+     "+",
+     null,
+     4205,
+     "          // D211: cut at the request's end when it is the request and the note byte for byte (`continuedRequest`)."
+    ],
+    [
+     "+",
+     null,
+     4206,
+     "          reply = await ask(continuedRequest(request, again.request), labels.repair);"
+    ],
+    [
+     " ",
+     null,
+     4207,
+     "          if (!usableOf(reply)) failedCall(REPAIR_PART);"
+    ],
+    [
+     " ",
+     null,
+     4208,
+     "        }"
+    ],
+    [
+     " ",
+     null,
+     4209,
+     "      }"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     4253,
+     "          calls.repair++;"
+    ],
+    [
+     " ",
+     null,
+     4254,
+     "          stage.manifests.repair = repairPlan.manifest;"
+    ],
+    [
+     " ",
+     null,
+     4255,
+     "          stage.shownBy.push([labels.repair, changeShownBy(repairPlan)]);"
+    ],
+    [
+     "-",
+     4235,
+     null,
+     "          const reply = await ask(repairPlan.request, labels.repair);"
+    ],
+    [
+     "+",
+     null,
+     4256,
+     "          // D211: cut at the request's end when it is the request and the note byte for byte (`continuedRequest`)."
+    ],
+    [
+     "+",
+     null,
+     4257,
+     "          const reply = await ask(continuedRequest(request, repairPlan.request), labels.repair);"
+    ],
+    [
+     " ",
+     null,
+     4258,
+     "          if (reply.ok && plain(reply.answer)) repaired = reply.answer;"
+    ],
+    [
+     " ",
+     null,
+     4259,
+     "          else { failedCall(REPAIR_PART); unchecked = REPAIR_FAILED; }"
+    ],
+    [
+     " ",
+     null,
+     4260,
+     "        }"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 21,
+    "list": [
+     {
+      "path": "packages/cli/src/code-snapshot.js",
+      "line": 14
+     },
+     {
+      "path": "packages/cli/src/code-snapshot.js",
+      "line": 1510
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 35
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 712
+     },
+     {
+      "path": "packages/cli/src/session-review.js",
+      "line": 776
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 168
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 290
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 1747
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 3257
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5020
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#verifyFinding",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "verifyFinding",
+   "kind": "callable",
+   "status": "changed",
+   "line": 5645,
+   "span": [
+    5643,
+    5671
+   ],
+   "oldLine": 5623,
+   "added": 2,
+   "removed": 1,
+   "definition": "async function verifyFinding({ g, key, words, change, outside = null, sessionSources, where, context, fits, ask, calls,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     5645,
+     "async function verifyFinding({ g, key, words, change, outside = null, sessionSources, where, context, fits, ask, calls,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     5660,
+     "  if (!rereadable(first)) { failedCall(VERIFY_PART); return { state: 'failed' }; }"
+    ],
+    [
+     " ",
+     null,
+     5661,
+     "  const read = first.ok ? readFindingVerdict(first.answer, published, context, shown) : voided(SHAPE, 'answer');"
+    ],
+    [
+     " ",
+     null,
+     5662,
+     "  if (read.ok) return { state: 'ok', verdict: read };"
+    ],
+    [
+     "-",
+     5641,
+     null,
+     "  const again = { ...request, prompt: `${request.prompt}${reaskNote([{ key: null, cause: read.cause, at: read.at }])}` };"
+    ],
+    [
+     "+",
+     null,
+     5663,
+     "  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`)."
+    ],
+    [
+     "+",
+     null,
+     5664,
+     "  const again = appendedRequest(request, reaskNote([{ key: null, cause: read.cause, at: read.at }]));"
+    ],
+    [
+     " ",
+     null,
+     5665,
+     "  if (!fits(again)) { notSent(VERIFY_PART); return { state: 'void', cause: read.cause }; }"
+    ],
+    [
+     " ",
+     null,
+     5666,
+     "  calls.verifyRepeat++;"
+    ],
+    [
+     " ",
+     null,
+     5667,
+     "  const second = await ask(again, `code-verify:${key}:reask`);"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4495
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4550
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/code-pass.js#verifyBatch",
+   "path": "packages/evidence/src/code-pass.js",
+   "name": "verifyBatch",
+   "kind": "callable",
+   "status": "changed",
+   "line": 5675,
+   "span": [
+    5673,
+    5712
+   ],
+   "oldLine": 5652,
+   "added": 3,
+   "removed": 2,
+   "definition": "async function verifyBatch({ grounded, byKey, words, change, where, context, fits, ask, calls, failedCall, notSent }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     5675,
+     "async function verifyBatch({ grounded, byKey, words, change, where, context, fits, ask, calls, failedCall, notSent }) {"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     5695,
+     "  const voids = expected.filter(({ key }) => !read.get(key).ok);"
+    ],
+    [
+     " ",
+     null,
+     5696,
+     "  for (const { key } of expected) if (read.get(key).ok) result.set(key, { state: 'ok', verdict: read.get(key) });"
+    ],
+    [
+     " ",
+     null,
+     5697,
+     "  if (!voids.length) return result;"
+    ],
+    [
+     "-",
+     5675,
+     null,
+     "  const again = { ...request, prompt: `${request.prompt}${reaskNote(voids.map(({ key }) => ({ key,"
+    ],
+    [
+     "-",
+     5676,
+     null,
+     "    cause: read.get(key).cause, at: read.get(key).at })))}` };"
+    ],
+    [
+     "+",
+     null,
+     5698,
+     "  // D211: the re-ask keeps the request's cuts and adds one at its end (prompt-parts.js `appendedRequest`)."
+    ],
+    [
+     "+",
+     null,
+     5699,
+     "  const again = appendedRequest(request, reaskNote(voids.map(({ key }) => ({ key, cause: read.get(key).cause,"
+    ],
+    [
+     "+",
+     null,
+     5700,
+     "    at: read.get(key).at }))));"
+    ],
+    [
+     " ",
+     null,
+     5701,
+     "  let reread = null;"
+    ],
+    [
+     " ",
+     null,
+     5702,
+     "  if (fits(again)) {"
+    ],
+    [
+     " ",
+     null,
+     5703,
+     "    calls.batchRepeat++;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4499
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "path": "packages/evidence/src/ledger.js",
+   "name": "PROMPT_PARTS_DROPPED",
+   "kind": "value",
+   "status": "new",
+   "line": 107,
+   "span": [
+    103,
+    107
+   ],
+   "oldLine": null,
+   "added": 5,
+   "removed": 0,
+   "definition": "export const PROMPT_PARTS_DROPPED = Object.freeze(['refused_in_parts']);",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     103,
+     "// D211: why the transport sent a request whose prompt is in parts (prompt-parts.js `promptCutsOf`) once more as one"
+    ],
+    [
+     "+",
+     null,
+     104,
+     "// string (cli/src/review-judge.js `withTransportRetry`): `refused_in_parts`, the provider refused it as invalid (the"
+    ],
+    [
+     "+",
+     null,
+     105,
+     "// typed class `invalid_request`, never the error's text). An attempt so resent states it (`partsDropped`); the review's"
+    ],
+    [
+     "+",
+     null,
+     106,
+     "// usage record counts it."
+    ],
+    [
+     "+",
+     null,
+     107,
+     "export const PROMPT_PARTS_DROPPED = Object.freeze(['refused_in_parts']);"
+    ]
+   ],
+   "callers": {
+    "count": 10,
+    "list": [
+     {
+      "path": "packages/cli/src/review-budget.js",
+      "line": 6
+     },
+     {
+      "path": "packages/cli/src/review-budget.js",
+      "line": 172
+     },
+     {
+      "path": "packages/cli/src/review-budget.js",
+      "line": 174
+     },
+     {
+      "path": "packages/cli/src/review-budget.js",
+      "line": 179
+     },
+     {
+      "path": "packages/cli/src/review-budget.js",
+      "line": 214
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 7
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1629
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1632
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1659
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1767
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": "value"
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "promptCutsOf",
+   "kind": "callable",
+   "status": "new",
+   "line": 21,
+   "span": [
+    14,
+    33
+   ],
+   "oldLine": null,
+   "added": 20,
+   "removed": 0,
+   "definition": "export function promptCutsOf(request) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     14,
+     "/**"
+    ],
+    [
+     "+",
+     null,
+     15,
+     " * The offsets at which a request's prompt is cut into parts (`request.parts`): strictly increasing whole numbers, each"
+    ],
+    [
+     "+",
+     null,
+     16,
+     " * inside the prompt, each part ending at one and the last part at the prompt's end. `[]` — the prompt is sent as one"
+    ],
+    [
+     "+",
+     null,
+     17,
+     " * string, as before — for a request that carries none, and for cuts the transport could not send as they are: a cut"
+    ],
+    [
+     "+",
+     null,
+     18,
+     " * outside the prompt or out of order, one inside a surrogate pair, or a part with no character other than white space"
+    ],
+    [
+     "+",
+     null,
+     19,
+     " * (the Messages API refuses such a text block). Malformed cuts are never refused: the prompt sent whole is the same text."
+    ],
+    [
+     "+",
+     null,
+     20,
+     " */"
+    ],
+    [
+     "+",
+     null,
+     21,
+     "export function promptCutsOf(request) {"
+    ],
+    [
+     "+",
+     null,
+     22,
+     "  const cuts = request?.parts, prompt = request?.prompt;"
+    ],
+    [
+     "+",
+     null,
+     23,
+     "  if (!Array.isArray(cuts) || cuts.length === 0 || typeof prompt !== 'string') return [];"
+    ],
+    [
+     "+",
+     null,
+     24,
+     "  let from = 0;"
+    ],
+    [
+     "+",
+     null,
+     25,
+     "  for (const cut of cuts) {"
+    ],
+    [
+     "+",
+     null,
+     26,
+     "    if (!Number.isSafeInteger(cut) || cut <= from || cut >= prompt.length) return [];"
+    ],
+    [
+     "+",
+     null,
+     27,
+     "    const before = prompt.charCodeAt(cut - 1), after = prompt.charCodeAt(cut);"
+    ],
+    [
+     "+",
+     null,
+     28,
+     "    if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) return [];"
+    ],
+    [
+     "+",
+     null,
+     29,
+     "    if (!/\\S/.test(prompt.slice(from, cut))) return [];"
+    ],
+    [
+     "+",
+     null,
+     30,
+     "    from = cut;"
+    ],
+    [
+     "+",
+     null,
+     31,
+     "  }"
+    ],
+    [
+     "+",
+     null,
+     32,
+     "  return /\\S/.test(prompt.slice(from)) ? [...cuts] : [];"
+    ],
+    [
+     "+",
+     null,
+     33,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 18,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 20
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 34
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 69
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 97
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 14
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 589
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 732
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 773
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1451
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 1453
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js",
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#promptPartsOf",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "promptPartsOf",
+   "kind": "callable",
+   "status": "new",
+   "line": 36,
+   "span": [
+    35,
+    41
+   ],
+   "oldLine": null,
+   "added": 7,
+   "removed": 0,
+   "definition": "export function promptPartsOf(prompt, cuts) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     35,
+     "/** The prompt's parts at `cuts` (`promptCutsOf`): strings that join to `prompt`, in order. */"
+    ],
+    [
+     "+",
+     null,
+     36,
+     "export function promptPartsOf(prompt, cuts) {"
+    ],
+    [
+     "+",
+     null,
+     37,
+     "  const parts = [];"
+    ],
+    [
+     "+",
+     null,
+     38,
+     "  let from = 0;"
+    ],
+    [
+     "+",
+     null,
+     39,
+     "  for (const cut of [...cuts, prompt.length]) { parts.push(prompt.slice(from, cut)); from = cut; }"
+    ],
+    [
+     "+",
+     null,
+     40,
+     "  return parts;"
+    ],
+    [
+     "+",
+     null,
+     41,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 14
+     },
+     {
+      "path": "packages/cli/src/review-judge.js",
+      "line": 735
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "appendedRequest",
+   "kind": "callable",
+   "status": "new",
+   "line": 48,
+   "span": [
+    43,
+    51
+   ],
+   "oldLine": null,
+   "added": 9,
+   "removed": 0,
+   "definition": "export function appendedRequest(request, suffix) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     43,
+     "/**"
+    ],
+    [
+     "+",
+     null,
+     44,
+     " * The request a re-ask or a repair sends when it appends `suffix` to `request`'s prompt: `request` with that prompt, its"
+    ],
+    [
+     "+",
+     null,
+     45,
+     " * own cuts kept, and one more at its prompt's end, so the re-ask reads the cache entry its original wrote at the end of"
+    ],
+    [
+     "+",
+     null,
+     46,
+     " * its user message while that entry lives. With an empty suffix the request is returned as it was."
+    ],
+    [
+     "+",
+     null,
+     47,
+     " */"
+    ],
+    [
+     "+",
+     null,
+     48,
+     "export function appendedRequest(request, suffix) {"
+    ],
+    [
+     "+",
+     null,
+     49,
+     "  if (typeof request?.prompt !== 'string' || typeof suffix !== 'string' || suffix === '') return request;"
+    ],
+    [
+     "+",
+     null,
+     50,
+     "  return { ...request, prompt: `${request.prompt}${suffix}`, parts: [...promptCutsOf(request), request.prompt.length] };"
+    ],
+    [
+     "+",
+     null,
+     51,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 10,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 77
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 532
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 538
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2855
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 2856
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5663
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5664
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5698
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 5699
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 54
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#continuedRequest",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "continuedRequest",
+   "kind": "callable",
+   "status": "new",
+   "line": 58,
+   "span": [
+    53,
+    62
+   ],
+   "oldLine": null,
+   "added": 10,
+   "removed": 0,
+   "definition": "export function continuedRequest(original, next) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     53,
+     "/**"
+    ],
+    [
+     "+",
+     null,
+     54,
+     " * `next` (a request rebuilt from the same plan as `original`) with the cuts `appendedRequest` would give it, when it is"
+    ],
+    [
+     "+",
+     null,
+     55,
+     " * `original`'s system and prompt with more after it, byte for byte; else `next` as it was (a rebuilt request whose"
+    ],
+    [
+     "+",
+     null,
+     56,
+     " * blocks gave way shares no prefix to cut at)."
+    ],
+    [
+     "+",
+     null,
+     57,
+     " */"
+    ],
+    [
+     "+",
+     null,
+     58,
+     "export function continuedRequest(original, next) {"
+    ],
+    [
+     "+",
+     null,
+     59,
+     "  if (typeof original?.prompt !== 'string' || typeof next?.prompt !== 'string' || next.system !== original.system"
+    ],
+    [
+     "+",
+     null,
+     60,
+     "      || next.prompt.length <= original.prompt.length || !next.prompt.startsWith(original.prompt)) return next;"
+    ],
+    [
+     "+",
+     null,
+     61,
+     "  return { ...next, parts: [...promptCutsOf(original), original.prompt.length] };"
+    ],
+    [
+     "+",
+     null,
+     62,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 5,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 77
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4205
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4206
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4256
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 4257
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "ANSWER_REPLAYED",
+   "kind": "value",
+   "status": "new",
+   "line": 70,
+   "span": [
+    64,
+    70
+   ],
+   "oldLine": null,
+   "added": 7,
+   "removed": 0,
+   "definition": "export const ANSWER_REPLAYED = 'answerReplayed';",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     64,
+     "/**"
+    ],
+    [
+     "+",
+     null,
+     65,
+     " * D211: the name of the function a request may carry, not enumerable (so no key, byte, copy or JSON of the request holds"
+    ],
+    [
+     "+",
+     null,
+     66,
+     " * it), which the answer store (cli answer-cache.js `memoizeJudge`) calls once when it answers the request with a stored"
+    ],
+    [
+     "+",
+     null,
+     67,
+     " * answer: no call was made, so no cache entry was written. `staggerSharedParts` gives one to the request that leads its"
+    ],
+    [
+     "+",
+     null,
+     68,
+     " * first part, so that when it made no call the next request of that first part leads in its place."
+    ],
+    [
+     "+",
+     null,
+     69,
+     " */"
+    ],
+    [
+     "+",
+     null,
+     70,
+     "export const ANSWER_REPLAYED = 'answerReplayed';"
+    ]
+   ],
+   "callers": {
+    "count": 8,
+    "list": [
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 20
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 323
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 351
+     },
+     {
+      "path": "packages/cli/src/answer-cache.js",
+      "line": 352
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 89
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 97
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 120
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 126
+     }
+    ]
+   },
+   "tests": [
+    "packages/cli/test/d211-prompt-parts-transport.test.js",
+    "packages/evidence/test/d211-prompt-parts.test.js"
+   ],
+   "fold": "value"
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#sharedFirstOf",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "sharedFirstOf",
+   "kind": "callable",
+   "status": "new",
+   "line": 76,
+   "span": [
+    72,
+    83
+   ],
+   "oldLine": null,
+   "added": 12,
+   "removed": 0,
+   "definition": "function sharedFirstOf(request) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     72,
+     "/** What two requests must hold alike for the second to read the first one's first part from the cache: the system"
+    ],
+    [
+     "+",
+     null,
+     73,
+     " *  prompt, the answer's schema (the CLI's structured output tool, part of the cached prefix) and the first part, as a"
+    ],
+    [
+     "+",
+     null,
+     74,
+     " *  SHA-256 of the three, so a long first part is not held for the whole step. Null for a request sent whole, or whose"
+    ],
+    [
+     "+",
+     null,
+     75,
+     " *  schema has no JSON form. */"
+    ],
+    [
+     "+",
+     null,
+     76,
+     "function sharedFirstOf(request) {"
+    ],
+    [
+     "+",
+     null,
+     77,
+     "  const cuts = promptCutsOf(request);"
+    ],
+    [
+     "+",
+     null,
+     78,
+     "  if (!cuts.length || typeof request.system !== 'string') return null;"
+    ],
+    [
+     "+",
+     null,
+     79,
+     "  let shared;"
+    ],
+    [
+     "+",
+     null,
+     80,
+     "  try { shared = JSON.stringify([request.system, request.schema ?? null, request.prompt.slice(0, cuts[0])]); }"
+    ],
+    [
+     "+",
+     null,
+     81,
+     "  catch { return null; }"
+    ],
+    [
+     "+",
+     null,
+     82,
+     "  return createHash('sha256').update(shared).digest('hex');"
+    ],
+    [
+     "+",
+     null,
+     83,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 86
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 142
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js",
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "path": "packages/evidence/src/prompt-parts.js",
+   "name": "staggerSharedParts",
+   "kind": "callable",
+   "status": "new",
+   "line": 99,
+   "span": [
+    85,
+    150
+   ],
+   "oldLine": null,
+   "added": 66,
+   "removed": 0,
+   "definition": "export function staggerSharedParts(judge) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     85,
+     "/**"
+    ],
+    [
+     "+",
+     null,
+     86,
+     " * D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+    ],
+    [
+     "+",
+     null,
+     87,
+     " * the request leading that first part has begun its reply, so it reads the first part the leader wrote instead of"
+    ],
+    [
+     "+",
+     null,
+     88,
+     " * writing it again. The first request of each first part leads it: it is sent with a REPLY_BEGUN function (challenge.js,"
+    ],
+    [
+     "+",
+     null,
+     89,
+     " * D145), which the claude CLI transport calls once when the model's reply begins, and with an ANSWER_REPLAYED one, which"
+    ],
+    [
+     "+",
+     null,
+     90,
+     " * the answer store calls when it answers from a stored answer. A later one is sent when the leader's reply begins or"
+    ],
+    [
+     "+",
+     null,
+     91,
+     " * when its call settles, whatever came of it (a failure, an abort), so none waits forever; after that, one of that first"
+    ],
+    [
+     "+",
+     null,
+     92,
+     " * part waits for nothing. When the leader was answered from the store it made no call, so the next request of its first"
+    ],
+    [
+     "+",
+     null,
+     93,
+     " * part leads in its place. Requests reach `judge` in exactly the order they were given, so the order never depends on"
+    ],
+    [
+     "+",
+     null,
+     94,
+     " * timing: identical requests take the same D60 occurrences, and a call cap (cli review-budget.js) admits the same"
+    ],
+    [
+     "+",
+     null,
+     95,
+     " * requests whenever a reply begins. A request given after one that waits is sent after it; one with nothing given before"
+    ],
+    [
+     "+",
+     null,
+     96,
+     " * it still waiting, and nothing to wait for, is sent at once, in the same turn. No request byte changes; a request's own"
+    ],
+    [
+     "+",
+     null,
+     97,
+     " * REPLY_BEGUN and ANSWER_REPLAYED are still called."
+    ],
+    [
+     "+",
+     null,
+     98,
+     " */"
+    ],
+    [
+     "+",
+     null,
+     99,
+     "export function staggerSharedParts(judge) {"
+    ],
+    [
+     "+",
+     null,
+     100,
+     "  // Each first part's group, by its digest: `open` once a leader's reply began or its call settled (later ones wait for"
+    ],
+    [
+     "+",
+     null,
+     101,
+     "  // nothing), and `leading` while a leader's call is out. `queue`: the requests given and not yet sent, in that order."
+    ],
+    [
+     "+",
+     null,
+     102,
+     "  const groups = new Map();"
+    ],
+    [
+     "+",
+     null,
+     103,
+     "  const queue = [];"
+    ],
+    [
+     "+",
+     null,
+     104,
+     "  const call = (request) => {"
+    ],
+    [
+     "+",
+     null,
+     105,
+     "    try { return Promise.resolve(judge(request)); } catch (error) { return Promise.reject(error); }"
+    ],
+    [
+     "+",
+     null,
+     106,
+     "  };"
+    ],
+    [
+     "+",
+     null,
+     107,
+     "  // Send from the front of the queue while its first may go: one with no first part, one of an open first part, or the"
+    ],
+    [
+     "+",
+     null,
+     108,
+     "  // leader of a first part none leads. A request of a first part still being led stops it, and all behind it."
+    ],
+    [
+     "+",
+     null,
+     109,
+     "  const pump = () => {"
+    ],
+    [
+     "+",
+     null,
+     110,
+     "    while (queue.length) {"
+    ],
+    [
+     "+",
+     null,
+     111,
+     "      const { request, group, go } = queue[0];"
+    ],
+    [
+     "+",
+     null,
+     112,
+     "      if (group !== null && !group.open && group.leading) return;"
+    ],
+    [
+     "+",
+     null,
+     113,
+     "      queue.shift();"
+    ],
+    [
+     "+",
+     null,
+     114,
+     "      go(group === null || group.open ? call(request) : lead(group, request));"
+    ],
+    [
+     "+",
+     null,
+     115,
+     "    }"
+    ],
+    [
+     "+",
+     null,
+     116,
+     "  };"
+    ],
+    [
+     "+",
+     null,
+     117,
+     "  const lead = (group, request) => {"
+    ],
+    [
+     "+",
+     null,
+     118,
+     "    group.leading = true;"
+    ],
+    [
+     "+",
+     null,
+     119,
+     "    let ended = false, replayed = false;"
+    ],
+    [
+     "+",
+     null,
+     120,
+     "    const ownBegun = request[REPLY_BEGUN], ownReplayed = request[ANSWER_REPLAYED];"
+    ],
+    [
+     "+",
+     null,
+     121,
+     "    const sent = Object.defineProperties({ ...request }, {"
+    ],
+    [
+     "+",
+     null,
+     122,
+     "      [REPLY_BEGUN]: { value: () => {"
+    ],
+    [
+     "+",
+     null,
+     123,
+     "        if (!ended) { ended = true; group.leading = false; group.open = true; pump(); }"
+    ],
+    [
+     "+",
+     null,
+     124,
+     "        if (typeof ownBegun === 'function') ownBegun();"
+    ],
+    [
+     "+",
+     null,
+     125,
+     "      } },"
+    ],
+    [
+     "+",
+     null,
+     126,
+     "      [ANSWER_REPLAYED]: { value: () => {"
+    ],
+    [
+     "+",
+     null,
+     127,
+     "        replayed = true;"
+    ],
+    [
+     "+",
+     null,
+     128,
+     "        if (typeof ownReplayed === 'function') ownReplayed();"
+    ],
+    [
+     "+",
+     null,
+     129,
+     "      } } });"
+    ],
+    [
+     "+",
+     null,
+     130,
+     "    const reply = call(sent);"
+    ],
+    [
+     "+",
+     null,
+     131,
+     "    const settled = () => {"
+    ],
+    [
+     "+",
+     null,
+     132,
+     "      if (ended) return;"
+    ],
+    [
+     "+",
+     null,
+     133,
+     "      ended = true;"
+    ],
+    [
+     "+",
+     null,
+     134,
+     "      group.leading = false;"
+    ],
+    [
+     "+",
+     null,
+     135,
+     "      if (!replayed) group.open = true;"
+    ],
+    [
+     "+",
+     null,
+     136,
+     "      pump();"
+    ],
+    [
+     "+",
+     null,
+     137,
+     "    };"
+    ],
+    [
+     "+",
+     null,
+     138,
+     "    reply.then(settled, settled);"
+    ],
+    [
+     "+",
+     null,
+     139,
+     "    return reply;"
+    ],
+    [
+     "+",
+     null,
+     140,
+     "  };"
+    ],
+    [
+     "+",
+     null,
+     141,
+     "  return (request) => {"
+    ],
+    [
+     "+",
+     null,
+     142,
+     "    const shared = sharedFirstOf(request);"
+    ],
+    [
+     "+",
+     null,
+     143,
+     "    let group = null;"
+    ],
+    [
+     "+",
+     null,
+     144,
+     "    if (shared !== null) {"
+    ],
+    [
+     "+",
+     null,
+     145,
+     "      group = groups.get(shared) ?? null;"
+    ],
+    [
+     "+",
+     null,
+     146,
+     "      if (group === null) groups.set(shared, group = { open: false, leading: false });"
+    ],
+    [
+     "+",
+     null,
+     147,
+     "    }"
+    ],
+    [
+     "+",
+     null,
+     148,
+     "    return new Promise((go) => { queue.push({ request, group, go }); pump(); });"
+    ],
+    [
+     "+",
+     null,
+     149,
+     "  };"
+    ],
+    [
+     "+",
+     null,
+     150,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 9,
+    "list": [
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 77
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 3981
+     },
+     {
+      "path": "packages/evidence/src/code-pass.js",
+      "line": 3982
+     },
+     {
+      "path": "packages/evidence/src/prompt-parts.js",
+      "line": 67
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 55
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2343
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2364
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2842
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2965
+     }
+    ]
+   },
+   "tests": [
+    "packages/evidence/test/d211-prompt-parts.test.js",
+    "packages/cli/test/d211-prompt-parts-transport.test.js"
+   ],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/prompt.js#refutedReask",
+   "path": "packages/evidence/src/prompt.js",
+   "name": "refutedReask",
+   "kind": "callable",
+   "status": "changed",
+   "line": 1917,
+   "span": [
+    1912,
+    1932
+   ],
+   "oldLine": 1915,
+   "added": 7,
+   "removed": 3,
+   "definition": "function refutedReask({ request, row, refutations, aliases, label, fields, heading, words, nowAnswer }) {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     1912,
+     "/** S3, W1 A and G2: one re-ask of a row the challenge refuted — the window's request with its \"Now answer\" replaced by"
+    ],
+    [
+     " ",
+     null,
+     1913,
+     " *  `heading` and `words`, the row's `fields`, every refuting vote, and `nowAnswer`; every event id by the window's"
+    ],
+    [
+     "-",
+     1914,
+     null,
+     " *  aliases. Null when the request holds no session-only \"Now answer\" to replace. */"
+    ],
+    [
+     "+",
+     null,
+     1914,
+     " *  aliases. Null when the request holds no session-only \"Now answer\" to replace. D211: its prompt is cut (`parts`,"
+    ],
+    [
+     "+",
+     null,
+     1915,
+     " *  prompt-parts.js) after the kept request's body and the two newlines that follow it: the part every re-ask of the"
+    ],
+    [
+     "+",
+     null,
+     1916,
+     " *  window shares, whichever its kind, so the re-asks after the first read it from the prompt cache. No byte moves. */"
+    ],
+    [
+     " ",
+     null,
+     1917,
+     "function refutedReask({ request, row, refutations, aliases, label, fields, heading, words, nowAnswer }) {"
+    ],
+    [
+     " ",
+     null,
+     1918,
+     "  const named = (value) => (aliases && typeof aliases.of === 'function' ? mapEventIds(value, aliases.of) : value);"
+    ],
+    [
+     " ",
+     null,
+     1919,
+     "  const prompt = typeof request?.prompt === 'string' ? request.prompt : null;"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     1924,
+     "  const checks = (Array.isArray(refutations) ? refutations : []).map((vote) => JSON.stringify(named({"
+    ],
+    [
+     " ",
+     null,
+     1925,
+     "    explanation: vote?.explanation ?? null, receipts: Array.isArray(vote?.receipts)"
+    ],
+    [
+     " ",
+     null,
+     1926,
+     "      ? vote.receipts.map((r) => ({ eventId: r?.eventId, role: r?.role, quote: r?.quote })) : [] })));"
+    ],
+    [
+     "-",
+     1925,
+     null,
+     "  const lines = [prompt.slice(0, prompt.length - tail.length), '', heading, '', ...words, '',"
+    ],
+    [
+     "+",
+     null,
+     1927,
+     "  const body = prompt.slice(0, prompt.length - tail.length);"
+    ],
+    [
+     "+",
+     null,
+     1928,
+     "  const lines = [body, '', heading, '', ...words, '',"
+    ],
+    [
+     " ",
+     null,
+     1929,
+     "    RESTATUS_ROW, JSON.stringify(shownRow), '', RESTATUS_CHECK, ...checks, '', ...nowAnswer];"
+    ],
+    [
+     "-",
+     1927,
+     null,
+     "  return { ...request, prompt: lines.join('\\n'), label };"
+    ],
+    [
+     "+",
+     null,
+     1930,
+     "  // D211: the body, then the newline that ends it and the empty line's (`lines`' first two joins)."
+    ],
+    [
+     "+",
+     null,
+     1931,
+     "  return { ...request, prompt: lines.join('\\n'), parts: [body.length + 2], label };"
+    ],
+    [
+     " ",
+     null,
+     1932,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 5,
+    "list": [
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 775
+     },
+     {
+      "path": "packages/evidence/src/prompt.js",
+      "line": 1680
+     },
+     {
+      "path": "packages/evidence/src/prompt.js",
+      "line": 1715
+     },
+     {
+      "path": "packages/evidence/src/prompt.js",
+      "line": 1745
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2363
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/run-review.js#restatedRequirements",
+   "path": "packages/evidence/src/run-review.js",
+   "name": "restatedRequirements",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2357,
+   "span": [
+    2336,
+    2415
+   ],
+   "oldLine": 2354,
+   "added": 8,
+   "removed": 4,
+   "definition": "async function restatedRequirements({ refuted, byKey, request, aliases, judge, session, sourceMap, windowEnd: end,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2338,
+     " * checked\"). Each session-only requirement the window's challenge refuted (`refuted`, its items as asked) is put to the"
+    ],
+    [
+     " ",
+     null,
+     2339,
+     " * reviewer once more, before it is lowered: the window's kept request with the row, what each vote that refuted it said"
+    ],
+    [
+     " ",
+     null,
+     2340,
+     " * and a fixed closing (prompt.js `restatusRequest`), one call per refuted ask, named `<label>:<its index>`. Every"
+    ],
+    [
+     "-",
+     2340,
+     null,
+     " * re-ask is sent before any answer is read, in the items' order, so a stored answer replays it (D60). Its answer's one"
+    ],
+    [
+     "-",
+     2341,
+     null,
+     " * readable requirement row whose instruction is the ask's own (the same human message and words, exactly) gives the new"
+    ],
+    [
+     "-",
+     2342,
+     null,
+     " * status; the ask (`text`, `instruction`) stays the row's own. Code checks it as any row (checklist.js"
+    ],
+    [
+     "+",
+     null,
+     2341,
+     " * re-ask is built before any answer is read and sent in the items' order, so a stored answer replays it (D60); D211:"
+    ],
+    [
+     "+",
+     null,
+     2342,
+     " * the first at once, and each after it once the first one's reply has begun or its call has settled (or, when the"
+    ],
+    [
+     "+",
+     null,
+     2343,
+     " * first was answered from the store, once the next one's has: prompt-parts.js `staggerSharedParts`), so it reads the"
+    ],
+    [
+     "+",
+     null,
+     2344,
+     " * body they share from the prompt cache. Its answer's one readable requirement row whose instruction is the ask's own"
+    ],
+    [
+     "+",
+     null,
+     2345,
+     " * (the same human message and words, exactly) gives the new status; the ask (`text`, `instruction`) stays the row's own. Code checks it as any row (checklist.js"
+    ],
+    [
+     " ",
+     null,
+     2346,
+     " * `checkedRequirement`), and it goes on only when it holds, is not not-checked and is not the status the challenge"
+    ],
+    [
+     " ",
+     null,
+     2347,
+     " * refuted (precision: a refuted \"done\" is never published \"done\" on a second answer). Each that goes on is asked as its"
+    ],
+    [
+     " ",
+     null,
+     2348,
+     " * own item (`ask`, the run the requirement was checked in: its tier, its dossier), and published only when that check"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2357,
+     "async function restatedRequirements({ refuted, byKey, request, aliases, judge, session, sourceMap, windowEnd: end,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2360,
+     "  const challenged = zeros(RESOLUTION_CHALLENGE_OUTCOMES);"
+    ],
+    [
+     " ",
+     null,
+     2361,
+     "  const record = { refuted: refuted.length, asked: 0, withheld, challenged };"
+    ],
+    [
+     " ",
+     null,
+     2362,
+     "  const causes = zeros(GROUNDING_CAUSES);"
+    ],
+    [
+     "+",
+     null,
+     2363,
+     "  // D211: the re-asks share the kept request's body (prompt.js `refutedReask`); those after the first wait for its reply."
+    ],
+    [
+     "+",
+     null,
+     2364,
+     "  const send = staggerSharedParts(judge);"
+    ],
+    [
+     " ",
+     null,
+     2365,
+     "  const sent = refuted.map((item) => {"
+    ],
+    [
+     " ",
+     null,
+     2366,
+     "    const refutations = (byKey.get(item.key)?.votes ?? []).filter((vote) => vote?.valid === true"
+    ],
+    [
+     " ",
+     null,
+     2367,
+     "      && vote.verdict === 'refuted');"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2370,
+     "    if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };"
+    ],
+    [
+     " ",
+     null,
+     2371,
+     "    record.asked++;"
+    ],
+    [
+     " ",
+     null,
+     2372,
+     "    let answer;"
+    ],
+    [
+     "-",
+     2368,
+     null,
+     "    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }"
+    ],
+    [
+     "+",
+     null,
+     2373,
+     "    try { answer = Promise.resolve(send(reask)).catch(() => undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2374,
+     "    catch { answer = Promise.resolve(undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2375,
+     "    return { item, answer };"
+    ],
+    [
+     " ",
+     null,
+     2376,
+     "  });"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 6,
+    "list": [
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 2040
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2841
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2964
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3161
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3756
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3764
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/run-review.js#recolumnedDecisions",
+   "path": "packages/evidence/src/run-review.js",
+   "name": "recolumnedDecisions",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2808,
+   "span": [
+    2777,
+    2892
+   ],
+   "oldLine": 2803,
+   "added": 3,
+   "removed": 1,
+   "definition": "async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, session, windowEnd: end, repo, pr,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2808,
+     "async function recolumnedDecisions({ refuted, byKey, request, aliases, judge, session, windowEnd: end, repo, pr,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2838,
+     "    else if (outcome === REFUTED_OUTCOME) existenceRefuted.push({ item, refutations: refutingVotesIn(ended) });"
+    ],
+    [
+     " ",
+     null,
+     2839,
+     "    else if (outcome === UNEXECUTED) unexecuted.push(item.candidate);"
+    ],
+    [
+     " ",
+     null,
+     2840,
+     "  }"
+    ],
+    [
+     "+",
+     null,
+     2841,
+     "  // D211: as the requirements' re-asks (`restatedRequirements`)."
+    ],
+    [
+     "+",
+     null,
+     2842,
+     "  const send = staggerSharedParts(judge);"
+    ],
+    [
+     " ",
+     null,
+     2843,
+     "  const sent = made.map((item) => {"
+    ],
+    [
+     " ",
+     null,
+     2844,
+     "    const refutations = refutationsOf(item);"
+    ],
+    [
+     " ",
+     null,
+     2845,
+     "    const reask = recolumnRequest({ request, row: item.candidate, refutations, aliases,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2847,
+     "    if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };"
+    ],
+    [
+     " ",
+     null,
+     2848,
+     "    record[ASKED_MEMBER]++;"
+    ],
+    [
+     " ",
+     null,
+     2849,
+     "    let answer;"
+    ],
+    [
+     "-",
+     2843,
+     null,
+     "    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }"
+    ],
+    [
+     "+",
+     null,
+     2850,
+     "    try { answer = Promise.resolve(send(reask)).catch(() => undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2851,
+     "    catch { answer = Promise.resolve(undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2852,
+     "    return { item, answer };"
+    ],
+    [
+     " ",
+     null,
+     2853,
+     "  });"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 10,
+    "list": [
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 282
+     },
+     {
+      "path": "packages/evidence/src/challenge.js",
+      "line": 769
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 1198
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 2056
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 2078
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 1801
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2921
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3164
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3771
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3788
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "packages/evidence/src/run-review.js#reanchoredChoices",
+   "path": "packages/evidence/src/run-review.js",
+   "name": "reanchoredChoices",
+   "kind": "callable",
+   "status": "changed",
+   "line": 2952,
+   "span": [
+    2916,
+    3038
+   ],
+   "oldLine": 2945,
+   "added": 3,
+   "removed": 1,
+   "definition": "async function reanchoredChoices({ refuted, request, aliases, judge, session, windowEnd: end, repo, pr, requestBound,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     2952,
+     "async function reanchoredChoices({ refuted, request, aliases, judge, session, windowEnd: end, repo, pr, requestBound,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     2961,
+     "    [EXISTENCE_MEMBER]: existence, [COLUMN_WITHHELD_MEMBER]: columnWithheld, [CHALLENGED_MEMBER]: challenged };"
+    ],
+    [
+     " ",
+     null,
+     2962,
+     "  const place = { session, repo, pr, end };"
+    ],
+    [
+     " ",
+     null,
+     2963,
+     "  const reanchored = new Map();"
+    ],
+    [
+     "+",
+     null,
+     2964,
+     "  // D211: as the requirements' re-asks (`restatedRequirements`)."
+    ],
+    [
+     "+",
+     null,
+     2965,
+     "  const send = staggerSharedParts(judge);"
+    ],
+    [
+     " ",
+     null,
+     2966,
+     "  const sent = refuted.map(({ item, refutations }) => {"
+    ],
+    [
+     " ",
+     null,
+     2967,
+     "    const reask = reanchorRequest({ request, row: item.candidate, refutations, aliases,"
+    ],
+    [
+     " ",
+     null,
+     2968,
+     "      label: `${label}:${item.key.split(':')[1]}` });"
+    ],
+    [
+     " ",
+     null,
+     2969,
+     "    if (reask === null || !requestFits(reask, requestBound)) return { item, answer: null };"
+    ],
+    [
+     " ",
+     null,
+     2970,
+     "    record[ASKED_MEMBER]++;"
+    ],
+    [
+     " ",
+     null,
+     2971,
+     "    let answer;"
+    ],
+    [
+     "-",
+     2963,
+     null,
+     "    try { answer = Promise.resolve(judge(reask)).catch(() => undefined); }"
+    ],
+    [
+     "+",
+     null,
+     2972,
+     "    try { answer = Promise.resolve(send(reask)).catch(() => undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2973,
+     "    catch { answer = Promise.resolve(undefined); }"
+    ],
+    [
+     " ",
+     null,
+     2974,
+     "    return { item, answer };"
+    ],
+    [
+     " ",
+     null,
+     2975,
+     "  });"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 9,
+    "list": [
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 205
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 1202
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 2079
+     },
+     {
+      "path": "packages/evidence/src/ledger.js",
+      "line": 2770
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 1801
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 2829
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3167
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3777
+     },
+     {
+      "path": "packages/evidence/src/run-review.js",
+      "line": 3804
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "scripts/session-review.mjs#runSessionReviewHarness",
+   "path": "scripts/session-review.mjs",
+   "name": "runSessionReviewHarness",
+   "kind": "callable",
+   "status": "changed",
+   "line": 369,
+   "span": [
+    363,
+    620
+   ],
+   "oldLine": 369,
+   "added": 6,
+   "removed": 1,
+   "definition": "export async function runSessionReviewHarness(options, { loadSession = loadRecordedSession, createJudge = createReviewJudge,",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     369,
+     "export async function runSessionReviewHarness(options, { loadSession = loadRecordedSession, createJudge = createReviewJudge,"
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ],
+    [
+     " ",
+     null,
+     467,
+     "      if (provider) providerClass[provider] = (providerClass[provider] ?? 0) + 1;"
+    ],
+    [
+     " ",
+     null,
+     468,
+     "      if (ok) tally.ok++;"
+    ],
+    [
+     " ",
+     null,
+     469,
+     "      attemptScope.getStore()?.push({ ok, attestation: attested });"
+    ],
+    [
+     "+",
+     null,
+     470,
+     "      // D211: an attempt sent with its prompt in parts that the provider refused as invalid is sent once more as one"
+    ],
+    [
+     "+",
+     null,
+     471,
+     "      // string by the transport (review-judge.js `withTransportRetry`, whichever attempt it was), so that refusal stops"
+    ],
+    [
+     "+",
+     null,
+     472,
+     "      // nothing; the resend's own attempt is judged as any."
+    ],
+    [
+     "+",
+     null,
+     473,
+     "      const resentWhole = provider === PROMPT_PARTS_REFUSED_CLASS && Number.isSafeInteger(metadata?.promptParts)"
+    ],
+    [
+     "+",
+     null,
+     474,
+     "        && metadata.promptParts > 1;"
+    ],
+    [
+     " ",
+     null,
+     475,
+     "      if (attested === MISMATCH) trip(ATTESTATION_TRIP);"
+    ],
+    [
+     "-",
+     471,
+     null,
+     "      else if (NON_RETRYABLE_PROVIDER_CLASSES.includes(provider)) trip(provider);"
+    ],
+    [
+     "+",
+     null,
+     476,
+     "      else if (NON_RETRYABLE_PROVIDER_CLASSES.includes(provider) && !resentWhole) trip(provider);"
+    ],
+    [
+     " ",
+     null,
+     477,
+     "      // D70 review (S0): a run that asked for a window never goes on under another — an attempt that reports another"
+    ],
+    [
+     " ",
+     null,
+     478,
+     "      // window, or answers and reports none, stops it before any further call (a failed attempt that reports none is"
+    ],
+    [
+     " ",
+     null,
+     479,
+     "      // left to its own class)."
+    ],
+    [
+     "~",
+     null,
+     null,
+     ""
+    ]
+   ],
+   "callers": {
+    "count": 2,
+    "list": [
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 36
+     },
+     {
+      "path": "scripts/session-review.mjs",
+      "line": 642
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  }
+ ],
+ "mentions": [
+  {
+   "from": "packages/cli/src/answer-cache.js#SENT_FIELDS",
+   "to": "packages/cli/src/review-judge.js#callLocal",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#SENT_FIELDS",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#agentAnswerKey",
+   "to": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#agentAnswerKey",
+   "to": "packages/cli/src/review-judge.js#REVIEW_AGENT_TRANSPORT_VERSION",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#agentAnswerKey",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#answerKey",
+   "to": "packages/cli/src/answer-cache.js#agentAnswerKey",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#answerKey",
+   "to": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#answerKey",
+   "to": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#answerKey",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "to": "packages/cli/src/answer-cache.js#answerKey",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "to": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "to": "packages/cli/src/review-judge.js#resentWhole",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/answer-cache.js#memoizeJudge",
+   "to": "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-budget.js#createReviewBudget",
+   "to": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "to": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "to": "packages/cli/src/review-judge.js#claudeStreamInput",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#REVIEW_AGENT_TRANSPORT_VERSION",
+   "to": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+   "to": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#imageContent",
+   "to": "packages/cli/src/review-judge.js#PROMPT_PART_CACHE_CONTROL",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#imageContent",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#imageContent",
+   "to": "packages/evidence/src/prompt-parts.js#promptPartsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#claudeStreamInput",
+   "to": "packages/cli/src/review-judge.js#imageContent",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "to": "packages/cli/src/review-judge.js#REVIEW_TRANSPORT_VERSION",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "to": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "to": "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#reviewTransportArguments",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#callLocal",
+   "to": "packages/cli/src/review-judge.js#reviewCliArgs",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#callLocal",
+   "to": "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#callLocal",
+   "to": "packages/cli/src/review-judge.js#claudeStreamInput",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#callLocal",
+   "to": "packages/evidence/src/challenge.js#REPLY_BEGUN",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#callLocal",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#PARTS_DROPPED",
+   "to": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#REFUSED_IN_PARTS",
+   "to": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withoutParts",
+   "to": "packages/cli/src/review-judge.js#PARTS_DROPPED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withoutParts",
+   "to": "packages/evidence/src/challenge.js#REPLY_BEGUN",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#RESENT_WHOLE",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#resentWhole",
+   "to": "packages/cli/src/review-judge.js#RESENT_WHOLE",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#markResentWhole",
+   "to": "packages/cli/src/review-judge.js#RESENT_WHOLE",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/cli/src/review-judge.js#REFUSED_IN_PARTS",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/cli/src/review-judge.js#withoutParts",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/cli/src/review-judge.js#resentWhole",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/cli/src/review-judge.js#markResentWhole",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#withTransportRetry",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#createReviewJudge",
+   "to": "packages/cli/src/review-judge.js#callLocal",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#createReviewJudge",
+   "to": "packages/cli/src/review-judge.js#PARTS_DROPPED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#createReviewJudge",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/cli/src/review-judge.js#createReviewJudge",
+   "to": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#receiptRepairOnce",
+   "to": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "to": "packages/evidence/src/code-pass.js#sharedCheckLines",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "to": "packages/evidence/src/code-pass.js#cutAfter",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+   "to": "packages/evidence/src/code-pass.js#sharedCheckLines",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+   "to": "packages/evidence/src/code-pass.js#cutAfter",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+   "to": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildAccountRequest",
+   "to": "packages/evidence/src/code-pass.js#sharedCheckLines",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildAccountRequest",
+   "to": "packages/evidence/src/code-pass.js#cutAfter",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#buildAccountRequest",
+   "to": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#accountBatch",
+   "to": "packages/evidence/src/code-pass.js#buildAccountRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#accountBatch",
+   "to": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#runCodePass",
+   "to": "packages/evidence/src/code-pass.js#accountBatch",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#runCodePass",
+   "to": "packages/evidence/src/code-pass.js#verifyFinding",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#runCodePass",
+   "to": "packages/evidence/src/code-pass.js#verifyBatch",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#runCodePass",
+   "to": "packages/evidence/src/prompt-parts.js#continuedRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#runCodePass",
+   "to": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#verifyFinding",
+   "to": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#verifyFinding",
+   "to": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#verifyBatch",
+   "to": "packages/evidence/src/code-pass.js#buildBatchVerifyRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/code-pass.js#verifyBatch",
+   "to": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/ledger.js#PROMPT_PARTS_DROPPED",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#promptPartsOf",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#continuedRequest",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#continuedRequest",
+   "to": "packages/evidence/src/prompt-parts.js#appendedRequest",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+   "to": "packages/cli/src/answer-cache.js#memoizeJudge",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+   "to": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#sharedFirstOf",
+   "to": "packages/evidence/src/prompt-parts.js#promptCutsOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "to": "packages/evidence/src/challenge.js#REPLY_BEGUN",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "to": "packages/evidence/src/prompt-parts.js#ANSWER_REPLAYED",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "to": "packages/evidence/src/prompt-parts.js#sharedFirstOf",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#restatedRequirements",
+   "to": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#restatedRequirements",
+   "to": "packages/evidence/src/prompt.js#refutedReask",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#recolumnedDecisions",
+   "to": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#recolumnedDecisions",
+   "to": "packages/evidence/src/run-review.js#restatedRequirements",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#recolumnedDecisions",
+   "to": "packages/evidence/src/run-review.js#reanchoredChoices",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#reanchoredChoices",
+   "to": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#reanchoredChoices",
+   "to": "packages/evidence/src/run-review.js#restatedRequirements",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "packages/evidence/src/run-review.js#reanchoredChoices",
+   "to": "packages/evidence/src/run-review.js#recolumnedDecisions",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "scripts/session-review.mjs#runSessionReviewHarness",
+   "to": "packages/cli/src/answer-cache.js#createAnswerCache",
+   "onCodeLine": true,
+   "callShaped": true
+  },
+  {
+   "from": "scripts/session-review.mjs#runSessionReviewHarness",
+   "to": "packages/cli/src/review-judge.js#PROMPT_PARTS_REFUSED_CLASS",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "scripts/session-review.mjs#runSessionReviewHarness",
+   "to": "packages/cli/src/review-judge.js#resentWhole",
+   "onCodeLine": true,
+   "callShaped": false
+  },
+  {
+   "from": "scripts/session-review.mjs#runSessionReviewHarness",
+   "to": "packages/cli/src/review-judge.js#withTransportRetry",
+   "onCodeLine": false,
+   "callShaped": false
+  },
+  {
+   "from": "scripts/session-review.mjs#runSessionReviewHarness",
+   "to": "packages/cli/src/review-judge.js#createReviewJudge",
+   "onCodeLine": true,
+   "callShaped": false
+  }
+ ],
+ "route": {
+  "read": [
+   {
+    "path": "packages/cli/src/answer-cache.js",
+    "lines": 34
+   },
+   {
+    "path": "packages/cli/src/review-budget.js",
+    "lines": 17
+   },
+   {
+    "path": "packages/cli/src/review-judge.js",
+    "lines": 142
+   },
+   {
+    "path": "packages/evidence/src/code-pass.js",
+    "lines": 62
+   },
+   {
+    "path": "packages/evidence/src/prompt-parts.js",
+    "lines": 150
+   },
+   {
+    "path": "packages/evidence/src/prompt.js",
+    "lines": 10
+   },
+   {
+    "path": "packages/evidence/src/run-review.js",
+    "lines": 21
+   },
+   {
+    "path": "scripts/session-review.mjs",
+    "lines": 11
+   }
+  ],
+  "skim": [
+   {
+    "path": "packages/cli/test/agentic-code-step-cli.test.js",
+    "lines": 3
+   },
+   {
+    "path": "packages/cli/test/d211-prompt-parts-transport.test.js",
+    "lines": 418
+   },
+   {
+    "path": "packages/evidence/src/ledger.js",
+    "lines": 6
+   },
+   {
+    "path": "packages/evidence/test/d211-prompt-parts.test.js",
+    "lines": 282
+   }
+  ],
+  "skip": [
+   {
+    "path": "CHANGELOG.md",
+    "lines": 12
+   },
+   {
+    "path": "docs/NOTES.md",
+    "lines": 32
+   },
+   {
+    "path": "docs/notes/pullfrog/RECORDS.md",
+    "lines": 53
+   },
+   {
+    "path": "package.json",
+    "lines": 1
+   },
+   {
+    "path": "packages/evidence/src/challenge.js",
+    "lines": 5
+   },
+   {
+    "path": "packages/evidence/test/d211-prompt-parts-fixture.js",
+    "lines": 160
+   }
+  ],
+  "lines": {
+   "read": 447,
+   "skim": 709,
+   "skip": 263
+  }
+ }
+}

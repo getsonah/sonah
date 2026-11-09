@@ -1,0 +1,88 @@
+[
+ {
+  "tier": "must-act",
+  "title": "Resent answer was stored under the in-parts key",
+  "oneLine": "A whole resend's answer was stored under the parts key and replayed later; now never stored.",
+  "fns": [
+   "packages/cli/src/review-judge.js#withTransportRetry",
+   "packages/cli/src/review-judge.js#markResentWhole",
+   "packages/cli/src/review-judge.js#resentWhole",
+   "packages/cli/src/answer-cache.js#createAnswerCache"
+  ],
+  "quote": "*  could not be read (AGENT_NOT_RETRIED). D211: one exception, read from the typed class only, never the error's text:"
+ },
+ {
+  "tier": "must-know",
+  "title": "One queue: other requests wait behind a waiting group",
+  "oneLine": "Batch check and accounting wait behind a change's first check: +302 ms on the fixture; kept for cap order.",
+  "fns": [
+   "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "packages/evidence/src/code-pass.js#runCodePass"
+  ],
+  "quote": "* D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+ },
+ {
+  "tier": "must-know",
+  "title": "A hung first call holds every later request",
+  "oneLine": "A first call that neither begins nor settles blocks all later requests until timeout: 20 min session, 30 agent.",
+  "fns": [
+   "packages/evidence/src/prompt-parts.js#staggerSharedParts"
+  ],
+  "quote": "* D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+ },
+ {
+  "tier": "must-know",
+  "title": "Leader failing before its reply frees siblings together",
+  "oneLine": "A leader refused or failed before any stream line releases all siblings at once; each writes the part (money).",
+  "fns": [
+   "packages/evidence/src/prompt-parts.js#staggerSharedParts"
+  ],
+  "quote": "* D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+ },
+ {
+  "tier": "must-know",
+  "title": "No saving on anthropic-api and codex-cli; siblings still wait",
+  "oneLine": "Those backends send no parts and never signal, so siblings wait for the first call to settle.",
+  "fns": [
+   "packages/evidence/src/prompt-parts.js#staggerSharedParts"
+  ],
+  "quote": "* D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+ },
+ {
+  "tier": "must-know",
+  "title": "Stored first answer let siblings all write again",
+  "oneLine": "When the leader was answered from the store, siblings went together, each writing the shared part; now the next leads.",
+  "fns": [
+   "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+   "packages/cli/src/answer-cache.js#memoizeJudge"
+  ],
+  "quote": "* D211: `judge` with each request that shares its first part (`sharedFirstOf`) with one given before it held back until"
+ },
+ {
+  "tier": "must-know",
+  "title": "Retry refused in parts was thrown, not resent",
+  "oneLine": "After a transport failure, the identical retry refused as invalid was thrown; now any in-parts refusal is resent once.",
+  "fns": [
+   "packages/cli/src/review-judge.js#withTransportRetry",
+   "scripts/session-review.mjs#runSessionReviewHarness"
+  ],
+  "quote": "*  could not be read (AGENT_NOT_RETRIED). D211: one exception, read from the typed class only, never the error's text:"
+ },
+ {
+  "tier": "good-to-know",
+  "title": "Agent transport version kept by the owner's amended rule",
+  "oneLine": "The agent argv moved but sonah.review-agent-transport/2 stays; the owner amended the rule on 2026-11-05.",
+  "fns": [
+   "packages/cli/src/review-judge.js#reviewAgentCliArgs",
+   "packages/cli/src/answer-cache.js#agentAnswerKey"
+  ],
+  "quote": "* system prompt comes last, as in reviewCliArgs. `effort` (D160): the review's, as in reviewCliArgs. `parts` (D211):"
+ },
+ {
+  "tier": "good-to-know",
+  "title": "Update note omitted what is rebuilt from re-ask answers",
+  "oneLine": "Changelog now says what is asked again after a re-asked answer changes: row checks, code review.",
+  "fns": [],
+  "quote": ""
+ }
+]

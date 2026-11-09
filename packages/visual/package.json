@@ -1,0 +1,8 @@
+{
+  "name": "@sonah/visual",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The visual review: a page of a branch's change, with How and Where graphs.",
+  "type": "module",
+  "license": "MIT"
+}

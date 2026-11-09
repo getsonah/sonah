@@ -6,7 +6,7 @@
 
 - [ ] `npm test` passes (`fail 0`).
 - [ ] Every commit is signed off (`git commit -s`), and I agree to the contribution terms in `CONTRIBUTING.md`.
-- [ ] No dependency was added; Node's standard library only.
+- [ ] No dependency was added; Node's standard library only (the visual review's vendored files excepted).
 - [ ] `packages/slicer`, `packages/redact` and `packages/render` still make no network or model call and read no clock
       or random source.
 - [ ] No real session recording, Sonah page, report or stored answer is attached or committed; tests use synthetic

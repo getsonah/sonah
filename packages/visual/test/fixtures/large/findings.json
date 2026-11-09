@@ -1,0 +1,114 @@
+[
+ {
+  "tier": "good-to-know",
+  "title": "Finding 1: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/handlers/orders.ts#loadOrder"
+  ],
+  "quote": "function loadOrder(input, options) {"
+ },
+ {
+  "tier": "must-act",
+  "title": "Finding 2: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/handlers/orders.ts#loadOrder"
+  ],
+  "quote": "function loadOrder(input, options) {"
+ },
+ {
+  "tier": "must-know",
+  "title": "Finding 3: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/handlers/orders.ts#loadOrder"
+  ],
+  "quote": "function loadOrder(input, options) {"
+ },
+ {
+  "tier": "good-to-know",
+  "title": "Finding 4: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/handlers/orders.ts#loadOrder"
+  ],
+  "quote": "function loadOrder(input, options) {"
+ },
+ {
+  "tier": "must-act",
+  "title": "Finding 5: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/handlers/orders.ts#loadOrder"
+  ],
+  "quote": "function loadOrder(input, options) {"
+ },
+ {
+  "tier": "must-know",
+  "title": "Finding 6: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/api/errors.ts#queueAccount",
+   "web/src/cart/Cart.tsx#renderSession"
+  ],
+  "quote": "function queueAccount(input, options) {"
+ },
+ {
+  "tier": "good-to-know",
+  "title": "Finding 7: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/worker/jobs/shipments.py#queue_session",
+   "web/src/checkout/Checkout.tsx#mergeBatchAsync"
+  ],
+  "quote": "const step0 = queue_sessionPart(input, 0, options.limit ?? 0); // keeps the order in order"
+ },
+ {
+  "tier": "must-act",
+  "title": "Finding 8: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "services/worker/queue.py#resolve_session",
+   "lib/dates.go#sendOrder"
+  ],
+  "quote": "function resolve_session(input, options) {"
+ },
+ {
+  "tier": "must-know",
+  "title": "Finding 9: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "web/src/cart/Cart.tsx#renderSession",
+   "services/api/handlers/orders.ts#buildSessionAsync"
+  ],
+  "quote": "function renderSession(input, options) {"
+ },
+ {
+  "tier": "good-to-know",
+  "title": "Finding 10: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "web/src/checkout/Checkout.tsx#mergeBatchAsync",
+   "services/api/handlers/orders.ts#parseInvoice"
+  ],
+  "quote": "function mergeBatchAsync(input, options) {"
+ },
+ {
+  "tier": "must-act",
+  "title": "Finding 11: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [
+   "lib/dates.go#sendOrder",
+   "services/api/handlers/invoices.ts#buildBatchAsync"
+  ],
+  "quote": "function sendOrder(input, options) {"
+ },
+ {
+  "tier": "must-know",
+  "title": "Finding 12: retries can run twice when the queue restarts",
+  "oneLine": "A job picked up during a restart runs again; the ledger write is not guarded against a second run.",
+  "fns": [],
+  "quote": ""
+ }
+]

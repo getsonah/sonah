@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "license": "BUSL-1.1",
+  "license": "MIT",
   "bin": {
     "sonah": "./bin/sonah.js"
   }

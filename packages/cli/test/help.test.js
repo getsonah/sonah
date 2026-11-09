@@ -66,9 +66,9 @@ test('the usage table advertises every command the dispatch implements', async (
   // on a session page. D76 retires `init` and `ledgers`; `capture`, `capture-outcome` and (D77) `trailer` stay only for
   // hooks early previews installed, doing nothing, and are no longer advertised. Owner decision 2026-10-14 adds
   // `config`, the code step's switch. D142 adds `skill`, the /sonah skill's add and remove. D143 adds `hook`
-  // (`hook add`, `hook remove`), the commit-to-session link.
+  // (`hook add`, `hook remove`), the commit-to-session link. D216 adds `visual`, the page of a branch's change.
   assert.deepEqual(listed.sort(), ['config', 'decision', 'doctor', 'feedback', 'hook', 'review', 'sessions', 'skill',
-    'slice']);
+    'slice', 'visual']);
 });
 
 test('every command answers --help without running, writing or reaching out', async (t) => {
@@ -83,6 +83,7 @@ test('every command answers --help without running, writing or reaching out', as
       const hook = await exists(join(box.cwd, '.git', 'hooks', 'prepare-commit-msg'));
       // `review` answers --help itself, with its own single-command usage line rather than the
       // whole table; the third test below pins that text. (D82 step 10: its line, now the only review route's.)
+      // D216: `visual` answers it itself too, with its own `usage:` line (visual-command.test.js pins its text).
       const helpful = cmd === 'review' ? /^sonah review \[session\.jsonl\]/m : /usage:/;
       if (r.code !== 0) broken.push(`${cmd} ${flag}: exit ${r.code}`);
       else if (!helpful.test(r.stdout + r.stderr)) broken.push(`${cmd} ${flag}: no usage text`);

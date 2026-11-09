@@ -560,6 +560,47 @@ a rebase or a cherry-pick, which add no line (see
 `... passes through a link`, and changes nothing; each exits 2. When `.git/hooks` is a link, it writes no hook there,
 prints what to add, and exits 1.
 
+## The page of a change (`sonah visual`)
+
+`sonah visual` prints its problems in fixed words, never git's or the model's text. A usage error prints `sonah visual:
+<the problem>.` and the usage line, and exits `2`: a range of another shape than `BASE..HEAD`, `BASE..` or `BASE` (`...`
+is refused), an unknown option, or an option with no value.
+
+**`Visual review is not complete: at least N answers are still needed. ...`**
+: Exit `1`. With `--replay-only`, the folder does not hold every answer yet: run the same command without
+  `--replay-only` to ask for them. Without it, run the same command again.
+
+**`Visual review could not complete: <code>.`** and a `Fix:` line. These exit `2`; fix what the line says, then run the
+same command again:
+
+- `not_git`: the folder you ran it in is in no git repository. Run it in the repository whose change you want.
+- `folder_unreadable`: the system refused Sonah access to the folder it runs in. Run it from a folder that this terminal
+  can read.
+- `base_not_found` or `head_not_found`: git cannot find that side of the range here. Check the name; a commit that is
+  only on the remote needs `git fetch` first, since Sonah never fetches. With no range, `head_not_found` means the
+  repository has no commit yet.
+- `default_branch_unknown`: you gave no range, and your local git does not know the default branch of the remote (no
+  remote, or no `origin/HEAD`). Give a range such as `sonah visual main..HEAD`, or run `git remote set-head origin
+  --auto` once (with the name of your remote).
+- `no_merge_base`: `HEAD` shares no commit with that default branch. Give a range.
+- `no_change`: the head adds no commit to the base (they are the same commit, or the head is behind the base), so there
+  is no change to draw. With no range, your branch has no commit of its own yet.
+- `invalid_model`: `--model` needs a full model ID, such as `claude-sonnet-5-5`, not an alias such as `sonnet`.
+- `output_folder_unwritable`: Sonah could not make or write the folder for the page. Choose a `--out` folder that you
+  own, or check that you own your `SONAH_HOME` folder.
+- `cli_missing`: Sonah could not start `claude`. Install Claude Code, and sign in with `claude auth login`.
+- `auth`: Claude Code is not signed in, or the account was refused. Run `claude auth login` with your Claude
+  subscription account.
+- `billing`: the account cannot pay for the call. Check the plan and billing of your Claude account.
+- `model_not_found`: your account cannot use that model. Choose another one with `--model`.
+- `usage_limit`: your Claude plan's usage limit was reached. Wait until it resets.
+
+The answers that came back before a stop stay stored, so the next run asks only for the rest.
+
+These exit `3`, and the same command asks again: `timeout`, `output_limit`, `provider_busy` and `call_failed` (the call
+for the story of the change, or for what a reviewer must act on or know, failed, so no page is written), and
+`visual_failed` (anything else). If it fails again, run `sonah doctor --no-probe`.
+
 ## Exit codes
 
 This is the one list of Sonah's exit codes. The exit code reports only whether Sonah's own review ran, never a
@@ -572,6 +613,10 @@ judgment of the agent's work: a review with findings that ran to the end exits `
 | `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model, a range git cannot list, a pull request GitHub does not answer for, or one whose list GitHub did not give whole and whose listed commits name no session) |
 | `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer; or `sonah skill add` or `sonah skill remove` could not write or delete its file |
 | `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again |
+
+`sonah visual` uses the same codes: `0` when the page is written, `1` when it ran and answers are still needed, `2` for
+invalid arguments or a problem it names with its fix (a call that stopped on your sign-in, plan or usage included), and
+`3` when it failed. Ctrl-C stops it; the same command goes on from the answers it stored.
 
 ## Still stuck
 

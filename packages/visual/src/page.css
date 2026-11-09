@@ -1,0 +1,628 @@
+@import url('https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@400;600&display=swap');
+/* A guided walk in five stops. Calm ground, one soft accent, space instead of frames. */
+:root{
+  --bg:#F6F6F3; --surface:#FCFCFA; --surface-2:#EEEFEB; --raised:#FFFFFF; --filebox:#EDEEE9;
+  --ink:#22272D; --ink-2:#4F5862; --ink-3:#5F6771; --hair:#E3E5E0; --hair-2:#CED2CD;
+  --accent:#3E7C74; --accent-ink:#2C625B; --tint:rgba(62,124,116,.13); --tint-new:rgba(62,124,116,.17); --tint-2:rgba(62,124,116,.22); --route:#6FA29B; --sig:#536B88;
+  --amber:#8A5F16; --red:#A64A41; --good:#5F6872; --ok:#3A7747; --on-pin:#FFFFFF;
+  --code:#F1F2EE; --add-bg:rgba(58,119,71,.09); --add-ink:#2E6A3B; --del-bg:rgba(166,74,65,.08); --del-ink:#973E36;
+  --write:#69717A; --on-write:#FFFFFF; --hl:#22272D;
+  --chip-new:rgba(62,124,116,.2); --chip-chg:#FFFFFF; --chip-more:#EEEFEB;
+  --shadow:0 18px 48px rgba(34,39,45,.16), 0 2px 8px rgba(34,39,45,.08);
+  --stick:0px;
+  --f-sans:"Overpass","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"Overpass Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121519; --surface:#181C21; --surface-2:#1D2228; --raised:#20252B; --filebox:#1F242A;
+    --ink:#E3E6EA; --ink-2:#A7AEB7; --ink-3:#878F9A; --hair:#262B32; --hair-2:#343B43;
+    --accent:#87B7AF; --accent-ink:#A0CCC4; --tint:rgba(135,183,175,.13); --tint-new:rgba(135,183,175,.17); --tint-2:rgba(135,183,175,.26); --route:#6E9C95; --sig:#93A6BF;
+    --amber:#D4A86C; --red:#DE9187; --good:#99A3AE; --ok:#95C29A; --on-pin:#121519;
+    --code:#161A1F; --add-bg:rgba(149,194,154,.10); --add-ink:#95C29A; --del-bg:rgba(222,145,135,.10); --del-ink:#DE9187;
+    --write:#48505A; --on-write:#E3E6EA; --hl:#E3E6EA;
+    --chip-new:rgba(135,183,175,.27); --chip-chg:transparent; --chip-more:#272D34;
+    --shadow:0 20px 56px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121519; --surface:#181C21; --surface-2:#1D2228; --raised:#20252B; --filebox:#1F242A;
+  --ink:#E3E6EA; --ink-2:#A7AEB7; --ink-3:#878F9A; --hair:#262B32; --hair-2:#343B43;
+  --accent:#87B7AF; --accent-ink:#A0CCC4; --tint:rgba(135,183,175,.13); --tint-new:rgba(135,183,175,.17); --tint-2:rgba(135,183,175,.26); --route:#6E9C95; --sig:#93A6BF;
+  --amber:#D4A86C; --red:#DE9187; --good:#99A3AE; --ok:#95C29A; --on-pin:#121519;
+  --code:#161A1F; --add-bg:rgba(149,194,154,.10); --add-ink:#95C29A; --del-bg:rgba(222,145,135,.10); --del-ink:#DE9187;
+  --write:#48505A; --on-write:#E3E6EA; --hl:#E3E6EA;
+  --chip-new:rgba(135,183,175,.27); --chip-chg:transparent; --chip-more:#272D34;
+  --shadow:0 20px 56px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{color-scheme:light}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0; background:var(--bg); color:var(--ink); font:400 15.5px/1.65 var(--f-sans); -webkit-font-smoothing:antialiased}
+@media (prefers-reduced-motion: no-preference){ html{scroll-behavior:smooth} }
+button{font:inherit; color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+code,.mono{font-family:var(--f-mono)}
+/* code as it is: no ligature turns -> into an arrow or != into a sign */
+code, pre, .mono, .diff, .code, svg text{font-variant-ligatures:none; font-feature-settings:"liga" 0, "calt" 0}
+.vh{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+
+.wrap{max-width:1300px; margin:0 auto; padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px)); padding-block:24px 112px}
+
+/* header */
+.top{display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; padding-bottom:20px}
+.brand{font:800 15px var(--f-sans); letter-spacing:.02em}
+.crumb{display:flex; align-items:center; gap:10px; font:600 13px var(--f-mono); color:var(--ink-2); min-width:0}
+.crumb .pr{color:var(--ink)}
+.crumb .sl{color:var(--ink-3)}
+@media (max-width:480px){ .crumb .rv, .crumb .sl{display:none} .top{gap:10px 12px} }
+.sha{padding:1px 8px; background:var(--surface-2); border-radius:6px; font-size:12px; color:var(--ink-2)}
+.tools{display:flex; align-items:center; gap:8px; margin-left:auto}
+.btn{display:inline-flex; align-items:center; gap:8px; padding:7px 16px; border:0; border-radius:8px; background:var(--surface-2); color:var(--ink); font:700 13px var(--f-sans); cursor:pointer}
+.btn:hover{background:var(--tint); color:var(--accent-ink)}
+.ibtn{display:inline-grid; place-items:center; width:34px; height:34px; padding:0; border:0; border-radius:8px; background:transparent; color:var(--ink-2); cursor:pointer}
+.ibtn:hover{background:var(--surface-2); color:var(--ink)}
+.ibtn svg{width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round}
+.ibtn .i-moon{fill:currentColor; stroke:none}
+.ibtn .i-sun{display:none}
+.is-dark .ibtn .i-sun{display:block} .is-dark .ibtn .i-moon{display:none}
+.share{position:relative}
+.pop{position:absolute; right:0; top:calc(100% + 10px); z-index:30; width:240px; background:var(--raised); border-radius:12px; padding:12px; display:grid; gap:8px; box-shadow:var(--shadow)}
+.linkfield{width:100%; font:12px var(--f-mono); padding:6px 8px; border:1px solid var(--hair-2); border-radius:6px; background:var(--bg); color:var(--ink)}
+.copied{font:600 12px var(--f-sans); color:var(--ok)}
+/* the local page's two buttons at the top right: "Invite your team", the one strong button on the page, and the quiet
+   "Save online"; on phones they stay at the top right, short (the repository moves under them) */
+.btn.strong{padding:8px 18px; background:var(--accent); color:var(--on-pin); text-decoration:none; white-space:nowrap}
+.btn.strong:hover{background:var(--accent-ink); color:var(--on-pin)}
+.btn.quiet{gap:7px; padding:7px 12px; background:transparent; color:var(--ink-2); font-weight:600; text-decoration:none; white-space:nowrap}
+.btn.quiet:hover{background:var(--surface-2); color:var(--ink)}
+.i-link{flex:none; width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round}
+@media (max-width:760px){ .top.with-share .crumb{order:3; flex-basis:100%} }
+@media (max-width:480px){ .lw{display:none} .top.with-share .tools{gap:2px} .btn.strong{padding:7px 13px} .btn.quiet{padding:7px 9px} }
+
+/* rail */
+.layout{display:grid; grid-template-columns:minmax(0,1fr)}
+main{min-width:0}
+.rail ol{list-style:none; margin:0; padding:0; position:relative; display:grid}
+.rail a{display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--ink-3); position:relative; font-size:13px; font-weight:700}
+.st{flex:none; width:24px; height:24px; border-radius:50%; background:var(--bg); box-shadow:inset 0 0 0 1.5px var(--hair-2); display:grid; place-items:center; font:700 11px var(--f-mono); color:var(--ink-3); position:relative; z-index:1}
+.rail a.done{color:var(--ink-2)}
+.rail a.done .st{box-shadow:inset 0 0 0 1.5px var(--ink-3); color:var(--ink-2)}
+.rail a[aria-current="step"]{color:var(--ink)}
+.rail a[aria-current="step"] .st{background:var(--tint-2); box-shadow:none; color:var(--accent-ink)}
+@media (min-width:980px){
+  .layout{grid-template-columns:88px minmax(0,1fr); gap:40px}
+  .rail{position:sticky; top:28px; align-self:start; padding-top:56px}
+  .rail ol{gap:30px}
+  .rail ol::before{content:""; position:absolute; left:11.5px; top:12px; bottom:12px; width:1px; background:var(--hair-2)}
+}
+@media (max-width:979px){
+  .rail{position:sticky; top:0; z-index:20; background:var(--bg);
+    margin-left:calc(-1 * max(16px, env(safe-area-inset-left,0px))); margin-right:calc(-1 * max(16px, env(safe-area-inset-right,0px)));
+    padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px, env(safe-area-inset-right,0px)) 8px max(16px, env(safe-area-inset-left,0px));
+    box-shadow:0 1px 0 var(--hair)}
+  .rail ol{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .rail ol::before{content:""; position:absolute; left:10%; right:10%; top:11.5px; height:1px; background:var(--hair-2)}
+  .rail a{flex-direction:column; gap:3px; font-size:11px}
+}
+/* framed on the team page (the bridge marks the root): the frame is narrower than the window, so the page keeps one
+   column with the stop bar on top at every width, and the graphs get the whole frame */
+:root[data-sonah-framed] .layout{grid-template-columns:minmax(0,1fr); gap:0}
+:root[data-sonah-framed] .rail{position:sticky; top:0; z-index:20; background:var(--bg); align-self:auto;
+  margin-left:calc(-1 * max(16px, env(safe-area-inset-left,0px))); margin-right:calc(-1 * max(16px, env(safe-area-inset-right,0px)));
+  padding:10px max(16px, env(safe-area-inset-right,0px)) 8px max(16px, env(safe-area-inset-left,0px)); box-shadow:0 1px 0 var(--hair)}
+:root[data-sonah-framed] .rail ol{grid-template-columns:repeat(5,minmax(0,1fr)); gap:0}
+:root[data-sonah-framed] .rail ol::before{left:10%; right:10%; top:11.5px; bottom:auto; width:auto; height:1px}
+:root[data-sonah-framed] .rail a{flex-direction:column; gap:3px; font-size:11px}
+:root[data-sonah-framed] .stop{scroll-margin-top:76px}
+
+/* stops */
+.stop{padding-block:56px; scroll-margin-top:76px; display:grid; gap:28px; min-width:0; container-type:inline-size}
+.stop:first-child{padding-top:32px}
+/* How is the first view: What stays short (title, ask, numbers, finding pins) and How starts close under it */
+#what{padding-bottom:24px; gap:20px}
+#how{padding-top:32px}
+.stop > *{min-width:0}
+@media (min-width:980px){ .stop{scroll-margin-top:20px} }
+.sh{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 16px}
+.stop h2{margin:0; font:800 12.5px var(--f-sans); text-transform:uppercase; letter-spacing:.14em; color:var(--ink-3)}
+.hint{font-size:13px; color:var(--ink-3)}
+h1{margin:0; font:800 clamp(22px, 2.5vw, 30px)/1.2 var(--f-sans); letter-spacing:-.012em; text-wrap:balance; max-width:40ch}
+.lbl{font:700 11px var(--f-sans); text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3)}
+.dim{color:var(--ink-3); text-transform:none; letter-spacing:0; font-weight:600}
+.ask{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; font-size:15.5px; color:var(--ink-2)}
+.ask .src{font:600 11px var(--f-mono); color:var(--ink-3); background:var(--surface-2); border-radius:5px; padding:0 7px}
+
+/* figures: no frames, no grid */
+.fig{margin:0; min-width:0}
+.fig svg{display:block; color:var(--ink)}
+.fig svg text{font-family:var(--f-sans); fill:currentColor}
+.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain}
+.el{font-size:11.5px; fill:var(--ink-2); paint-order:stroke; stroke:var(--bg); stroke-width:5px; stroke-linejoin:round}
+.el.acc, .el.sig-l{font-weight:700}
+.el.acc{fill:var(--accent-ink)}
+.el.sig-l{fill:var(--sig)}
+.mk-ink{fill:var(--ink-3)} .mk-route{fill:var(--route)} .mk-sig{fill:var(--sig)} .mk-hl{fill:var(--hl)}
+
+/* stop 1: before / now, side by side */
+.bn{display:grid; grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr); gap:10px 18px; max-width:860px; padding-top:4px}
+.bn-h, .bn-r{display:contents}
+.bn .lbl.now{color:var(--accent-ink)}
+.bn-b, .bn-n{font-size:15px; line-height:1.45; padding:12px 16px; border-radius:12px}
+.bn-b{background:var(--surface-2); color:var(--ink-2)}
+.bn-n{background:var(--tint); color:var(--ink)}
+.bn-a{width:24px; height:12px; align-self:center; fill:none; stroke:var(--ink-3); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+.bn i.lbl{display:none; font-style:normal; margin-bottom:2px}
+@media (max-width:640px){
+  .bn{grid-template-columns:minmax(0,1fr); gap:6px}
+  .bn-h{display:none}
+  .bn-a{display:none}
+  .bn i.lbl{display:block}
+  .bn-n{margin-bottom:12px}
+}
+
+
+.sumrow{display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap:24px 56px}
+.cell{display:grid; gap:8px; align-content:start; min-width:0}
+.big{font:800 32px/1 var(--f-sans); letter-spacing:-.02em; font-variant-numeric:tabular-nums; color:var(--accent-ink)}
+.cap{font-size:13px; color:var(--ink-2)}
+.cap b{color:var(--ink); font-weight:800}
+.tiers{display:flex; flex-wrap:wrap; gap:10px 22px}
+.tg{display:grid; gap:4px}
+.tg span{font:700 11px var(--f-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3)}
+.tp{display:flex; gap:5px}
+
+/* pins (html) */
+.pin-h{display:inline-grid; place-items:center; min-width:21px; height:21px; padding:0 5px; border-radius:11px; font:700 11px/1 var(--f-sans); text-decoration:none; background:var(--tc); color:var(--on-pin); box-shadow:inset 0 0 0 1.5px var(--tc)}
+.pin-h.fixed{background:transparent; color:var(--tc)}
+.t-act{--tc:var(--red)} .t-know{--tc:var(--amber)} .t-good{--tc:var(--good)}
+a.pin-h:hover{outline:2px solid var(--accent); outline-offset:2px}
+
+/* read bar */
+.route{display:grid; gap:10px}
+.rb{display:flex; gap:4px; height:14px}
+.rb-g{display:flex; gap:2px; min-width:0; flex-basis:0}
+.seg{flex-basis:0; min-width:3px; border:0; padding:0; cursor:pointer; border-radius:3px}
+.rb-read .seg{background:var(--accent)}
+.rb-skim .seg{background:var(--tint-2)}
+.rb-skip .seg{background:transparent; box-shadow:inset 0 0 0 1px var(--hair-2)}
+.seg:hover, .seg.sel{outline:2px solid var(--ink-2); outline-offset:2px; position:relative; z-index:1}
+.rb-key{display:flex; flex-wrap:wrap; align-items:center; gap:4px 18px; font:12px var(--f-mono); color:var(--ink-3)}
+.rb-key b{color:var(--ink)}
+.sw{display:inline-block; width:12px; height:10px; margin-right:6px; vertical-align:-1px; border-radius:3px}
+.sw-read{background:var(--accent)} .sw-skim{background:var(--tint-2)} .sw-skip{background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--hair-2)}
+.rb-files{display:flex; flex-wrap:wrap; gap:8px}
+.fl{font:600 12px var(--f-mono); padding:3px 10px; border:0; border-radius:6px; background:var(--tint); color:var(--accent-ink); cursor:pointer}
+.fl:hover, .fl.sel{background:var(--tint-2)}
+
+/* a graph's key: real small samples of its marks (the graph's own classes) and a few words each; hover or focus on an
+   entry lights the marks it names and quiets the rest. On a desktop it stays in view over its figure, under the stop
+   bar, as wide as its entries; on phones it wraps and stays put. */
+.key{display:flex; flex-wrap:wrap; align-items:center; gap:6px 20px; list-style:none; margin:0; padding:0; font-size:12.5px; line-height:1.3; color:var(--ink-2)}
+.key li{display:flex}
+.key .k{display:inline-flex; align-items:center; gap:8px; margin:-3px -7px; padding:3px 7px; border:0; border-radius:7px; background:none; color:inherit; font:inherit; white-space:nowrap; cursor:default}
+.key .k:hover, .key .k:focus-visible{background:var(--surface-2); color:var(--ink)}
+.ks{display:block; flex:none; overflow:visible}
+.ks *{pointer-events:none}
+.ks .chip .nm{font-size:10.5px !important}
+@media (max-width:979px){ :root{--stick:calc(env(safe-area-inset-top,0px) + 64px)} }
+:root[data-sonah-framed]{--stick:64px}
+@media (min-width:720px){
+  .key{position:sticky; top:var(--stick); z-index:15; width:fit-content; max-width:100%; margin:-8px -12px; padding:8px 12px; border-radius:0 0 12px 12px; background:var(--bg)}
+  .key.stuck{box-shadow:0 10px 18px -14px rgba(0,0,0,.45)}
+}
+@media (max-width:719px){ .key{gap:6px 12px; font-size:12px} .key .k{gap:6px} }
+/* lit by a key entry: what it names stays, the rest of that stop's marks step back */
+.k-on [data-k]:not(.k-lit){opacity:.2}
+.k-on .cg-e.k-lit{opacity:1}
+@media (prefers-reduced-motion: no-preference){ [data-k]{transition:opacity .12s} }
+
+/* change map: the desktop code graph, and the list on phones */
+.map, .cg{display:block; max-width:100%; height:auto}
+.map-p{display:none}
+.map-p.all{display:grid}
+.p-only{display:none !important}
+/* the code graph draws while its stop's column holds it at its floor (the page's own figure rule, by the column's
+   width); narrower, and on phones, the list */
+@media (max-width:719px){ .map-w{display:none} .map-p{display:grid} .w-only{display:none !important} .p-only{display:inline-flex !important} }
+.r-lbl{font:600 11.5px var(--f-mono) !important; fill:var(--ink-3) !important; letter-spacing:.02em}
+.m-file{cursor:pointer}
+.m-file .fb{fill:var(--filebox)}
+.m-file:hover .fb, .m-file.sel .fb{fill:var(--surface-2)}
+.m-file.g-unch{cursor:default}
+.m-file.g-unch .fb{fill:none; stroke:var(--hair-2); stroke-dasharray:5 5}
+.m-file .fn{font:600 12.5px var(--f-mono) !important}
+.m-file.g-skim .fn, .m-file.g-skip .fn, .m-file.g-unch .fn{fill:var(--ink-2) !important}
+.m-file .fcnt{font:400 11.5px var(--f-mono) !important; fill:var(--ink-3) !important; text-anchor:end}
+.m-file .fcnt .add{fill:var(--add-ink)} .m-file .fcnt .del{fill:var(--del-ink)} .m-file .fcnt .nw{fill:var(--accent-ink); font-weight:600}
+.m-file:focus{outline:none}
+.m-file:focus-visible .fb{stroke:var(--accent); stroke-width:2}
+.m-route{fill:none; stroke:var(--route); stroke-width:2.6; stroke-linejoin:round; stroke-linecap:round; marker-end:url(#mk-route)}
+.m-signal{fill:none; stroke:var(--sig); stroke-width:1.6; stroke-dasharray:1.5 4; stroke-linecap:round; stroke-linejoin:round; marker-end:url(#mk-sig)}
+.m-lbl{font:700 11.5px var(--f-sans); fill:var(--ink-3); paint-order:stroke; stroke:var(--bg); stroke-width:5px; stroke-linejoin:round}
+.m-lbl.route-l{fill:var(--accent-ink)} .m-lbl.sig-l{fill:var(--sig)}
+.m-ext{cursor:pointer}
+.m-ext rect{fill:transparent; stroke:var(--ink-3); stroke-width:1; stroke-dasharray:5 4}
+.m-ext:hover rect, .m-ext.sel rect{fill:var(--surface-2)}
+.m-ext .xt{font:800 12.5px var(--f-sans)} .m-ext .xs{font:11px var(--f-sans); fill:var(--ink-3) !important}
+.m-ext:focus{outline:none} .m-ext:focus-visible rect{stroke:var(--accent); stroke-width:2; stroke-dasharray:none}
+.dyn-e{fill:none; stroke:var(--hl); stroke-width:1.6; opacity:.85; marker-end:url(#mk-hl)}
+.map .static{transition:opacity .15s}
+.map.focus .static{opacity:.3}
+.chip{cursor:pointer}
+.chip .nm{font:500 12px var(--f-mono) !important}
+.chip.new .bd{fill:var(--chip-new)}
+.chip.new .nm{fill:var(--accent-ink) !important; font-weight:600 !important}
+.chip.chg .bd{fill:var(--chip-chg); stroke:var(--hair-2); stroke-width:1}
+.chip.ghost .bd{fill:transparent; stroke:var(--ink-3); stroke-width:1; stroke-dasharray:3 3; stroke-opacity:.7}
+.chip.ghost .nm{fill:var(--ink-3) !important}
+.chip.more .bd{fill:var(--chip-more)}
+.chip.more .nm{fill:var(--ink-2) !important}
+.chip .ut rect{fill:none; stroke:var(--amber); stroke-width:1.2}
+.chip .ut line{stroke:var(--amber); stroke-width:1.2}
+.chip .ring{fill:none; stroke:none}
+.chip.sel .ring{stroke:var(--ink-2); stroke-width:1.6}
+.chip.rel .ring{stroke:var(--ink-3); stroke-width:1.2; stroke-dasharray:3 3}
+.chip.chg:hover .bd{stroke:var(--ink-3)}
+.chip.new:hover .bd, .chip.more:hover .bd{fill:var(--tint-2)}
+.chip.ghost:hover .bd{stroke-opacity:1}
+.chip:focus{outline:none}
+.chip:focus-visible .ring{stroke:var(--accent); stroke-width:2}
+.pin{cursor:pointer}
+.pin circle{fill:var(--tc); stroke:var(--bg); stroke-width:2}
+.pin text{font:700 11px var(--f-sans) !important; fill:var(--on-pin) !important}
+.pin.fixed circle{fill:var(--bg); stroke:var(--tc); stroke-width:1.4}
+.pin.fixed text{fill:var(--tc) !important}
+.map .pin:not(.fixed) circle{stroke:var(--filebox)}
+.map .pin.fixed circle{fill:var(--filebox)}
+.pin:focus{outline:none}
+.pin:focus-visible circle{stroke:var(--accent); stroke-width:2.5}
+
+/* change map: phone */
+.map-p{gap:16px 20px; grid-template-columns:repeat(auto-fill, minmax(min(100%, 380px), 1fr)); align-items:start}
+.pc{background:var(--filebox); border-radius:16px; padding:6px 0 10px}
+.pc.unch, .pc.ext{background:transparent; box-shadow:inset 0 0 0 1px var(--hair-2)}
+.pc.ext{padding:2px 0}
+.pc-h{display:flex; width:100%; justify-content:space-between; gap:8px; align-items:baseline; padding:10px 14px 6px; border:0; background:none; text-align:left; cursor:pointer; border-radius:14px}
+div.pc-h{cursor:default}
+.pc-h code{font-weight:600; font-size:12.5px}
+.pc-c{font:11px var(--f-mono); color:var(--ink-3)}
+.pc-c .add{color:var(--add-ink)} .pc-c .del{color:var(--del-ink)} .pc-c .nw{color:var(--accent-ink)}
+.pc-b{display:flex; flex-wrap:wrap; gap:8px; padding:4px 14px 8px}
+.pc-b:empty{display:none}
+.pwrap{display:inline-flex; align-items:center; gap:4px}
+.pchip{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; font:12px var(--f-mono); border:0; border-radius:8px; background:var(--chip-chg); box-shadow:inset 0 0 0 1px var(--hair-2); color:var(--ink); cursor:pointer}
+.pchip.new{background:var(--chip-new); box-shadow:none; color:var(--accent-ink); font-weight:600}
+.pchip.ghost{background:transparent; box-shadow:inset 0 0 0 1px var(--hair-2); color:var(--ink-3)}
+.pchip.sel, .pc-h.sel{outline:2px solid var(--ink-2); outline-offset:2px}
+.rn{font:700 10px/1 var(--f-sans); font-style:normal; display:inline-grid; place-items:center; width:16px; height:16px; border-radius:50%; background:transparent; box-shadow:inset 0 0 0 1.5px var(--route); color:var(--accent-ink)}
+.ut-h{display:inline-block; width:9px; height:9px; border-radius:2px; border:1.3px solid var(--amber); background:linear-gradient(135deg, transparent 44%, var(--amber) 44% 56%, transparent 56%)}
+.pwrap .pin-h{min-width:19px; height:19px; font-size:10px}
+
+/* flow */
+.flows{display:flex; flex-wrap:wrap; align-items:flex-start; gap:48px 72px}
+.flowfig{padding-top:4px; flex:0 1 auto; min-width:0; max-width:100%; display:grid; gap:14px; align-content:start}
+.ft{font:800 15px/1.35 var(--f-sans); color:var(--ink)}
+.flow-w, .flow-t{display:block; max-width:100%; height:auto}
+.flow-tall{display:none}
+.flowfig.tall-only .flow-tall{display:block}
+/* the wide flow while its stop's column holds it at its floor (the page's own figure rule); narrower, and on phones,
+   the tall one */
+@media (max-width:719px){ .flow-wide{display:none} .flow-tall{display:block} }
+.f-e{fill:none; stroke:var(--ink-3); stroke-width:1.3; stroke-linejoin:round}
+.f-b{fill:none; stroke:var(--route); stroke-width:1.8; stroke-linejoin:round}
+.f-sig{fill:none; stroke:var(--sig); stroke-width:1.7; stroke-dasharray:1.5 4; stroke-linecap:round; stroke-linejoin:round}
+.node{cursor:pointer}
+.node rect{fill:var(--surface); stroke:var(--hair-2); stroke-width:1}
+.node.new rect{fill:var(--tint-2); stroke:none}
+.node.chg rect{fill:transparent; stroke:var(--hair-2)}
+.node.chg .t1{fill:var(--ink-2)}
+.node.new .t1{fill:var(--accent-ink)}
+.node.ext rect{fill:transparent; stroke:var(--ink-3); stroke-dasharray:5 4}
+.node .t1{font-size:13px; font-weight:800}
+.node .t2{font-family:var(--f-mono); font-size:11.5px; fill:var(--ink-2)}
+.node .t2.mut{font-family:var(--f-sans); font-size:11px}
+.node .was{font-size:11px; font-style:italic; fill:var(--ink-3)}
+.node .cnd{font-size:11px; font-style:italic; font-weight:600; fill:var(--ink-3)}
+.node.new .t2, .node.new .cnd, .node.new .was{fill:var(--accent-ink)}
+.flow-t .t1{font-size:12px}
+.flow-t .t2{font-family:var(--f-mono); font-size:10.5px}
+.flow-t .was, .flow-t .cnd{font-size:10.5px}
+.flow-t .el{font-size:11px}
+.flow-t .t2.mut{font-family:var(--f-sans); font-size:10.5px; fill:var(--ink-3)}
+.node:hover rect{stroke:var(--ink-3)}
+.node.new:hover rect{stroke:none; filter:brightness(1.12)}
+.node.sel rect{stroke:var(--ink-2); stroke-width:1.8}
+.node.new.sel rect{stroke:var(--accent); stroke-width:1.8}
+.node:focus{outline:none}
+.node:focus-visible rect{stroke:var(--accent); stroke-width:2.2}
+.pill rect{fill:var(--bg); stroke:var(--hair-2); stroke-width:1}
+.pill text{font-size:11.5px; font-weight:700; font-style:italic; fill:var(--accent-ink) !important}
+
+.terms summary{cursor:pointer; font:700 11.5px var(--f-sans); text-transform:uppercase; letter-spacing:.1em; color:var(--ink-3); width:max-content}
+.terms dl{display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 260px),1fr)); gap:4px 32px; margin:14px 0 0}
+.terms dl div{padding:8px 0}
+.terms dt{font:700 12px var(--f-mono)}
+.terms dd{margin:2px 0 0; font-size:13.5px; color:var(--ink-2)}
+
+/* decide */
+.exl{display:flex; flex-wrap:wrap; align-items:center; gap:8px 22px; font-size:12.5px; color:var(--ink-3)}
+.exl .dk{display:inline-flex; align-items:center; gap:8px}
+.exl .dk button{pointer-events:none; width:26px; height:24px; font-size:14px}
+.grp{margin:12px 0 -12px; font:800 11.5px var(--f-sans); text-transform:uppercase; letter-spacing:.12em; color:var(--ink-3); display:flex; gap:10px; align-items:baseline}
+.grp span{font-family:var(--f-mono)}
+.finds{list-style:none; margin:0; padding:0}
+.fd{display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:8px 16px; align-items:start; padding:20px 0; scroll-margin-top:80px}
+.fd + .fd{border-top:1px solid var(--hair)}
+.fd:target, .fd.sel{background:var(--tint); border-radius:10px; box-shadow:0 0 0 10px var(--tint)}
+.fd-pin{padding-top:2px}
+.fd-main{display:grid; gap:8px; min-width:0}
+.fd-title{font-weight:700; font-size:15.5px; line-height:1.4}
+.fd:not(.open) .fd-title{color:var(--ink-2); font-weight:600}
+.fd-sub{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px}
+.tier{font:700 11px var(--f-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--tc); margin-right:6px}
+.fc{display:inline-block; padding:2px 9px; font:12px var(--f-mono); border:0; border-radius:6px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; word-break:break-all; text-align:left}
+.fc:hover, .fc.sel{background:var(--tint); color:var(--accent-ink)}
+.fd-sub .fd-more{display:inline-block}
+.fd-sub .fd-more[open]{flex-basis:100%}
+.fd-more summary{display:inline-block; cursor:pointer; font:700 13px/1 var(--f-mono); color:var(--ink-3); width:max-content; list-style:none; padding:5px 8px; border-radius:6px}
+.fd-more summary:hover{background:var(--surface-2)}
+.fd-more summary::-webkit-details-marker{display:none}
+.fd-more[open] summary{color:var(--ink)}
+.fd-more p{margin:4px 0 0; font-size:13.5px; color:var(--ink-2); max-width:72ch}
+.fd-more .src{font:11.5px var(--f-mono); color:var(--ink-3)}
+.fd-act{display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:10px}
+.marks{display:flex; gap:6px}
+.mk{display:inline-flex; align-items:center; gap:5px; min-height:24px; padding:3px 9px; line-height:1.35; font:600 11px var(--f-mono); border-radius:6px; color:var(--tc2); background:transparent; box-shadow:inset 0 0 0 1px var(--tc2)}
+.mk.ok{--tc2:var(--ok)}
+.mk.ok::before{content:""; width:7px; height:4px; border-left:2px solid currentColor; border-bottom:2px solid currentColor; transform:translateY(-2px) rotate(-45deg)}
+.mk.ov{--tc2:var(--red)}
+.mk.ov::before{content:"\00D7"; font:700 13px var(--f-sans)}
+.mk.ex{box-shadow:none; border:1px dashed var(--tc2)}
+.dec{display:flex; gap:6px}
+.dec button{display:inline-grid; place-items:center; width:34px; height:30px; padding:0; font:700 16px/1 var(--f-sans); background:transparent; border:0; border-radius:8px; color:var(--ink-2); cursor:pointer}
+.dec button:focus-visible{outline:none; box-shadow:inset 0 0 0 2px var(--accent)}
+.g-ok{display:inline-block; width:10px; height:5px; border-left:2px solid currentColor; border-bottom:2px solid currentColor; transform:translateY(-2px) rotate(-45deg)}
+.dec .cf:hover{color:var(--ok); background:var(--surface-2)}
+.dec .ov:hover{color:var(--red); background:var(--surface-2)}
+.dec .cf[aria-pressed="true"]{background:var(--ok); box-shadow:none; color:var(--on-pin)}
+.dec .ov[aria-pressed="true"]{background:var(--red); box-shadow:none; color:var(--on-pin)}
+@media (max-width:640px){
+  .fd{grid-template-columns:30px minmax(0,1fr)}
+  .fd-act{grid-column:2; justify-content:flex-start}
+}
+.close{display:flex; flex-wrap:wrap; align-items:center; gap:12px 18px; padding-top:8px}
+.tally{font:600 13px var(--f-mono); color:var(--ink-3)}
+.tally b{color:var(--ink)}
+/* framed on the team page (the bridge marks the root): the rail beside it is the one place to decide, and this
+   page's own address is not the review's, so its decision buttons, tally and share controls are not shown */
+[data-sonah-framed] .fd-act .dec, [data-sonah-framed] .exl, [data-sonah-framed] #decide .close,
+[data-sonah-framed] .top .share{display:none}
+/* the team page around the frame has the one theme switch (it sends its theme in; a sandboxed page keeps nothing to
+   remember a choice by), and the local page's buttons are not this page's */
+[data-sonah-framed] #theme, [data-sonah-framed] [data-intent]{display:none}
+[data-sonah-framed] .top{display:none}
+:root[data-sonah-wait]{visibility:hidden; color-scheme:normal; background:transparent}
+:root[data-sonah-wait] body{background:transparent}
+
+/* read */
+.hunks{display:flex; flex-direction:column}
+.hunk{min-width:0; scroll-margin-top:80px}
+.hunk + .hunk{margin-top:56px}
+.hunk.shut + .hunk.shut{margin-top:8px}
+.h-body{display:grid; gap:12px; min-width:0}
+/* a folded section: one row (name, one-liner, counts, pins) that opens its diff */
+.h-row{display:flex; align-items:center; gap:6px 14px; width:100%; min-width:0; padding:11px 14px; border:0; border-radius:10px; background:var(--surface); color:var(--ink); text-align:left; cursor:pointer}
+.h-row:hover{background:var(--surface-2)}
+.h-row:focus-visible{outline-offset:2px}
+.h-nm{flex:none; max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; font-size:13.5px}
+.h-sum{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; color:var(--ink-2)}
+.h-cnt{flex:none; white-space:nowrap; font-size:12px; color:var(--ink-3)}
+.h-cnt .add{color:var(--add-ink)} .h-cnt .del{color:var(--del-ink)}
+.h-pins{flex:none; display:inline-flex; gap:4px}
+.h-pins .pin-h{min-width:19px; height:19px; font-size:10px}
+.chev{flex:none; width:12px; height:12px; fill:none; stroke:var(--ink-3); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+.h-fold{display:inline-grid; place-items:center; width:30px; height:30px; padding:0; border:0; border-radius:8px; background:transparent; cursor:pointer}
+.h-fold:hover{background:var(--surface-2)}
+.h-fold .chev{transform:rotate(90deg)}
+.hh .h-fold{align-self:start; margin-top:-3px}
+/* phones: the name (whole, wrapping) and the chevron, then the one-liner, then the counts and pins */
+@media (max-width:640px){
+  .h-row{flex-wrap:wrap; align-items:flex-start; padding:10px 12px}
+  .h-row .hn{padding-top:1px}
+  .h-nm{flex:1 1 0; max-width:none; white-space:normal; overflow-wrap:anywhere}
+  .h-row .chev{order:1; margin-top:5px}
+  .h-sum{order:2; flex-basis:100%; padding-left:32px; white-space:normal}
+  .h-sum:empty{display:none}
+  .h-cnt{order:3; margin-left:32px}
+  .h-pins{order:4}
+}
+.hunk.sel .code{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.hh{display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px 14px; align-items:baseline}
+.hn{font:700 12px var(--f-mono); color:var(--ink-3); min-width:18px}
+.ht{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; min-width:0}
+.hname{border:0; background:none; padding:0; cursor:pointer; text-align:left}
+.hname code{font-weight:700; font-size:15px}
+.hname .sub{color:var(--ink-3); font-weight:600}
+.hname:hover code{color:var(--accent-ink)}
+.lc{font:11.5px var(--f-mono); color:var(--ink-3); word-break:break-all}
+.lc.hk{font-family:var(--f-sans); font-size:12px}
+.stchip{display:inline-block; padding:1px 8px; font:700 11px/1.6 var(--f-sans); text-transform:uppercase; letter-spacing:.08em; border-radius:5px; white-space:nowrap}
+.stchip.new{color:var(--accent-ink); background:var(--tint-new)}
+.stchip.changed{color:var(--ink-2); padding-inline:0}
+.stchip.unchanged{color:var(--ink-3); border:1px dashed var(--hair-2)}
+.stchip.ext{color:var(--ink-3); border:1px dashed var(--hair-2)}
+.hone{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; font-size:14.5px; color:var(--ink-2); padding-left:32px}
+.tchip{font:600 11px var(--f-mono); color:var(--ink-3); background:var(--surface-2); border-radius:5px; padding:0 7px}
+
+/* code and diff rows (Read stop and the card share them) */
+pre.code, .diff{margin:0; background:var(--code); border-radius:10px; overflow-x:auto; padding:10px 0; font:11.5px/1.75 var(--f-mono); color:var(--ink)}
+pre.code{margin-left:32px}
+.code .l, .diff .l{display:block; padding-right:16px; white-space:pre; min-width:max-content}
+.code .l i, .diff .l i{display:inline-block; width:52px; padding-right:10px; text-align:right; font-style:normal; color:var(--ink-3); user-select:none}
+.code .l b, .diff .l b{display:inline-block; width:18px; font-weight:400; color:var(--ink-3); user-select:none}
+.code .l.a, .diff .l.a{background:var(--add-bg)}
+.code .l.a i, .code .l.a b, .diff .l.a i, .diff .l.a b{color:var(--add-ink)}
+.diff .l.d{background:var(--del-bg)}
+.diff .l.d i, .diff .l.d b{color:var(--del-ink)}
+.code .l.gap, .diff .l.gap{color:var(--ink-3); height:22px; line-height:22px}
+.code .l.cmt, .diff .l.cmt{color:var(--ink-3)}
+.cmt-b{font:inherit; font-size:12px; color:var(--ink-3); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px}
+.cmt-b:hover{color:var(--ink-2)}
+.cmt-rows{display:block}
+@media (max-width:640px){ .hone{padding-left:0} pre.code{margin-left:0} }
+.foot{padding-top:24px; font:11px var(--f-mono); color:var(--ink-3)}
+
+/* the floating card */
+.card{position:absolute; z-index:50; top:0; left:0; width:min(600px, calc(100vw - 32px)); max-height:70vh; overflow:auto; overscroll-behavior:contain;
+  background:var(--raised); color:var(--ink); border-radius:14px; box-shadow:var(--shadow); padding:18px 20px 20px; outline:none}
+.card:focus-visible{box-shadow:var(--shadow), 0 0 0 2px var(--accent)}
+.card .x{position:absolute; top:10px; right:10px; width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:8px; background:transparent; color:var(--ink-3); font:400 22px/1 var(--f-sans); cursor:pointer}
+.card .x:hover{background:var(--surface-2); color:var(--ink)}
+.c-head{display:grid; grid-template-columns:minmax(0,1fr); gap:6px; padding-right:36px; min-width:0}
+.c-name{display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px}
+.c-name code{font-weight:700; font-size:15px; word-break:break-all}
+.c-meta{display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font:12px var(--f-mono); color:var(--ink-3)}
+.c-meta > span{min-width:0}
+.c-meta .c-path{overflow-wrap:anywhere}
+.c-meta .p{color:var(--add-ink)} .c-meta .m{color:var(--del-ink)}
+.c-meta .nt{font:700 10.5px var(--f-sans); text-transform:uppercase; letter-spacing:.06em; color:var(--amber)}
+.c-tabs{display:flex; flex-wrap:wrap; gap:6px; padding-right:40px; margin-bottom:14px}
+.c-tab{padding:3px 10px; border:0; border-radius:7px; background:transparent; font:12px var(--f-mono); color:var(--ink-2); cursor:pointer}
+.c-tab:hover{color:var(--ink); background:var(--surface-2)}
+.c-tab[aria-selected="true"]{background:var(--tint-new); color:var(--accent-ink); font-weight:600}
+.c-one{margin:14px 0 0; font-size:15px; line-height:1.5; color:var(--ink)}
+.c-what{margin:14px 0 0; padding:12px 14px; border-radius:10px; background:var(--tint)}
+.c-what .lbl{display:block; font:700 10.5px var(--f-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--accent-ink)}
+.c-what p{margin:6px 0 0; font-size:14px; line-height:1.55; color:var(--ink)}
+.c-say{display:grid; gap:6px; margin:16px 0 0}
+.c-say div{display:grid; grid-template-columns:42px minmax(0,1fr); gap:10px; align-items:baseline}
+.c-say dt{font:700 10.5px var(--f-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3)}
+.c-say dd{margin:0; font-size:14px; line-height:1.5}
+.c-say .was dd{color:var(--ink-2)}
+.c-dh{display:flex; justify-content:space-between; gap:10px; margin:18px 0 8px; font:11.5px var(--f-mono); color:var(--ink-3)}
+.c-dh .p{color:var(--add-ink)} .c-dh .m{color:var(--del-ink)}
+.card .diff{font-size:12px; padding:8px 0; overflow-x:hidden; margin-inline:-20px; border-radius:0}
+/* long lines wrap under their own text, not under the line number, so the card scrolls one way only */
+.card .diff .l{white-space:pre-wrap; overflow-wrap:anywhere; min-width:0; padding-left:50px; text-indent:-50px}
+.card .diff .l i, .card .diff .l b{text-indent:0}
+.card .diff .l i{width:36px; padding-right:6px}
+.card .diff .l b{width:14px}
+.c-more{margin-top:8px; padding:4px 10px; border:0; border-radius:7px; background:var(--surface-2); color:var(--ink-2); font:600 12px var(--f-mono); cursor:pointer}
+.c-more:hover{color:var(--ink)}
+.c-go{display:inline-block; margin-top:14px; font:700 13px var(--f-sans); color:var(--accent-ink); text-decoration:none}
+.c-go:hover{text-decoration:underline}
+.c-note{margin:14px 0 0; font-size:14px; color:var(--ink-2)}
+.c-fns{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+@media (max-width:640px){ .card{padding:16px 16px 18px; border-radius:12px} .card .diff{margin-inline:-16px} }
+
+/* ---- added for the generated page ---- */
+.cap .add, .lc .add{color:var(--add-ink)} .cap .del, .lc .del{color:var(--del-ink)}
+.none{margin:0; font-size:15px; color:var(--ink-2)}
+.m-pill{cursor:pointer}
+.m-pill rect{fill:transparent; stroke:var(--hair-2); stroke-width:1}
+.m-pill .pn{font:500 11.5px var(--f-mono) !important; fill:var(--ink-2) !important}
+.m-pill .pc{font:400 11px var(--f-mono) !important; fill:var(--ink-3) !important}
+.m-pill:hover rect, .m-pill.sel rect{fill:var(--surface-2)}
+.m-pill:focus{outline:none} .m-pill:focus-visible rect{stroke:var(--accent); stroke-width:2}
+.chip.gone .bd{fill:transparent; stroke:var(--del-ink); stroke-width:1; stroke-dasharray:3 3; stroke-opacity:.8}
+.chip.gone .nm{fill:var(--del-ink) !important; text-decoration:line-through}
+/* a function's number in the first flow: a ring, apart from the finding pins (filled, tier-coloured) */
+.chip .cn{fill:none; stroke:var(--route); stroke-width:1.6}
+.chip .cnt{font:700 10px var(--f-sans) !important; fill:var(--accent-ink) !important}
+.pin.t-act circle, .pin.t-know circle, .pin.t-good circle{fill:var(--tc)}
+.nb circle{fill:var(--bg); stroke:var(--route); stroke-width:1.6}
+.nb text{font:700 10px var(--f-sans) !important; fill:var(--accent-ink) !important}
+.node.plain rect{fill:var(--surface); stroke:var(--hair-2)}
+.node.ext .t2.mut{font-style:italic}
+.fk circle{fill:var(--bg); stroke:var(--ink-3); stroke-width:1.3}
+.fk.k-signal circle{stroke:var(--sig)} .fk.k-branch circle{stroke:var(--route)}
+.fk text{font:700 10.5px var(--f-sans) !important; fill:var(--ink-2) !important}
+.fkey{list-style:none; margin:10px 0 0; padding:0; display:grid; gap:4px; font-size:12.5px; color:var(--ink-2)}
+.fkey li{display:flex; gap:8px; align-items:baseline}
+.fk-i{display:inline-grid; place-items:center; width:17px; height:17px; flex:none; border-radius:50%; box-shadow:inset 0 0 0 1.3px var(--ink-3); font:700 10.5px/1 var(--f-sans); font-style:normal; color:var(--ink-2)}
+.fk-i.k-signal{box-shadow:inset 0 0 0 1.3px var(--sig)} .fk-i.k-branch{box-shadow:inset 0 0 0 1.3px var(--route)}
+.fd-more .q{display:block; margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--code); font:12px/1.5 var(--f-mono); color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere; max-width:72ch}
+.stchip.removed{color:var(--del-ink); border:1px dashed var(--del-ink)}
+.r-what{margin:0 0 0 32px; max-width:72ch}
+pre.code.diff{margin-left:32px}
+.folded{display:grid; gap:10px; padding-top:40px}
+.folded .c-fns{margin-top:0}
+.pg{display:grid; gap:10px; align-content:start}
+.pg-h{font:600 11.5px var(--f-mono); color:var(--ink-3)}
+.pc.other{background:transparent; box-shadow:inset 0 0 0 1px var(--hair-2); padding:6px 4px; display:grid}
+.pfile{display:flex; justify-content:space-between; gap:8px; align-items:baseline; width:100%; padding:6px 10px; border:0; border-radius:8px; background:none; text-align:left; cursor:pointer; color:var(--ink-2)}
+.pfile:hover, .pfile.sel{background:var(--surface-2)}
+.pfile code{font-size:12px; word-break:break-all}
+.pchip.gone{background:transparent; box-shadow:none; outline:1px dashed var(--del-ink); outline-offset:-1px; color:var(--del-ink); text-decoration:line-through}
+.pchip.more{background:var(--surface-2); box-shadow:none; color:var(--ink-2)}
+.pchip{max-width:100%; word-break:break-all; text-align:left}
+@media (max-width:640px){ .r-what{margin-left:0} pre.code.diff{margin-left:0} }
+.pin text.pm{font-size:9px !important; letter-spacing:-.02em}
+.ht{min-width:0} .hname{min-width:0; max-width:100%} .hname code{overflow-wrap:anywhere; word-break:break-word}
+.c-name code, .lc, .fc{overflow-wrap:anywhere}
+
+/* ---- the desktop graphs (placed by ELK) ---- */
+/* How: the before track over the steps, branch conditions as pills, steps that work as before quieter */
+.trk-l{font:800 11px var(--f-sans) !important; letter-spacing:.14em; fill:var(--ink-3) !important}
+.trk-l.now{fill:var(--accent-ink) !important}
+.b-line{stroke:var(--hair-2); stroke-width:1.2; stroke-dasharray:4 5}
+.b-dot{fill:var(--bg); stroke:var(--ink-3); stroke-width:1.3}
+.b-t{font-size:11.5px; fill:var(--ink-3) !important}
+.flow-w .node.chg .t2{fill:var(--ink-3)}
+.flow-w .pill rect{fill:var(--bg); stroke:var(--route); stroke-width:1}
+.flow-w .el{font-size:11.5px}
+/* Where: nested folder regions, file boxes of function rows, calls; a selected function's view */
+.cg .rg rect{fill:none; stroke:var(--hair-2); stroke-width:1; stroke-dasharray:2 4}
+.cg .rg.d0 rect{fill:var(--surface); stroke:none}
+.cg .rg.d1 rect{fill:none; stroke:var(--hair-2); stroke-dasharray:none}
+.cg .rg .r-lbl{font:600 11.5px var(--f-mono) !important}
+.cg-e{fill:none; stroke:var(--ink-3); stroke-width:1.2; stroke-linejoin:round; opacity:.65}
+.cg-e.in{stroke-width:1; opacity:.55}
+.cg-e.sel-only{display:none}
+.cg.focus .cg-e.sel-only.hot{display:inline}
+.mk-call, .mk-imp{fill:var(--ink-3)}
+.cg .own{font:600 11px var(--f-mono) !important; fill:var(--ink-3) !important}
+.imp-m path{fill:none; stroke:var(--ink-3); stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round}
+.imp-m text{font:700 10px var(--f-sans) !important; fill:var(--ink-2) !important}
+.cg.focus .cg-e{opacity:.1}
+.cg.focus .cg-e.hot{opacity:1; stroke:var(--hl); stroke-width:1.6}
+.cg.focus .chip:not(.sel):not(.rel):not(.ghost){opacity:.42}
+.cg.focus .m-file .fb{fill:var(--surface-2)}
+.cg .imp-bg{fill:var(--bg); stroke:var(--hair-2); stroke-width:1; filter:drop-shadow(0 6px 14px rgba(0,0,0,.14))}
+.cg .imp-c{font:700 10.5px var(--f-sans) !important; letter-spacing:.08em; text-transform:uppercase; fill:var(--ink-3) !important}
+.cg .imp-f{fill:none; stroke:var(--hair-2); stroke-width:1; stroke-dasharray:5 4}
+.cg .imp-fn{font:600 11.5px var(--f-mono) !important; fill:var(--ink-3) !important}
+.cg .imp-l{fill:none; stroke:var(--ink-3); stroke-width:1.2; stroke-dasharray:4 3}
+.cg .imp-l.may, .cg .chip.ghost.may .bd{stroke-dasharray:1.5 3}
+.cg .imp-n{font:11px var(--f-sans) !important; fill:var(--ink-3) !important}
+.cg .chip.ghost .mr{font:italic 10.5px var(--f-sans) !important; fill:var(--ink-3) !important}
+@media (prefers-reduced-motion: no-preference){ .cg .imp:not([hidden]){animation:imp-in .18s ease-out} }
+@keyframes imp-in{from{opacity:0}to{opacity:1}}
+.cwrap{display:grid; gap:28px; min-width:0}
+.imp-h{display:inline-flex; align-items:center; gap:2px; font:700 10px/1 var(--f-sans); font-style:normal; color:var(--ink-2)}
+.imp-h svg{width:10px; height:10px; fill:none; stroke:var(--ink-3); stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round}
+.others{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin-top:14px}
+.others .lbl{margin-right:6px}
+.others .pfile{display:inline-flex; width:auto; gap:8px; padding:3px 10px; background:var(--surface-2); border-radius:7px}
+/* the card: what the parser knows beyond the diff */
+.c-imp{margin:14px 0 0; display:grid; gap:6px}
+.c-imp .c-fns{margin-top:0}
+.c-imp .c-n{margin:0; font-size:12.5px; color:var(--ink-3)}
+.c-tab.gh{border:1px dashed var(--hair-2)}
+.c-tab.gh i{font-style:italic; color:var(--ink-3)}
+.c-in{margin:10px 0 0; font-size:13px; color:var(--ink-2)}
+.c-in code{font-size:12px}
+/* the card: calls among the changed functions, and the ways between How and Where */
+.c-calls{display:grid; gap:6px; margin:14px 0 0}
+.c-calls div{display:grid; grid-template-columns:76px minmax(0,1fr); gap:10px; align-items:baseline}
+.c-calls dt{font:700 10.5px var(--f-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3)}
+.c-calls dd{margin:0}
+.c-calls .c-fns{margin-top:0}
+.c-ways{display:flex; flex-wrap:wrap; gap:6px 10px; margin:14px 0 0}
+.c-way{padding:4px 10px; border:0; border-radius:7px; background:var(--tint); color:var(--accent-ink); font:700 12.5px var(--f-sans); cursor:pointer; text-align:left}
+.c-way:hover{background:var(--tint-2)}

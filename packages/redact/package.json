@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "license": "BUSL-1.1"
+  "license": "MIT"
 }

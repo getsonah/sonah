@@ -1,0 +1,265 @@
+{
+ "v": 1,
+ "repo": {
+  "name": "acme-shop"
+ },
+ "range": {
+  "base": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+  "head": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+  "commits": [
+   {
+    "sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+    "subject": "Apply the discount before tax",
+    "body": ""
+   }
+  ]
+ },
+ "stats": {
+  "files": 2,
+  "added": 11,
+  "removed": 2,
+  "functions": 3,
+  "newFunctions": 1,
+  "changedFunctions": 2,
+  "removedFunctions": 0
+ },
+ "groups": [
+  {
+   "group": "src",
+   "files": [
+    "src/cart.py",
+    "src/price.ts"
+   ]
+  }
+ ],
+ "files": [
+  {
+   "path": "src/cart.py",
+   "status": "M",
+   "role": "source",
+   "lang": "py",
+   "added": 7,
+   "removed": 1,
+   "functions": [
+    "src/cart.py#add_item",
+    "src/cart.py#total"
+   ]
+  },
+  {
+   "path": "src/price.ts",
+   "status": "M",
+   "role": "source",
+   "lang": "ts",
+   "added": 2,
+   "removed": 1,
+   "functions": [
+    "src/price.ts#applyDiscount"
+   ]
+  }
+ ],
+ "functions": [
+  {
+   "id": "src/cart.py#add_item",
+   "path": "src/cart.py",
+   "name": "add_item",
+   "kind": "callable",
+   "status": "new",
+   "line": 8,
+   "span": [
+    8,
+    12
+   ],
+   "oldLine": null,
+   "added": 4,
+   "removed": 0,
+   "definition": "def add_item(cart, item):",
+   "commentOnly": false,
+   "diff": [
+    [
+     "+",
+     null,
+     8,
+     "def add_item(cart, item):"
+    ],
+    [
+     "+",
+     null,
+     9,
+     "    if item.qty <= 0:"
+    ],
+    [
+     "+",
+     null,
+     10,
+     "        raise ValueError(\"qty\")"
+    ],
+    [
+     "+",
+     null,
+     11,
+     "    cart.items.append(item)"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "src/checkout.py",
+      "line": 40
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  },
+  {
+   "id": "src/cart.py#total",
+   "path": "src/cart.py",
+   "name": "total",
+   "kind": "callable",
+   "status": "changed",
+   "line": 20,
+   "span": [
+    20,
+    25
+   ],
+   "oldLine": 19,
+   "added": 3,
+   "removed": 1,
+   "definition": "def total(cart, region):",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     20,
+     "def total(cart, region):"
+    ],
+    [
+     "-",
+     19,
+     null,
+     "    return sum(i.price for i in cart.items)"
+    ],
+    [
+     "+",
+     null,
+     21,
+     "    subtotal = sum(i.price for i in cart.items)"
+    ],
+    [
+     "+",
+     null,
+     22,
+     "    subtotal = apply_discount(subtotal, cart.code)"
+    ],
+    [
+     "+",
+     null,
+     23,
+     "    return subtotal + tax_for(region, subtotal)"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "src/checkout.py",
+      "line": 40
+     }
+    ]
+   },
+   "tests": [
+    "tests/test_cart.py"
+   ],
+   "fold": null
+  },
+  {
+   "id": "src/price.ts#applyDiscount",
+   "path": "src/price.ts",
+   "name": "applyDiscount",
+   "kind": "callable",
+   "status": "changed",
+   "line": 3,
+   "span": [
+    3,
+    8
+   ],
+   "oldLine": 2,
+   "added": 2,
+   "removed": 1,
+   "definition": "export function applyDiscount(amount: number, code?: string): number {",
+   "commentOnly": false,
+   "diff": [
+    [
+     " ",
+     null,
+     3,
+     "export function applyDiscount(amount: number, code?: string): number {"
+    ],
+    [
+     "-",
+     4,
+     null,
+     "  return code ? amount * 0.9 : amount;"
+    ],
+    [
+     "+",
+     null,
+     4,
+     "  if (!code) return amount;"
+    ],
+    [
+     "+",
+     null,
+     5,
+     "  return Math.max(0, amount - discountOf(code));"
+    ],
+    [
+     " ",
+     null,
+     6,
+     "}"
+    ]
+   ],
+   "callers": {
+    "count": 1,
+    "list": [
+     {
+      "path": "src/checkout.py",
+      "line": 40
+     }
+    ]
+   },
+   "tests": [],
+   "fold": null
+  }
+ ],
+ "mentions": [
+  {
+   "from": "src/cart.py#total",
+   "to": "src/price.ts#applyDiscount",
+   "onCodeLine": true,
+   "callShaped": true
+  }
+ ],
+ "route": {
+  "read": [
+   {
+    "path": "src/cart.py",
+    "lines": 8
+   },
+   {
+    "path": "src/price.ts",
+    "lines": 3
+   }
+  ],
+  "skim": [],
+  "skip": [],
+  "lines": {
+   "read": 11,
+   "skim": 0,
+   "skip": 0
+  }
+ }
+}

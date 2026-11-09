@@ -1,0 +1,579 @@
+{
+ "functions": {
+  "packages/evidence/src/prompt-parts.js#promptCutsOf": {
+   "summary": "Returns a request's valid split points, or none to send it whole.",
+   "change": "Adds the safety check for splitting a prompt: if any split point is invalid, for example one leaving a blank piece, the prompt is sent whole, same text."
+  },
+  "packages/evidence/src/prompt-parts.js#promptPartsOf": {
+   "summary": "Splits a prompt at its split points into pieces that rejoin exactly.",
+   "change": "Adds the split itself: the prompt becomes a list of pieces that join back to the original text in order, so the model reads exactly the same words."
+  },
+  "packages/evidence/src/prompt-parts.js#appendedRequest": {
+   "summary": "Builds a follow-up request: the original prompt plus added text.",
+   "change": "Adds the helper for asking again: the follow-up keeps the original's split points plus one where the original ended, so the repeated original is read from cache."
+  },
+  "packages/evidence/src/prompt-parts.js#continuedRequest": {
+   "summary": "Splits a rebuilt repair at the original's end, if it extends it.",
+   "change": "Adds the same reuse for repairs built from scratch: split at the original's end only when the new prompt starts with the original exactly; otherwise left as it was."
+  },
+  "packages/evidence/src/prompt-parts.js#staggerSharedParts": {
+   "summary": "Holds back requests sharing an opening until the first one's reply starts.",
+   "change": "Adds a queue: requests sharing a long opening wait until the first one's reply begins or its call ends, then read that opening from cache instead of rewriting it."
+  },
+  "packages/evidence/src/prompt-parts.js#sharedFirstOf": {
+   "summary": "Fingerprints a request's instructions, answer format and opening, to group requests.",
+   "change": "Adds the grouping rule: requests share a group only when instructions, expected answer format and opening text are identical, because only then can one reuse another's cache."
+  },
+  "packages/evidence/src/prompt.js#refutedReask": {
+   "summary": "Builds a re-ask about a review row the challenge step refuted.",
+   "change": "Now marks a split right after the long session text every re-ask repeats, so later re-asks for that stretch of session read it from cache. The text is unchanged."
+  },
+  "packages/evidence/src/code-pass.js#sharedCheckLines": {
+   "summary": "Lists the opening lines that every code check of one change shares.",
+   "change": "Adds one definition of that shared opening: the person's instructions, a heading and the change itself. The three check builders now all use it."
+  },
+  "packages/evidence/src/code-pass.js#cutAfter": {
+   "summary": "Gives the split point right after the shared opening lines.",
+   "change": "Adds where to split: the length of the shared opening lines joined together, plus one for the line break that ends them."
+  },
+  "packages/evidence/src/code-pass.js#buildVerifyRequest": {
+   "summary": "Builds the request that asks an agent to check one finding.",
+   "change": "Now splits the request after the shared opening (instructions and the change), so checks of other findings on that change read it from cache. Wording is unchanged."
+  },
+  "packages/evidence/src/code-pass.js#buildBatchVerifyRequest": {
+   "summary": "Builds the one request that checks all the review's questions.",
+   "change": "Now splits after the same opening as a finding check, so its own re-ask reads it from cache. Its different instructions keep it from sharing the finding checks' cache."
+  },
+  "packages/evidence/src/code-pass.js#buildAccountRequest": {
+   "summary": "Builds an agent request that accounts for a batch of items.",
+   "change": "Now splits after the person's instructions and the change, which every accounting batch of that change shares, so batches after the first read that opening from cache."
+  },
+  "packages/evidence/src/code-pass.js#receiptRepairOnce": {
+   "summary": "Asks once to fix candidates whose quoted evidence failed the check.",
+   "change": "The repair request now keeps the original's split points plus one where the original ended, so the original text it repeats is read from cache. Text is unchanged."
+  },
+  "packages/evidence/src/code-pass.js#verifyFinding": {
+   "summary": "Checks one finding with an agent; re-asks once if unusable.",
+   "change": "Its one follow-up now keeps the original's split points plus one at the original's end, so the repeated original is read from cache instead of paid for again."
+  },
+  "packages/evidence/src/code-pass.js#verifyBatch": {
+   "summary": "Checks the review's questions in one batch, re-asking once about unusable entries.",
+   "change": "As with a single finding's check: its follow-up now keeps the original's split points plus one where the original ended, so the repeated text comes from cache."
+  },
+  "packages/evidence/src/code-pass.js#accountBatch": {
+   "summary": "Runs one accounting batch, re-asking once about entries it could not use.",
+   "change": "Its one follow-up now keeps the original's split points plus one where the original ended, so the original text it repeats is read from cache."
+  },
+  "packages/evidence/src/code-pass.js#runCodePass": {
+   "summary": "Runs the code step: review agents, finding checks and accounting.",
+   "change": "All agent requests now pass through one queue: checks sharing an opening wait for the first's reply, and requests behind them wait too. Repairs extending the original reuse its cache."
+  },
+  "packages/evidence/src/run-review.js#restatedRequirements": {
+   "summary": "Re-asks the reviewer about each requirement the challenge step refuted.",
+   "change": "Its re-asks no longer go all at once: the first goes now, the rest once its reply begins, so they read the shared session text from cache."
+  },
+  "packages/evidence/src/run-review.js#recolumnedDecisions": {
+   "summary": "Re-asks about decisions the challenge step refuted on who made them.",
+   "change": "Same change as the requirement re-asks: the first goes at once, the rest wait for its reply, then read the shared session text from cache. No test drives this wait."
+  },
+  "packages/evidence/src/run-review.js#reanchoredChoices": {
+   "summary": "Re-asks for the agent's own words behind refuted choices not to act.",
+   "change": "Same change as the requirement re-asks: the first goes at once, the rest wait for its reply, then read the shared session text from cache. No test drives this wait."
+  },
+  "packages/cli/src/review-judge.js#reviewCliArgs": {
+   "summary": "Builds the command-line arguments for a plain Claude CLI call.",
+   "change": "A request sent in pieces now also switches the CLI to structured input (one JSON message on standard input), as images already did. Other requests' arguments are unchanged."
+  },
+  "packages/cli/src/review-judge.js#reviewAgentCliArgs": {
+   "summary": "Builds the command-line arguments for a Claude CLI agent that reads code.",
+   "change": "A request sent in pieces now switches the agent to structured input, so the CLI reads its prompt as one JSON message with separate pieces. Others are unchanged."
+  },
+  "packages/cli/src/review-judge.js#imageContent": {
+   "summary": "Builds a message's content: the prompt's text blocks, then any images.",
+   "change": "The prompt can now go as several text blocks, one per piece, only the first marked 'save up to here in the cache'. Without split points, still one block."
+  },
+  "packages/cli/src/review-judge.js#claudeStreamInput": {
+   "summary": "Writes the single JSON message line sent to the CLI's input.",
+   "change": "Now also used for requests sent in pieces, not only for requests with images, so the pieces and their cache mark reach the CLI."
+  },
+  "packages/cli/src/review-judge.js#reviewTransportArguments": {
+   "summary": "Returns each backend's call arguments, which the stored-answer key includes.",
+   "change": "Now passes 'sent in pieces' through, but only to the Claude CLI's arguments. Other backends never send pieces, so their arguments and stored-answer keys stay the same."
+  },
+  "packages/cli/src/review-judge.js#callLocal": {
+   "summary": "Runs one Claude CLI call: sends the prompt and reads the reply.",
+   "change": "Pieces now reach the CLI as separate text blocks. Agent calls now also signal 'reply started' at their first reply line, so requests waiting on them go sooner."
+  },
+  "packages/cli/src/review-judge.js#withTransportRetry": {
+   "summary": "Retries a failed call once; resends a refused split request whole, once.",
+   "change": "New safety net: if the provider rejects a split request as invalid, it is resent once as one piece, same text, so the added cache mark never fails a call."
+  },
+  "packages/cli/src/review-judge.js#withoutParts": {
+   "summary": "Copies a request without its split points, noting why they were dropped.",
+   "change": "Adds the copy used for that resend: same text in one piece, still able to signal 'reply started', and tagged with the reason so its attempt record says why."
+  },
+  "packages/cli/src/review-judge.js#markResentWhole": {
+   "summary": "Marks an answer as one that came from a whole resend.",
+   "change": "Adds a private list that remembers which answers came from a resend, so later code can tell, without changing any byte of the answer itself."
+  },
+  "packages/cli/src/review-judge.js#resentWhole": {
+   "summary": "Says whether an answer came from a whole resend.",
+   "change": "Adds the check the answer store uses to refuse such answers: the split request their stored key would describe did not produce them."
+  },
+  "packages/cli/src/review-judge.js#createReviewJudge": {
+   "summary": "Creates the function that makes each model call and records its details.",
+   "change": "An attempt resent as one piece now records why ('refused in parts'), so the review's usage record can count those resends."
+  },
+  "packages/cli/src/answer-cache.js#answerKey": {
+   "summary": "Computes the key under which a model answer is stored and found.",
+   "change": "A split request's key now includes the CLI's structured-input setting, not the split positions, so its old stored answer no longer matches. Every other key is unchanged."
+  },
+  "packages/cli/src/answer-cache.js#agentAnswerKey": {
+   "summary": "Computes the stored-answer key for an agent request.",
+   "change": "As with the plain key: a split agent request's key now includes the structured-input setting, so it never reuses an answer stored for the unsplit form."
+  },
+  "packages/cli/src/answer-cache.js#createAnswerCache": {
+   "summary": "Creates the on-disk store of past model answers.",
+   "change": "Its save step now refuses answers got by a whole resend, since their key would claim the split request produced them. The next review simply asks again."
+  },
+  "packages/cli/src/answer-cache.js#memoizeJudge": {
+   "summary": "Returns a stored answer when one exists, instead of a new call.",
+   "change": "When it reuses a stored answer, it now tells the waiting queue no call was made, so the next request sharing that opening takes the lead and writes the cache."
+  },
+  "packages/cli/src/review-budget.js#createReviewBudget": {
+   "summary": "Tracks a review's calls, limits and usage record.",
+   "change": "The usage record now counts calls sent in pieces and calls resent whole, by reason. A review with neither keeps its record exactly as before."
+  },
+  "scripts/session-review.mjs#runSessionReviewHarness": {
+   "summary": "Runs one session review for assessments, stopping on serious provider errors.",
+   "change": "Its emergency stop no longer fires when a split request is rejected as invalid, because the transport resends it whole; the resend's own result still counts. No test covers this."
+  }
+ },
+ "story": {
+  "oneLine": "Related requests' shared opening is cached by the first and read by the rest.",
+  "ask": "Make each Sonah review cost less, in the cost release.",
+  "beforeNow": [
+   {
+    "before": "Each re-ask writes the shared opening again",
+    "now": "The first writes it; the rest read it"
+   },
+   {
+    "before": "Related requests are all sent at once",
+    "now": "Siblings wait until the first reply begins"
+   },
+   {
+    "before": "The prompt goes as one string",
+    "now": "The prompt goes as blocks, first one cached"
+   }
+  ],
+  "flows": [
+   {
+    "title": "Re-asks of a refuted row",
+    "steps": [
+     {
+      "id": "a1",
+      "label": "Challenge refutes a row",
+      "fn": null,
+      "ext": "reviewWindow",
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "a2",
+      "label": "Cut after kept body",
+      "fn": "packages/evidence/src/prompt.js#refutedReask",
+      "ext": null,
+      "was": "one string",
+      "isNew": true
+     },
+     {
+      "id": "a3",
+      "label": "First re-ask leads",
+      "fn": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+      "ext": null,
+      "was": "all sent together",
+      "isNew": true
+     },
+     {
+      "id": "a4",
+      "label": "Stored answer? Replay it",
+      "fn": "packages/cli/src/answer-cache.js#memoizeJudge",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "a5",
+      "label": "Send parts, first marked",
+      "fn": "packages/cli/src/review-judge.js#claudeStreamInput",
+      "ext": null,
+      "was": "prompt piped as text",
+      "isNew": true
+     },
+     {
+      "id": "a6",
+      "label": "Reply begins: release siblings",
+      "fn": "packages/cli/src/review-judge.js#callLocal",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a7",
+      "label": "Siblings read cached body",
+      "fn": null,
+      "ext": "claude CLI",
+      "was": "each writes body again",
+      "isNew": true
+     },
+     {
+      "id": "a8",
+      "label": "Next re-ask leads instead",
+      "fn": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a9",
+      "label": "Leader ends: release siblings",
+      "fn": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     }
+    ],
+    "edges": [
+     {
+      "from": "a1",
+      "to": "a2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a2",
+      "to": "a3",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a3",
+      "to": "a4",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a4",
+      "to": "a5",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a5",
+      "to": "a6",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a6",
+      "to": "a7",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a4",
+      "to": "a8",
+      "label": "answered from store",
+      "kind": "branch"
+     },
+     {
+      "from": "a5",
+      "to": "a9",
+      "label": "call settles first",
+      "kind": "branch"
+     },
+     {
+      "from": "a6",
+      "to": "a3",
+      "label": "reply begun",
+      "kind": "signal"
+     },
+     {
+      "from": "a9",
+      "to": "a3",
+      "label": "release all",
+      "kind": "signal"
+     }
+    ]
+   },
+   {
+    "title": "Code checks of one change",
+    "steps": [
+     {
+      "id": "b1",
+      "label": "Review agents read change",
+      "fn": "packages/evidence/src/code-pass.js#runCodePass",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "b2",
+      "label": "Cut after words, change",
+      "fn": "packages/evidence/src/code-pass.js#sharedCheckLines",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b3",
+      "label": "Build check with parts",
+      "fn": "packages/evidence/src/code-pass.js#buildVerifyRequest",
+      "ext": null,
+      "was": "built uncut",
+      "isNew": true
+     },
+     {
+      "id": "b4",
+      "label": "First check leads",
+      "fn": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+      "ext": null,
+      "was": "all launched together",
+      "isNew": true
+     },
+     {
+      "id": "b5",
+      "label": "First assistant line: release",
+      "fn": "packages/cli/src/review-judge.js#callLocal",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b6",
+      "label": "Other checks read cache",
+      "fn": null,
+      "ext": "claude CLI",
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b7",
+      "label": "Batch, accounting wait too",
+      "fn": "packages/evidence/src/prompt-parts.js#staggerSharedParts",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b8",
+      "label": "Re-ask: cut at original end",
+      "fn": "packages/evidence/src/prompt-parts.js#appendedRequest",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b9",
+      "label": "Repair cut if prefix",
+      "fn": "packages/evidence/src/prompt-parts.js#continuedRequest",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     }
+    ],
+    "edges": [
+     {
+      "from": "b1",
+      "to": "b2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "b2",
+      "to": "b3",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "b3",
+      "to": "b4",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "b4",
+      "to": "b5",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "b5",
+      "to": "b6",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "b4",
+      "to": "b7",
+      "label": "other first part",
+      "kind": "branch"
+     },
+     {
+      "from": "b3",
+      "to": "b8",
+      "label": "unusable answer",
+      "kind": "branch"
+     },
+     {
+      "from": "b8",
+      "to": "b9",
+      "label": "review agent repair",
+      "kind": "branch"
+     },
+     {
+      "from": "b5",
+      "to": "b4",
+      "label": "reply begun",
+      "kind": "signal"
+     }
+    ]
+   },
+   {
+    "title": "Refused in parts: resend whole",
+    "steps": [
+     {
+      "id": "c1",
+      "label": "Attempt sent in parts",
+      "fn": "packages/cli/src/review-judge.js#withTransportRetry",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "c2",
+      "label": "Refused invalid: drop parts",
+      "fn": "packages/cli/src/review-judge.js#withoutParts",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c3",
+      "label": "Resend once, one string",
+      "fn": "packages/cli/src/review-judge.js#withTransportRetry",
+      "ext": null,
+      "was": "fail now",
+      "isNew": true
+     },
+     {
+      "id": "c4",
+      "label": "Record refused_in_parts",
+      "fn": "packages/cli/src/review-judge.js#createReviewJudge",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c5",
+      "label": "Mark answer resent",
+      "fn": "packages/cli/src/review-judge.js#markResentWhole",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c6",
+      "label": "Store skips marked answer",
+      "fn": "packages/cli/src/answer-cache.js#createAnswerCache",
+      "ext": null,
+      "was": "stored by key",
+      "isNew": true
+     },
+     {
+      "id": "c7",
+      "label": "Transport failure: retry once",
+      "fn": "packages/cli/src/review-judge.js#withTransportRetry",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     }
+    ],
+    "edges": [
+     {
+      "from": "c1",
+      "to": "c2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c2",
+      "to": "c3",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c3",
+      "to": "c4",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c4",
+      "to": "c5",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c5",
+      "to": "c6",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c1",
+      "to": "c7",
+      "label": "other transport failure",
+      "kind": "branch"
+     },
+     {
+      "from": "c7",
+      "to": "c3",
+      "label": "refused in parts",
+      "kind": "branch"
+     }
+    ]
+   }
+  ],
+  "glossary": [
+   {
+    "term": "first part",
+    "def": "Long opening several requests share; ends at the first cut."
+   },
+   {
+    "term": "cache_control",
+    "def": "Marker on a block: cache the prompt up to here."
+   },
+   {
+    "term": "prompt cache",
+    "def": "Saved prompt prefix, five minutes; reading costs $0.10, writing $2.50 per million."
+   },
+   {
+    "term": "stagger",
+    "def": "Siblings wait until the first request's reply begins, then go."
+   },
+   {
+    "term": "stream-json",
+    "def": "Claude CLI input as one JSON user message with blocks."
+   },
+   {
+    "term": "answer key",
+    "def": "Hash naming a stored answer: model, argv, system, prompt."
+   },
+   {
+    "term": "re-ask",
+    "def": "Asking again: about a refuted row, or after an unusable answer."
+   }
+  ]
+ }
+}

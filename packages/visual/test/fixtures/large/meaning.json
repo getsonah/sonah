@@ -1,0 +1,887 @@
+{
+ "functions": {
+  "services/api/handlers/orders.ts#loadOrder": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/orders.ts#saveCart": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#parseBatch": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#buildSessionAsync": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#checkRefund": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/orders.ts#normalizeIncomingWebhookPayloadForLegacyClients": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#renderToken": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#queueWebhook": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#retryShipmentAsync": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/orders.ts#indexOrder": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#scoreCart": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#trimBatch": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#loadSessionAsync": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/orders.ts#saveRefund": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#parseInvoice": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#sendToken": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/orders.ts#mergeAccount": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/invoices.ts#splitSession": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#renderRefund": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#resolveInvoice": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#queueLedgerAsync": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/invoices.ts#indexToken": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#scoreAccount": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#loadShipment": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#saveOrder": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/invoices.ts#buildBatchAsync": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#checkSession": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/invoices.ts#sendRefund": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/webhooks.ts#mergeWebhook": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/webhooks.ts#splitShipment": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/webhooks.ts#renderOrder": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/webhooks.ts#resolveCartAsync": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/handlers/webhooks.ts#retrySession": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/handlers/webhooks.ts#reconcile_partial_refunds_against_settled_ledger_entries": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/auth/session.ts#trimShipment": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/auth/session.ts#saveCartAsync": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/auth/session.ts#parseBatch": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/auth/tokens.ts#buildToken": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/auth/tokens.ts#checkAccount": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/auth/tokens.ts#sendWebhook": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/routes.ts#splitInvoice": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/routes.ts#renderLedger": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/routes.ts#resolveReportAsync": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/routes.ts#queueToken": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/routes.ts#retryAccount": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/routes.ts#indexWebhook": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/routes.ts#trimOrder": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/middleware.ts#saveReport": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/middleware.ts#buildAccount": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/middleware.ts#checkWebhookAsync": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/middleware.ts#sendShipment": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/middleware.ts#mergeOrder": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/middleware.ts#splitCart": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/middleware.ts#renderBatchAsync": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/errors.ts#resolveToken": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/errors.ts#queueAccount": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/errors.ts#indexShipmentAsync": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/api/errors.ts#trimCart": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/pagination.ts#loadReport": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/pagination.ts#saveToken": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/api/pagination.ts#buildWebhookAsync": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/jobs/ledger.py#build_cross_region_replication_plan_with_fallback_ordering": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/ledger.py#send_invoice": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#merge_shipment": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#split_order": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/jobs/shipments.py#render_cart": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#queue_session": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#retry_refund": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#index_invoice": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/jobs/shipments.py#score_ledger_async": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/shipments.py#trim_report": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/refunds.py#load_cart": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/refunds.py#save_batch": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/jobs/refunds.py#parse_session": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/refunds.py#build_refund_async": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/jobs/refunds.py#merge_report": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/queue.py#render_batch": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/queue.py#resolve_session": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/queue.py#queue_refund_async": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/queue.py#retry_invoice": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/retry.py#index_shipment": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "services/worker/retry.py#score_order": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "services/worker/retry.py#trim_cart": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/Cart.tsx#loadReport": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/Cart.tsx#parseAccount": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "web/src/cart/Cart.tsx#buildWebhookAsync": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/Cart.tsx#checkShipment": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/Cart.tsx#splitBatchAsync": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/Cart.tsx#renderSession": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "web/src/cart/Cart.tsx#resolveRefund": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#queueWebhook": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#normalizeIncomingWebhookPayloadForLegacyClients": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#scoreCartAsync": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "web/src/cart/useCart.ts#trimBatch": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#loadSession": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#saveRefund": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/cart/useCart.ts#parseInvoiceAsync": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "web/src/checkout/Checkout.tsx#checkOrder": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/checkout/Checkout.tsx#sendCart": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/checkout/Checkout.tsx#mergeBatchAsync": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/checkout/Checkout.tsx#splitSession": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "web/src/checkout/steps.ts#resolveWebhook": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/checkout/steps.ts#queueShipment": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "web/src/api.ts#retryInvoice": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/money.go#indexShipment": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "lib/money.go#scoreOrder": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/money.go#trimCart": {
+   "summary": "Turns one batch request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/money.go#loadBatchAsync": {
+   "summary": "Turns one report request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/money.go#parseRefund": {
+   "summary": "Checks one order request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "lib/money.go#buildInvoice": {
+   "summary": "Turns one invoice request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/dates.go#sendOrder": {
+   "summary": "Turns one webhook request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/dates.go#mergeCart": {
+   "summary": "Checks one session request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/dates.go#splitBatch": {
+   "summary": "Turns one token request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "lib/dates.go#renderSessionAsync": {
+   "summary": "Turns one cart request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/dates.go#resolveRefund": {
+   "summary": "Checks one ledger request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/ids.go#retryShipment": {
+   "summary": "Turns one shipment request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  },
+  "lib/ids.go#indexOrder": {
+   "summary": "Turns one refund request into the stored shape.",
+   "change": "Now keeps going when one part fails, records which part failed, and retries it once later with the same input."
+  },
+  "lib/ids.go#scoreCart": {
+   "summary": "Checks one account request into the stored shape.",
+   "change": "Adds a limit option; without it the old behaviour stays, so callers that pass nothing see no change."
+  }
+ },
+ "story": {
+  "oneLine": "Settlement batches now survive bad rows and retry them instead of failing whole.",
+  "ask": "Stop one bad row from failing the whole nightly settlement.",
+  "beforeNow": [
+   {
+    "before": "One bad row failed the batch",
+    "now": "Bad rows set aside and retried"
+   },
+   {
+    "before": "Refunds reconciled by hand",
+    "now": "Partial refunds matched to the ledger"
+   },
+   {
+    "before": "No limit on relay mail",
+    "now": "Mail queued again when rate limited"
+   }
+  ],
+  "flows": [
+   {
+    "title": "Settlement of one batch, start to end",
+    "steps": [
+     {
+      "id": "a1",
+      "label": "Batch arrives from the bank",
+      "fn": "services/api/handlers/orders.ts#loadOrder",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a2",
+      "label": "Rows parsed and checked",
+      "fn": "services/api/handlers/orders.ts#trimBatch",
+      "ext": null,
+      "was": "parsed all at once",
+      "isNew": true
+     },
+     {
+      "id": "a3",
+      "label": "Duplicates dropped",
+      "fn": "services/api/handlers/invoices.ts#scoreAccount",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a4",
+      "label": "Ledger entries matched",
+      "fn": "services/api/handlers/webhooks.ts#reconcile_partial_refunds_against_settled_ledger_entries",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "a5",
+      "label": "Partial refunds reconciled",
+      "fn": "services/api/routes.ts#retryAccount",
+      "ext": null,
+      "was": "refunds skipped entirely here",
+      "isNew": true
+     },
+     {
+      "id": "a6",
+      "label": "Totals written",
+      "fn": "services/api/errors.ts#queueAccount",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "a7",
+      "label": "Report queued",
+      "fn": "services/worker/jobs/shipments.py#queue_session",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a8",
+      "label": "Owner notified",
+      "fn": null,
+      "ext": "mail relay service",
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "a9",
+      "label": "Done",
+      "fn": "services/worker/queue.py#resolve_session",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a10",
+      "label": "Bad row set aside",
+      "fn": "web/src/cart/Cart.tsx#renderSession",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a11",
+      "label": "Retry scheduled later",
+      "fn": "web/src/checkout/Checkout.tsx#mergeBatchAsync",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a12",
+      "label": "Gave up after retries",
+      "fn": "lib/dates.go#sendOrder",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a13",
+      "label": "Mismatch flagged for people",
+      "fn": "services/api/handlers/orders.ts#buildSessionAsync",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "a14",
+      "label": "Rate limited by relay",
+      "fn": "services/api/handlers/orders.ts#parseInvoice",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     }
+    ],
+    "edges": [
+     {
+      "from": "a1",
+      "to": "a2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a2",
+      "to": "a3",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a3",
+      "to": "a4",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a4",
+      "to": "a5",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a5",
+      "to": "a6",
+      "label": "all matched",
+      "kind": "main"
+     },
+     {
+      "from": "a6",
+      "to": "a7",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a7",
+      "to": "a8",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a8",
+      "to": "a9",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "a2",
+      "to": "a10",
+      "label": "row fails its check",
+      "kind": "branch"
+     },
+     {
+      "from": "a10",
+      "to": "a11",
+      "label": "retry budget left",
+      "kind": "branch"
+     },
+     {
+      "from": "a11",
+      "to": "a12",
+      "label": "third failure",
+      "kind": "branch"
+     },
+     {
+      "from": "a4",
+      "to": "a13",
+      "label": "amounts differ",
+      "kind": "branch"
+     },
+     {
+      "from": "a8",
+      "to": "a14",
+      "label": "relay says slow down",
+      "kind": "branch"
+     },
+     {
+      "from": "a11",
+      "to": "a2",
+      "label": "retry runs",
+      "kind": "signal"
+     },
+     {
+      "from": "a14",
+      "to": "a7",
+      "label": "queued again",
+      "kind": "signal"
+     },
+     {
+      "from": "a9",
+      "to": "a1",
+      "label": "next batch starts",
+      "kind": "signal"
+     },
+     {
+      "from": "a13",
+      "to": "a6",
+      "label": "cleared by a person",
+      "kind": "branch"
+     }
+    ]
+   },
+   {
+    "title": "Webhook intake (no main chain given)",
+    "steps": [
+     {
+      "id": "b1",
+      "label": "Webhook received",
+      "fn": "services/api/handlers/invoices.ts#buildBatchAsync",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b2",
+      "label": "Signature checked",
+      "fn": "services/api/auth/session.ts#parseBatch",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "b3",
+      "label": "Payload normalised for legacy clients",
+      "fn": "services/api/middleware.ts#saveReport",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "b4",
+      "label": "Rejected",
+      "fn": null,
+      "ext": "caller",
+      "was": null,
+      "isNew": false
+     }
+    ],
+    "edges": [
+     {
+      "from": "b1",
+      "to": "b2",
+      "label": "signed",
+      "kind": "branch"
+     },
+     {
+      "from": "b2",
+      "to": "b3",
+      "label": null,
+      "kind": "branch"
+     },
+     {
+      "from": "b1",
+      "to": "b4",
+      "label": "unsigned or expired",
+      "kind": "branch"
+     }
+    ]
+   },
+   {
+    "title": "Session refresh",
+    "steps": [
+     {
+      "id": "c1",
+      "label": "Token near expiry",
+      "fn": "services/api/pagination.ts#loadReport",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c2",
+      "label": "Refresh asked",
+      "fn": "services/worker/jobs/shipments.py#score_ledger_async",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "c3",
+      "label": "New token stored",
+      "fn": "services/worker/retry.py#index_shipment",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c4",
+      "label": "Old token revoked",
+      "fn": "web/src/cart/useCart.ts#normalizeIncomingWebhookPayloadForLegacyClients",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "c5",
+      "label": "Refresh refused",
+      "fn": "web/src/checkout/steps.ts#queueShipment",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "c6",
+      "label": "User signed out",
+      "fn": "lib/dates.go#renderSessionAsync",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     }
+    ],
+    "edges": [
+     {
+      "from": "c1",
+      "to": "c2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c2",
+      "to": "c3",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c3",
+      "to": "c4",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c4",
+      "to": "c1",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "c2",
+      "to": "c5",
+      "label": "refused",
+      "kind": "branch"
+     },
+     {
+      "from": "c5",
+      "to": "c6",
+      "label": null,
+      "kind": "branch"
+     },
+     {
+      "from": "c6",
+      "to": "c5",
+      "label": "sign-in again",
+      "kind": "signal"
+     },
+     {
+      "from": "c5",
+      "to": "c3",
+      "label": "grace token",
+      "kind": "signal"
+     }
+    ]
+   }
+  ],
+  "glossary": [
+   {
+    "term": "ledger",
+    "def": "The record of settled amounts per account."
+   },
+   {
+    "term": "batch",
+    "def": "One file of rows from the bank."
+   }
+  ]
+ }
+}

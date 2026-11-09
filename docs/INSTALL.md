@@ -1,8 +1,8 @@
 # Install and use Sonah (beta)
 
-This guide covers installing Sonah, checking your setup, reviewing a session, choosing the reviewer, and where Sonah
-keeps things. [README.md](../README.md) has the short version; [PRIVACY.md](PRIVACY.md) says exactly what is sent and
-kept; [TROUBLESHOOTING.md](TROUBLESHOOTING.md) lists the common messages and their fixes.
+This guide covers installing Sonah, checking your setup, reviewing a session, drawing a branch's change, choosing the
+reviewer, and where Sonah keeps things. [README.md](../README.md) has the short version; [PRIVACY.md](PRIVACY.md) says
+exactly what is sent and kept; [TROUBLESHOOTING.md](TROUBLESHOOTING.md) lists the common messages and their fixes.
 
 Sonah reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and
 what is wrong in the code. It never gives a verdict on the agent's work: nothing it prints says the work is fine, needs
@@ -562,6 +562,48 @@ request; when it holds more, Sonah says so, says only what it found in those it 
 read them all (`git fetch https://github.com/OWNER/REPO.git pull/N/head`, which works in a clone of a fork too, then
 `sonah sessions --commits BASE..FETCH_HEAD`).
 
+## Draw a branch's change (sonah visual)
+
+`sonah visual` draws one page of a branch's change, for whoever reviews its code: what the change does and what it was
+for, a How graph of how its parts run, a Where graph of where they lie, and what the model says a reviewer must act on
+or know, each with the line it quotes. It reads commits with git, not a session recording. Run it in the repository:
+
+```sh
+sonah visual                    # from where your branch left the default branch, to HEAD
+sonah visual main..HEAD         # a range that you name
+sonah visual v1.2               # from v1.2 to HEAD (v1.2.. is the same)
+```
+
+**The range.** `BASE..HEAD`, `BASE..` or `BASE`; the last two end at `HEAD`. Only commits are drawn: commit your work
+first. With no range, the base is the commit where `HEAD` left the default branch of your remote: the remote of your
+branch's upstream, else `origin`, else your only remote, and that remote's `HEAD` as your local git has it
+(`origin/HEAD`). Sonah reads only your local git and never fetches. When that `HEAD` is not set, `sonah visual` stops
+and asks for a range. `git remote set-head origin --auto` sets it (git asks the remote for it).
+
+**What it prints.** `Local page: <path>`: open that file in your browser. The page needs no network.
+
+**Where it keeps things.** One folder for each range and model, readable by you only:
+`~/.sonah/visual/<repository folder>-<8 characters of a hash of its path>/<base>-<head>-<model>/`, with the first 12
+characters of each commit. It holds the page (`page.html`), each request as it was sent and its answer (`requests/` and
+`answers/`), what Sonah read of the change (`facts.json`), and how the run went (`run.json`). The same range again
+reuses the stored answers and asks only for what is missing, so a rerun after a crash or Ctrl-C goes on where it
+stopped. `--out DIR` uses that folder instead. Sonah never deletes these folders: remove one when you no longer need it.
+
+**Options.**
+
+- `--model ID`: the model, as a full ID (default `claude-sonnet-5-5`); an alias such as `sonnet` is refused. Stored
+  answers belong to the model that gave them, so another model gets a folder of its own (with `--out`, choose a new
+  folder for it).
+- `--replay-only`: send nothing, and draw from the stored answers alone. When some are missing, it says at least how
+  many and exits `1`; run it again without `--replay-only` to ask for them.
+- `--out DIR`: the folder for the page, the requests and the answers.
+
+It calls the model through your own `claude` login, as a session review does: never with an API key from your
+environment. [PRIVACY.md](PRIVACY.md#what-leaves-your-computer) says what each request holds. It exits `0` when the
+page is written, `1` when answers are still needed, `2` for invalid arguments or a problem it names with its fix (a
+range git cannot find, no default branch, a model alias, a sign-in or usage limit that stopped its calls), and `3` when
+it failed. [TROUBLESHOOTING.md](TROUBLESHOOTING.md#the-page-of-a-change-sonah-visual) lists its messages.
+
 ## Choose the reviewer
 
 **Claude Code (default).** Your `claude` login and the model `claude-sonnet-5-5[1m]` (Sonnet 5.5 with its 1M-token
@@ -633,12 +675,14 @@ of input tokens and tens of minutes. Yours will differ with the length of the se
 | The update check's setting, once you set it with `sonah config update-check` | `~/.sonah/update-check-setting.json` |
 | The update check's last answer, from a review that called the reviewer or from `sonah doctor`: when Sonah last asked npm's registry, and the latest version it gave | `~/.sonah/update-check.json` |
 | The page or Markdown | the `--output` file you named |
+| The page of a change, with its requests and answers (`sonah visual`) | `~/.sonah/visual/<repository folder>-<hash>/<base>-<head>-<model>/` (`--out DIR` moves it) |
 | The /sonah skill, only if you ran `sonah skill add` | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) |
 | The commit link's hook, only where you ran `sonah hook add` | `.git/hooks/prepare-commit-msg` (`prepare-commit-msg.old` or `.legacy` when lefthook or pre-commit moved it) and `.git/sonah/` (the script, and `hooks-folder-made` when Sonah made the hooks folder) in that repository |
 
-`SONAH_HOME` moves `~/.sonah`. Folders are created readable by you only. Stored answers are capped at 64 MB per
-recording, least recently used removed first. The requests themselves are never stored, but answers quote the
-session as recorded, secrets included: keep a `--state-dir` outside every Git repository. Your recordings are only
+`SONAH_HOME` moves `~/.sonah`. Folders are created readable by you only. A session review's stored answers are capped
+at 64 MB per recording, least recently used removed first. Its requests themselves are never stored, but answers quote
+the session as recorded, secrets included: keep a `--state-dir` outside every Git repository. `sonah visual` stores its
+requests and answers in its folder, so a rerun replays them; they quote your code. Your recordings are only
 read, never changed. Your provider's CLI may keep its own history of the calls.
 
 ## Uninstall
@@ -809,7 +853,9 @@ It does not:
 - run your code or your tests: the review reads the recording and, with the code step (on unless you turn it off),
   your working directory and the git repositories it reads, as they are now, with read-only tools, and the session's
   changes from Git, which writes nothing;
-- let the model rate its own confidence or the severity of anything;
+- let the model rate its own confidence, or set how serious a point is on its word alone, with two exceptions: the code
+  review's proposal, which code keeps inside fixed bounds, and `sonah visual`'s tier, which its page shows as the model
+  proposed it once code checks it is one of the three;
 - post anything anywhere unless you ask for it and confirm;
 - change your recordings.
 
@@ -817,7 +863,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.13`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.14`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

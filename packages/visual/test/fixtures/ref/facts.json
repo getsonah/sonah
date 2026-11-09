@@ -1,0 +1,812 @@
+{
+  "functions": [
+    {
+      "id": "f1",
+      "name": "promptCutsOf",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 21,
+      "status": "new",
+      "added": 20,
+      "removed": 0,
+      "signature": "promptCutsOf(request)",
+      "oneLine": "Returns a request's valid cut offsets, or none (send whole).",
+      "calls": [],
+      "calledBy": [
+        "f3",
+        "f4",
+        "f6",
+        "f26",
+        "f27",
+        "f32",
+        "f33"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211: cuts the transport could not send as they are are none — the prompt goes whole, the same text",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): only a request in parts has another answer key — on claude-cli, session, image and agent alike; every other key is 20be6999's"
+      ]
+    },
+    {
+      "id": "f2",
+      "name": "promptPartsOf",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 36,
+      "status": "new",
+      "added": 7,
+      "removed": 0,
+      "signature": "promptPartsOf(prompt, cuts)",
+      "oneLine": "Splits the prompt at the cuts; the parts join back exactly.",
+      "calls": [],
+      "calledBy": [
+        "f23"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211: cuts the transport could not send as they are are none — the prompt goes whole, the same text",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): a request in parts is one stream-json user message — its text blocks join to the prompt, one cache marker on the first, images after; a request without is sent as before"
+      ]
+    },
+    {
+      "id": "f3",
+      "name": "appendedRequest",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 48,
+      "status": "new",
+      "added": 9,
+      "removed": 0,
+      "signature": "appendedRequest(request, suffix)",
+      "oneLine": "Re-ask or repair: original's cuts kept, plus a cut at its end.",
+      "calls": [
+        "f1"
+      ],
+      "calledBy": [
+        "f13",
+        "f14",
+        "f15",
+        "f16"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): a receipt repair keeps its request's cuts and adds one at its end; a request rebuilt with its blocks given way is not cut"
+      ]
+    },
+    {
+      "id": "f4",
+      "name": "continuedRequest",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 58,
+      "status": "new",
+      "added": 10,
+      "removed": 0,
+      "signature": "continuedRequest(original, next)",
+      "oneLine": "Cuts a rebuilt repair at the original's end, if it extends it.",
+      "calls": [
+        "f1"
+      ],
+      "calledBy": [
+        "f17"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): a receipt repair keeps its request's cuts and adds one at its end; a request rebuilt with its blocks given way is not cut"
+      ]
+    },
+    {
+      "id": "f5",
+      "name": "staggerSharedParts",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 99,
+      "status": "new",
+      "added": 66,
+      "removed": 0,
+      "signature": "staggerSharedParts(judge)",
+      "oneLine": "Holds requests sharing a first part until the leader's reply begins.",
+      "calls": [
+        "f6"
+      ],
+      "calledBy": [
+        "f17",
+        "f18",
+        "f19",
+        "f20"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): siblings wait for the first one's reply to begin, then go in the order given; a request given after one that waits goes after it; with nothing waiting a request goes at once",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): a first one answered from the store made no call, so the next one waiting leads in its place",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): a sibling never waits forever — it goes when the first one's call settles, failed or aborted; the first one's own signal is still called",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): through runReview, a window's second re-ask is sent only once the first one's reply has begun",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): through runCodePass, the checks of one change wait for the first one's reply, and every later request keeps today's order",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (d): the answer store tells a request it answered with no call; through it, the next request of a first part leads when the first one was stored"
+      ]
+    },
+    {
+      "id": "f6",
+      "name": "sharedFirstOf",
+      "file": "packages/evidence/src/prompt-parts.js",
+      "line": 76,
+      "status": "new",
+      "added": 12,
+      "removed": 0,
+      "signature": "sharedFirstOf(request)",
+      "oneLine": "SHA-256 of system, schema and first part: the group key.",
+      "calls": [
+        "f1"
+      ],
+      "calledBy": [
+        "f5"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): siblings wait for the first one's reply to begin, then go in the order given; a request given after one that waits goes after it; with nothing waiting a request goes at once"
+      ]
+    },
+    {
+      "id": "f7",
+      "name": "refutedReask",
+      "file": "packages/evidence/src/prompt.js",
+      "line": 1917,
+      "status": "changed",
+      "added": 7,
+      "removed": 3,
+      "signature": "refutedReask({ request, row, refutations, aliases, label, fields, heading, words, nowAnswer })",
+      "oneLine": "Builds a re-ask, cut after the kept request's body plus two newlines.",
+      "beforeOneLine": "Built a re-ask as one uncut string.",
+      "calls": [],
+      "calledBy": [
+        "restatusRequest (unchanged, packages/evidence/src/prompt.js:1679)",
+        "recolumnRequest (unchanged, packages/evidence/src/prompt.js:1714)",
+        "reanchorRequest (unchanged, packages/evidence/src/prompt.js:1744)"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (a): every re-ask of a window is cut after the kept request's body and the two newlines after it, the same first part for all three kinds; its bytes are 20be6999's",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (a): through runReview, a window's two restatus re-asks share the kept request's body as their first part; their bytes are 20be6999's"
+      ]
+    },
+    {
+      "id": "f8",
+      "name": "sharedCheckLines",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2693,
+      "status": "new",
+      "added": 3,
+      "removed": 0,
+      "signature": "sharedCheckLines(words, change, where)",
+      "oneLine": "The lines every check of a change starts with: words, heading, change.",
+      "calls": [],
+      "calledBy": [
+        "f10",
+        "f11",
+        "f12"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f9",
+      "name": "cutAfter",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2695,
+      "status": "new",
+      "added": 2,
+      "removed": 0,
+      "signature": "cutAfter(shared)",
+      "oneLine": "Cut offset: length of the shared lines joined, plus one newline.",
+      "calls": [],
+      "calledBy": [
+        "f10",
+        "f11",
+        "f12"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f10",
+      "name": "buildVerifyRequest",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2702,
+      "status": "changed",
+      "added": 6,
+      "removed": 3,
+      "signature": "buildVerifyRequest({ words, change, outside, finding, cited, where })",
+      "oneLine": "Builds a finding's check request, cut after the shared lines.",
+      "beforeOneLine": "Built a finding's check request as one uncut string.",
+      "calls": [
+        "f8",
+        "f9"
+      ],
+      "calledBy": [
+        "f14"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f11",
+      "name": "buildBatchVerifyRequest",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2717,
+      "status": "changed",
+      "added": 5,
+      "removed": 3,
+      "signature": "buildBatchVerifyRequest({ words, change, questions, where })",
+      "oneLine": "Builds the questions' check request, cut after the shared lines.",
+      "beforeOneLine": "Built the questions' check request as one uncut string.",
+      "calls": [
+        "f8",
+        "f9"
+      ],
+      "calledBy": [
+        "f15"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f12",
+      "name": "buildAccountRequest",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2753,
+      "status": "changed",
+      "added": 5,
+      "removed": 3,
+      "signature": "buildAccountRequest({ words, change, findings, questions, items, where })",
+      "oneLine": "Builds an accounting batch request, cut after the shared lines.",
+      "beforeOneLine": "Built an accounting batch request as one uncut string.",
+      "calls": [
+        "f8",
+        "f9"
+      ],
+      "calledBy": [
+        "f16"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f13",
+      "name": "receiptRepairOnce",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 534,
+      "status": "changed",
+      "added": 4,
+      "removed": 3,
+      "signature": "receiptRepairOnce({ judge, request, label, note, failed, readRepaired, identity, fits })",
+      "oneLine": "Sends one receipt repair keeping the request's cuts, plus one at end.",
+      "beforeOneLine": "Sent one receipt repair: prompt plus note, one string.",
+      "calls": [
+        "f3"
+      ],
+      "calledBy": [
+        "runCodeReview (unchanged, packages/evidence/src/code-review.js:492)"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): a receipt repair keeps its request's cuts and adds one at its end; a request rebuilt with its blocks given way is not cut"
+      ]
+    },
+    {
+      "id": "f14",
+      "name": "verifyFinding",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 5645,
+      "status": "changed",
+      "added": 2,
+      "removed": 1,
+      "signature": "verifyFinding({ g, key, words, change, outside, sessionSources, where, context, fits, ask, calls, failedCall, notSent })",
+      "oneLine": "Checks one finding; its re-ask keeps cuts via appendedRequest.",
+      "beforeOneLine": "Checked one finding; its re-ask was prompt plus note.",
+      "calls": [
+        "f10",
+        "f3"
+      ],
+      "calledBy": [
+        "f17"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f15",
+      "name": "verifyBatch",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 5675,
+      "status": "changed",
+      "added": 3,
+      "removed": 2,
+      "signature": "verifyBatch({ grounded, byKey, words, change, where, context, fits, ask, calls, failedCall, notSent })",
+      "oneLine": "Checks the questions; its re-ask keeps cuts via appendedRequest.",
+      "beforeOneLine": "Checked the questions; its re-ask was prompt plus note.",
+      "calls": [
+        "f11",
+        "f3"
+      ],
+      "calledBy": [
+        "f17"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f16",
+      "name": "accountBatch",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 2832,
+      "status": "changed",
+      "added": 2,
+      "removed": 1,
+      "signature": "accountBatch({ n, entries, words, change, review, where, context, fits, ask, calls, failedCall, notSent })",
+      "oneLine": "Runs one accounting batch; its re-ask keeps cuts via appendedRequest.",
+      "beforeOneLine": "Ran one accounting batch; its re-ask was prompt plus note.",
+      "calls": [
+        "f12",
+        "f3"
+      ],
+      "calledBy": [
+        "f17"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's"
+      ]
+    },
+    {
+      "id": "f17",
+      "name": "runCodePass",
+      "file": "packages/evidence/src/code-pass.js",
+      "line": 3959,
+      "status": "changed",
+      "added": 9,
+      "removed": 3,
+      "signature": "runCodePass({ report, session, snapshot, repo, judge, bound, ran, root, top, base, gate, wholeFiles, outsideSnapshot, folders, realRoot, startFolder })",
+      "oneLine": "Code step: every agent request goes through one stagger queue.",
+      "beforeOneLine": "Code step: each agent request went straight to the judge.",
+      "calls": [
+        "f5",
+        "f4",
+        "f14",
+        "f15",
+        "f16"
+      ],
+      "calledBy": [
+        "reviewCodePass (unchanged, packages/cli/src/session-review.js:684)",
+        "dryRunReplay (unchanged, packages/cli/src/session-review.js:763)"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (b): each checking agent is cut after the person's words and the change; a re-ask or repair keeps its original's cut and adds one at its end; every byte and the order are 20be6999's",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): through runCodePass, the checks of one change wait for the first one's reply, and every later request keeps today's order"
+      ]
+    },
+    {
+      "id": "f18",
+      "name": "restatedRequirements",
+      "file": "packages/evidence/src/run-review.js",
+      "line": 2357,
+      "status": "changed",
+      "added": 8,
+      "removed": 4,
+      "signature": "restatedRequirements({ refuted, byKey, request, aliases, judge, session, sourceMap, windowEnd, requestBound, label, ask })",
+      "oneLine": "Sends a window's restatus re-asks through a stagger, first one leading.",
+      "beforeOneLine": "Sent all of a window's restatus re-asks at once.",
+      "calls": [
+        "f5"
+      ],
+      "calledBy": [
+        "reviewWindow (unchanged, packages/evidence/src/run-review.js:3136)"
+      ],
+      "tests": [
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (a): through runReview, a window's two restatus re-asks share the kept request's body as their first part; their bytes are 20be6999's",
+        "packages/evidence/test/d211-prompt-parts.test.js :: D211 (d): through runReview, a window's second re-ask is sent only once the first one's reply has begun"
+      ]
+    },
+    {
+      "id": "f19",
+      "name": "recolumnedDecisions",
+      "file": "packages/evidence/src/run-review.js",
+      "line": 2808,
+      "status": "changed",
+      "added": 3,
+      "removed": 1,
+      "signature": "recolumnedDecisions({ refuted, byKey, request, aliases, judge, session, windowEnd, repo, pr, requestBound, label, ask, existenceBounds })",
+      "oneLine": "Sends a window's recolumn re-asks through a stagger.",
+      "beforeOneLine": "Sent all of a window's recolumn re-asks at once.",
+      "calls": [
+        "f5"
+      ],
+      "calledBy": [
+        "reviewWindow (unchanged, packages/evidence/src/run-review.js:3136)"
+      ],
+      "tests": []
+    },
+    {
+      "id": "f20",
+      "name": "reanchoredChoices",
+      "file": "packages/evidence/src/run-review.js",
+      "line": 2952,
+      "status": "changed",
+      "added": 3,
+      "removed": 1,
+      "signature": "reanchoredChoices({ refuted, request, aliases, judge, session, windowEnd, repo, pr, requestBound, label, ask, existenceBounds })",
+      "oneLine": "Sends a window's reanchor re-asks through a stagger.",
+      "beforeOneLine": "Sent all of a window's reanchor re-asks at once.",
+      "calls": [
+        "f5"
+      ],
+      "calledBy": [
+        "reviewWindow (unchanged, packages/evidence/src/run-review.js:3136)"
+      ],
+      "tests": []
+    },
+    {
+      "id": "f21",
+      "name": "reviewCliArgs",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 592,
+      "status": "changed",
+      "added": 5,
+      "removed": 3,
+      "signature": "reviewCliArgs({ system, model, effort, images, parts })",
+      "oneLine": "Session argv; adds --input-format stream-json for images or parts.",
+      "beforeOneLine": "Session argv; --input-format stream-json only for images.",
+      "calls": [],
+      "calledBy": [
+        "f25",
+        "f26"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): a request in parts is one stream-json user message — its text blocks join to the prompt, one cache marker on the first, images after; a request without is sent as before"
+      ]
+    },
+    {
+      "id": "f22",
+      "name": "reviewAgentCliArgs",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 701,
+      "status": "changed",
+      "added": 5,
+      "removed": 3,
+      "signature": "reviewAgentCliArgs({ system, model, effort, agent, schema, parts })",
+      "oneLine": "Agent argv; adds --input-format stream-json after --verbose for parts.",
+      "beforeOneLine": "Agent argv; prompt read as plain text on stdin.",
+      "calls": [],
+      "calledBy": [
+        "f25",
+        "f26"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): an agent request in parts gets --input-format stream-json after --verbose and its message on stdin; one without keeps its argv",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (e): with the installed claude, an agent request in parts runs 30 turns and more, never sending more than four cache markers, and its first part carries one"
+      ]
+    },
+    {
+      "id": "f23",
+      "name": "imageContent",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 734,
+      "status": "changed",
+      "added": 7,
+      "removed": 3,
+      "signature": "imageContent(prompt, images, cuts)",
+      "oneLine": "One text block per part, first marked cache_control; images after.",
+      "beforeOneLine": "One text block for the prompt, then images.",
+      "calls": [
+        "f2"
+      ],
+      "calledBy": [
+        "f24",
+        "reviewApiBody (unchanged, packages/cli/src/review-judge.js:756; passes no cuts)"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): a request in parts is one stream-json user message — its text blocks join to the prompt, one cache marker on the first, images after; a request without is sent as before"
+      ]
+    },
+    {
+      "id": "f24",
+      "name": "claudeStreamInput",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 745,
+      "status": "changed",
+      "added": 4,
+      "removed": 3,
+      "signature": "claudeStreamInput(prompt, images, cuts)",
+      "oneLine": "One stream-json user message line, for images or parts.",
+      "beforeOneLine": "One stream-json user message line, for image requests only.",
+      "calls": [
+        "f23"
+      ],
+      "calledBy": [
+        "f26"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): a request in parts is one stream-json user message — its text blocks join to the prompt, one cache marker on the first, images after; a request without is sent as before"
+      ]
+    },
+    {
+      "id": "f25",
+      "name": "reviewTransportArguments",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 776,
+      "status": "changed",
+      "added": 6,
+      "removed": 4,
+      "signature": "reviewTransportArguments({ backend, model, effort, system, images, agent, schema, parts })",
+      "oneLine": "Argv for the answer key; passes parts to claude-cli argv only.",
+      "beforeOneLine": "Argv for the answer key; no notion of parts.",
+      "calls": [
+        "f21",
+        "f22"
+      ],
+      "calledBy": [
+        "f32",
+        "f33",
+        "f34"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): only a request in parts has another answer key — on claude-cli, session, image and agent alike; every other key is 20be6999's"
+      ]
+    },
+    {
+      "id": "f26",
+      "name": "callLocal",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1406,
+      "status": "changed",
+      "added": 12,
+      "removed": 5,
+      "signature": "callLocal(request, config, { env, spawnProcess, timeoutMs, maxOutputBytes, cancellation, agent })",
+      "oneLine": "Spawns claude; parts go as blocks; agents signal at first assistant.",
+      "beforeOneLine": "Spawns claude; prompt on stdin; reply-begun only at stream_event.",
+      "calls": [
+        "f1",
+        "f21",
+        "f22",
+        "f24"
+      ],
+      "calledBy": [
+        "f31"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): a request in parts is one stream-json user message — its text blocks join to the prompt, one cache marker on the first, images after; a request without is sent as before",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): an agent request in parts gets --input-format stream-json after --verbose and its message on stdin; one without keeps its argv",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (d): an agent request is told once, at its first assistant line; a session request still at its first stream_event line only",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (e): with the installed claude, an agent request in parts runs 30 turns and more, never sending more than four cache markers, and its first part carries one"
+      ]
+    },
+    {
+      "id": "f27",
+      "name": "withTransportRetry",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1664,
+      "status": "changed",
+      "added": 21,
+      "removed": 4,
+      "signature": "withTransportRetry(judge)",
+      "oneLine": "Retries once; resends a refused in-parts request whole, once.",
+      "beforeOneLine": "Retried transport failures once; invalid request failed at once.",
+      "calls": [
+        "f1",
+        "f28",
+        "f29"
+      ],
+      "calledBy": [
+        "boundedJudge (unchanged, packages/cli/src/session-review.js:866)"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: a request in parts the provider refuses as invalid is sent once more as one string, its reason recorded; a request sent whole that is refused is not asked again",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an attempt in parts refused as invalid after a transport failure is resent as one string too; the resend's own failure stands"
+      ]
+    },
+    {
+      "id": "f28",
+      "name": "withoutParts",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1634,
+      "status": "new",
+      "added": 6,
+      "removed": 0,
+      "signature": "withoutParts(request, reason)",
+      "oneLine": "Copy of the request without parts, keeping REPLY_BEGUN, saying why.",
+      "calls": [],
+      "calledBy": [
+        "f27"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: a request in parts the provider refuses as invalid is sent once more as one string, its reason recorded; a request sent whole that is refused is not asked again"
+      ]
+    },
+    {
+      "id": "f29",
+      "name": "markResentWhole",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1645,
+      "status": "new",
+      "added": 4,
+      "removed": 0,
+      "signature": "markResentWhole(answer)",
+      "oneLine": "Marks a resent answer in a WeakSet; answer bytes unchanged.",
+      "calls": [],
+      "calledBy": [
+        "f27"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an attempt in parts refused as invalid after a transport failure is resent as one string too; the resend's own failure stands"
+      ]
+    },
+    {
+      "id": "f30",
+      "name": "resentWhole",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1644,
+      "status": "new",
+      "added": 3,
+      "removed": 0,
+      "signature": "resentWhole(answer)",
+      "oneLine": "True when an answer came from a whole resend.",
+      "calls": [],
+      "calledBy": [
+        "f34"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an attempt in parts refused as invalid after a transport failure is resent as one string too; the resend's own failure stands",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an answer got by resending a request in parts as one string is never stored under the key that binds its parts; the next review asks it again"
+      ]
+    },
+    {
+      "id": "f31",
+      "name": "createReviewJudge",
+      "file": "packages/cli/src/review-judge.js",
+      "line": 1740,
+      "status": "changed",
+      "added": 2,
+      "removed": 0,
+      "signature": "createReviewJudge({ config, env, spawnProcess, fetchImpl, timeoutMs, maxOutputBytes, onResult, signal })",
+      "oneLine": "Records partsDropped reason on a resent attempt's metadata.",
+      "beforeOneLine": "Recorded each attempt's metadata; no parts reason.",
+      "calls": [
+        "f26"
+      ],
+      "calledBy": [
+        "runSessionReviewCommand (unchanged, packages/cli/src/session-review-command.js:522)",
+        "doctor (unchanged, packages/cli/src/doctor.js:222)",
+        "f37"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: a request in parts the provider refuses as invalid is sent once more as one string, its reason recorded; a request sent whole that is refused is not asked again"
+      ]
+    },
+    {
+      "id": "f32",
+      "name": "answerKey",
+      "file": "packages/cli/src/answer-cache.js",
+      "line": 88,
+      "status": "changed",
+      "added": 5,
+      "removed": 2,
+      "signature": "answerKey(request, { backend, model, effort, transportArguments, repoState })",
+      "oneLine": "Key binds parts only through the argv it changes, not offsets.",
+      "beforeOneLine": "Key bound system, prompt and argv; no parts.",
+      "calls": [
+        "f1",
+        "f25",
+        "f33"
+      ],
+      "calledBy": [
+        "f34"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): only a request in parts has another answer key — on claude-cli, session, image and agent alike; every other key is 20be6999's"
+      ]
+    },
+    {
+      "id": "f33",
+      "name": "agentAnswerKey",
+      "file": "packages/cli/src/answer-cache.js",
+      "line": 64,
+      "status": "changed",
+      "added": 2,
+      "removed": 1,
+      "signature": "agentAnswerKey(request, { backend, model, named, transportArguments, repoState })",
+      "oneLine": "Agent key: argv with --input-format when the request has parts.",
+      "beforeOneLine": "Agent key from the agent argv without parts.",
+      "calls": [
+        "f1",
+        "f25"
+      ],
+      "calledBy": [
+        "f32"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (c): only a request in parts has another answer key — on claude-cli, session, image and agent alike; every other key is 20be6999's"
+      ]
+    },
+    {
+      "id": "f34",
+      "name": "createAnswerCache",
+      "file": "packages/cli/src/answer-cache.js",
+      "line": 199,
+      "status": "changed",
+      "added": 5,
+      "removed": 1,
+      "signature": "createAnswerCache(directory, { backend, model, effort, transportArguments, maxBytes, readOnly, repoState })",
+      "oneLine": "Store's put (line 239) refuses answers got by a whole resend.",
+      "beforeOneLine": "Store's put stored every storable answer.",
+      "calls": [
+        "f30",
+        "f32"
+      ],
+      "calledBy": [
+        "runSessionReviewCommand (unchanged, packages/cli/src/session-review-command.js:522)",
+        "f37"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an answer got by resending a request in parts as one string is never stored under the key that binds its parts; the next review asks it again",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (d): the answer store tells a request it answered with no call; through it, the next request of a first part leads when the first one was stored"
+      ]
+    },
+    {
+      "id": "f35",
+      "name": "memoizeJudge",
+      "file": "packages/cli/src/answer-cache.js",
+      "line": 326,
+      "status": "changed",
+      "added": 10,
+      "removed": 1,
+      "signature": "memoizeJudge(judge, cache, { fresh })",
+      "oneLine": "On a stored-answer hit, calls the request's ANSWER_REPLAYED signal.",
+      "beforeOneLine": "On a stored-answer hit, returned it silently.",
+      "calls": [
+        "f34"
+      ],
+      "calledBy": [
+        "reviewSession (unchanged, packages/cli/src/session-review.js:497)",
+        "reviewCodePass (unchanged, packages/cli/src/session-review.js:684)"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: an answer got by resending a request in parts as one string is never stored under the key that binds its parts; the next review asks it again",
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211 (d): the answer store tells a request it answered with no call; through it, the next request of a first part leads when the first one was stored"
+      ]
+    },
+    {
+      "id": "f36",
+      "name": "createReviewBudget",
+      "file": "packages/cli/src/review-budget.js",
+      "line": 159,
+      "status": "changed",
+      "added": 13,
+      "removed": 2,
+      "signature": "createReviewBudget(options, { now })",
+      "oneLine": "Usage record counts attempts in parts and whole resends, when any.",
+      "beforeOneLine": "Usage record had no parts counts.",
+      "calls": [],
+      "calledBy": [
+        "runSessionReviewCommand (unchanged, packages/cli/src/session-review-command.js:522)"
+      ],
+      "tests": [
+        "packages/cli/test/d211-prompt-parts-transport.test.js :: D211: a request in parts the provider refuses as invalid is sent once more as one string, its reason recorded; a request sent whole that is refused is not asked again"
+      ]
+    },
+    {
+      "id": "f37",
+      "name": "runSessionReviewHarness",
+      "file": "scripts/session-review.mjs",
+      "line": 369,
+      "status": "changed",
+      "added": 6,
+      "removed": 1,
+      "signature": "runSessionReviewHarness(options, { loadSession, createJudge, now, write, progress, installSignals })",
+      "oneLine": "The review script's breaker skips an in-parts invalid refusal (it gets resent).",
+      "beforeOneLine": "Breaker tripped on every non-retryable class, invalid request included.",
+      "calls": [
+        "f31",
+        "f34"
+      ],
+      "calledBy": [
+        "the script's main block (scripts/session-review.mjs:642)"
+      ],
+      "tests": []
+    }
+  ]
+}

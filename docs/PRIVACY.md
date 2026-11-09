@@ -7,7 +7,8 @@ that open, search and list files with read-only tools. What leaves your computer
 model you choose, through your own `claude` or `codex` login, or your API key with `--backend anthropic-api`. The only
 other requests are a check for a newer Sonah that holds nothing about you or your work, once a day at most and only with
 a review's first call to the reviewer or in `sonah doctor`, to npm's public registry, and requests to GitHub, only when
-you name a pull request with `--github` ([below](#what-leaves-your-computer)).
+you name a pull request with `--github` ([below](#what-leaves-your-computer)). `sonah visual` reads a range of commits
+from your local git, not a recording, and sends the change to the model through your own `claude` login.
 
 Sonah masks nothing and withholds nothing for privacy's sake. The model reads your session as it was recorded and, in
 the code step, the files it is sent and any file that its agents open. The page, the Markdown report, the terminal and
@@ -17,7 +18,7 @@ out; then only the session is sent. This page says exactly what each of these me
 
 ## What leaves your computer
 
-Two commands send anything to a model, and nothing else does:
+Three commands send anything to a model, and nothing else does:
 
 - **`sonah review`** (not with `--dry-run`). Before the first request it prints roughly how many minutes the review
   should take, then it runs. Each part of the session is sent in a request of its own, more than once: one request asks
@@ -40,6 +41,16 @@ Two commands send anything to a model, and nothing else does:
   results (the files and search results it reads) go to the model as it works.
 - **`sonah doctor`** without `--no-probe`: one tiny synthetic request that quotes no session, to check that the model
   answers.
+- **`sonah visual`** (not with `--replay-only`): the change of the range it draws, read with git from your commits (your
+  uncommitted work is not read). The requests hold the repository's name (the last part of its `origin` address, else
+  its folder's name), the range's two commits (12 characters of each), the commits' messages, the changed files' paths
+  and line counts, and each changed function's name, place and code after the change, its added and removed lines
+  marked, with which changed functions name each other and how many other places name it. Requests of at most 25
+  changed functions each describe them; one asks for the story of the change, with the checked descriptions; one asks
+  what a reviewer must act on or know. A request whose answer does not fit is asked again, with what was wrong. No
+  recording and no other file is sent. The calls run as a session review's do: the `claude` CLI in an empty private
+  folder, with its tools off, the same basic environment and your login (never an API key), and the model
+  `claude-sonnet-5-5` unless you give `--model`. Answers stored in its folder are not asked again.
 
 What a review request contains. The model reads your session as it was recorded, secrets and the images you pasted
 included: a reviewer that cannot see a value cannot judge what was done with it. When the reviewer is the same provider
@@ -163,6 +174,7 @@ recorded, like the recording itself.
 | The update check's setting (`sonah config update-check`) | `~/.sonah/update-check-setting.json` | Whether the update check is on, once you set it. Readable by you only; one that is not yours, that others can write or that cannot be read turns the check off. |
 | The update check's last answer | `~/.sonah/update-check.json` | When Sonah last asked npm's registry for getsonah's latest version, and the version it answered (none when it did not answer). Readable by you only. Written only with a review's first call to the reviewer and by `sonah doctor`, and not while the check is off. |
 | The page or Markdown you asked for | the `--output` file | Never overwrites an existing file. It holds your session as recorded. |
+| The page of a change (`sonah visual`) | `~/.sonah/visual/<the repository folder's name and a hash of its path>/<the range's two commits and the model>/` (or `--out DIR`) | Only if you ran it. The page (`page.html`), each request as it was sent (`requests/`) and its answer (`answers/`), what Sonah read of the change (`facts.json`), and what it kept and why (`meaning.json`, `findings.json`, `dropped.json`, `run.json`). A rerun of the same range with the same model replays the stored answers. They quote your code as it is in the commits; they are never sent anywhere. Sonah never deletes this folder: remove it when you no longer need it. |
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
 | The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |
 | The page, Markdown report and log of `sonah review --session ID --background` | `background/` in the review's folder above | Only if you ran one. The page and the report hold your session as recorded; the log holds what the review printed. `active.json` there holds the process id of the review it started, nothing else. |
@@ -170,8 +182,10 @@ recorded, like the recording itself.
 | A `sonah feedback` bundle | `~/sonah-feedback-YYYY-MM-DD.md` in your home folder | Setup facts and counts only. A second bundle on the same day replaces the first. |
 | The commit link's hook (`sonah hook add`) | `.git/hooks/prepare-commit-msg` (`prepare-commit-msg.old` or `.legacy` when lefthook or pre-commit moved it) and `.git/sonah/` in that repository: the script `agent-session.sh`, and `hooks-folder-made` when Sonah made the hooks folder | Only where you ran it. It holds no session text; `sonah hook remove` deletes these files. The `Agent-Session` lines it added stay in your commits. |
 
-Every file a review or `sonah decision` writes is readable by you only (folders `0700`, files `0600`). `SONAH_HOME`
-moves `~/.sonah`. To delete everything Sonah stored, run `sonah skill remove` if you added the /sonah skill, run
+Every file a review or `sonah decision` writes is readable by you only (folders `0700`, files `0600`). `sonah visual`
+makes each of its folders readable by you only (`0700`), and writes the files in them with your usual permissions.
+`SONAH_HOME` moves `~/.sonah`. To delete everything Sonah stored, run `sonah skill remove` if you added the /sonah
+skill, run
 `sonah hook remove` in each repository where you ran `sonah hook add`, and remove `~/.sonah`, the output files you wrote
 and any `sonah-feedback-*.md` bundle; your recordings are not affected. If you used an early preview of Sonah, `~/.sonah` can
 also hold `pr-reviews/`, `answers/`, `ledgers/` and `outcomes/` from it; you can delete them (a review still reads
@@ -209,7 +223,9 @@ The page and the Markdown quote your session and your code as recorded, nothing 
 and share them only where you would share the recording. The page loads nothing from the network. Its one script copies
 a prompt for the agent and follows the page's links to their place. For Back, each link it follows adds an entry to the
 browser's history, and the script keeps in the current entry the tab you are on, the scroll and the link you took, and
-the new entry names the place. It reads only the address's `#` part and those entries, and sends nothing.
+the new entry names the place. It reads only the address's `#` part and those entries, and sends nothing. The page of
+`sonah visual` quotes your code and loads nothing from the network either. Its script moves between its parts and
+graphs, keeps your light or dark choice in the browser, and sends nothing.
 
 Nothing is ever posted unless you ask. A review with `--github OWNER/REPO --pr N --post-comment` can leave one comment
 and one neutral GitHub check on that pull request: it needs a private repository, a GitHub App token and your typed

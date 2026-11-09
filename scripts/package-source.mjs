@@ -11,12 +11,34 @@ import { tmpdir } from 'node:os';
 const run = promisify(execFile);
 export const SOURCE_ROOT = fileURLToPath(new URL('../', import.meta.url));
 export const PACKAGE_ENTRY = 'packages/cli/bin/sonah.js';
-// npm includes a package README even with a file allowlist (packages/github/README.md).
+// npm includes a package README even with a file allowlist (packages/github/README.md). The visual review's vendored
+// code ships with its record and each upstream licence beside it.
 export const PACKAGE_DOCUMENTS = Object.freeze([
   'package.json', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'CHANGELOG.md', 'README.md',
-  'docs/INSTALL.md', 'docs/PRIVACY.md', 'docs/TROUBLESHOOTING.md', 'packages/github/README.md']);
+  'docs/INSTALL.md', 'docs/PRIVACY.md', 'docs/TROUBLESHOOTING.md', 'packages/github/README.md',
+  'packages/visual/src/vendor/THIRD_PARTY.md', 'packages/visual/src/vendor/elkjs/LICENSE.md',
+  'packages/visual/src/vendor/tree-sitter-go/LICENSE', 'packages/visual/src/vendor/tree-sitter-javascript/LICENSE',
+  'packages/visual/src/vendor/tree-sitter-python/LICENSE', 'packages/visual/src/vendor/tree-sitter-typescript/LICENSE',
+  'packages/visual/src/vendor/web-tree-sitter/LICENSE']);
 
-/** Follow local imports, including lazy commands. Ship no audit/data tree. */
+/** A file the package runs or reads, by its path: a script (`.js`, `.mjs`, `.cjs`; a dotted name such as
+ *  `page.client.js` too) or an asset a script reads (`.css`, `.hex`), inside a package. No data file. */
+const RUNTIME_PATH = /^packages\/[\w-]+\/(?:[\w-]+\/)*[\w-]+(?:\.[\w-]+)*\.(?:m?js|cjs|css|hex)$/;
+/** A script's local loads, each by a literal relative specifier: a static or lazy import; `new URL('./x',
+ *  import.meta.url)`, less a folder (a specifier ending in `/`); `createRequire(import.meta.url)('./x')`. */
+const LOADS = Object.freeze([
+  /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)['"](\.[^'"]+)['"]/g,
+  /\bnew URL\(\s*['"](\.[^'"]*[^/'"])['"]\s*,\s*import\.meta\.url\s*\)/g,
+  /\bcreateRequire\(\s*import\.meta\.url\s*\)\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
+]);
+/** Whether the text before `index`, on its line, opens a comment: a `//`, or a block comment's `/*` or `*` line. */
+const inComment = (source, index) => {
+  const before = source.slice(source.lastIndexOf('\n', index - 1) + 1, index);
+  return /(?:^|\s)\/\//.test(before) || /^\s*(?:\/\*|\*)/.test(before);
+};
+
+/** Follow local loads, including lazy commands. Ship no audit/data tree. A vendored file (under a `vendor/` folder)
+ *  and an asset are leaves: shipped as they are, never followed (a vendored bundle names files it never loads). */
 export async function sourcePackageFiles(root = SOURCE_ROOT) {
   root = await realpath(root);
   const seen = new Set(PACKAGE_DOCUMENTS);
@@ -32,13 +54,15 @@ export async function sourcePackageFiles(root = SOURCE_ROOT) {
   async function include(path) {
     path = path.split(sep).join('/');
     if (seen.has(path)) return;
-    if (!/^packages\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/.test(path)
-        || /\/(?:test|fixtures)\//.test(path)) throw new Error('Non-runtime import in package closure');
+    if (!RUNTIME_PATH.test(path) || /\/(?:test|fixtures)\//.test(path))
+      throw new Error('Non-runtime import in package closure');
     const absolute = await regularSource(path);
     seen.add(path);
+    if (/\/vendor\//.test(path) || !/\.(?:m?js|cjs)$/.test(path)) return;
     const source = await readFile(absolute, 'utf8');
-    for (const [, dependency] of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)['"](\.[^'"]+)['"]/g))
-      await include(relative(root, resolve(dirname(absolute), dependency)));
+    for (const pattern of LOADS) for (const match of source.matchAll(pattern)) {
+      if (!inComment(source, match.index)) await include(relative(root, resolve(dirname(absolute), match[1])));
+    }
   }
   await include(PACKAGE_ENTRY);
   for (const path of PACKAGE_DOCUMENTS) await regularSource(path);

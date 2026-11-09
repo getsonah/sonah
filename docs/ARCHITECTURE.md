@@ -1,7 +1,8 @@
 # Architecture
 
 This is the map for contributors: what happens between `sonah review` and the page, which file does each step, which
-steps are deterministic and which ask a model, and where state is kept. [CONTRIBUTING.md](../CONTRIBUTING.md) has the
+steps are deterministic and which ask a model, and where state is kept. `sonah visual`, the page of a branch's change,
+has [its own section](#the-page-of-a-change-sonah-visual). [CONTRIBUTING.md](../CONTRIBUTING.md) has the
 rules a change must keep.
 
 One idea runs through all of it: **the model proposes, code decides what is shown.** The reviewer model reads the
@@ -9,7 +10,9 @@ session and proposes what was asked, claimed and decided, each with quotes. Code
 against the recording, has independent checking passes test each proposal (three for each claim; one for a decision or
 an ask by default, three with `--profile standard`), derives every status and column from recorded structure, and
 keeps anything it cannot settle as not checked. Nothing the model says about its own
-confidence or severity is used.
+confidence or severity is used, with two exceptions: the code review's high, medium or low proposal, which code keeps
+inside each kind's floor and ceiling, and `sonah visual`, whose page shows the tier the model proposes for each point
+(must act, must know, good to know) once code checks that it is one of the three.
 
 ## The packages
 
@@ -17,16 +20,17 @@ Each package is a folder of ES modules that import each other by relative path; 
 
 | Package | What it holds | Deterministic |
 | --- | --- | --- |
-| `packages/cli` | The `sonah` command: finds and loads recordings, reads the repository for the code step, calls the reviewer and its agents, stores answers, writes the page, the opt-in PR comment, `sonah doctor`, `sonah decision` | No: the only package that finds your recordings, runs git or starts the reviewer |
+| `packages/cli` | The `sonah` command: finds and loads recordings, reads the repository for the code step, calls the reviewer and its agents, stores answers, writes the page, the opt-in PR comment, `sonah doctor`, `sonah decision`, `sonah visual` | No: the only package that finds your recordings, and with `visual` the only ones that run git or start a model |
 | `packages/slicer` | Reads Claude Code, Codex and Cursor recording files, as `cli` points it to them, into a ledger of typed events | Yes: the same file gives the same ledger |
 | `packages/redact` | Bounds and validates the ledger and computes its hash (the session's identity); it masks nothing | Yes |
 | `packages/evidence` | The review engine: the canonical session, the parts it is reviewed in, the prompts, grounding, the checking passes, the code step and the report | Code only: the model call and the repository reader are passed in, and it makes no network call and starts no process of its own |
 | `packages/render` | The report model, and the HTML page and the Markdown report that render it, from a session, a finished report and the repository facts the CLI passes in | Yes |
 | `packages/github` | The PR comment: one metadata read and a confirmed, count-only post; and, for `sonah sessions --github`, a pull request's metadata and commit list, read only | No: it talks to GitHub |
 | `packages/golden` | A builder of synthetic Claude Code recordings, for tests | Yes |
+| `packages/visual` | The page of a branch's change for `sonah visual`: reads the range with git (and parses the changed files with its vendored tree-sitter grammars), asks the model through the `claude` CLI, checks each answer, lays out the How and Where graphs (vendored elkjs) and renders the page | No: it runs git and starts `claude` |
 
-Imports point one way: `cli` uses `evidence`, `slicer`, `redact`, `render` and `github`; `render` and `github` use
-`evidence`; `slicer` uses `redact`; `evidence` and `redact` use no other package. "Deterministic" means no
+Imports point one way: `cli` uses `evidence`, `slicer`, `redact`, `render`, `github` and `visual`; `render` and `github`
+use `evidence`; `slicer` uses `redact`; `evidence`, `redact` and `visual` use no other package. "Deterministic" means no
 network, no model, no clock, no random source and no child process: the same input gives the same bytes out. Continuous
 integration checks this for `slicer`, `redact` and `render`.
 
@@ -55,14 +59,13 @@ integration checks this for `slicer`, `redact` and `render`.
    which pasted images a request carries. A part too large for one request is never cut down: it is declared not
    reviewed.
 6. **Ask the model.** `evidence/src/prompt.js` builds each part's prompt from the session's exact text, and
-   `evidence/src/review-agent.js` holds the reviewer's brief. When the answer asks for more lines of a tool result or
-   of a file before an edit, `evidence/src/evidence-requests.js` serves them in one more request. Every call itself is
-   made in `cli/src/review-judge.js`, the only place a model is called: it starts the `claude` or Codex CLI or calls
-   the Anthropic API, and for the code step starts Claude Code as an agent with read-only tools (the agent transport).
+   `evidence/src/review-agent.js` holds the reviewer's brief. When the answer asks for more lines of a tool result or of
+   a file before an edit, `evidence/src/evidence-requests.js` serves them in one more request. Every call itself is made
+   in `cli/src/review-judge.js`, the only place a review calls a model: it starts the `claude` or Codex CLI or calls the
+   Anthropic API, and for the code step starts Claude Code as an agent with read-only tools (the agent transport).
    `cli/src/codex-model.js` only finds the Codex executable and builds its arguments. `cli/src/answer-cache.js` stores
    each answer and reuses it only for the same request bytes, backend and model (and, for an agent, the same state of
-   the repository);
-   `cli/src/session-review.js` records finished parts, so a stopped review resumes.
+   the repository); `cli/src/session-review.js` records finished parts, so a stopped review resumes.
 7. **Ground every quote.** `evidence/src/ledger.js` takes the model's proposals and keeps only what code can ground:
    `evidence/src/session.js` (`verifyReceipt`) checks each quote by string search in the exact event it cites, and
    `evidence/src/receipt-repair.js` may propose one near-miss repair (a straightened quote mark, say) that must then
@@ -112,18 +115,40 @@ ask's status. `cli/src/session-review.js` runs it and takes the repository's sta
 is `cli/src/doctor.js`; `sonah slice` (`cli/index.js`) prints the ledger of steps 2 and 3 for debugging, as a review
 reads it.
 
+## The page of a change (`sonah visual`)
+
+`cli/src/visual-command.js` runs `sonah visual`. It reads the range with local git only (`code-snapshot.js` `runGit`,
+which reaches no network): each side named by the person, or with no range the merge base of `HEAD` and the remote's
+`HEAD` as local git has it (the remote chosen by `repo-links.js` `remoteOf`). It then hands the two commits to
+`visual/src/job.mjs` (`runJob`), which writes everything into one folder:
+
+1. **Extract.** `visual/src/extract.mjs` reads the change with git (with every setting that would change git's output
+   pinned) and `parse-pr.mjs`, `parse-tree.mjs` and `parse-calls.mjs` find the changed functions, their calls and
+   callers. The grammars are vendored WebAssembly, kept as gzip then hex text and decoded when they load.
+2. **Ask.** `visual/src/requests.mjs` builds three kinds of request (the functions, the story, the findings) and writes
+   each to `requests/` before it is asked; `answers.mjs` stores each answer under its request's id and asks only what is
+   missing (`--replay-only` asks nothing). `transport-claude.mjs` is the one place it calls a model: `claude -p` in an
+   empty temporary folder, with its tools off. The command gives it the person's environment without an API key, so a
+   call runs on the person's Claude Code login, as the review's do.
+3. **Check.** `visual/src/checks.mjs` keeps only what code can check: ids that name a shown function, quotes found word
+   for word in the diff, the limits of each field, and a tier that is one of the three. What it drops gets a reason from
+   `visual/src/reasons.mjs`.
+4. **Lay out and render.** `layout.mjs` and `graph-how.mjs`, `graph-where.mjs` and `graph-elk.mjs` place the graphs;
+   `render.mjs` writes `page.html` with its CSS and script inline. The command passes no share address, so the page
+   holds no "Save online" or "Invite your team" button and no upload, and it makes no request when it is opened.
+
 ## Where the model can and cannot reach
 
 The reviewer gets text (and pasted images) and returns text; it cannot act. The `claude` reviewer runs in an empty
 private folder with its tools, MCP servers, settings and slash commands switched off, a minimal environment, and the
-request on standard input. The code step's agents are the one exception, and only on `claude-cli`: they run in the
-working directory with three read-only tools (Read, Grep and Glob) in Claude Code's restricted mode, which confines them
-to the working directory, the repository it lies in, each other git repository that holds a file of the change (its top
-folder) and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the start commit; a
-call that uses any other tool fails. The Codex reviewer runs read-only with its tools and web search off. Nothing in
-`evidence` calls a model or reads the disk by itself: `runReview` and the code step are given a function that answers a
-request (and the code step a repository reader), which is how the tests run the whole pipeline with stand-in reviewers
-and agents.
+request on standard input; `sonah visual`'s `claude` calls run the same way. The code step's agents are the one
+exception, and only on `claude-cli`: they run in the working directory with three read-only tools (Read, Grep and Glob)
+in Claude Code's restricted mode, which confines them to the working directory, the repository it lies in, each other
+git repository that holds a file of the change (its top folder) and, when the change is reviewed in parts, Sonah's copy
+of the changed files as they were at the start commit; a call that uses any other tool fails. The Codex reviewer runs
+read-only with its tools and web search off. Nothing in `evidence` calls a model or reads the disk by itself:
+`runReview` and the code step are given a function that answers a request (and the code step a repository reader), which
+is how the tests run the whole pipeline with stand-in reviewers and agents.
 
 ## Where state lives
 
@@ -136,9 +161,11 @@ and agents.
 | Your settings (`sonah config`) | `~/.sonah/config.json`; the update check's, once set, `~/.sonah/update-check-setting.json` |
 | The update check's last answer | `~/.sonah/update-check.json` |
 | The page and the .md | The `--output` file, and the .md beside the page |
+| `sonah visual`'s page, requests, answers and run | `~/.sonah/visual/<repository folder>-<hash of its path>/<base>-<head>-<model>/` (or `--out DIR`) |
 
 `SONAH_HOME` moves `~/.sonah`, and `--state-dir` moves one review's folder. Every file is written readable by its
-owner only (folders `0700`, files `0600`). The answers, the report and the page quote the session as recorded; the
+owner only (folders `0700`, files `0600`); `sonah visual` makes its folders `0700` and writes its files with the
+person's usual permissions inside them. The answers, the report and the page quote the session as recorded; the
 answers and the report never leave the computer.
 
 ## Closed vocabularies and versions
@@ -147,9 +174,12 @@ answers and the report never leave the computer.
   in `evidence/src/ledger.js`, the slicer's in `slicer/index.js` and `slicer/src/labels.js`, the recorder's typed facts
   in `redact/index.js`. A quote that a checklist row cites goes through one ordered list of grounding tests
   (`GROUNDING_CAUSES` in `ledger.js`); a refused quote keeps its row's reason and names the first test that failed,
-  and the reader's words come from that test and say only what it read.
+  and the reader's words come from that test and say only what it read. The visual review's reasons for what its
+  checks drop are in `visual/src/reasons.mjs`.
 - Every schema, prompt and rendered format carries a version string, `sonah.<name>/<n>`. A change to the bytes it
-  names bumps it.
+  names bumps it. The visual review is the exception: its `facts.json`, `run.json` and answer records carry `v: 1`,
+  and its other files and its prompts carry no version; a changed prompt gets a new request id, so its stored answers
+  are not reused.
 - Every digest goes through one canonical serialization, `evidence/contracts/canonical.js`.
 
 ## The large files
@@ -173,7 +203,8 @@ due to be removed. The Markdown review that route printed (`renderReview`) is re
 ## Tests
 
 `npm test` runs `node --test packages/*/test/*.test.js`. No test calls a model or the network: the review tests use
-stand-in reviewers and synthetic sessions (`corpus/golden/`, `packages/golden/src/build.js`). Some tests pin exact
+stand-in reviewers and synthetic sessions (`corpus/golden/`, `packages/golden/src/build.js`); the visual review's
+tests use a stand-in `claude` (`packages/visual/test/fake-claude.mjs`). Some tests pin exact
 bytes: the requests sent to the model and their run-profile digests (the `*-baseline` tests in `packages/cli/test`),
 and the rendered page and .md (`packages/render/test/snapshots/`). A style linter (`packages/render/test/style-lint.js`)
 checks Sonah's fixed sentences: at most 20 words a sentence, the active voice, no semicolon, one term for one thing. Continuous integration

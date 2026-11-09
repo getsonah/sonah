@@ -609,7 +609,7 @@ test('the line: once, its exact words; the commands that check, closed', async (
   for (const argv of [[], ['--version'], ['-v'], ['help'], ['--help'], ['capture'], ['capture-outcome'], ['trailer'],
     ['not-a-command'], ['review', '--help'], ['doctor', '-h'], ['review', '--session', 'abc', '--background'],
     ['sessions'], ['sessions', '--github', 'o/r', '--pr', '1'], ['decision', 'accept'], ['hook', 'add'], ['skill', 'add'],
-    ['feedback'], ['slice', 'x.jsonl'],
+    ['feedback'], ['slice', 'x.jsonl'], ['visual'], ['visual', 'main..HEAD'],
     ['config'], ['config', 'update-check', 'off'], ['config', 'update-check', 'on'], ['config', 'code-pass', 'off']])
     assert.equal(updateNoticeApplies(argv), false, argv.join(' '));
 });

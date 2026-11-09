@@ -1,0 +1,91 @@
+{
+ "functions": {
+  "src/cart.py#add_item": {
+   "summary": "Adds an item to the cart, refusing empty quantities.",
+   "change": "Adds the function: a quantity of zero or less is refused before the item is stored."
+  },
+  "src/cart.py#total": {
+   "summary": "Sums the cart, takes the discount off, then adds tax.",
+   "change": "The discount now comes off before tax is added, so tax is paid on the lower amount."
+  },
+  "src/price.ts#applyDiscount": {
+   "summary": "Takes a discount code off an amount, never below zero.",
+   "change": "A code now takes off its own amount instead of a flat tenth; the result never goes below zero."
+  }
+ },
+ "story": {
+  "oneLine": "Tax is now charged on the discounted amount.",
+  "ask": "Charge tax after the discount, as the shop terms say.",
+  "beforeNow": [
+   {
+    "before": "Tax on the full price",
+    "now": "Tax on the price after discount"
+   }
+  ],
+  "flows": [
+   {
+    "title": "Checkout total",
+    "steps": [
+     {
+      "id": "s1",
+      "label": "Item added",
+      "fn": "src/cart.py#add_item",
+      "ext": null,
+      "was": null,
+      "isNew": true
+     },
+     {
+      "id": "s2",
+      "label": "Cart summed",
+      "fn": "src/cart.py#total",
+      "ext": null,
+      "was": null,
+      "isNew": false
+     },
+     {
+      "id": "s3",
+      "label": "Discount taken off",
+      "fn": "src/price.ts#applyDiscount",
+      "ext": null,
+      "was": "a flat tenth",
+      "isNew": true
+     },
+     {
+      "id": "s4",
+      "label": "Tax looked up",
+      "fn": null,
+      "ext": "tax service",
+      "was": null,
+      "isNew": false
+     }
+    ],
+    "edges": [
+     {
+      "from": "s1",
+      "to": "s2",
+      "label": null,
+      "kind": "main"
+     },
+     {
+      "from": "s2",
+      "to": "s3",
+      "label": "code given",
+      "kind": "main"
+     },
+     {
+      "from": "s3",
+      "to": "s4",
+      "label": "region set",
+      "kind": "branch"
+     }
+    ]
+   }
+  ],
+  "glossary": [
+   {
+    "term": "subtotal",
+    "def": "The cart sum before tax."
+   }
+  ]
+ }
+}
