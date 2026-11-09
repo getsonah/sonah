@@ -75,7 +75,7 @@ test('D97 (6): readRepoFacts — atHead by HEAD\'s bytes, goneAtHead by HEAD\'s 
   // The process runs elsewhere: the prefix is the snapshot's working directory under its top folder.
   const facts = await readRepoFacts({ snapshot: { root: true, top, dir, realRoot: dir }, codePass, git });
   assert.deepEqual(facts.repo, { head: HEAD, start: START, prefix: 'packages/app', atHead: ['src/a.js'],
-    goneAtHead: ['src/old.js'] });
+    goneAtHead: ['src/old.js'], cleanAtHead: [] });
   assert.deepEqual(facts.github, { owner: 'someone', repo: 'app-fork', remote: 'fork', pushed: true, startPushed: false });
   // Every argv is one of the allowed shapes, run in the repository's top folder.
   for (const { args } of asked) assert.ok(repoGitAllowed(args), args.join(' '));
@@ -117,15 +117,49 @@ test('D97 (6): no upstream reads origin, else the only remote; no GitHub remote,
       { repo: null, github: undefined });
 });
 
+test('D219: cleanAtHead: a file the code step holds no sha256 of is at HEAD when HEAD holds it and the working tree '
+  + 'does not differ', async (t) => {
+  const { top, dir } = await folders(t);
+  const codePass = { base: { kind: 'git', commit: START }, files: [
+    { path: 'img/logo.png', type: 'added', state: 'binary' },
+    { path: 'img/new.png', type: 'added', state: 'binary' },
+    { path: 'big.lock', type: 'modified', state: 'oversize' },
+    { path: 'odd.bin', type: 'modified', state: 'unreadable' },
+    { path: 'back.js', type: 'modified', state: 'changed_since_session' },
+    { path: 'src/a.js', type: 'modified', state: 'shown', sha256: sha256('a\n') }] };
+  const diff = (path) => `diff --quiet --no-ext-diff --no-textconv ${HEAD} -- :(top,literal)packages/app/${path}`;
+  const { git, asked } = fakeGit({
+    'rev-parse --verify --quiet HEAD^{commit}': `${HEAD}\n`,
+    [`cat-file -e ${HEAD}:packages/app/img/logo.png`]: '', [diff('img/logo.png')]: '',
+    [`cat-file -e ${HEAD}:packages/app/big.lock`]: '', [diff('big.lock')]: false,
+    [`cat-file -e ${HEAD}:packages/app/odd.bin`]: '', [diff('odd.bin')]: '',
+    [`cat-file -e ${HEAD}:packages/app/back.js`]: '', [diff('back.js')]: '',
+    [`cat-file blob ${HEAD}:packages/app/src/a.js`]: 'a\n',
+  });
+  const facts = await readRepoFacts({ snapshot: { root: true, top, dir, realRoot: dir }, codePass, git });
+  // A file HEAD does not hold (img/new.png) and one the working tree changes (big.lock: git's exit 1) are left out.
+  assert.deepEqual(facts.repo.cleanAtHead, ['img/logo.png', 'odd.bin', 'back.js']);
+  assert.deepEqual(facts.repo.atHead, ['src/a.js'], 'D97\'s links read atHead alone, as before');
+  assert.equal(asked.some(({ args }) => args.join(' ') === diff('img/new.png')), false, 'no diff of a path HEAD lacks');
+  for (const { args } of asked) assert.ok(repoGitAllowed(args), args.join(' '));
+});
+
 test('D97 (6): every argv is in REPO_FACT_GIT_ARGS; a fetch, a push or an option in a slot is refused unrun', () => {
   assert.ok(REPO_FACT_GIT_ARGS.every((shape) => Object.isFrozen(shape)));
   assert.deepEqual(REPO_FACT_GIT_ARGS.map((shape) => shape.slice(0, 2).join(' ')), ['rev-parse --verify',
-    'rev-parse --abbrev-ref', 'remote', 'remote get-url', 'cat-file blob', 'cat-file -e', 'branch -r', 'check-ignore -q']);
+    'rev-parse --abbrev-ref', 'remote', 'remote get-url', 'cat-file blob', 'cat-file -e', 'branch -r', 'check-ignore -q',
+    'diff --quiet']);
   for (const args of [['fetch'], ['fetch', 'origin'], ['ls-remote', 'origin'], ['push'], ['pull'],
     ['remote', 'update'], ['remote', 'get-url', '--push'], ['cat-file', 'blob', '--batch'],
     ['branch', '-r', '--contains', '--all'], ['remote', 'get-url', 'origin', 'extra'], ['check-ignore', '-q', 'x'],
-    ['rev-parse', 'HEAD'], ['cat-file', 'blob', 'a\nb']])
+    ['rev-parse', 'HEAD'], ['cat-file', 'blob', 'a\nb'],
+    // D219: the diff shape only with its own words: no output, no external diff program, no textconv, one path.
+    ['diff', HEAD, '--', 'x'], ['diff', '--quiet', HEAD, '--', 'x'],
+    ['diff', '--quiet', '--no-ext-diff', '--no-textconv', HEAD, '--', '--output=x'],
+    ['diff', '--quiet', '--no-ext-diff', '--no-textconv', '--cached', '--', 'x']])
     assert.equal(repoGitAllowed(args), false, args.join(' '));
+  assert.equal(repoGitAllowed(['diff', '--quiet', '--no-ext-diff', '--no-textconv', HEAD, '--', ':(top,literal)a b']),
+    true);
   assert.equal(repoGitAllowed(['branch', '-r', '--contains', HEAD]), true);
 });
 

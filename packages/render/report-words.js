@@ -88,9 +88,76 @@ export const REPORT_HEADER_WORDS = Object.freeze({
   // Sonah could not check (report-model.js REPORT_FOLD_CHOICES `continuedUnread`).
   continuedPart: 'This session continues from an earlier part.',
   notCheckedLead: 'Sonah did not check:',
+  // D219 (the owner, 2026-11-09): the page's one link to a file of this computer, the graphs page of the session's
+  // commits that `sonah review --format html` drew before it (cli review-graphs.js; the page only, never the .md).
+  graphsPage: "Open the graphs page of the session's commits.",
   // D199 (the owner, 2026-10-30: "All of them"): no reader prints the notes beside the header any more, so their words
   // are gone: the items with no impact and no action (D118 (a)'s `noCodeImpact`), no GitHub remote, and a commit that
   // git did not show on GitHub (`notOnGitHub`; the terminal keeps its own, cli report-output.js REPORT_OUTPUT_WORDS).
+});
+/**
+ * D219: why the graphs page failed, for the page's `failed` line (REPORT_GRAPHS_WORDS): the problem and its fix, by the
+ * visual's closed code. Its keys mirror cli visual-command.js VISUAL_FIX_WORDS' keys that a drawing can end with
+ * (`drawVisualPage`; render imports no cli module, and d219-review-graphs.test.js holds the two sets equal), and `other`
+ * is any other ending, whose fix is VISUAL_FIX_DEFAULT's: a failed call, answers still needed, or anything else. A
+ * function takes the range that `sonah visual` draws the page with alone (`<start12>..<head12>`); a plain entry names
+ * none. The terminal prints the visual's own problem and fix instead (on stderr).
+ */
+export const REPORT_GRAPHS_FAILURE_WORDS = Object.freeze({
+  // HEAD is the start commit, or behind it: `sonah visual` with the same range would find nothing to draw either.
+  no_change: 'Sonah found no commit to draw: HEAD is at or behind the start of its range. Run sonah visual with a '
+    + 'range, such as sonah visual main..HEAD.',
+  output_folder_unwritable: (range) => 'Sonah could not make or write its folder. Check that you can write to your '
+    + `SONAH_HOME folder, then run sonah visual ${range}.`,
+  cli_missing: (range) => 'Sonah could not start claude. Install Claude Code, sign in with claude auth login, then run '
+    + `sonah visual ${range}.`,
+  auth: (range) => 'The claude CLI did not accept your login. Run claude auth login with your Claude subscription '
+    + `account, then run sonah visual ${range}.`,
+  billing: (range) => 'The plan or billing of your Claude account stopped the calls. Check them, then run sonah visual '
+    + `${range}.`,
+  model_not_found: (range) => 'Your Claude account cannot use the graphs page\'s model. Run sonah visual '
+    + `${range} with --model and a model that your account can use.`,
+  usage_limit: (range) => 'Your Claude plan reached its usage limit. Wait until it resets, then run sonah visual '
+    + `${range}.`,
+  other: (range) => `Sonah could not finish it. Run sonah visual ${range}, which reuses the answers that came back. If `
+    + 'it fails again, run sonah doctor --no-probe.',
+});
+/**
+ * D219: why `sonah review --format html` did not draw the graphs page of the session's commits, one line a closed code
+ * (its keys): the terminal prints it (cli review-graphs.js, on stdout) and the page says it in its header where the link
+ * would be (report-model.js `graphsNotDrawnOf`; never the .md). A function takes the range the line names, 12
+ * characters of each commit (`<start>..HEAD` or `<start>..<head>`); a plain line names none. The range starts at the
+ * session's start commit, or, with `--code-base` (D207), at the merge-base that the code review starts from, so "its
+ * range" and "the change" are the code review's, not only the session's. `sonah visual` is named only where it can draw
+ * the page: never for another backend, a folder that no git repository holds, or a HEAD that is still the start
+ * commit. `failed` is the page's alone, with the visual's code (REPORT_GRAPHS_FAILURE_WORDS): the terminal prints the
+ * visual's own problem and fix instead.
+ */
+export const REPORT_GRAPHS_WORDS = Object.freeze({
+  backend: 'Graphs page: not drawn. Sonah draws it only on the claude-cli backend.',
+  codeStep: 'Graphs page: not drawn. Sonah finds where the session\'s commits start with the code review, which was off. '
+    + 'Run sonah visual with a range, such as sonah visual main..HEAD.',
+  noRepository: 'Graphs page: not drawn. It draws the commits of a git repository, and Sonah found none that holds the '
+    + 'session\'s folder.',
+  unknown: 'Graphs page: not drawn. It draws commits only, and Sonah could not tell where the session\'s commits start. '
+    + 'Run sonah visual with a range, such as sonah visual main..HEAD.',
+  // HEAD is the start commit of its range, and every file of the change (if any) is at HEAD: no commit to draw.
+  noCommits: 'Graphs page: not drawn. It draws commits only, and HEAD is still the commit where its range starts.',
+  // No file of the change to compare with HEAD: the session changed none here, or the code review read none (it waits
+  // for the run that can finish the session review, D210).
+  noChange: (range) => 'Graphs page: not drawn. It draws commits only, and Sonah read no file of the change. To draw '
+    + `its range anyway, run sonah visual ${range}.`,
+  uncommitted: (range) => 'Graphs page: not drawn. It draws commits only, and files of the change differ from HEAD. '
+    + `Commit them, then run sonah visual ${range}.`,
+  limits: (range) => 'Graphs page: not drawn, because its calls would not count in the limits that you set. To draw '
+    + `it, run sonah visual ${range}.`,
+  // The visual's failure (`failure`, a key of REPORT_GRAPHS_FAILURE_WORDS): its problem and fix, with the range.
+  failed: (range, failure) => {
+    const said = REPORT_GRAPHS_FAILURE_WORDS[failure];
+    return `Graphs page: not drawn. ${typeof said === 'function' ? said(range) : said}`;
+  },
+  // Ctrl-C (or SIGTERM) while it was drawn: only the graphs page stops, and the review writes its own page.
+  stopped: (range) => `Graphs page: not drawn, because you stopped it. To draw it on its own, run sonah visual ${range}.`,
 });
 /** The parts of the header's results sentence, by RESULT_OUTCOME_CLASSES member, in the order the header names them.
  *  No part holds a comma: the sentence joins its parts with commas, so a comma inside one would split it in two. */
@@ -985,7 +1052,8 @@ export const STYLE_KINDS = Object.freeze({
   REPORT_HEADER_WORDS: 'notice', 'REPORT_HEADER_WORDS.review': 'heading', 'REPORT_HEADER_WORDS.filesChanged': 'fragment',
   'REPORT_HEADER_WORDS.change': 'fragment',
   'REPORT_HEADER_WORDS.commands': 'fragment', 'REPORT_HEADER_WORDS.commit': 'fragment',
-  'REPORT_HEADER_WORDS.notCheckedLead': 'label',
+  'REPORT_HEADER_WORDS.notCheckedLead': 'label', 'REPORT_HEADER_WORDS.graphsPage': 'action',
+  REPORT_GRAPHS_WORDS: 'notice', REPORT_GRAPHS_FAILURE_WORDS: 'notice',
   REPORT_RESULT_PARTS: 'fragment', REPORT_NOT_CHECKED_PARTS: 'fragment',
   REPORT_COUNT_WORDS: 'fragment', 'REPORT_COUNT_WORDS.emptyTiers': 'notice', 'REPORT_COUNT_WORDS.outside': 'notice',
   'REPORT_COUNT_WORDS.recheck': 'notice', REPORT_RECHECK_PARTS: 'fragment',
@@ -1053,6 +1121,14 @@ export const STYLE_FIXTURES = Object.freeze({
     ['for 2 Sonah read no exit code']],
   'REPORT_HEADER_WORDS.refusedAfterEdit': [[1], [3]],
   'REPORT_HEADER_WORDS.unclearAfterEdit': [[1], [2]],
+  // D219: the ranges the graphs page's lines name, 12 characters of each commit.
+  'REPORT_GRAPHS_WORDS.noChange': [['0123456789ab..HEAD']],
+  'REPORT_GRAPHS_WORDS.uncommitted': [['0123456789ab..HEAD']],
+  'REPORT_GRAPHS_WORDS.limits': [['0123456789ab..fedcba987654']],
+  // The failed line with a failure whose words name the range, and with one whose words name none.
+  'REPORT_GRAPHS_WORDS.failed': [['0123456789ab..fedcba987654', 'other'], ['0123456789ab..fedcba987654', 'no_change']],
+  'REPORT_GRAPHS_WORDS.stopped': [['0123456789ab..fedcba987654']],
+  ...each('REPORT_GRAPHS_FAILURE_WORDS', REPORT_GRAPHS_FAILURE_WORDS, [['0123456789ab..fedcba987654']]),
   ...each('REPORT_RESULT_PARTS', REPORT_RESULT_PARTS, [[1], [3]]),
   ...each('REPORT_NOT_CHECKED_PARTS', REPORT_NOT_CHECKED_PARTS, [[1], [3]]),
   // D109 amended: the files the code review did not see, with how many of them its checks read.
@@ -1180,4 +1256,10 @@ export const STYLE_ALLOW = Object.freeze({
   'REPORT_FOOTER_WORDS.answerCommand': ['technical-noun'],
   // D123: "working directory" is a technical noun, not a verb in progress.
   'REPORT_DID_WORDS.noFilesHere': ['technical-noun'],
+  // D219: claude, its CLI, its `claude auth login` and the Claude plan and account are the names the claude CLI and its
+  // plans use; "billing" is a technical noun.
+  'REPORT_GRAPHS_FAILURE_WORDS.cli_missing': ['quoted-term'], 'REPORT_GRAPHS_FAILURE_WORDS.auth': ['quoted-term'],
+  'REPORT_GRAPHS_FAILURE_WORDS.billing': ['quoted-term', 'technical-noun'],
+  'REPORT_GRAPHS_FAILURE_WORDS.model_not_found': ['quoted-term'],
+  'REPORT_GRAPHS_FAILURE_WORDS.usage_limit': ['quoted-term'],
 });

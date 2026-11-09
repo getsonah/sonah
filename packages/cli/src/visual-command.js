@@ -8,6 +8,8 @@
 // the account); 3 Sonah failed. What it prints is fixed words, codes and paths: never git's or the provider's text.
 //
 // No work at import: the visual package (packages/visual/src) and the review's model check are imported when it runs.
+// D219: the job's machinery is one exported helper (`drawVisualPage`), which `sonah review --format html` also runs, for
+// the graphs page of the session's commits (review-graphs.js).
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -52,7 +54,7 @@ export const VISUAL_FIX_WORDS = Object.freeze({
   no_merge_base: 'HEAD shares no commit with the default branch of your remote. Give a range, such as sonah visual '
     + 'main..HEAD.',
   no_change: 'The range holds no change: its head adds no commit to its base. Give a range whose head is ahead of its '
-    + 'base, such as sonah visual main..HEAD.',
+    + 'base, such as sonah visual main..HEAD on a branch, or sonah visual HEAD~1..HEAD for the last commit.',
   invalid_model: `Choose a full model ID, such as ${VISUAL_DEFAULT_MODEL}. Sonah does not accept an alias such as `
     + 'sonnet.',
   output_folder_unwritable: 'Sonah could not make or write the folder for the page. Choose a --out folder that you '
@@ -201,12 +203,75 @@ function failureOf(run) {
   return 'visual_failed';
 }
 
+/** The fix of a code the command or the job ended with: its own words (VISUAL_FIX_WORDS), else the default. */
+export const visualFixOf = (code) => (Object.hasOwn(VISUAL_FIX_WORDS, code) ? VISUAL_FIX_WORDS[code]
+  : VISUAL_FIX_DEFAULT);
+
+/**
+ * One drawing of the graphs page of `base..head`, two commits of the repository whose real top folder is `top`: the
+ * job's machinery that `sonah visual` and (D219) `sonah review --format html` share (review-graphs.js). A head the base
+ * already holds is `no_change`; the folder `outDir` and its `requests/` and `answers/` are made owner-only; the calls run
+ * with `model` in the environment `visualCallEnvironment(env)` gives, or none are made with `replayOnly`; `onStart` is
+ * told the folder just before the job starts. While the job runs, `GIT_NO_LAZY_FETCH` is set in this process's
+ * environment, which extract keeps for its git children, so nothing but the claude calls reaches the network; its
+ * earlier value is put back when the job ends (D219: the review's own process goes on after it). D219: `signal` (the
+ * review's, which abandons the graphs page on Ctrl-C or SIGTERM): once it is aborted, no new call starts; each fails at
+ * once as `call_failed`, without starting claude, so the job ends soon. A call already running is not stopped here:
+ * packages/visual's transport takes no signal. At a terminal, Ctrl-C is expected to reach that claude too, since it
+ * runs in this process's group, but no test has sent Ctrl-C at a real terminal (D219, Left): that is not checked.
+ * Resolves `{ status: 'complete', page, run }` (the page's path), `{ status: 'pending', needed, run }` (how many answers
+ * are still needed) or `{ status: 'failed', code }` (a code of VISUAL_FIX_WORDS, a failed call's or `visual_failed`);
+ * never rejects.
+ */
+export async function drawVisualPage({ top, base, head, model = VISUAL_DEFAULT_MODEL, outDir, replayOnly = false,
+  env = process.env, git = runGit, onStart = null, signal = null }) {
+  try {
+    // A head the base already holds (the same commit, or one behind it) adds nothing to draw: the job would ask the
+    // model about an empty change.
+    if (base === head || (await git(['merge-base', '--is-ancestor', head, base], { cwd: top })).ok) {
+      return { status: 'failed', code: 'no_change' };
+    }
+    // Every folder Sonah makes here is readable by its owner only; the job's own folders are made first, the same way.
+    try {
+      for (const folder of [outDir, join(outDir, 'requests'), join(outDir, 'answers')])
+        mkdirSync(folder, { recursive: true, mode: 0o700 });
+    } catch { return { status: 'failed', code: 'output_folder_unwritable' }; }
+    const [{ runJob }, { claudeTransport, TransportError }] = await Promise.all([import('../../visual/src/job.mjs'),
+      import('../../visual/src/transport-claude.mjs')]);
+    const calls = replayOnly ? null : claudeTransport({ model, env: visualCallEnvironment(env) });
+    // D219: after a stop, no new call starts (the transport's own `by` and `model` kept for the answers' records).
+    const transport = calls && signal ? Object.assign(async (request) => {
+      if (signal.aborted) throw new TransportError('call_failed');
+      return calls(request);
+    }, { by: calls.by, model: calls.model }) : calls;
+    onStart?.(outDir);
+    // The job's git calls fetch no missing object of a partial clone (extract keeps this name for its git children).
+    const before = process.env.GIT_NO_LAZY_FETCH;
+    process.env.GIT_NO_LAZY_FETCH = '1';
+    let run;
+    try {
+      run = await runJob({ repoDir: top, base, head, outDir, transport, mode: 'local', shareUrl: null, branch: null });
+    } finally {
+      if (before === undefined) delete process.env.GIT_NO_LAZY_FETCH;
+      else process.env.GIT_NO_LAZY_FETCH = before;
+    }
+    if (run?.status === 'complete') return { status: 'complete', page: join(outDir, 'page.html'), run };
+    if (run?.status === 'pending') return { status: 'pending', needed: Array.isArray(run.needed) ? run.needed.length : 0,
+      run };
+    return { status: 'failed', code: failureOf(run), run };
+  } catch {
+    return { status: 'failed', code: 'visual_failed' };
+  }
+}
+
 /**
  * `sonah visual [BASE..HEAD] [--out DIR] [--model ID] [--replay-only]`: the exit code. `cwd` is where it runs (the
- * repository is its top folder); `env` is the environment the calls and Sonah's folder are read from.
+ * repository is its top folder); `env` is the environment the calls and Sonah's folder are read from. `presentPage`,
+ * when given, is called with the written page's path in place of printing the `Local page:` line (D218: bare `sonah`
+ * prints that line and opens the page, bare-command.js).
  */
 export async function runVisualCommand(argv, { stdout = process.stdout, stderr = process.stderr, cwd = undefined,
-  env = process.env, git = runGit } = {}) {
+  env = process.env, git = runGit, presentPage = null } = {}) {
   let options;
   try { options = parseVisualArgs(argv); }
   catch (error) {
@@ -221,9 +286,8 @@ export async function runVisualCommand(argv, { stdout = process.stdout, stderr =
   }
   // A problem named with its fix, a stop of the calls among them, exits 2; any other failure is Sonah's, and exits 3.
   const failed = (code) => {
-    const fixed = Object.hasOwn(VISUAL_FIX_WORDS, code);
-    stderr.write(`${VISUAL_WORDS.failed(code, fixed ? VISUAL_FIX_WORDS[code] : VISUAL_FIX_DEFAULT)}\n`);
-    return fixed ? 2 : 3;
+    stderr.write(`${VISUAL_WORDS.failed(code, visualFixOf(code))}\n`);
+    return Object.hasOwn(VISUAL_FIX_WORDS, code) ? 2 : 3;
   };
   try {
     const model = options.model ?? VISUAL_DEFAULT_MODEL;
@@ -246,37 +310,20 @@ export async function runVisualCommand(argv, { stdout = process.stdout, stderr =
       if (found.problem) throw problem(found.problem);
       base = found.base;
     }
-    // A head the base already holds (the same commit, or one behind it) adds nothing to draw: the job would ask the
-    // model about an empty change.
-    if (base === head || (await git(['merge-base', '--is-ancestor', head, base], { cwd: top })).ok) {
-      throw problem('no_change');
-    }
-
-    // Every folder Sonah makes here is readable by its owner only; the job's own folders are made first, the same way.
+    // The job (`drawVisualPage`, which D219's review shares): the empty range, the folders, the calls and the page.
     const outDir = options.out !== null ? resolve(root, options.out) : visualOutDir({ top, base, head, model, env });
-    try {
-      for (const folder of [outDir, join(outDir, 'requests'), join(outDir, 'answers')])
-        mkdirSync(folder, { recursive: true, mode: 0o700 });
-    } catch { throw problem('output_folder_unwritable'); }
-
-    // The job's git calls fetch no missing object of a partial clone (extract keeps this name for its git children):
-    // nothing but the claude calls reaches the network. `sonah visual` is this process's one job.
-    process.env.GIT_NO_LAZY_FETCH = '1';
-    const [{ runJob }, { claudeTransport }] = await Promise.all([import('../../visual/src/job.mjs'),
-      import('../../visual/src/transport-claude.mjs')]);
-    const transport = options.replayOnly ? null : claudeTransport({ model, env: visualCallEnvironment(env) });
-    stderr.write(`${VISUAL_WORDS.started(base, head, outDir)}\n`);
-    const run = await runJob({ repoDir: top, base, head, outDir, transport, mode: 'local', shareUrl: null,
-      branch: null });
-    if (run?.status === 'complete') {
-      stdout.write(`${LOCAL_PAGE_WORDS.line(join(outDir, 'page.html'))}\n`);
+    const drawn = await drawVisualPage({ top, base, head, model, outDir, replayOnly: options.replayOnly, env, git,
+      onStart: (folder) => stderr.write(`${VISUAL_WORDS.started(base, head, folder)}\n`) });
+    if (drawn.status === 'complete') {
+      if (presentPage) await presentPage(drawn.page);
+      else stdout.write(`${LOCAL_PAGE_WORDS.line(drawn.page)}\n`);
       return 0;
     }
-    if (run?.status === 'pending') {
-      stdout.write(`${VISUAL_WORDS.pending(Array.isArray(run.needed) ? run.needed.length : 0, options.replayOnly)}\n`);
+    if (drawn.status === 'pending') {
+      stdout.write(`${VISUAL_WORDS.pending(drawn.needed, options.replayOnly)}\n`);
       return 1;
     }
-    return failed(failureOf(run));
+    return failed(drawn.code);
   } catch (error) {
     return failed(error?.named === true ? error.code : 'visual_failed');
   }

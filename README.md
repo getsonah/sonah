@@ -40,7 +40,11 @@ npm install -g getsonah
 sonah doctor                  # checks Node, your claude login and one tiny model request
 cd ~/code/your-project
 sonah review --format html --output ~/review.html     # reviews the newest session here, opens the page, writes ~/review.md
+sonah                                                 # draws your branch's change as a page of graphs and opens it
 ```
+
+In a terminal, plain `sonah`, with no command, runs `sonah visual` through your own `claude` login and opens its page
+in your browser. `sonah --help` lists every command.
 
 To try it without installing, run `npx getsonah doctor`. To install from a checkout instead:
 
@@ -96,9 +100,19 @@ The page and the .md hold the same report. The .md is for a pull request comment
 posts nothing itself. `~/` is your home folder, outside the project, so the next review does not read the report as
 part of the change. A path inside the project works when `.gitignore` holds it.
 
+When the session's work is committed, the review also draws the graphs page of the session's commits first, as
+`sonah visual` does, with `claude -p` on your Claude plan (with `--code-base`, of the whole branch since that base). It
+prints `Graphs page: <path>` and the calls and cost it took, and the review page links to it. The .md never does.
+`--no-visual` skips it. It is not drawn on another backend than `claude-cli`, under `--max-calls`, `--max-input-bytes`
+or `--stop-at-utilization`, with the code review off, or while the change is not all committed. One line then says why,
+and the review page says it where the link would be, as it says the problem and fix of a graphs page that fails; where
+`sonah visual` can draw it, the line names that command. Ctrl-C while it is drawn stops the graphs page only: the
+review still writes its page.
+
 After you commit and push your work, the report links each place in the code to GitHub. Did you run Sonah before you
 committed? Then commit, push, and run the same command with a new `--output` file. Sonah reuses its stored answers, so
-the second run makes no model call.
+the second run makes no model call for the review; an HTML review whose work is now committed draws its graphs page,
+with calls of its own.
 
 Other ways to run it:
 
@@ -107,6 +121,7 @@ sonah sessions                                        # this project's recorded 
 sonah review --choose 2 --format html --output ~/second.html
 sonah review /path/to/session.jsonl --format html --output ~/review.html
 sonah review --format md --output ~/review.md         # the Markdown report only, no page
+sonah review --no-visual --format html --output ~/review.html   # the page, without the graphs page of the commits
 sonah review --no-code-pass --format html --output ~/session.html   # the session only, no files read
 sonah review --code-base main --format html --output ~/branch.html  # the code review reads all the branch changed since main, in this folder
 sonah review --backend codex-cli --model gpt-6.1-sol --format html --output ~/review.html   # your codex login, the session only
@@ -115,6 +130,7 @@ sonah hook add                                        # once per repository: Cla
 sonah sessions --commits main..HEAD                   # the sessions behind your branch, after sonah hook add
 sonah visual                                          # a page of your branch's change, with How and Where graphs
 sonah visual main..HEAD                               # the same, for a range you name
+sonah                                                 # in a terminal: sonah visual, and it opens the page
 ```
 
 A review that stops partway resumes when you run the same command again. [Troubleshooting](docs/TROUBLESHOOTING.md)
@@ -131,9 +147,11 @@ lists the messages and exit codes.
   the session started, the lines the session read of other files and the skill files it used, as they are now, and
   what the code review's read-only agents open. Turn the code review off with `--no-code-pass`, or for every review
   with `sonah config code-pass off`.
-- **With `sonah visual`:** the change of the range, through your own `claude` login: the repository's name, the
-  commits' messages, the changed files' paths and each changed function's code with its added and removed lines. It
-  reads no recording.
+- **With `sonah visual`, plain `sonah` in a terminal, or `sonah review --format html` on committed work:** the change of
+  the range (for the review, from where the session started to `HEAD`; with `--code-base`, the whole branch since it
+  met that base), through your own `claude` login: the repository's name, the commits' messages, the changed files'
+  paths and each changed function's code with its added and removed lines. It reads no recording. The review skips it
+  with `--no-visual`.
 - **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics.
   Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's public registry
   for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`) and tells you

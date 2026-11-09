@@ -1266,6 +1266,41 @@ export const READ_CENSUS = Object.freeze({
     // D133 (R2): the short line beside the title when Sonah did not read the earlier part: a positive fact of the session.
     'REPORT_HEADER_WORDS.continuedPart': ['other', '4d6387e20e796633'],
     'REPORT_HEADER_WORDS.notCheckedLead': ['sonah', '4788f4a16b3c8c4b'],
+    // D219 (read 2026-11-09): the page's link to the graphs page of the session's commits, an instruction (other).
+    'REPORT_HEADER_WORDS.graphsPage': ['other', '2d50cd16e4564197'],
+    // D219 (read 2026-11-09): why `sonah review --format html` did not draw the graphs page, the terminal's line and the
+    // page's (moved here from cli review-graphs.js, the five earlier lines with the same texts): what Sonah did not draw
+    // and why (sonah, as CODE_STEP_BACKEND_LINE and CODE_STEP_WORDS.gated). `uncommitted` says that files of the change
+    // differ from HEAD and `noCommits` that HEAD is the start commit, facts git answered, never that work is missing;
+    // `noChange`, `unknown` and `noRepository` say what Sonah read, could not tell or found; `codeStep` that its code
+    // review was off; `failed` that Sonah could not finish it; `stopped` that you stopped it. None states an absence.
+    'REPORT_GRAPHS_WORDS.backend': ['sonah', '1ec5cb18e8c1d4ae'],
+    'REPORT_GRAPHS_WORDS.codeStep': ['sonah', '7ebad7cd62b27e42'],
+    'REPORT_GRAPHS_WORDS.noRepository': ['sonah', '54962f192f9e3e02'],
+    'REPORT_GRAPHS_WORDS.unknown': ['sonah', 'e173b24d18b88c88'],
+    // Read again 2026-11-10 for --code-base (D207), whose range starts at the merge-base: `noCommits` says HEAD is the
+    // commit where its range starts, `noChange` and `uncommitted` name the change, not the session's (were
+    // 73131abf1264518b, 0f63a09599719ff3, bba346b97939bd2e); `failed` says the visual's problem and fix by its closed
+    // code (REPORT_GRAPHS_FAILURE_WORDS; was 1ede1ad390f79f70). Each class as before.
+    'REPORT_GRAPHS_WORDS.noCommits': ['sonah', 'bcfe33cc4879c2ce'],
+    'REPORT_GRAPHS_WORDS.noChange': ['sonah', '9b2c7b28035965b4'],
+    'REPORT_GRAPHS_WORDS.uncommitted': ['sonah', '7a2cf360abd3675e'],
+    'REPORT_GRAPHS_WORDS.limits': ['sonah', 'a9360a7c9753c15a'],
+    'REPORT_GRAPHS_WORDS.failed': ['sonah', 'fa348ee8ac1a32e0'],
+    'REPORT_GRAPHS_WORDS.stopped': ['sonah', 'd4608086b8190d9a'],
+    // D219 (read 2026-11-10): the problem and fix of the visual's closed code, which the page's `failed` line says. What
+    // Sonah found, could not make, start or finish (sonah: `no_change`, where HEAD is a fact git answered; the folder;
+    // claude; any other ending); what the person's own claude login, plan or account did or cannot do, with the fix
+    // (other: the person's own machine and account, an instruction). None states an absence of the recording, the
+    // session or the code.
+    'REPORT_GRAPHS_FAILURE_WORDS.no_change': ['sonah', 'fc8fce959b4f2237'],
+    'REPORT_GRAPHS_FAILURE_WORDS.output_folder_unwritable': ['sonah', 'f8e83d2d87f34f79'],
+    'REPORT_GRAPHS_FAILURE_WORDS.cli_missing': ['sonah', '82a124650d971675'],
+    'REPORT_GRAPHS_FAILURE_WORDS.auth': ['other', 'e604fcb4e79015cf'],
+    'REPORT_GRAPHS_FAILURE_WORDS.billing': ['other', '5f3ccec97904299f'],
+    'REPORT_GRAPHS_FAILURE_WORDS.model_not_found': ['other', '6397f396db8bf480'],
+    'REPORT_GRAPHS_FAILURE_WORDS.usage_limit': ['other', '5e9c76fe9c7837f5'],
+    'REPORT_GRAPHS_FAILURE_WORDS.other': ['sonah', 'b044a25e90001380'],
     'REPORT_ITEM_WORDS.impact': ['other', '4ddecf57abc0a922'],
     'REPORT_ITEM_WORDS.action': ['other', '200f186b8b38342e'],
     'REPORT_ITEM_WORDS.where': ['other', '02cc020f791cdbd4'],
@@ -1774,6 +1809,35 @@ export const READ_CENSUS = Object.freeze({
     'UPDATE_NOTICE_WORDS.line': ['other', '5cbdc76e7d5a6932'],
     'UPDATE_NOTICE_WORDS.doctor': ['other', '62ac77cf03d3cfea'],
   }),
+  // D218 (read 2026-11-09): bare `sonah` in a terminal. Its notice, what it draws and with what, and the command that
+  // lists every command (other); the line after a problem the visual names, that command (other); a page the browser
+  // did not open, what Sonah saved and could not do (sonah, as LOCAL_PAGE_OPEN_FIX). None states an absence.
+  'packages/cli/src/bare-command.js': Object.freeze({
+    'BARE_WORDS.notice': ['other', '56976abd5b7cdaa3'],
+    'BARE_WORDS.help': ['other', 'bff6fdb0c4156808'],
+    'BARE_WORDS.openFix': ['sonah', '8572881c48cefeb9'],
+  }),
+  // D219 (read 2026-11-09): the review's graphs page of the session's commits. The started line, the page's path, its
+  // usage, the mark on the visual's lines and how to draw it alone, and the dry run's "on" and "off (--no-visual)" (other:
+  // what Sonah does, a path, counts, a label, an instruction, the person's own choice); the dry run's off on another
+  // backend, under a limit, with the code review off, with no git repository or no start commit, what Sonah would not
+  // draw and why (sonah, as CODE_STEP_BACKEND_LINE and CODE_STEP_WORDS.gated). The lines that say it is not drawn are
+  // render report-words.js REPORT_GRAPHS_WORDS, which the page says too. None states an absence.
+  'packages/cli/src/review-graphs.js': Object.freeze({
+    'REVIEW_GRAPHS_WORDS.started': ['other', '9f778e3d4be2ce56'],
+    'REVIEW_GRAPHS_WORDS.page': ['other', '56775eafea4387ff'],
+    'REVIEW_GRAPHS_WORDS.usage': ['other', '894e268ef79a80e3'],
+    'REVIEW_GRAPHS_WORDS.mark': ['other', 'd848496a426467ef'],
+    'REVIEW_GRAPHS_WORDS.again': ['other', '937d8bb26e6a168b'],
+    // Read again 2026-11-10: "from commits only", true with --code-base too (was 467193c7129d17f7).
+    'REVIEW_GRAPHS_WORDS.dry.on': ['other', '70b8e0e4b2956d38'],
+    'REVIEW_GRAPHS_WORDS.dry.off': ['other', '493775446f7adb78'],
+    'REVIEW_GRAPHS_WORDS.dry.backend': ['sonah', '0f06f4bea3b113e9'],
+    'REVIEW_GRAPHS_WORDS.dry.codeStep': ['sonah', '185335581275a418'],
+    'REVIEW_GRAPHS_WORDS.dry.noRepository': ['sonah', 'a547aaff6463dd07'],
+    'REVIEW_GRAPHS_WORDS.dry.unknown': ['sonah', 'cad6ebcfb45dde22'],
+    'REVIEW_GRAPHS_WORDS.dry.limits': ['sonah', '48b97549934ea63a'],
+  }),
   'packages/cli/src/session-review-command.js': Object.freeze({
     'ANSWER_REUSE_WORDS.session': ['other', '85e45abc60f5de21'],
     'ANSWER_REUSE_WORDS.code': ['other', '79cb4d6d285c6efe'],
@@ -1948,8 +2012,9 @@ export const READ_CENSUS = Object.freeze({
     'WORKING_FOLDER_WORDS.fix': ['other', '7a49f66e9d8a61f7'],
     // D172 (read 2026-10-28): the usage's opening lines say that with no path the review takes the session it runs in
     // (from inside Claude Code), else the latest one of the repository; was fa2c83253fa72038. Read again for D171's
-    // option A (2026-10-29): --dry-run's help back to "send nothing", the D172 text again (was 54ed26823fbcd0c1).
-    'sessionReviewUsage': ['other', '3e5686b68178df29'],
+    // option A (2026-10-29): --dry-run's help back to "send nothing", the D172 text again (was 54ed26823fbcd0c1). Read
+    // again for D219 (2026-11-09): the --no-visual option, which says what it turns off (was 3e5686b68178df29).
+    'sessionReviewUsage': ['other', '200ed47f90c0d234'],
     // D155 (read 2026-10-26): the window line's count of the decisions left out because their second check did not run.
     'WINDOW_LINE_WORDS.rechecksUnexecuted': ['sonah', 'b5bd26647c019d59'],
   }),

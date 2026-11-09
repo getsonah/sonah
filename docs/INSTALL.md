@@ -151,8 +151,11 @@ from where the session started, the lines the session read of other files and th
 It gives them to a review agent, Claude Code with read-only tools (Read, Grep and Glob), and to checking agents with the
 same tools. They read what they need over your working directory, its repository, the other git repositories that hold a
 file of the change and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the
-start commit, and send it to the model as they work. Nothing else about you or your work leaves your computer: no
-telemetry. The other requests are the update check, once a day at most, to npm's public registry ([Update](#update) says
+start commit, and send it to the model as they work. A review that writes its HTML page also draws the graphs page,
+unless `--no-visual`: it sends the repository's name, the messages of the commits from the start of its range to HEAD
+and the code of the functions they change to `claude -p`, on the graphs page's model (`claude-sonnet-5-5`). Nothing
+else about you or your work leaves your computer: no telemetry. The other requests are the update check, once a
+day at most, to npm's public registry ([Update](#update) says
 what it does and how to turn it off), and requests to GitHub, only when you name a pull request with `--github`. Nothing
 is masked or withheld, in what is sent or in what Sonah shows and keeps: treat the page, the .md and `~/.sonah` as
 holding your session as recorded. [PRIVACY.md](PRIVACY.md) has the details.
@@ -192,7 +195,9 @@ their parent, never as separate sessions. Other choices:
   `review/frozen-read.json` in the review's folder. Add `--background` to print one line and review in the background: Sonah writes the page
   (`review-<time>.html`), the Markdown report beside it (`review-<time>.md`) and a log (`review-<time>.log`) in
   `background/` of the review's folder under `~/.sonah/session-reviews/`, and opens the page when the review ends
-  (`--no-open` keeps it closed). The line names all three files, and /sonah repeats it.
+  (`--no-open` keeps it closed). The line names all three files, and /sonah repeats it. The
+  background review also draws the graphs page of the session's commits, as any review that writes its page does
+  (`--no-visual` skips it); when it is not drawn, the page it opens says why, in its header.
 
 Where Sonah looks:
 
@@ -210,7 +215,9 @@ compaction. When you give or choose such a recording, Sonah also reads the recor
 oldest first, as one session: the terminal says how many. If Sonah cannot find or read the earlier part, the report says
 so and why.
 
-Listing and dry runs make no model call and write nothing.
+Listing and dry runs make no model call and write nothing. A dry run with `--format html` ends with one `Graphs page:`
+line: whether the review would draw the graphs page of the session's commits, and if not, why ([The graphs
+page](#reading-the-result)).
 
 ### A repository that the recording does not show the session changing
 
@@ -313,6 +320,47 @@ with an entry in the browser's history for Back; it sends nothing. Sonah also wr
 with no prompt for the agent (see below). A relative `--output` is read from the folder you run Sonah in. The examples
 use `~/review.html`, in your home folder: outside the project, the next review does not read the report as part of
 the change (see below).
+
+**The graphs page.** A review that writes its HTML page (`--format html --output`, and the background review that /sonah
+starts) also draws the graphs page of the session's commits, as [`sonah visual`](#draw-a-branchs-change-sonah-visual)
+does, before it writes its own page, and the page links to it in its header ("Open the graphs page of the session's
+commits.").
+
+The range is from the commit where the session started to `HEAD`; with `--code-base REF` it starts where
+your branch and REF meet (the code review's base), so it covers the whole branch. Sonah prints one line on stderr when
+it starts, then `Graphs page: <path>` and
+`Graphs page usage: N model calls, list cost $X, as the footer of the page counts them.` The graphs page takes about a
+minute or more and its own calls, through your `claude` login (`claude -p`, the model `claude-sonnet-5-5`), outside the
+review's usage line; the same review again reuses its stored answers. The .md never links to it or names its path. With
+`--no-visual` or `--format md` it is not drawn, and the review prints nothing about it (only its dry run, below, says
+`Graphs page: off (--no-visual).`). In these cases it is not drawn either, and one line on stdout says why; the review's
+page says the same line in its header, where the link would be:
+
+- on another backend than `claude-cli` (the line names no command: you chose another provider);
+- under `--max-calls`, `--max-input-bytes` or `--stop-at-utilization`, whose limits do not count its calls;
+- with the code review off (`--no-code-pass`), since Sonah finds where the session's commits start with it;
+- when the change that the code review read is not all committed (the graphs page draws commits only). A binary file, a
+  lockfile or another file whose text Sonah does not keep counts as committed when `HEAD` holds it and your working tree
+  does not change it;
+- when no git repository holds the session's folder, Sonah could not tell where the session's commits start, or `HEAD`
+  is still the commit where the range starts (then there is nothing to draw).
+
+Where `sonah visual` can draw it, the line names that command, with the range when Sonah knows it.
+
+When it fails, its problem and fix are printed on stderr, each line starting with `Graphs page:`, then the `sonah
+visual` command that draws it alone. The review's page is written without the link, and says in its header the same
+problem and its fix, with a `sonah visual` command (so the page of a /sonah background review, whose terminal lines go
+to its log, says why too); the review's exit code does not change. Ctrl-C (or SIGTERM) while it is drawn stops the
+graphs page only: Sonah starts no new call for it, prints `Graphs page: not drawn, because you stopped it.` with the
+`sonah visual` range, and the review writes its page, its report and its usage record as usual, with its own exit code.
+Sonah does not stop a call to `claude` that was already running. At a terminal your Ctrl-C is expected to reach it too,
+since it runs in Sonah's process group, but that has not been tried at a real terminal; after a SIGTERM alone, Sonah
+exits once that call ends.
+
+**The dry run.** With `--format html`, `--dry-run` ends with one line about the graphs page, and reads no commit for it
+(whether the work is committed is known only after the code review):
+`Graphs page: on. After the review, Sonah would draw it with claude -p, from commits only.`, or `Graphs page: off` and
+why: `(--no-visual)`, another backend, a limit, the code review off, no git repository, or no start commit.
 
 The report has this order:
 
@@ -424,7 +472,8 @@ terminal tells you how to get the links:
 2. Push the commit.
 3. Run the same command with a new `--output` file.
 
-Sonah reuses its stored answers, so the second run makes no model call. Keep the report files outside the repository,
+Sonah reuses its stored answers, so the second run makes no model call for the review; an HTML review whose work is
+now committed draws its graphs page, with calls of its own. Keep the report files outside the repository,
 or add them to `.gitignore`. Otherwise the second run reads them as a change of the repository, and the code review asks
 again. The terminal tells you when Sonah wrote the report inside the repository.
 
@@ -456,7 +505,10 @@ recording's path exactly as the `Recording:` line printed it: `printf '%s' /abso
 
 A review has no limits by default. Press Ctrl-C to stop: answers already received are kept and never asked again, no
 page is written, and the same command continues where it stopped; a request still running when you stop is sent again
-when you resume. A stop takes at most a few seconds. Optional stops, off unless you set them:
+when you resume. A stop takes at most a few seconds. One exception: after the review's own calls, while it draws the
+graphs page ([The graphs page](#reading-the-result)), Ctrl-C stops the graphs page only, and the review writes its
+page, prints `Graphs page: not drawn, because you stopped it.` and exits with its own code. Optional stops, off unless
+you set them:
 
 ```sh
 sonah review --format html --output ~/review.html --max-calls 30 --max-input-bytes 8000000 --stop-at-utilization 0.95
@@ -468,6 +520,12 @@ stops when the highest limit in the usage line reaches U, whichever it is: the f
 the seven-day one does. It works only when the reviewer reports your plan's usage (the `claude` CLI does; the Codex CLI
 and the API do not, so this stop never fires there). When one is reached Sonah prints `Review stopped where you asked
 (...)` and exits `3`; run the same command to continue.
+
+With any of these stops set, a review that writes its HTML page does not draw the graphs page, since its calls would not
+count toward them. One line says why, and a reason checked before the limits comes first: on another backend, with no
+git repository that holds the session's folder, or with `HEAD` still at the start of the range and nothing left to
+commit, that line names no `sonah visual` command; otherwise it names one. A `--format md` review says nothing of the
+graphs page.
 
 Running a review again (for example after the session continued) reuses every stored answer whose request is
 unchanged and asks only what is new or failed. The code review's requests hold what the session review found, so when
@@ -572,7 +630,14 @@ or know, each with the line it quotes. It reads commits with git, not a session 
 sonah visual                    # from where your branch left the default branch, to HEAD
 sonah visual main..HEAD         # a range that you name
 sonah visual v1.2               # from v1.2 to HEAD (v1.2.. is the same)
+sonah                           # in a terminal: sonah visual, then it opens the page in your browser
 ```
+
+**Plain `sonah`.** In a terminal (its input and output both a terminal), `sonah` with no command prints one line that
+says what it draws and that `sonah --help` lists every command. Then it runs `sonah visual` with no range and opens
+the page in your browser, as `sonah review --format html` opens its page. It exits with `sonah visual`'s code, and
+after a problem with its fix it adds a line that points to `sonah --help`. In a pipe or a script, `sonah` with no
+command prints the usage and exits `2`.
 
 **The range.** `BASE..HEAD`, `BASE..` or `BASE`; the last two end at `HEAD`. Only commits are drawn: commit your work
 first. With no range, the base is the commit where `HEAD` left the default branch of your remote: the remote of your
@@ -581,6 +646,12 @@ branch's upstream, else `origin`, else your only remote, and that remote's `HEAD
 and asks for a range. `git remote set-head origin --auto` sets it (git asks the remote for it).
 
 **What it prints.** `Local page: <path>`: open that file in your browser. The page needs no network.
+
+**From a review.** `sonah review --format html` draws this page for the session's commits too, from where the session
+started (with `--code-base`, where your branch and that base meet) to `HEAD`, with the same default model and folder,
+and its page links to it ([The graphs page](#reading-the-result)). It prints `Graphs page: <path>`, not `Local page:`,
+which names the review's own page. `sonah visual` with the range that the review names draws the same page from the
+same stored answers.
 
 **Where it keeps things.** One folder for each range and model, readable by you only:
 `~/.sonah/visual/<repository folder>-<8 characters of a hash of its path>/<base>-<head>-<model>/`, with the first 12
@@ -863,7 +934,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.14`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.15`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

@@ -23,14 +23,15 @@ export async function openLocalPage(file, { platform = process.platform, exec = 
 }
 
 /** Call only after the HTML has been saved successfully. Failure to launch the browser is
- * an operational warning, never a failed review or a reason to delete the saved page. */
+ * an operational warning, never a failed review or a reason to delete the saved page. `openFix` is the line printed
+ * then: a command with no --no-open (D218, bare `sonah`) gives its own. */
 export async function presentLocalPage(file, { stdout = process.stdout, stderr = process.stderr,
-  noOpen = false, openPage = openLocalPage } = {}) {
+  noOpen = false, openPage = openLocalPage, openFix = LOCAL_PAGE_OPEN_FIX } = {}) {
   const absolute = resolve(file);
   stdout.write(`${LOCAL_PAGE_WORDS.line(absolute)}\n`);
   if (noOpen) return;
   try { await openPage(absolute); }
-  catch { stderr.write(`${LOCAL_PAGE_OPEN_FIX}\n`); }
+  catch { stderr.write(`${openFix}\n`); }
 }
 
 /** The kind of each of this file's word tables, for the style linter (packages/render/test/style-lint.js). */

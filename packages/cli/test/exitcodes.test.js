@@ -131,7 +131,8 @@ test('D90: sonah slice prints the recorded text, and its hash names the bounded 
 
 // Owner decision 2026-10-06: the legacy gate's product surface is retired. Each retired command is
 // now an unknown command — a usage error, exit 2 — that reads, writes and reaches nothing; bare `sonah`, which opened the
-// docket on a terminal and ran `scan` in a pipe, prints the usage table the same way.
+// docket on a terminal and ran `scan` in a pipe, prints the usage table the same way when it is not in a terminal (as
+// here: the test's pipes). D218: in a terminal, it draws the graphs page instead (d218-bare-sonah.test.js).
 // D76: early previews' capture commands `init` and `ledgers` are retired the same way. (`trailer`, which the git hook
 // `init` wrote calls, is silent instead, D77: see the commands old hooks call, below.)
 const RETIRED = Object.freeze(['scan', 'docket', 'web', 'demo', 'arcs', 'departures', 'bounce', 'tree', 'pr',

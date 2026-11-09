@@ -16,7 +16,8 @@ import { extract } from '../../visual/src/extract.mjs';
 import { functionRequests, storyRequest, findingsRequest, mapAnswerIds, STORY_SYSTEM, FINDINGS_SYSTEM }
   from '../../visual/src/requests.mjs';
 import { checkFunctions } from '../../visual/src/checks.mjs';
-import { parseVisualArgs, visualRange, visualUsage, VISUAL_DEFAULT_MODEL } from '../src/visual-command.js';
+import { parseVisualArgs, runVisualCommand, visualRange, visualUsage, VISUAL_DEFAULT_MODEL }
+  from '../src/visual-command.js';
 
 const exec = promisify(execFile);
 // fileURLToPath, never URL.pathname: a checkout may live under a folder with a space in its name.
@@ -259,6 +260,17 @@ test('a full run writes the local page with no share or upload, on the person\'s
   const again = await run(['visual', `${base}..feature`, '--out', out, '--replay-only'], where);
   assert.equal(again.code, 0, again.stderr);
   assert.equal(readFileSync(join(out, 'page.html'), 'utf8'), page);
+  assert.equal(calls(where.home).length, made.length);
+
+  // D218: a caller's presentPage is handed the written page in place of the Local page line (bare `sonah` prints that
+  // line itself and opens the page).
+  const shown = [], printed = { stdout: '', stderr: '' };
+  const code = await runVisualCommand([`${base}..feature`, '--out', out, '--replay-only'], { cwd: repo,
+    env: { HOME: where.home, SONAH_HOME: where.sonah }, stdout: { write: (text) => { printed.stdout += text; } },
+    stderr: { write: (text) => { printed.stderr += text; } }, presentPage: async (file) => { shown.push(file); } });
+  assert.equal(code, 0, printed.stderr);
+  assert.deepEqual(shown, [join(out, 'page.html')]);
+  assert.equal(printed.stdout, '');
   assert.equal(calls(where.home).length, made.length);
 });
 

@@ -330,7 +330,16 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // sentences of those files, the files list's lead, and the code step's line (other: a review call for each part).
   // D210, a code review that waits for the run that can finish the session review: 4 sonah in (the code review's fold,
   // the first screen's reason, the terminal's line and the run-state words). None states an absence.
-  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 579, 520]);
+  // D218, bare `sonah` in a terminal: its notice and its help line (2 other), and its line for a page the browser did not
+  // open (1 sonah). None states an absence. + [0, 1, 2].
+  // D219, the review's graphs page of the session's commits: 15 sonah (the ten lines that say why it is not drawn,
+  // REPORT_GRAPHS_WORDS, which the terminal and the page say, and the dry run's off on another backend, under a limit,
+  // with the code review off, with no git repository and with no start commit) and 8 other (its started, page, usage,
+  // mark and again lines, the dry run's on and off by --no-visual, and the page's link). None states an absence.
+  // + [0, 15, 8]. Its page's problem and fix of the visual's closed code (REPORT_GRAPHS_FAILURE_WORDS): 4 sonah (what
+  // Sonah found, could not make, start or finish) and 4 other (what the person's claude login, plan or account did, with
+  // the fix). None states an absence. + [0, 4, 4].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 599, 534]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);

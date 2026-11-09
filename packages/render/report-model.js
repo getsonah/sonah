@@ -50,7 +50,8 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
   REPORT_LEVEL_WORDS, REPORT_PROMPT_WORDS, REPORT_DID_WORDS, REPORT_OUTCOME_WORDS, REPORT_NOT_CHECKED_WORDS,
   REPORT_FOOTER_WORDS, REPORT_ANSWER_WORDS, REPORT_CAUSE_WORDS, REPORT_GAP_WORDS, REPORT_COLUMN_REASON_WORDS,
   REPORT_SECTION_WORDS, REPORT_REFUSAL_WORDS, REPORT_LIMIT_WORDS, REPORT_AGENT_PROMPT_WORDS,
-  REPORT_RECHECK_PARTS, REPORT_TRAIL_WORDS, REPORT_ASK_TAGS, REPORT_DECISION_TAGS } from './report-words.js';
+  REPORT_RECHECK_PARTS, REPORT_TRAIL_WORDS, REPORT_ASK_TAGS, REPORT_DECISION_TAGS, REPORT_GRAPHS_WORDS,
+  REPORT_GRAPHS_FAILURE_WORDS } from './report-words.js';
 
 /** The report model's version: reported in the page's generator meta and the footer. /2 (D101, owner decision
  *  2026-10-17): an ask's line for why it is not checked reads the cause of the test that refused its quote
@@ -175,7 +176,10 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_RECORDING_KINDS, REPORT_HE
  *  or the base you named), and the code review's base line says how many each way. /12 (D210): `header.noCode` can
  *  give the reason `waits` (evidence ledger.js CODE_NOT_REVIEWED_REASONS): the code review did not start, because a new
  *  run can finish the session review, after which it runs. A review whose code step did not wait moves by the version
- *  alone.
+ *  alone. D219 (the owner, 2026-11-09; it rides /12, as D171's `footer.newer` rode /9): `header.graphs`, the graphs
+ *  page of the session's commits that the CLI drew, from its `graphsPage`, or why the CLI did not draw it, from its
+ *  `graphsNotDrawn`; the page says it, the .md does not. With neither option the header has no such key, and every other
+ *  field is as /12 had it.
  */
 export const REPORT_MODEL_VERSION = 'sonah.report-model/12';
 
@@ -814,7 +818,10 @@ function promptAsks(session, report, facts) {
  *   size line names no files), `runs` (line C's sentences), `reviewIncomplete` (sentences), `didNotCheck` (`{ lead,
  *   phrases, more }` or null; D133: null while REPORT_FOLD_CHOICES `notCheckedLine` folds it), `noCode` (D118 (a): `{ reason, words, folder, impact }` — the reason no code was reviewed, of ledger.js
  *   CODE_NOT_REVIEWED_REASONS, the owner's sentence with it, the folder the code step looked in or null, and the items'
- *   line with no code step that ran, or null — or null when code was reviewed).
+ *   line with no code step that ran, or null — or null when code was reviewed), D219: `graphs` (`{ href, words }`: the
+ *   graphs page the CLI drew, `graphsPageOf` its `graphsPage`, and the link's words; or `{ href: null, notDrawn,
+ *   failure?, words }`: why the CLI did not draw it, `graphsNotDrawnOf` its `graphsNotDrawn`, the code (with `failed`,
+ *   the visual's failure) and its line; absent with neither).
  * - `countLine`: `tiers` (`[{ tier, words, n, folded }]`), `prompt` (its text), `labels` (`[{ n, parts }]`, the first
  *   Must act items' labels), `more` (Must act items past them), `empty` (the fixed sentence, or null; D133: its second
  *   sentence is in `notChecked.quiet`), `counts` (by tier).
@@ -3334,10 +3341,60 @@ function headerOf(ctx, prompt) {
     : Number.isSafeInteger(continued.earlier) && continued.earlier > 0
       ? REPORT_HEADER_WORDS.continued(continued.earlier) : null;
   if (unread && REPORT_FOLD_CHOICES.continuedUnread) quiet.unshift(REPORT_HEADER_WORDS.continuedUnread);
+  // H. D219 (the owner, 2026-11-09): the graphs page of the session's commits that the CLI drew before this page
+  // (`graphsPage`), said as it is given once it is a file URL of the form `graphsPageOf` reads; else why the CLI did not
+  // draw it (`graphsNotDrawn`, `graphsNotDrawnOf`), in that code's fixed line; absent otherwise.
+  const graphs = graphsPageOf(options);
+  const notDrawn = graphs ? null : graphsNotDrawnOf(options);
   // D118 (c): how many files the size line counts, from the one list the Files section counts (`changeListOf`).
   return { title, ...(continuedWords ? { continued: continuedWords } : {}), size,
     changeFiles: changeListOf(ctx).files.length, runs, reviewIncomplete: notChecked, didNotCheck, noCode, noLinks, quiet,
-    folded: didNotCheck ? null : didNotCheckParts };
+    folded: didNotCheck ? null : didNotCheckParts,
+    ...(graphs ? { graphs: { href: graphs, words: REPORT_HEADER_WORDS.graphsPage } }
+      : notDrawn ? { graphs: { href: null, notDrawn: notDrawn.code,
+        ...(notDrawn.failure ? { failure: notDrawn.failure } : {}), words: notDrawn.words } } : {}) };
+}
+
+/** D219: the longest `graphsPage` the model takes, in characters. */
+const GRAPHS_PAGE_CHARS = 4096;
+/**
+ * D219: the CLI's `graphsPage`, the `file:` URL of the graphs page it drew for this review (cli review-graphs.js, as
+ * node:url `pathToFileURL` writes it: an absolute path, with every space, quote, angle bracket, backslash, `#`, `?`,
+ * control and non-ASCII character percent-encoded), or null for any other value. Structure only: no file is read. The
+ * page links to it (the one link out that is not a GitHub permalink); the .md never reads it.
+ */
+export function graphsPageOf(options) {
+  const given = options?.graphsPage;
+  return typeof given === 'string' && given.length <= GRAPHS_PAGE_CHARS
+    && /^file:\/\/\/[A-Za-z0-9\-._~!$&'()*+,;=:@%/[\]^|]+$/.test(given) && !given.slice('file://'.length).includes('//')
+    && !/%(?![0-9A-Fa-f]{2})/.test(given) ? given : null;
+}
+
+/** D219: a range as the graphs page's lines name it: 12 hex characters of the start commit, `..`, then 12 of the head
+ *  or `HEAD`. */
+const GRAPHS_RANGE = /^[0-9a-f]{12}\.\.(?:[0-9a-f]{12}|HEAD)$/;
+/**
+ * D219: why the CLI did not draw the graphs page, from its `graphsNotDrawn`: `{ code, range?, failure? }`, the code one
+ * of REPORT_GRAPHS_WORDS' keys, with a `range` of the form GRAPHS_RANGE exactly when that code's line names one, and a
+ * `failure` exactly when the code is `failed`: the visual's closed code, an own key of REPORT_GRAPHS_FAILURE_WORDS
+ * (render's mirror of cli visual-command.js VISUAL_FIX_WORDS' keys that a drawing can end with, and `other`). Any other
+ * value is null. `{ code, failure?, words }`: the code, the failure, and the fixed line. Structure only; the .md never
+ * reads it.
+ */
+export function graphsNotDrawnOf(options) {
+  const given = options?.graphsNotDrawn;
+  if (!plain(given) || typeof given.code !== 'string' || !Object.hasOwn(REPORT_GRAPHS_WORDS, given.code)) return null;
+  const failed = given.code === 'failed';
+  if (Object.keys(given).some((key) => key !== 'code' && key !== 'range' && !(failed && key === 'failure'))) return null;
+  if (failed && (typeof given.failure !== 'string' || !Object.hasOwn(REPORT_GRAPHS_FAILURE_WORDS, given.failure)))
+    return null;
+  const words = REPORT_GRAPHS_WORDS[given.code];
+  if (typeof words === 'function') {
+    return typeof given.range === 'string' && GRAPHS_RANGE.test(given.range)
+      ? { code: given.code, ...(failed ? { failure: given.failure, words: words(given.range, given.failure) }
+        : { words: words(given.range) }) } : null;
+  }
+  return given.range === undefined ? { code: given.code, words } : null;
 }
 
 /** The header's "Sonah did not check:" line as one text (D97), as the first screen said it before D133. */

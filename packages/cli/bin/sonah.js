@@ -23,9 +23,10 @@ function fail(e) {
 }
 
 const argv = process.argv.slice(2);
-// Owner decision 2026-10-06 (legacy gate retired): bare `sonah` runs nothing. It used to open the
-// docket on a terminal and run `scan` in a pipe; both were the legacy verdict surface, so it now prints the usage
-// table and exits 2, like any other usage error.
+// D218 (the owner, 2026-11-09; it replaces the rule of 2026-10-06 that bare `sonah` runs nothing): bare `sonah` in a
+// terminal, its standard input and output both a TTY, draws the graphs page. It runs `sonah visual` with no arguments
+// and opens the page in the browser (bare-command.js). Anywhere else it prints the usage table and exits 2, like any
+// other usage error, as it has since the legacy gate's retirement.
 const cmd = argv[0];
 
 /** This Sonah's version: the build's own when it carries one, else the package's. */
@@ -87,7 +88,10 @@ if (cmd === 'review') {
   // as a code target) is removed; `--github OWNER/REPO --pr N --post-comment` names only the PR a count-only comment
   // goes to.
   const { runSessionReviewCommand } = await import('../src/session-review-command.js');
-  process.exitCode = await runSessionReviewCommand(argv.slice(1), withNotice);
+  // D219: a review that writes its HTML page also draws the graphs page of the session's commits (review-graphs.js),
+  // with `sonah visual`'s job; only the entry hands the review that drawer, as it hands it the update notice.
+  const { drawVisualPage } = await import('../src/visual-command.js');
+  process.exitCode = await runSessionReviewCommand(argv.slice(1), { ...withNotice, drawGraphs: drawVisualPage });
 } else if (cmd === 'sessions') {
   const { runSessionsCommand } = await import('../src/session-discovery.js');
   process.exitCode = await runSessionsCommand(argv.slice(1));
@@ -128,6 +132,11 @@ if (cmd === 'review') {
   console.log(`  wrote ${r.file}
   setup facts and counts only · no session text or freeform reasons · inspect before sharing`);
   process.exitCode = 0;
+} else if (cmd === undefined) {
+  // D218: bare `sonah` (bare-command.js): the graphs page in a terminal, else the usage table and exit 2. It never
+  // checks for updates.
+  const { runBareCommand } = await import('../src/bare-command.js');
+  process.exitCode = await runBareCommand({ usage: usage() });
 } else {
   console.error(usage());
   process.exit(cmd === '--help' || cmd === '-h' ? 0 : 2);
@@ -142,10 +151,14 @@ if (updateNotice?.asked()) {
 }
 }
 
-/** What Sonah is, printed above the command table for --help. */
+/** What Sonah is, printed above the command table for --help. D218: and what plain `sonah` does in a terminal (never
+ *  as a table row: the help test reads each `  sonah <word>` row as a command). */
 const ABOUT = 'Sonah reviews what your coding agent did, not just the diff: did it do what you\n'
   + 'asked, what it decided on its own, and what is wrong in the code. It never says\n'
-  + 'the work is right.';
+  + 'the work is right.\n'
+  + '\n'
+  + 'In a terminal, plain sonah, with no command, draws this branch\'s change as a\n'
+  + 'page of graphs, as sonah visual does, and opens the page in your browser.';
 
 /** The one command table, within 80 columns. Printed for --help, for an unknown command, and read by the help test.
  *  Each command's words start in one column; a command too long for it (or given as several lines, the later ones

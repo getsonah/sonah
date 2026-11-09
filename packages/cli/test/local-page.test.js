@@ -50,4 +50,9 @@ test('opener failure or timeout gives only fixed instructions and preserves succ
     assert.doesNotMatch(out.read().stderr, /SYNTHETIC_PRIVATE|ENOENT|ETIMEDOUT/);
     assert.equal(out.read().stdout, `Local page: ${resolve('synthetic.html')}\n`);
   }
+  // D218: a command with no --no-open (bare `sonah`) gives its own line for the failure.
+  const own = output();
+  await presentLocalPage('synthetic.html', { ...own, openFix: 'SYNTHETIC_OWN_FIX',
+    openPage: async () => { throw new Error('SYNTHETIC_PRIVATE_OPENER_ERROR'); } });
+  assert.deepEqual(own.read(), { stdout: `Local page: ${resolve('synthetic.html')}\n`, stderr: 'SYNTHETIC_OWN_FIX\n' });
 });

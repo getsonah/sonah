@@ -1,6 +1,6 @@
 {
   "name": "getsonah",
-  "version": "0.3.0-beta.14",
+  "version": "0.3.0-beta.15",
   "description": "Reviews what your coding agent did, not just the diff: did it do what you asked, what it decided on its own, and what is wrong in the code.",
   "keywords": [
     "ai-agents",
@@ -48,6 +48,7 @@
     "packages/cli/index.js",
     "packages/cli/src/agent-session-hook.js",
     "packages/cli/src/answer-cache.js",
+    "packages/cli/src/bare-command.js",
     "packages/cli/src/claude-home.js",
     "packages/cli/src/code-map.js",
     "packages/cli/src/code-snapshot.js",
@@ -69,6 +70,7 @@
     "packages/cli/src/repo-links.js",
     "packages/cli/src/report-output.js",
     "packages/cli/src/review-budget.js",
+    "packages/cli/src/review-graphs.js",
     "packages/cli/src/review-judge.js",
     "packages/cli/src/review-probe.js",
     "packages/cli/src/session-discovery.js",

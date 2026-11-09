@@ -21,9 +21,11 @@
 //   3. Safe and self-contained: one escape (`escapeHtml`) for every recorded, review-authored or human-answered string,
 //      a CSP that allows the inline style and, only on a page with a prompt's copy button or an in-page link, one script
 //      pinned by its sha256 (`PAGE_SCRIPT`, D199, D203): no other script, no external resource. The only links out are GitHub commit
-//      permalinks the report model built from validated local git facts (D97 amends this rule); every other link is an
-//      in-page anchor. The page is bounded (`PAGE_LIMITS`): only the visible lines of the items and the open start of
-//      each message that holds an ask are never cut. Every cut is stated where it happens.
+//      permalinks the report model built from validated local git facts (D97 amends this rule) and, since D219, one
+//      link to a local file: the graphs page of the session's commits that the CLI drew before this page, a `file:` URL
+//      that the report model validated (`graphsPageOf`); every other link is an in-page anchor. The page is bounded
+//      (`PAGE_LIMITS`): only the visible lines of the items and the open start of each message that holds an ask are
+//      never cut. Every cut is stated where it happens.
 //   4. Fold, never drop: every row of the review is placed once (report-model.js `reportPlacement`); a fold's summary
 //      carries its count.
 
@@ -129,7 +131,10 @@ import { REPORT_TIER_WORDS, REPORT_TYPE_WORDS, REPORT_HEADER_WORDS, REPORT_COUNT
  *  the focus ring, the quotes' marks), labels in sentence case, the system's fonts, one type scale. /48 (D207): the
  *  file rows and base line the model's /11 moves. D208 rides it: no colour behind quoted words or a marked ask, only
  *  coloured marks and the rule under the ask. /49 (D210): the first screen's reason the model's /12 adds, a code review
- *  that waits for the run that can finish the session review; no other byte moves but the version. */
+ *  that waits for the run that can finish the session review; no other byte moves but the version. D219 (the owner,
+ *  2026-11-09; no move of this reader, as D171's): the header's line that links to the graphs page of the session's
+ *  commits, when the CLI drew it, or that says why the CLI did not draw it (`header.graphs`), unweighed against the
+ *  page's bound; a page made with no such fact is as before, byte for byte. */
 export const PAGE_VERSION = 'sonah.session-page/49';
 
 /** The page's colour themes. `system` (the default) follows the reader's setting; `light` and `dark` fix the theme. */
@@ -142,7 +147,9 @@ const [SYSTEM] = PAGE_THEMES;
  *  that hold no ask are halved until empty, then the lists of what Sonah could not check — each said where it happens
  *  (D97). D202: your asks' evidence folds go with the decisions' detail folds. Only the visible lines of the items and
  *  the open start of each message that holds an ask are never cut. The
- *  footer's line that a newer Sonah is out (D171) is not weighed against `maxBytes`. The report model's display bounds
+ *  footer's line that a newer Sonah is out (D171) and the header's line about the graphs page of the session's commits
+ *  (D219: its link, or why it was not drawn) are not weighed against `maxBytes`: the page leaves out what it would
+ *  without them, so `whole`, and the .md made with it, do not move. The report model's display bounds
  *  are `REPORT_LIMITS`. */
 export const PAGE_LIMITS = Object.freeze({ maxBytes: 600_000, quoteChars: REPORT_LIMITS.quoteChars,
   messageChars: REPORT_LIMITS.messageChars });
@@ -252,6 +259,14 @@ function asksBar(asks, counts) {
 /** D193: the count line's separator, a span of its own so that the stylesheet can show each part as a chip. Its text
  *  is the count line's, so the page's text is the .md's. */
 const SEP = '<span class="sep"> · </span>';
+/** D219: the header's line about the graphs page of the session's commits (`header.graphs`, report-model.js): the link
+ *  to the page the CLI drew (`graphsPageOf`; the page's one link to a file of this computer), or the fixed line that
+ *  says why the CLI did not draw it (`graphsNotDrawnOf`), where the link would be; nothing with neither. As D171's
+ *  footer line, its bytes are not weighed against `maxBytes` (`sessionPage`). */
+const graphsHtml = (header) => (!header.graphs ? '' : typeof header.graphs.href === 'string'
+  ? `<p class="meta graphs"><a href="${esc(header.graphs.href)}" rel="noreferrer noopener">${esc(header.graphs.words)}`
+    + '</a></p>'
+  : `<p class="meta graphs">${esc(header.graphs.words)}</p>`);
 
 function headerHtml(model) {
   const { header, countLine } = model;
@@ -267,6 +282,9 @@ function headerHtml(model) {
       .join(`<code>${esc(header.noCode.folder)}</code>`)] : [])].join(' ')}</p>`);
   if (header.noLinks.length) out.push(`<p class="meta no-links">${header.noLinks.map(esc).join(' ')}</p>`);
   if (header.runs.length) out.push(`<p class="meta runs">${header.runs.map(esc).join(' ')}</p>`);
+  // D219: the graphs page of the session's commits that the CLI drew before this page, or why it did not draw it
+  // (`header.graphs`, `graphsHtml`). A page made with no such fact is as before.
+  if (header.graphs) out.push(graphsHtml(header));
   const notChecked = [...header.reviewIncomplete.map(escOwnCode)];
   if (header.didNotCheck) notChecked.push(`${esc(header.didNotCheck.lead)} ${header.didNotCheck.phrases.map(esc).join(' · ')}`
     + `${header.didNotCheck.more ? ` <a href="#not-checked">${esc(header.didNotCheck.more)}</a>` : ''}`);
@@ -1408,7 +1426,8 @@ export function sessionPage(session, report, options = {}) {
   const theme = PAGE_THEMES.includes(opts.theme) ? opts.theme : SYSTEM;
   // D171 fix round: the line that a newer Sonah is out is not weighed, so the page leaves out what it would leave out
   // without it, `whole` is the same, and the .md made with `whole` is too; the page may pass `maxBytes` by that line.
-  const unweighed = bytes(newerHtml(model.footer));
+  // D219: nor is the header's line about the graphs page (its link, or why it was not drawn), for the same reason.
+  const unweighed = bytes(newerHtml(model.footer)) + bytes(graphsHtml(model.header));
   let html = '';
   let whole = true;
   for (const trim of compositions(model)) {

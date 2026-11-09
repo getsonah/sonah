@@ -17,7 +17,9 @@ import { CODE_OUTSIDE_STATES } from '../../evidence/src/code-pass.js';
  * Every git argv this file may run, as a shape: a literal word, or a slot (`<remote>`, `<object>`, `<commit>`,
  * `<path>`) that takes one value which never starts with `-`. Local reads only: the HEAD commit, the current branch's
  * upstream, the remotes and their URLs, a blob or an object's presence at a commit, the remote-tracking branches that
- * hold a commit, and whether git ignores a path. `repoGitAllowed` checks an argv against it before every call.
+ * hold a commit, whether git ignores a path, and (D219) whether a path in the working tree differs from a commit (`git
+ * diff --quiet`, exit 0 when it does not; no external diff program, no textconv filter, nothing printed). `repoGitAllowed`
+ * checks an argv against it before every call.
  */
 export const REPO_FACT_GIT_ARGS = Object.freeze([
   Object.freeze(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']),
@@ -28,6 +30,7 @@ export const REPO_FACT_GIT_ARGS = Object.freeze([
   Object.freeze(['cat-file', '-e', '<object>']),
   Object.freeze(['branch', '-r', '--contains', '<commit>']),
   Object.freeze(['check-ignore', '-q', '--', '<path>']),
+  Object.freeze(['diff', '--quiet', '--no-ext-diff', '--no-textconv', '<commit>', '--', '<path>']),
 ]);
 const SLOT = /^<[a-z]+>$/;
 /** Whether an argv is one of `REPO_FACT_GIT_ARGS`: the same words, each slot one value that does not start with `-`
@@ -75,6 +78,12 @@ export function remoteOf(remotes, upstream) {
   return ofUpstream ?? (names.includes('origin') ? 'origin' : names.length === 1 ? names[0] : null);
 }
 
+/** The change's files that `readRepoFacts` reads at HEAD (`atHead`, `goneAtHead`, `cleanAtHead`): the code step's files
+ *  in its repository (none of CODE_OUTSIDE_STATES), each a relative path a link can name. D219: the review's graphs page
+ *  draws the session's commits only when each of them is at HEAD (review-graphs.js). */
+export const repoChangeFiles = (codePass) => (Array.isArray(codePass?.files) ? codePass.files : [])
+  .filter((f) => f && typeof f === 'object' && !CODE_OUTSIDE_STATES.includes(f.state) && linkablePath(f.path));
+
 /** Whether a remote-tracking branch of `remote` holds `commit`: true, false, or null when git could not say. */
 async function onRemote(git, top, remote, commit) {
   if (!HASH.test(commit ?? '') || typeof remote !== 'string') return null;
@@ -85,11 +94,15 @@ async function onRemote(git, top, remote, commit) {
 
 /**
  * The facts of the repository the code step reviewed, for the report's code links (D97):
- *   - `repo`: `{ head, start, prefix, atHead, goneAtHead }`, or null when the code step took no snapshot on a git base.
- *     `head` is HEAD's commit (null before the first commit); `start` the session's start commit (`codePass.base`);
- *     `prefix` the working directory under the repository's top folder (`''` at the top); `atHead` the paths of the
- *     change's files whose bytes at HEAD hash to the sha256 the code step read; `goneAtHead` the paths of its deleted
- *     files that HEAD does not hold.
+ *   - `repo`: `{ head, start, prefix, atHead, goneAtHead, cleanAtHead }`, or null when the code step took no snapshot on
+ *     a git base. `head` is HEAD's commit (null before the first commit); `start` the session's start commit
+ *     (`codePass.base`); `prefix` the working directory under the repository's top folder (`''` at the top); `atHead` the
+ *     paths of the change's files whose bytes at HEAD hash to the sha256 the code step read; `goneAtHead` the paths of its
+ *     deleted files that HEAD does not hold. D219: `cleanAtHead` the paths of its files that are not deleted and whose
+ *     sha256 the code step does not hold (binary, too large, unreadable, there again after the session deleted them),
+ *     decided by git's structure: HEAD holds the path (`cat-file -e`) and the working tree's file does not differ from
+ *     HEAD's (`diff --quiet`, the path read literally). Only the review's graphs page reads it (review-graphs.js); a
+ *     code link never does, so D97's links are as before.
  *   - `github`: `{ owner, repo, remote, pushed, startPushed }`, or null when no remote is a GitHub repository (and
  *     undefined with no git base). `remote` is the current branch's upstream remote, else `origin`, else the only remote;
  *     `pushed` and `startPushed` whether a remote-tracking branch of it holds HEAD and the start commit (null when git
@@ -108,12 +121,12 @@ export async function readRepoFacts({ snapshot, codePass, git = runGit } = {}) {
   const head = text(await allowedGit(git, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], realTop))?.trim() ?? null;
   const headSha = HASH.test(head ?? '') ? head : null;
   const start = HASH.test(codePass.base.commit ?? '') ? codePass.base.commit : null;
-  const files = (Array.isArray(codePass.files) ? codePass.files : []).filter((f) => f && typeof f === 'object'
-    && !CODE_OUTSIDE_STATES.includes(f.state) && linkablePath(f.path));
-  const atHead = [], goneAtHead = [];
+  const files = repoChangeFiles(codePass);
+  const atHead = [], goneAtHead = [], cleanAtHead = [];
   if (headSha) {
     for (const f of files) {
-      const object = `${headSha}:${prefix ? `${prefix}/${f.path}` : f.path}`;
+      const gitPath = prefix ? `${prefix}/${f.path}` : f.path;
+      const object = `${headSha}:${gitPath}`;
       if (typeof f.sha256 === 'string' && /^[0-9a-f]{64}$/.test(f.sha256)) {
         const blob = await allowedGit(git, ['cat-file', 'blob', object], realTop);
         if (blob?.ok && Buffer.isBuffer(blob.stdout)
@@ -121,10 +134,17 @@ export async function readRepoFacts({ snapshot, codePass, git = runGit } = {}) {
       } else if (f.type === 'deleted' || f.state === 'deleted') {
         const there = await allowedGit(git, ['cat-file', '-e', object], realTop);
         if (!there?.ok && !there?.refused) goneAtHead.push(f.path);
+      } else {
+        // D219: no bytes' hash to compare, so git's structure decides: the path is at HEAD and the working tree holds it
+        // as HEAD does. Any failure (git's exit 1 for a difference among them) leaves it out: fail closed.
+        const there = await allowedGit(git, ['cat-file', '-e', object], realTop);
+        const same = there?.ok ? await allowedGit(git, ['diff', '--quiet', '--no-ext-diff', '--no-textconv', headSha,
+          '--', `:(top,literal)${gitPath}`], realTop) : null;
+        if (same?.ok) cleanAtHead.push(f.path);
       }
     }
   }
-  const repo = { head: headSha, start, prefix, atHead, goneAtHead };
+  const repo = { head: headSha, start, prefix, atHead, goneAtHead, cleanAtHead };
   // The remote: the current branch's upstream's, else origin, else the only one.
   const remotes = lines(text(await allowedGit(git, ['remote'], realTop)));
   const upstream = text(await allowedGit(git, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],

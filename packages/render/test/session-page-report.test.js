@@ -11,7 +11,8 @@ import { renderSessionPage, sessionPage, escapeHtml, PAGE_VERSION, PAGE_LIMITS, 
 import { reportModel, REPORT_MODEL_VERSION, reportItems } from '../report-model.js';
 import { renderReportMarkdown } from '../session-story.js';
 import { REPORT_TRIM_WORDS, REPORT_FOOTER_WORDS, REPORT_PROMPT_WORDS, REPORT_HEADER_WORDS, REPORT_TIER_WORDS,
-  REPORT_TAB_WORDS, REPORT_SECTION_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_DECISION_TAGS } from '../report-words.js';
+  REPORT_TAB_WORDS, REPORT_SECTION_WORDS, REPORT_DID_WORDS, REPORT_ITEM_WORDS, REPORT_DECISION_TAGS, REPORT_GRAPHS_WORDS,
+  REPORT_GRAPHS_FAILURE_WORDS } from '../report-words.js';
 /** The story's words for a message with no recorded words, before the story was the report .md (story /32): no reader
  *  shows them, and storyFacts no longer makes them. */
 const STORY_SENTENCES = Object.freeze({ withheldAsk: '(no request text in the recording)' });
@@ -139,7 +140,7 @@ test('D97, D131: the page is the report model in its order — header, count lin
   assert.equal(PAGE_VERSION, 'sonah.session-page/49');
 });
 
-test('D97 (13), D199, D203: the page is inert: one CSP, one script only by its hash, no resource; the only link out is a validated GitHub permalink', () => {
+test('D97 (13), D199, D203, D219: the page is inert: one CSP, one script only by its hash, no resource; the only links out are validated GitHub permalinks and the graphs page', () => {
   const html = page();
   // D199: one CSP; with a copy button (D203: or an in-page link), one inline script, its sha256 the policy's one
   // script-src and PAGE_SCRIPT_HASH.
@@ -183,10 +184,133 @@ test('D97 (13), D199, D203: the page is inert: one CSP, one script only by its h
   for (const href of hrefs.filter((h) => h.startsWith('#')))
     // D161: and the agent's decisions (`#decisions`).
     assert.match(href, /^#(?:ask|item|run|claim|not-checked|did|prompt|must-act|must-know|good-to-know|decisions|review)(?:-[A-Za-z0-9]+)?$/);
+  // D219: and, with the CLI's graphs page (a `file:` URL), exactly one link to that local file, in the header's meta
+  // lines, with no other byte moved; a value that is not such a URL gives no link, and the .md never carries it.
+  const graphsPage = 'file:///tmp/you/.sonah/visual/example-api-0a1b2c3d/0123456789ab-fedcba987654-claude-sonnet-5-5/'
+    + 'page.html';
+  const linked = page(triagedReport, { ...repoFacts(), graphsPage });
+  const linkedOut = [...linked.matchAll(/href="([^"]*)"/g)].map((m) => unescape(m[1])).filter((h) => !h.startsWith('#'));
+  assert.deepEqual(linkedOut.filter((h) => !h.startsWith('https://github.com/')), [graphsPage]);
+  assert.deepEqual(linkedOut.filter((h) => h.startsWith('https://')), out);
+  const graphsLine = `<p class="meta graphs"><a href="${graphsPage}" rel="noreferrer noopener">`
+    + `${escapeHtml(REPORT_HEADER_WORDS.graphsPage)}</a></p>`;
+  assert.equal(linked.split(graphsLine).length, 2);
+  assert.ok(linked.indexOf(graphsLine) < linked.indexOf('<p class="count">'), 'in the header, before the count line');
+  assert.equal(linked.replace(graphsLine, ''), html);
+  assert.deepEqual(modelOf(triagedReport, { ...repoFacts(), graphsPage }).header.graphs,
+    { href: graphsPage, words: REPORT_HEADER_WORDS.graphsPage });
+  assert.equal(Object.hasOwn(modelOf().header, 'graphs'), false, 'a model given no graphs page has no such key');
+  for (const bad of ['https://example.com/page.html', 'file:///a b.html', 'file:////host/share/page.html',
+    'javascript:alert(1)', 'file:///a"onmouseover="x', 'file:///a%zz', `file:///${'a'.repeat(5000)}`, 7, null])
+    assert.equal(page(triagedReport, { ...repoFacts(), graphsPage: bad }), html, String(bad).slice(0, 40));
+  const session = reportSession();
+  const md = renderReportMarkdown(session, triagedReport(session), { ...repoFacts(), graphsPage });
+  assert.equal(md, renderReportMarkdown(session, triagedReport(session), repoFacts()));
+  assert.equal(/file:|\.sonah\/visual/.test(md), false);
   // Without the facts, no link leaves the page at all; facts that are not valid build none either.
   assert.equal(/href="https?:/.test(page(triagedReport, {})), false);
   assert.equal(/href="https?:/.test(page(triagedReport, repoFacts({ github: { owner: 'two words' } }))), false);
   assert.equal(/href="https?:/.test(page(triagedReport, repoFacts({ repo: { head: 'not-a-sha' } }))), false);
+});
+
+test('D219: why the CLI did not draw the graphs page is one fixed line in the header, where the link would be; '
+  + 'the .md never says it', () => {
+  const html = page();
+  const range = '0123456789ab..HEAD';
+  const notDrawn = { code: 'uncommitted', range };
+  const words = REPORT_GRAPHS_WORDS.uncommitted(range);
+  const line = `<p class="meta graphs">${escapeHtml(words)}</p>`;
+  const said = page(triagedReport, { ...repoFacts(), graphsNotDrawn: notDrawn });
+  assert.equal(said.split(line).length, 2, 'said once');
+  assert.ok(said.indexOf(line) < said.indexOf('<p class="count">'), 'in the header, before the count line');
+  assert.equal(said.replace(line, ''), html, 'the page differs by that line alone');
+  assert.equal(/href="file:/.test(said), false, 'no link');
+  assert.deepEqual(modelOf(triagedReport, { ...repoFacts(), graphsNotDrawn: notDrawn }).header.graphs,
+    { href: null, notDrawn: 'uncommitted', words });
+  // Each code says its own line; a code whose line names a range needs one, and one that names none takes none.
+  for (const [code, words] of Object.entries(REPORT_GRAPHS_WORDS)) {
+    if (code === 'failed') continue;
+    const given = typeof words === 'function' ? { code, range: '0123456789ab..fedcba987654' } : { code };
+    const text = typeof words === 'function' ? words(given.range) : words;
+    assert.ok(page(triagedReport, { ...repoFacts(), graphsNotDrawn: given })
+      .includes(`<p class="meta graphs">${escapeHtml(text)}</p>`), code);
+  }
+  // `failed` takes the visual's closed code too, and says its problem and fix (a /sonah background review's reader sees
+  // no terminal): each of the mirrored codes, once, in the header; the model keeps the code.
+  const drawn = '0123456789ab..fedcba987654';
+  for (const failure of Object.keys(REPORT_GRAPHS_FAILURE_WORDS)) {
+    const given = { code: 'failed', range: drawn, failure };
+    const text = REPORT_GRAPHS_WORDS.failed(drawn, failure);
+    const said = page(triagedReport, { ...repoFacts(), graphsNotDrawn: given });
+    assert.equal(said.split(`<p class="meta graphs">${escapeHtml(text)}</p>`).length, 2, failure);
+    assert.ok(text.startsWith('Graphs page: not drawn. '), failure);
+    assert.deepEqual(modelOf(triagedReport, { ...repoFacts(), graphsNotDrawn: given }).header.graphs,
+      { href: null, notDrawn: 'failed', failure, words: text });
+  }
+  for (const bad of [{ code: 'uncommitted' }, { code: 'uncommitted', range: 'main..HEAD' },
+    { code: 'uncommitted', range: '0123456789AB..HEAD' }, { code: 'uncommitted', range: `${range}<b>` },
+    { code: 'backend', range }, { code: 'limits', range, extra: 1 }, { code: 'toString' }, { code: 'graphsPage' },
+    { code: 7 }, 'uncommitted', ['uncommitted'], null,
+    // `failed` with no failure, one outside the mirror (a code only `sonah visual` names, a call's, an inherited key),
+    // with no range, and a failure with another code.
+    { code: 'failed', range: drawn }, { code: 'failed', range: drawn, failure: 'not_git' },
+    { code: 'failed', range: drawn, failure: 'timeout' }, { code: 'failed', range: drawn, failure: 'toString' },
+    { code: 'failed', range: drawn, failure: 7 }, { code: 'failed', failure: 'auth' },
+    { code: 'limits', range: drawn, failure: 'auth' }, { code: 'backend', failure: 'other' }])
+    assert.equal(page(triagedReport, { ...repoFacts(), graphsNotDrawn: bad }), html, JSON.stringify(bad));
+  // The link wins when both are given (the CLI gives one or the other).
+  const graphsPage = 'file:///tmp/you/.sonah/visual/a-0a1b2c3d/0123456789ab-fedcba987654-m/page.html';
+  assert.deepEqual(modelOf(triagedReport, { ...repoFacts(), graphsPage, graphsNotDrawn: notDrawn }).header.graphs,
+    { href: graphsPage, words: REPORT_HEADER_WORDS.graphsPage });
+  const session = reportSession();
+  assert.equal(renderReportMarkdown(session, triagedReport(session), { ...repoFacts(), graphsNotDrawn: notDrawn }),
+    renderReportMarkdown(session, triagedReport(session), repoFacts()));
+});
+
+test('D219: at the page\'s size bound the graphs line moves nothing else: the same parts kept, the same whole, the same .md',
+  () => {
+  // As D171's footer line: the header's line about the graphs page (its link, or why it was not drawn) is not weighed
+  // against the bound. The fixture's second ask, padded until the page without the line is whole and within the line's
+  // bytes of the bound, so that weighing it would cut the page.
+  const bytes = (text) => Buffer.byteLength(text, 'utf8');
+  const padded = (n) => {
+    const session = reportSession();
+    const ask = session.events.find((event) => event.id === 'I2');
+    const [span] = ask.text;
+    const text = `${session.blobs[span.sourceKey]}${' pad'.repeat(n)}`;
+    session.blobs[span.sourceKey] = text;
+    ask.text = [{ ...span, untilByte: bytes(text) }];
+    return session;
+  };
+  const at = (n, extra = {}) => {
+    const session = padded(n);
+    return sessionPage(session, sessionReviewOnlyReport(session), { ...repoFacts(), ...extra });
+  };
+  let whole = 0, cut = 200_000;
+  assert.ok(at(whole).whole && !at(cut).whole, 'premise: the padding crosses the bound');
+  while (cut - whole > 1) { const mid = Math.floor((whole + cut) / 2); if (at(mid).whole) whole = mid; else cut = mid; }
+  const without = at(whole);
+  const graphsPage = `file:///tmp/you/.sonah/visual/a-0a1b2c3d/${'0'.repeat(12)}-${'f'.repeat(12)}-m/page.html`;
+  const link = `<p class="meta graphs"><a href="${graphsPage}" rel="noreferrer noopener">`
+    + `${escapeHtml(REPORT_HEADER_WORDS.graphsPage)}</a></p>`;
+  const range = '0123456789ab..fedcba987654';
+  const reason = `<p class="meta graphs">${escapeHtml(REPORT_GRAPHS_WORDS.limits(range))}</p>`;
+  for (const [name, extra, line] of [['link', { graphsPage }, link],
+    ['not drawn', { graphsNotDrawn: { code: 'limits', range } }, reason]]) {
+    assert.ok(bytes(without.html) <= PAGE_LIMITS.maxBytes && bytes(without.html) + bytes(line) > PAGE_LIMITS.maxBytes,
+      `premise: ${bytes(without.html)} bytes, whole, within the ${name} line of the bound`);
+    const withLine = at(whole, extra);
+    assert.equal(withLine.whole, true, `${name}: still whole`);
+    assert.equal(withLine.html.replace(line, ''), without.html, `${name}: the page differs by that line alone`);
+    assert.equal(bytes(withLine.html), bytes(without.html) + bytes(line), `${name}: past the bound by that line`);
+    const session = padded(whole), report = sessionReviewOnlyReport(session);
+    assert.equal(renderReportMarkdown(session, report, { ...repoFacts(), page: { whole: withLine.whole } }),
+      renderReportMarkdown(session, report, { ...repoFacts(), page: { whole: without.whole } }), `${name}: the .md`);
+    // And a page cut to fit cuts the same parts with the line as without it.
+    const over = at(cut), overWith = at(cut, extra);
+    assert.equal(overWith.whole, false);
+    assert.equal(overWith.html.replace(line, ''), over.html, `${name}: the same trim past the bound`);
+  }
 });
 
 test('D97 (13): recorded and reviewers\' text that holds markup renders escaped, as text', () => {

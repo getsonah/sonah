@@ -47,6 +47,7 @@ import { CODE_STEP_PART, CODE_STEP_ESTIMATE_MINUTES, createReviewBudget, normali
 import { resolveCodePass } from './settings.js';
 import { outputsInRepository, readRepoFacts } from './repo-links.js';
 import { countLines, mdPathFor, reportOutputLines } from './report-output.js';
+import { reviewGraphsDryRunLine, reviewGraphsPage } from './review-graphs.js';
 
 /** The review's one usage line, printed under a usage error. */
 const SESSION_REVIEW_USAGE_LINE = 'sonah review [session.jsonl] [options]';
@@ -111,6 +112,9 @@ export const sessionReviewUsage = [SESSION_REVIEW_USAGE_LINE,
   '                           of printing. With --format html, the page opens in',
   '                           your browser',
   '  --no-open                do not open the page',
+  '  --no-visual              with --format html, do not draw the graphs page',
+  '                           of the session\'s commits (sonah visual\'s page),',
+  '                           which the page links to by default',
   '  --state-dir DIR          where Sonah keeps stored answers and the report',
   '                           (default: under ~/.sonah)',
   '  --max-calls N, --max-input-bytes N, --stop-at-utilization U',
@@ -155,12 +159,13 @@ export function parseSessionReviewArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') { options.help = true; continue; }
+    // D219: --no-visual, no graphs page of the session's commits for this review (review-graphs.js).
     if (arg === '--dry-run' || arg === '--no-open' || arg === '--post-comment' || arg === '--code-pass'
-        || arg === '--background') {
+        || arg === '--background' || arg === '--no-visual') {
       if (seen.has(arg)) throw usageError(`${arg} is given twice`);
       seen.add(arg);
       options[{ '--dry-run': 'dryRun', '--no-open': 'noOpen', '--post-comment': 'postComment',
-        '--code-pass': 'codePass', '--background': 'background' }[arg]] = true;
+        '--code-pass': 'codePass', '--background': 'background', '--no-visual': 'noVisual' }[arg]] = true;
       continue;
     }
     // D142: --session ID, the agent's own session id (a UUID). An empty value is a harness that gave none: kept, and
@@ -515,6 +520,9 @@ async function shellFolderOf(env) {
 
 /** Injectable boundaries are for synthetic tests; the default path uses the product's own loaders,
  * transport, private stores and renderers. Selection and dry planning do not construct a reviewer.
+ * D219: `drawGraphs` draws the graphs page of the session's commits (visual-command.js `drawVisualPage`) for a review
+ * that writes its HTML page (review-graphs.js), and the page links to it. As D171's `updateNotice`, only the CLI's entry
+ * hands it in: a library call (a test's among them) draws none, prints no line about it and makes none of its calls.
  * D90 (owner decision 2026-10-15, privacy is not a design constraint): the session is loaded as recorded
  * (recorded-session.js), and the report .md or the page is rendered from it as loaded and written as rendered: nothing
  * is masked for a person. The answers and the review kept under SONAH_HOME hold the model's quotes as it read them: they stay on
@@ -524,7 +532,8 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
   createJudge = createReviewJudge, runSession = reviewSession, loadReviews = loadDecisionReviews,
   signal = null, installSignals = true, openPage = openLocalPage, client = null, confirm = undefined,
   resolveToken = null, readCode = readCodeSnapshot, runCode = reviewCodePass, resolveSession = resolveSessionId,
-  freeze = freezeRecordings, startReview = startDetachedReview, updateNotice = async () => null } = {}) {
+  freeze = freezeRecordings, startReview = startDetachedReview, updateNotice = async () => null,
+  drawGraphs = null } = {}) {
   let options;
   try { options = parseSessionReviewArgs(argv); }
   catch (error) {
@@ -793,6 +802,10 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
       }
       if (options.postComment)
         for (const line of await savedCommentLines(state, options)) stdout.write(`${line}\n`);
+      // D219: whether a review would draw the graphs page, when it writes its HTML page; nothing is drawn or sent. With
+      // the code step off, or no git repository or start commit in its snapshot, it would not.
+      if (drawGraphs && options.format === 'html') stdout.write(`${reviewGraphsDryRunLine({ options, backend,
+        codeStepOn: codeStep.on === true, snapshot })}\n`);
       return 0;
     }
     if (options.postComment) {
@@ -963,9 +976,30 @@ export async function runSessionReviewCommand(argv, { stdout = process.stdout, s
     // entry's, started with the review's first call to the reviewer; none in a library call, nor when the review made
     // no call): for /sonah, whose person never sees stderr. The .md never carries it: it is the PR comment, and says
     // nothing about the reader's own Sonah.
+    // D219: the graphs page of the session's commits (review-graphs.js), when this run writes the page: drawn now, before
+    // the page is rendered and written once, so that the page links to a page that exists. Its lines are its own; it
+    // never throws, and the exit code stays the review's. Its fact (the link, `graphsPage`, a `file:` URL, or why it was
+    // not drawn, `graphsNotDrawn`) is the page's alone: the .md is the PR comment, and never names a file of this
+    // computer. Ctrl-C or SIGTERM while it is drawn (or a stop of the review before it) abandons the graphs page alone:
+    // the review goes on to write its page, and its usage record in `finally`.
+    let graphs = {};
+    if (options.format === 'html' && drawGraphs && !options.noVisual) {
+      const graphsStop = new AbortController();
+      const stopGraphs = () => graphsStop.abort();
+      if (signal?.aborted || controller.signal.aborted) stopGraphs();
+      signal?.addEventListener('abort', stopGraphs, { once: true });
+      if (installSignals) { process.on('SIGINT', stopGraphs); process.on('SIGTERM', stopGraphs); }
+      try {
+        graphs = await reviewGraphsPage({ options, backend, repo: facts.repo, codePass: report.codePass, snapshot, cwd,
+          env, stdout, stderr, draw: drawGraphs, signal: graphsStop.signal });
+      } finally {
+        signal?.removeEventListener('abort', stopGraphs);
+        if (installSignals) { process.off('SIGINT', stopGraphs); process.off('SIGTERM', stopGraphs); }
+      }
+    }
     const newer = options.format === 'html' && newerAnswer ? await newerAnswer : null;
     const page = options.format === 'html' ? sessionPage(session, report, { sessionHash: hash, ...linkFacts,
-      ...(newer && typeof newer.latest === 'string' ? { newerVersion: newer.latest } : {}),
+      ...(newer && typeof newer.latest === 'string' ? { newerVersion: newer.latest } : {}), ...graphs,
       decisionReviews: answersFor(hash, await loadReviews().catch(() => new Map())) }) : null;
     // D118 (a), amended (the owner, 2026-10-19: "yes, folder name only"): the report .md names that folder by its name
     // alone, and the home folder itself as `~` (render report-model.js `folderNameOf`), by the home as the environment

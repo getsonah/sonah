@@ -8,7 +8,9 @@ model you choose, through your own `claude` or `codex` login, or your API key wi
 other requests are a check for a newer Sonah that holds nothing about you or your work, once a day at most and only with
 a review's first call to the reviewer or in `sonah doctor`, to npm's public registry, and requests to GitHub, only when
 you name a pull request with `--github` ([below](#what-leaves-your-computer)). `sonah visual` reads a range of commits
-from your local git, not a recording, and sends the change to the model through your own `claude` login.
+from your local git, not a recording, and sends the change to the model through your own `claude` login; so does
+`sonah review --format html`, for the session's commits, when the session's work is committed (D219; `--no-visual`
+skips it).
 
 Sonah masks nothing and withholds nothing for privacy's sake. The model reads your session as it was recorded and, in
 the code step, the files it is sent and any file that its agents open. The page, the Markdown report, the terminal and
@@ -41,16 +43,22 @@ Three commands send anything to a model, and nothing else does:
   results (the files and search results it reads) go to the model as it works.
 - **`sonah doctor`** without `--no-probe`: one tiny synthetic request that quotes no session, to check that the model
   answers.
-- **`sonah visual`** (not with `--replay-only`): the change of the range it draws, read with git from your commits (your
-  uncommitted work is not read). The requests hold the repository's name (the last part of its `origin` address, else
-  its folder's name), the range's two commits (12 characters of each), the commits' messages, the changed files' paths
-  and line counts, and each changed function's name, place and code after the change, its added and removed lines
-  marked, with which changed functions name each other and how many other places name it. Requests of at most 25
-  changed functions each describe them; one asks for the story of the change, with the checked descriptions; one asks
-  what a reviewer must act on or know. A request whose answer does not fit is asked again, with what was wrong. No
-  recording and no other file is sent. The calls run as a session review's do: the `claude` CLI in an empty private
-  folder, with its tools off, the same basic environment and your login (never an API key), and the model
-  `claude-sonnet-5-5` unless you give `--model`. Answers stored in its folder are not asked again.
+- **`sonah visual`** (not with `--replay-only`), plain `sonah` in a terminal, which runs it, and `sonah review` when it
+  writes its HTML page (`--format html --output`, and the background review of /sonah), on the `claude` reviewer, with
+  no `--no-visual` and no limit of calls or size, and only when each file of the change that the code review read is
+  committed: the change of the range it draws, read with git from your commits (your uncommitted work is not read). For
+  the review, the range is from the commit where the session started to `HEAD`, which can hold commits made after the
+  session; with `--code-base`, it starts where your branch and that base meet, so it holds the whole branch. The
+  requests hold the repository's name (the last part of its `origin` address, else its folder's name), the range's two
+  commits (12 characters of each), the commits' messages, the changed files' paths and line counts, and each changed
+  function's name, place and code after the change, its added and removed lines marked, with which changed functions
+  name each other and how many other places name it. Requests of at most 25 changed functions each describe them; one
+  asks for the story of the change, with the checked descriptions; one asks what a reviewer must act on or know. A
+  request whose answer does not fit is asked again, with what was wrong. No recording and no other file is sent. The
+  calls run as a session review's do: the `claude` CLI in an empty private folder, with its tools off, the same basic
+  environment and your login (never an API key), and the model `claude-sonnet-5-5` unless you give `--model` to
+  `sonah visual` (the review always uses `claude-sonnet-5-5` for it, never its own `--model`). Answers stored in its
+  folder are not asked again.
 
 What a review request contains. The model reads your session as it was recorded, secrets and the images you pasted
 included: a reviewer that cannot see a value cannot judge what was done with it. When the reviewer is the same provider
@@ -174,7 +182,7 @@ recorded, like the recording itself.
 | The update check's setting (`sonah config update-check`) | `~/.sonah/update-check-setting.json` | Whether the update check is on, once you set it. Readable by you only; one that is not yours, that others can write or that cannot be read turns the check off. |
 | The update check's last answer | `~/.sonah/update-check.json` | When Sonah last asked npm's registry for getsonah's latest version, and the version it answered (none when it did not answer). Readable by you only. Written only with a review's first call to the reviewer and by `sonah doctor`, and not while the check is off. |
 | The page or Markdown you asked for | the `--output` file | Never overwrites an existing file. It holds your session as recorded. |
-| The page of a change (`sonah visual`) | `~/.sonah/visual/<the repository folder's name and a hash of its path>/<the range's two commits and the model>/` (or `--out DIR`) | Only if you ran it. The page (`page.html`), each request as it was sent (`requests/`) and its answer (`answers/`), what Sonah read of the change (`facts.json`), and what it kept and why (`meaning.json`, `findings.json`, `dropped.json`, `run.json`). A rerun of the same range with the same model replays the stored answers. They quote your code as it is in the commits; they are never sent anywhere. Sonah never deletes this folder: remove it when you no longer need it. |
+| The page of a change (`sonah visual`, and the graphs page of a review's HTML page) | `~/.sonah/visual/<the repository folder's name and a hash of its path>/<the range's two commits and the model>/` (or `--out DIR`) | Only if you ran it, or a review drew it (the review's page links to its `page.html` by its full path; the Markdown report never names it). The page (`page.html`), each request as it was sent (`requests/`) and its answer (`answers/`), what Sonah read of the change (`facts.json`), and what it kept and why (`meaning.json`, `findings.json`, `dropped.json`, `run.json`). A rerun of the same range with the same model replays the stored answers. They quote your code as it is in the commits; they are never sent anywhere. Sonah never deletes this folder: remove it when you no longer need it. |
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
 | The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |
 | The page, Markdown report and log of `sonah review --session ID --background` | `background/` in the review's folder above | Only if you ran one. The page and the report hold your session as recorded; the log holds what the review printed. `active.json` there holds the process id of the review it started, nothing else. |
@@ -225,7 +233,10 @@ a prompt for the agent and follows the page's links to their place. For Back, ea
 browser's history, and the script keeps in the current entry the tab you are on, the scroll and the link you took, and
 the new entry names the place. It reads only the address's `#` part and those entries, and sends nothing. The page of
 `sonah visual` quotes your code and loads nothing from the network either. Its script moves between its parts and
-graphs, keeps your light or dark choice in the browser, and sends nothing.
+graphs, keeps your light or dark choice in the browser, and sends nothing. When `sonah review --format html` drew the
+graphs page of the session's commits (D219), its page links to that page by its full path on your computer (a `file:`
+link, which names your home folder): a copy of the page that you share names that path, and the link opens nothing on
+another computer. The Markdown report never holds it.
 
 Nothing is ever posted unless you ask. A review with `--github OWNER/REPO --pr N --post-comment` can leave one comment
 and one neutral GitHub check on that pull request: it needs a private repository, a GitHub App token and your typed

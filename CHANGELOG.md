@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.0-beta.15 (2026-11-10)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+The page of graphs that `sonah visual` draws is now the default: plain `sonah` draws it in a terminal, and
+`sonah review --format html` draws it too and links to it from the review's page. What `sonah review` finds, and the
+rest of its page, are the same as in 0.3.0-beta.14.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+### Plain `sonah` draws the graphs page
+
+Plain `sonah`, with no command, now draws the page of graphs in a terminal. It prints one line that says what it draws
+and that `sonah --help` lists every command, runs `sonah visual` with no range and opens the page in your browser, as
+`sonah review --format html` opens its page. It sends what `sonah visual` sends, through your own `claude` login, keeps
+the same folder under `~/.sonah/visual/` and exits with the same code. After a problem with its fix, it adds a line
+that points to `sonah --help`. In a pipe or a script, plain `sonah` still prints the usage and exits 2.
+
+### `sonah review` draws it too
+
+`sonah review --format html`, and the background review that /sonah starts, now also draws the graphs page of the
+session's commits, from where the session started to `HEAD`, before it writes its own page, and the page links to it in
+its header. With `--code-base`, the range starts where your branch and that base meet, so it covers the whole branch.
+It prints one line when it starts, then `Graphs page: <path>` and the calls and list cost it took. It uses
+`sonah visual`'s model, folder and stored answers, through your own `claude` login. The Markdown report and the PR
+comment never link to it. `--no-visual` and `--format md` skip it, and the review prints nothing about it; the dry run
+of an HTML review ends with one `Graphs page:` line, `Graphs page: off (--no-visual).` among them. It is not drawn on
+another backend than `claude-cli`, under `--max-calls`, `--max-input-bytes` or `--stop-at-utilization`, with the code
+review off, or while the change is not all committed (a binary file or a lockfile counts as committed when `HEAD` holds
+it and your working tree does not change it): one line then says why, and the review's page says it too where the link
+would be. Where `sonah visual` can draw the page, the line names that command. A graphs page that fails prints its
+problem and fix on stderr, marked `Graphs page:`, and the review's page says them in its header; it never changes the
+review's exit code. Ctrl-C while it is drawn stops the graphs page only: the review still writes its page and its usage
+record.
+
 ## 0.3.0-beta.14 (2026-11-09)
 
 This beta is experimental, and we want to hear how the report reads for you.

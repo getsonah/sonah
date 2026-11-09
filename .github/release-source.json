@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/4",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "d26cccd1fe5cacc84df607f2da6957cee9f454b0",
+  "sourceHead": "f8b49d2ff1fb0c25e684e29bd5c30d002a3289c2",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -56,8 +56,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "27bccfabdf5860ccf4fafd97d0e45e5d5056f31a616b55035ab71f1a0f130188",
-      "bytes": 151978,
+      "sha256": "fc15d670b0ed5e9d0aca158c63747db39ae3b27671b70707cd389f1682ae57ac",
+      "bytes": 154779,
       "mode": 420
     },
     {
@@ -80,8 +80,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "db23e7e38e514c7bc0594c0ffb1915c2109d01e91adea59e845cba87949d858e",
-      "bytes": 10258,
+      "sha256": "97fdcf693cb66e896f7c206d5dbe961a8cc3c8c6ac6b24fce2b219557021144c",
+      "bytes": 11964,
       "mode": 420
     },
     {
@@ -110,32 +110,32 @@
     },
     {
       "path": "docs/INSTALL.md",
-      "sha256": "d245ff721ef9057a06e5e1cab4435e29fbf43294c298b89264176efb4982d798",
-      "bytes": 74781,
+      "sha256": "a8cc70806058bb67298f6fe96700de12ad5b5410c5ced76e6992711d61ad2d12",
+      "bytes": 80989,
       "mode": 420
     },
     {
       "path": "docs/PRIVACY.md",
-      "sha256": "5522bd0d61e15fc3a9f84f59d739e61cd0fbdb9edae1f0a7c1aa259578e8cf03",
-      "bytes": 32046,
+      "sha256": "9c635b8e3f5d5200486914dc961d724777c336ec9302334347c467795e379f7f",
+      "bytes": 33325,
       "mode": 420
     },
     {
       "path": "docs/TROUBLESHOOTING.md",
-      "sha256": "05cc748462885676383aab598b67d05beea38845e1533eff548617bfb75345bb",
-      "bytes": 70848,
+      "sha256": "2e1ff11c5c1f64cf23c0252901d1f895da9d503567b6bf038d926cbe0452d6cc",
+      "bytes": 76755,
       "mode": 420
     },
     {
       "path": "package.json",
-      "sha256": "0f00f3f3f9a8325944dcbd7e64edb3cc7742eebcab2a965fee73ac02f813b33b",
-      "bytes": 7557,
+      "sha256": "e026aa013868c114d7c13dcf337648bea780220d8275565261715617be4d3c0f",
+      "bytes": 7638,
       "mode": 420
     },
     {
       "path": "packages/cli/bin/sonah.js",
-      "sha256": "16fd07c4d8f5bc69be4bfd5a8c513d7b59291eb5f06a4c22cfb3d81030ccd28f",
-      "bytes": 12725,
+      "sha256": "5cccf427d5265fe86d1c85c08f49f79c3ee68f89f275e3eecb3cdba81daeb863",
+      "bytes": 13837,
       "mode": 493
     },
     {
@@ -160,6 +160,12 @@
       "path": "packages/cli/src/answer-cache.js",
       "sha256": "6d56fad63429691ac4351a799df68408307363accb222e818ca7202bcf5414db",
       "bytes": 24539,
+      "mode": 420
+    },
+    {
+      "path": "packages/cli/src/bare-command.js",
+      "sha256": "d056abb3e086d0e0e455d6509e2f1f7edf73cee4a2148e374b26c13da1ab3bce",
+      "bytes": 3326,
       "mode": 420
     },
     {
@@ -236,8 +242,8 @@
     },
     {
       "path": "packages/cli/src/local-page.js",
-      "sha256": "f65ddbaa4961110475ff0cc96d77e84928b4e3f58a962d1ceaab44a89940e727",
-      "bytes": 2299,
+      "sha256": "dc2cbedc86fc1d40c13c1ea61ea97f645ad27d98267e1195b413be0f61c8c689",
+      "bytes": 2421,
       "mode": 420
     },
     {
@@ -272,8 +278,8 @@
     },
     {
       "path": "packages/cli/src/repo-links.js",
-      "sha256": "9087a4e25f3152ac0a4eafc1ad8cb7a12b79a5c86633d804013e9fd26e6f437f",
-      "bytes": 10528,
+      "sha256": "963778cfca2f923a0980369c8e531d90f00d43dac88ed18649c1dc1ffbd5a336",
+      "bytes": 12333,
       "mode": 420
     },
     {
@@ -286,6 +292,12 @@
       "path": "packages/cli/src/review-budget.js",
       "sha256": "9ed3e891ba1c917fcef8142d2e3a56cb66850e1439c98dc8e102b9111f0a645f",
       "bytes": 25185,
+      "mode": 420
+    },
+    {
+      "path": "packages/cli/src/review-graphs.js",
+      "sha256": "6652f81ded1863130925a9d6d483cac9b67dac174cc4dd3f6c6cb7542dac2cd6",
+      "bytes": 15187,
       "mode": 420
     },
     {
@@ -320,8 +332,8 @@
     },
     {
       "path": "packages/cli/src/session-review-command.js",
-      "sha256": "487a2bdb4cb79a5683c1fe4d315555450200b3011ac9f0e6960276de7e7c3479",
-      "bytes": 122594,
+      "sha256": "8bcfbb903e55fbbb7fe080752f82832569adcb2d1e65e74ec379c73ff6c57dc1",
+      "bytes": 125347,
       "mode": 420
     },
     {
@@ -350,8 +362,8 @@
     },
     {
       "path": "packages/cli/src/visual-command.js",
-      "sha256": "d47ad04a4e85e799dff51cc5bdfaba0565822b47b3e08ee6e4891e60b02cee86",
-      "bytes": 16483,
+      "sha256": "835638a1ba45df20a0b6102b1c0531c8c340d49fb3561639cd981ae5243258ec",
+      "bytes": 20028,
       "mode": 420
     },
     {
@@ -823,6 +835,18 @@
       "mode": 420
     },
     {
+      "path": "packages/cli/test/d218-bare-sonah.test.js",
+      "sha256": "c1076f91cad2f80725dc2abb4631ee81c958a0f6ea10e657790585da72cdad3c",
+      "bytes": 7259,
+      "mode": 420
+    },
+    {
+      "path": "packages/cli/test/d219-review-graphs.test.js",
+      "sha256": "149af22578e0e467c0ace4921e5e678b97a8485fce22daff075c14f0cee77034",
+      "bytes": 43511,
+      "mode": 420
+    },
+    {
       "path": "packages/cli/test/d70-long-context.test.js",
       "sha256": "d9813c92b2ccf89617acc174d2bbd16640f616b7db849e090cab2df8c2127f25",
       "bytes": 28345,
@@ -872,8 +896,8 @@
     },
     {
       "path": "packages/cli/test/exitcodes.test.js",
-      "sha256": "0794486c4ae4bc0ad8e57ee42870167bf296b4deea92864d5cca363248540c0c",
-      "bytes": 15459,
+      "sha256": "114a5190ec9076c63081cb4bebe2f530f33e1546bfd87aaa0a789575ad490d3b",
+      "bytes": 15600,
       "mode": 420
     },
     {
@@ -926,8 +950,8 @@
     },
     {
       "path": "packages/cli/test/local-page.test.js",
-      "sha256": "6591cbea98106aac8157cbd830a8370cd51158c5436c344bdc5bb9226650037c",
-      "bytes": 2613,
+      "sha256": "1b4f4552d66f0df97b5545f599580e86c2f96ad8724222c107575c36a8fb7af5",
+      "bytes": 3016,
       "mode": 420
     },
     {
@@ -1172,8 +1196,8 @@
     },
     {
       "path": "packages/cli/test/repo-links.test.js",
-      "sha256": "9c3177994c36accef6bb8f14ef65a467cb096f439e2b6f9e60bf8cfe988516b8",
-      "bytes": 10297,
+      "sha256": "da7e66afd1cd82edd38d8d7ac124c32964d12273d00d2675f11f624f9aefe785",
+      "bytes": 12702,
       "mode": 420
     },
     {
@@ -1250,8 +1274,8 @@
     },
     {
       "path": "packages/cli/test/visual-command.test.js",
-      "sha256": "4afb93e50efd0f9a1ad6b8a1374f2d2f733c557859d192b6c3dc30e7d263baaa",
-      "bytes": 17364,
+      "sha256": "ec478e4518a33475dae541489127a681523ebcb32bf322ab6a051816974c9af0",
+      "bytes": 18120,
       "mode": 420
     },
     {
@@ -3092,20 +3116,20 @@
     },
     {
       "path": "packages/render/report-model.js",
-      "sha256": "708ba9045eb67ffed7646b7c8643427a130cc8e06d7a8d641e52c46b81e4c59a",
-      "bytes": 288268,
+      "sha256": "9ae5f1fbd88dbd385142ea9183ee61cfe7bf634df89b1659082b7559ea494e29",
+      "bytes": 292334,
       "mode": 420
     },
     {
       "path": "packages/render/report-words.js",
-      "sha256": "05a448f310473ed65356bec7bbcbb8dddcffcb829fe8105289653ec91897a2c7",
-      "bytes": 94752,
+      "sha256": "635d281b76cbec83228d35988dd08554bac71bf7080524a3c7e54a8401e58ecb",
+      "bytes": 101571,
       "mode": 420
     },
     {
       "path": "packages/render/session-page.js",
-      "sha256": "c882aeedb5c422328dfd336136fa7278956d94d66a59ff51461e484c6ff8c390",
-      "bytes": 115299,
+      "sha256": "b31c26e5fa47338d4b79a198e3c0b24c7a664eaf312fa12f81a14d010754b3ae",
+      "bytes": 117171,
       "mode": 420
     },
     {
@@ -3116,14 +3140,14 @@
     },
     {
       "path": "packages/render/test/absence-audit.js",
-      "sha256": "c361fccd188b58b2a5e8a04c4184226982f1bbc181e07ffd63e9a8c5616295e7",
-      "bytes": 152869,
+      "sha256": "08694aa0aacde7a7f21d091e79fb9547b7399fe36aa53eb5652e546bca315969",
+      "bytes": 158362,
       "mode": 420
     },
     {
       "path": "packages/render/test/absence-audit.test.js",
-      "sha256": "94ab660aa8af0db717a88cba5071beadb704d283c60a50f2e3006e475f99bac4",
-      "bytes": 46244,
+      "sha256": "e5479144ce51bfa731051bda4067347850e7d229478dc3a8f906783426e0639b",
+      "bytes": 47187,
       "mode": 420
     },
     {
@@ -3464,8 +3488,8 @@
     },
     {
       "path": "packages/render/test/session-page-report.test.js",
-      "sha256": "b60b88721c236360857b57c7ce75934c06b779b762d912dca77489ee61db9578",
-      "bytes": 48861,
+      "sha256": "d5fba8d5b5ecb432f5861212cbcbb577bbd7aed9f6c0a3b16a9d771fc5ad9f37",
+      "bytes": 57894,
       "mode": 420
     },
     {

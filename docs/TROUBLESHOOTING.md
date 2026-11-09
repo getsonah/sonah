@@ -161,7 +161,10 @@ It then prints `Review window N/M finished` as each part completes. There are no
 **You want to stop**
 : Press Ctrl-C. Sonah prints `Review could not complete: review_interrupted.` and how much it used. Answers already
   received are kept and never asked again; run the same command to continue. A request still running when you
-  stopped is sent again.
+  stopped is sent again. One exception: after the review's own calls, while `sonah review --format html` draws the
+  graphs page ([The graphs page of a review](#the-graphs-page-of-a-review)), Ctrl-C stops the graphs page only. Sonah
+  then prints `Graphs page: not drawn, because you stopped it.`, not `review_interrupted`, writes the review's page and
+  exits with the review's own code.
 
 **`Review stopped where you asked (max_calls | max_input_bytes | utilization).`**
 : One of your optional stops (`--max-calls`, `--max-input-bytes`, `--stop-at-utilization`) was reached. Run the same
@@ -449,7 +452,8 @@ the .md)
 **`To get code links, commit your work.`**
 : Some reviewed files differ from your last commit, or a commit is not on GitHub. So the report has no code links for
   them. Commit your work. Push the commit. Then run the same command with a new `--output` file. Sonah reuses its
-  stored answers, so this run makes no model call.
+  stored answers, so this run makes no model call for the review (an HTML review whose work is now committed draws its
+  graphs page, with calls of its own).
 
 **`Sonah wrote the report inside the repository.`**
 : On the next run, a report file in the repository reads as a change of the repository, so the code review asks again.
@@ -584,7 +588,8 @@ same command again:
   --auto` once (with the name of your remote).
 - `no_merge_base`: `HEAD` shares no commit with that default branch. Give a range.
 - `no_change`: the head adds no commit to the base (they are the same commit, or the head is behind the base), so there
-  is no change to draw. With no range, your branch has no commit of its own yet.
+  is no change to draw. With no range, your branch has no commit of its own yet, which is also what plain `sonah`
+  finds on the default branch itself: `sonah visual HEAD~1..HEAD` draws the last commit there.
 - `invalid_model`: `--model` needs a full model ID, such as `claude-sonnet-5-5`, not an alias such as `sonnet`.
 - `output_folder_unwritable`: Sonah could not make or write the folder for the page. Choose a `--out` folder that you
   own, or check that you own your `SONAH_HOME` folder.
@@ -601,6 +606,59 @@ These exit `3`, and the same command asks again: `timeout`, `output_limit`, `pro
 for the story of the change, or for what a reviewer must act on or know, failed, so no page is written), and
 `visual_failed` (anything else). If it fails again, run `sonah doctor --no-probe`.
 
+### The graphs page of a review
+
+`sonah review --format html` draws the graphs page of the session's commits before its own page (D219), from where the
+session started to `HEAD` (with `--code-base`, from where your branch and that base meet: the whole branch). When it
+starts, it prints `Sonah draws the graphs page of the session's commits, with claude -p on your Claude plan.` on
+stderr; each other line it prints about it starts with `Graphs page`:
+
+**`Graphs page: <path>`** and
+**`Graphs page usage: N model calls, list cost $X, as the footer of the page counts them.`**
+: The page is written, and the review's page links to it in its header. The counts are those of the graphs page's
+  own `run.json`, stored answers included; the review's `Review usage:` line does not count them.
+
+**`Graphs page: not drawn. ...`**
+: One line on stdout says why, and the review's page says the same line in its header, where the link would be. Where
+  `sonah visual` can draw it, the line names that command:
+  - `It draws commits only, and files of the change differ from HEAD.`: commit the work, then run the `sonah visual
+    <start>..HEAD` that the line names (or the same review again with a new `--output`). A binary file, a lockfile or
+    another file whose text Sonah does not keep counts as committed when `HEAD` holds it and your working tree does not
+    change it (`git diff` of it against `HEAD` is empty).
+  - `Sonah finds where the session's commits start with the code review, which was off.`: you ran the review with
+    `--no-code-pass` (or `sonah config code-pass off`), so Sonah has no start commit. Give `sonah visual` a range.
+  - `It draws the commits of a git repository, and Sonah found none that holds the session's folder.`: the session ran
+    outside a git repository, or Sonah could not read its folder here. No command is named.
+  - `It draws commits only, and Sonah could not tell where the session's commits start.`: a git repository holds the
+    folder, but Sonah read no start commit of the session in it. Give `sonah visual` a range.
+  - `It draws commits only, and HEAD is still the commit where its range starts.`: no commit since the session started
+    (with `--code-base`, since your branch and that base meet), and nothing of the change to commit (a session that only
+    read, for one). There is nothing to draw, and no command is named.
+  - `It draws commits only, and Sonah read no file of the change.`: the session changed no file of this repository that
+    Sonah found, or the code review did not run yet (it waits for the run that can finish the session review). The line
+    names `sonah visual <start>..HEAD`, the commits since the start of the range.
+  - `because its calls would not count in the limits that you set.`: `--max-calls`, `--max-input-bytes` and
+    `--stop-at-utilization` limit the review's own calls only. Run the `sonah visual` command the line names.
+  - `Sonah draws it only on the claude-cli backend.`: on `--backend codex-cli` or `anthropic-api` you chose another
+    provider, so nothing is sent to `claude`, and no command is named.
+  - `because you stopped it.`: you pressed Ctrl-C (or the process got SIGTERM) while it was drawn. Only the graphs page
+    stops: Sonah starts no new call for it, and the review writes its page, its report and its usage record, with its
+    own exit code. Run the `sonah visual` command the line names; it reuses the answers that came back.
+
+**`Graphs page: Visual review could not complete: <code>.`** and **`Graphs page: Fix: ...`** (on stderr)
+: The graphs page was not drawn, for one of the codes above. The review's page is written without the link, and says
+  in its header the same problem and its fix, in one line that starts `Graphs page: not drawn.` and names the `sonah
+  visual <range>` command (for `no_change`, a range such as `main..HEAD`): the page of a /sonah background review says
+  why too. A failed call, answers still needed or any other failure says `Sonah could not finish it.` there. The
+  review's exit code is its own: a graphs page that fails never changes it. Fix what the line says, then run the `sonah
+  visual <range>` that the next line names: it reuses the answers that came back. After `no_change` no such line
+  follows: give a range whose head is ahead of its base, such as `main..HEAD`. `--no-visual` skips the graphs page.
+
+**`Graphs page: on. ...`** or **`Graphs page: off ...`** (the last line of a `--dry-run` with `--format html`)
+: Whether the review would draw the graphs page, and if not, why: `(--no-visual)`, another backend, a limit, the code
+  review off, no git repository, or no start commit. The dry run reads no commit for it, so a review whose work is not
+  committed can still say `on`.
+
 ## Exit codes
 
 This is the one list of Sonah's exit codes. The exit code reports only whether Sonah's own review ran, never a
@@ -612,11 +670,17 @@ judgment of the agent's work: a review with findings that ran to the end exits `
 | `1` | Sonah's review ran but did not complete (a part of the session was not reviewed, or, with `--code-pass` on the command line, the code step did not cover the whole change and finish its checks; the output says which and why); or no session was found for this repository, or `--session` got an empty id; or `sonah doctor` found something to fix; or `sonah hook add` could not turn the commit link on by itself and printed the line for you to add; or `sonah skill add` or `sonah skill remove` found a file that Sonah did not write and changed nothing; or `sonah sessions --commits A..B` found no commit that names a session, or `sonah sessions --github OWNER/REPO --pr N` found none in a list that GitHub gave whole; or `sonah decision` refused an answer (the reason is printed). A code step that ran by default or by your setting never sets it by itself. |
 | `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model, a range git cannot list, a pull request GitHub does not answer for, or one whose list GitHub did not give whole and whose listed commits name no session) |
 | `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer; or `sonah skill add` or `sonah skill remove` could not write or delete its file |
-| `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again |
+| `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again. Ctrl-C while `sonah review` draws the graphs page (D219) stops that page only: the review writes its page and exits with its own code |
 
 `sonah visual` uses the same codes: `0` when the page is written, `1` when it ran and answers are still needed, `2` for
 invalid arguments or a problem it names with its fix (a call that stopped on your sign-in, plan or usage included), and
 `3` when it failed. Ctrl-C stops it; the same command goes on from the answers it stored.
+
+Plain `sonah`, with no command, in a terminal runs `sonah visual` and exits with its code. After a problem with its fix
+(`2`), it adds a line that points to `sonah --help`. In a pipe or a script, it prints the usage and exits `2`.
+
+The graphs page that `sonah review --format html` draws (D219) never changes the review's exit code: when it fails or
+you stop it, its lines say so, and the review exits as it would without it.
 
 ## Still stuck
 
