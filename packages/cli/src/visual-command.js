@@ -1,7 +1,11 @@
 // D216: `sonah visual`, the visual review of a branch's change: one page of what the change does, how it runs and where
 // it lies, with graphs (packages/visual). The range is read from local git only; the one thing that leaves the computer
-// is the `claude -p` calls the job makes, on the person's own Claude Code login. "Save online" and "Invite your team"
-// stay hidden: the job always gets no share url, so the page carries no upload and names no server.
+// while it runs is the `claude -p` calls the job makes, on the person's own Claude Code login.
+// D221: in a repository whose push remote names an owner and a repository, the page has "Save online" and "Invite your
+// team" (`visualShare`): links to the server's /share page of the review (https://pr.sonah.dev unless --server names
+// another), and the review's upload, which the page sends there only when the person presses one of them. The branch
+// whose tip is the head goes with it (none when no branch points at the head), so the saves of one branch land in one
+// saved review. Drawing the page sends nothing: no request to the server is made here.
 //
 // Exit codes, as every command's (bin/sonah.js): 0 the page is written; 1 the job ran and answers are still needed;
 // 2 a usage error, or a problem named with its fix (a range git cannot find, no default branch, a call that stopped on
@@ -21,8 +25,11 @@ import { LOCAL_PAGE_WORDS } from './local-page.js';
 
 /** The model the visual review asks when --model names none: a full id, which the review's attestation accepts. */
 export const VISUAL_DEFAULT_MODEL = 'claude-sonnet-5-5';
-/** The command's one usage line, printed under a usage error. */
-const VISUAL_USAGE_LINE = 'sonah visual [BASE..HEAD] [--out DIR] [--model ID] [--replay-only]';
+/** D221: the server "Save online" and "Invite your team" send the review to when --server names none. */
+export const VISUAL_DEFAULT_SERVER = 'https://pr.sonah.dev';
+/** The command's usage, printed under a usage error: two lines, each within 80 columns after `usage: `. */
+const VISUAL_USAGE_LINE = 'sonah visual [BASE..HEAD] [--out DIR] [--model ID] [--replay-only]\n'
+  + '                    [--server URL]';
 /** `sonah visual --help`, within 80 columns. */
 export const visualUsage = [`usage: ${VISUAL_USAGE_LINE}`,
   'Draws one page of a branch\'s change: what it does, with How and Where graphs.',
@@ -33,11 +40,20 @@ export const visualUsage = [`usage: ${VISUAL_USAGE_LINE}`,
   'range: from where HEAD left the default branch of your remote (origin/HEAD',
   'in your local git) to HEAD. Sonah reads only your local git: it never fetches.',
   '',
+  'When the push remote of the repository names its owner and name, the page',
+  'has Save online and Invite your team. Nothing is sent until you press one.',
+  'Then your browser sends the review (the code and diff of the change, the',
+  'commit messages and the findings), the repository\'s owner and name and the',
+  'branch to the server, where you sign in and it is saved to your account.',
+  '',
   'options:',
   '  --out DIR        the folder for the page, the requests and the answers',
   '                   (default: one per range and model, under ~/.sonah/visual)',
   `  --model ID       the model's full ID (default ${VISUAL_DEFAULT_MODEL})`,
   '  --replay-only    send nothing, and use only the answers in the folder',
+  '  --server URL     the server that Save online and Invite your team send the',
+  `                   review to (default ${VISUAL_DEFAULT_SERVER}): https, or`,
+  '                   http for this computer only',
   '',
   'Run the same command again to reuse the answers that Sonah stored.'].join('\n');
 
@@ -117,11 +133,27 @@ export function visualRange(text) {
   return sides.base === '' || sides.base.startsWith('-') || sides.head.startsWith('-') ? null : sides;
 }
 
+const LOOPBACK = Object.freeze(['localhost', '127.0.0.1', '[::1]']);
+/**
+ * D221: the server address "Save online" and "Invite your team" may send a review to, as the page names it: an https
+ * URL (http only for this computer: localhost, 127.0.0.1 or [::1]), with no user, password, query or fragment, as its
+ * origin and path with no trailing slash; null for anything else: over plain http the review would cross the network
+ * unencrypted.
+ */
+export function visualServer(text) {
+  if (typeof text !== 'string' || text === '' || /[\s\0?#]/.test(text)) return null;
+  let url;
+  try { url = new URL(text); } catch { return null; }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.includes(url.hostname))) return null;
+  if (url.username || url.password) return null;
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+}
+
 /** The command's options, or a thrown usage error. `--help` and `-h` are answered first, before anything is read. */
 export function parseVisualArgs(argv) {
-  const options = { range: null, out: null, model: null, replayOnly: false, help: false };
+  const options = { range: null, out: null, model: null, replayOnly: false, server: null, help: false };
   if (argv.includes('--help') || argv.includes('-h')) return { ...options, help: true };
-  const values = new Map([['--out', 'out'], ['--model', 'model']]);
+  const values = new Map([['--out', 'out'], ['--model', 'model'], ['--server', 'server']]);
   const seen = new Set();
   let range = null;
   for (let i = 0; i < argv.length; i++) {
@@ -141,6 +173,11 @@ export function parseVisualArgs(argv) {
   if (range !== null) {
     options.range = visualRange(range);
     if (!options.range) throw usageError('the range takes the form BASE..HEAD, BASE.. or BASE');
+  }
+  if (options.server !== null) {
+    options.server = visualServer(options.server);
+    if (options.server === null) throw usageError('--server takes an https address, such as '
+      + `${VISUAL_DEFAULT_SERVER}`);
   }
   return options;
 }
@@ -168,6 +205,82 @@ export async function defaultBase(top, { git = runGit } = {}) {
   if (!ref.startsWith(`refs/remotes/${remote}/`)) return { problem: 'default_branch_unknown' };
   const met = textOf(await git(['merge-base', 'HEAD', ref], { cwd: top }));
   return HASH.test(met) ? { base: met } : { problem: 'no_merge_base' };
+}
+
+// D221: the remotes whose URL names a repository on a server: git's network transports. A local path or a file: URL
+// names a folder on this computer, never a repository the server knows, so its folders never go into the page.
+const NETWORK_SCHEMES = Object.freeze(['https', 'http', 'ssh', 'git', 'git+ssh', 'ssh+git']);
+// The owner and repository names the server takes (its store's own rules), so the page never carries an upload the
+// server refuses for its name.
+const OWNER_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9]|[-_](?=[A-Za-z0-9])){0,99}$/;
+const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
+const SHA1 = /^[0-9a-f]{40}$/;
+
+/**
+ * D221: the repository a remote URL names on its server, as `{ owner, name }`: the last two parts of its path, from a
+ * network URL (`https://host/o/r.git`, `ssh://git@host/o/r`, ...) or git's short ssh form (`git@host:o/r.git`), on any
+ * host; `.git` and trailing slashes are dropped. Null for a local path, a `file:` URL, any other form, or names the
+ * server would refuse. Structure only: the URL is never shown or sent.
+ */
+export function remoteRepository(url) {
+  if (typeof url !== 'string' || /[\s\0]/.test(url.trim())) return null;
+  const text = url.trim();
+  let path;
+  const full = /^([a-z][a-z0-9+.-]*):\/\/([^/]*)(\/.*)?$/i.exec(text);
+  if (full) {
+    if (!NETWORK_SCHEMES.includes(full[1].toLowerCase()) || full[2] === '') return null;
+    path = full[3] ?? '';
+  } else {
+    // [user@]host:path, git's ssh form; a colon after a slash is a local path's (git reads it so too).
+    const short = /^(?:[^@/:]+@)?([^/:]+):(.*)$/.exec(text);
+    if (!short || short[2].startsWith('//')) return null;
+    path = short[2];
+  }
+  const parts = path.replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/\.git$/, '').split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+  const [owner, name] = parts.slice(-2);
+  return OWNER_NAME.test(owner) && REPO_NAME.test(name) && name !== '.' && name !== '..' ? { owner, name } : null;
+}
+
+const linesOf = (result) => textOf(result).split('\n').map((line) => line.trim()).filter(Boolean);
+const BRANCH_REF = 'refs/heads/';
+
+/**
+ * D221: what the page's "Save online" and "Invite your team" name, from local git only: `{ url, branch }`, or null when
+ * the page has neither. `url` is the server's /share page of the review (render.mjs `shareLink`: the server, the
+ * repository the push remote names and the head commit); `branch` the branch whose tip is `head` (the checked-out
+ * branch when it is, else the first local branch that is), or null when none is. The push remote is the branch's
+ * (`branch.<b>.pushRemote`, `remote.pushDefault`, `branch.<b>.remote`, as git pushes), else `origin`, else the only
+ * remote. Null with no such remote, a URL that names no repository (`remoteRepository`), a head that is not a SHA-1
+ * commit (the server takes 40 hex characters), or any git call that fails: the page then simply has no buttons.
+ */
+export async function visualShare({ top, head, server = VISUAL_DEFAULT_SERVER, git = runGit, shareLink }) {
+  try {
+    if (server === null || !SHA1.test(head ?? '') || typeof shareLink !== 'function') return null;
+    const at = linesOf(await git(['for-each-ref', '--format=%(refname)', `--points-at=${head}`, BRANCH_REF],
+      { cwd: top })).filter((ref) => ref.startsWith(BRANCH_REF)).map((ref) => ref.slice(BRANCH_REF.length));
+    const current = textOf(await git(['symbolic-ref', '--quiet', 'HEAD'], { cwd: top }));
+    const checkedOut = current.startsWith(BRANCH_REF) ? current.slice(BRANCH_REF.length) : null;
+    const branch = checkedOut !== null && at.includes(checkedOut) ? checkedOut : at[0] ?? null;
+    const remotes = linesOf(await git(['remote'], { cwd: top }));
+    const setting = async (key) => textOf(await git(['config', '--get', key], { cwd: top }));
+    let remote = null;
+    for (const key of [...(branch ? [`branch.${branch}.pushRemote`] : []), 'remote.pushDefault',
+      ...(branch ? [`branch.${branch}.remote`] : [])]) {
+      const value = await setting(key);
+      if (value && value !== '.') { remote = value; break; }
+    }
+    remote ??= remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : null;
+    if (remote === null) return null;
+    // A remote's name gives its push URL (git's own insteadOf rules applied); a branch's remote may also be a URL.
+    const url = remotes.includes(remote)
+      ? textOf(await git(['remote', 'get-url', '--push', '--', remote], { cwd: top })) : remote;
+    const named = remoteRepository(url);
+    if (!named) return null;
+    return { url: shareLink(server, { owner: named.owner, repo: named.name, head }), branch };
+  } catch {
+    return null;
+  }
 }
 
 /** The default folder of a range,
@@ -219,12 +332,15 @@ export const visualFixOf = (code) => (Object.hasOwn(VISUAL_FIX_WORDS, code) ? VI
  * once as `call_failed`, without starting claude, so the job ends soon. A call already running is not stopped here:
  * packages/visual's transport takes no signal. At a terminal, Ctrl-C is expected to reach that claude too, since it
  * runs in this process's group, but no test has sent Ctrl-C at a real terminal (D219, Left): that is not checked.
+ * D221: `server` (an address `visualServer` gave, or null for none) is where the page's "Save online" and "Invite your
+ * team" send the review; the page has them when `visualShare` finds a push remote that names the repository. Both
+ * commands draw it so: `sonah visual` with its --server, the review with the default server.
  * Resolves `{ status: 'complete', page, run }` (the page's path), `{ status: 'pending', needed, run }` (how many answers
  * are still needed) or `{ status: 'failed', code }` (a code of VISUAL_FIX_WORDS, a failed call's or `visual_failed`);
  * never rejects.
  */
 export async function drawVisualPage({ top, base, head, model = VISUAL_DEFAULT_MODEL, outDir, replayOnly = false,
-  env = process.env, git = runGit, onStart = null, signal = null }) {
+  env = process.env, git = runGit, onStart = null, signal = null, server = VISUAL_DEFAULT_SERVER }) {
   try {
     // A head the base already holds (the same commit, or one behind it) adds nothing to draw: the job would ask the
     // model about an empty change.
@@ -236,8 +352,11 @@ export async function drawVisualPage({ top, base, head, model = VISUAL_DEFAULT_M
       for (const folder of [outDir, join(outDir, 'requests'), join(outDir, 'answers')])
         mkdirSync(folder, { recursive: true, mode: 0o700 });
     } catch { return { status: 'failed', code: 'output_folder_unwritable' }; }
-    const [{ runJob }, { claudeTransport, TransportError }] = await Promise.all([import('../../visual/src/job.mjs'),
-      import('../../visual/src/transport-claude.mjs')]);
+    const [{ runJob }, { claudeTransport, TransportError }, { shareLink }] = await Promise.all([
+      import('../../visual/src/job.mjs'), import('../../visual/src/transport-claude.mjs'),
+      import('../../visual/src/render.mjs')]);
+    // D221: the buttons' link and branch, read from local git before the job starts (null: no buttons).
+    const share = await visualShare({ top, head, server, git, shareLink });
     const calls = replayOnly ? null : claudeTransport({ model, env: visualCallEnvironment(env) });
     // D219: after a stop, no new call starts (the transport's own `by` and `model` kept for the answers' records).
     const transport = calls && signal ? Object.assign(async (request) => {
@@ -250,7 +369,8 @@ export async function drawVisualPage({ top, base, head, model = VISUAL_DEFAULT_M
     process.env.GIT_NO_LAZY_FETCH = '1';
     let run;
     try {
-      run = await runJob({ repoDir: top, base, head, outDir, transport, mode: 'local', shareUrl: null, branch: null });
+      run = await runJob({ repoDir: top, base, head, outDir, transport, mode: 'local',
+        shareUrl: share?.url ?? null, branch: share?.branch ?? null });
     } finally {
       if (before === undefined) delete process.env.GIT_NO_LAZY_FETCH;
       else process.env.GIT_NO_LAZY_FETCH = before;
@@ -265,10 +385,10 @@ export async function drawVisualPage({ top, base, head, model = VISUAL_DEFAULT_M
 }
 
 /**
- * `sonah visual [BASE..HEAD] [--out DIR] [--model ID] [--replay-only]`: the exit code. `cwd` is where it runs (the
- * repository is its top folder); `env` is the environment the calls and Sonah's folder are read from. `presentPage`,
- * when given, is called with the written page's path in place of printing the `Local page:` line (D218: bare `sonah`
- * prints that line and opens the page, bare-command.js).
+ * `sonah visual [BASE..HEAD] [--out DIR] [--model ID] [--replay-only] [--server URL]`: the exit code. `cwd` is where it
+ * runs (the repository is its top folder); `env` is the environment the calls and Sonah's folder are read from.
+ * `presentPage`, when given, is called with the written page's path in place of printing the `Local page:` line (D218:
+ * bare `sonah` prints that line and opens the page, bare-command.js).
  */
 export async function runVisualCommand(argv, { stdout = process.stdout, stderr = process.stderr, cwd = undefined,
   env = process.env, git = runGit, presentPage = null } = {}) {
@@ -313,6 +433,7 @@ export async function runVisualCommand(argv, { stdout = process.stdout, stderr =
     // The job (`drawVisualPage`, which D219's review shares): the empty range, the folders, the calls and the page.
     const outDir = options.out !== null ? resolve(root, options.out) : visualOutDir({ top, base, head, model, env });
     const drawn = await drawVisualPage({ top, base, head, model, outDir, replayOnly: options.replayOnly, env, git,
+      server: options.server ?? VISUAL_DEFAULT_SERVER,
       onStart: (folder) => stderr.write(`${VISUAL_WORDS.started(base, head, folder)}\n`) });
     if (drawn.status === 'complete') {
       if (presentPage) await presentPage(drawn.page);

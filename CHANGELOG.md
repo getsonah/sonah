@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.0-beta.16 (2026-11-11)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+The graphs page now has "Save online" and "Invite your team": they put the review into Sonah Team, Sonah's hosted team
+version at https://pr.sonah.dev, where your team can read it and decide on it with you. Nothing is sent until you press
+one. What `sonah review` finds, and its own page, are the same as in 0.3.0-beta.15.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+### "Save online" and "Invite your team" on the graphs page
+
+The graphs page now has "Save online" and "Invite your team", wherever Sonah draws it (`sonah visual`, plain `sonah`
+and `sonah review --format html`), when the push remote of the repository names its owner and name. They put the review
+into Sonah Team, Sonah's hosted team version at https://pr.sonah.dev, where your team can read it and decide on it with
+you, as its plan allows. "Invite your team" saves it too and opens the invite.
+
+Nothing is sent when Sonah draws the page or when you open it. When you press one of the two buttons, your browser opens
+a new tab and sends the review to the server: the page as the team's site shows it, and what Sonah read and kept of the
+change: the repository's name; each of the range's commits with its full id, subject and body; the changed files' paths
+and line counts; each changed function's code with its added and removed lines; the story of the change; the findings
+with the lines they quote; the run's calls, models, times and list cost; and, from outside the change, up to 10 other
+places in the repository that call each changed function (each with its path, its line and the line that starts the
+function it is in), and, for JavaScript, TypeScript, Python and Go, the paths of up to 5 unchanged test files that call
+it and up to 300 unchanged functions that call a changed one (each with its path, name, owner and line). With it go the
+repository's owner and name from the address of its push remote and the branch whose tip is the head of the range. No
+path, token or setting of your computer is sent. The server keeps it for up to an hour until you sign in there, then
+saves it to your account; when you do not, its hourly clean-up deletes it. Its log names the repository and the head
+commit's first 7 characters, and a hash of your address is counted for a day for its rate limit. Pressing Save online on
+a newer review of the same branch updates the same saved review.
+[Privacy](docs/PRIVACY.md#save-online-and-invite-your-team) lists it all.
+
+`sonah visual --server URL` sends it to another Sonah server instead (https, or http for this computer only). With no
+remote, or a remote that is a folder on your computer, the page has neither button.
+
 ## 0.3.0-beta.15 (2026-11-10)
 
 This beta is experimental, and we want to hear how the report reads for you.

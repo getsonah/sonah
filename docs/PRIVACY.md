@@ -10,7 +10,8 @@ a review's first call to the reviewer or in `sonah doctor`, to npm's public regi
 you name a pull request with `--github` ([below](#what-leaves-your-computer)). `sonah visual` reads a range of commits
 from your local git, not a recording, and sends the change to the model through your own `claude` login; so does
 `sonah review --format html`, for the session's commits, when the session's work is committed (D219; `--no-visual`
-skips it).
+skips it). That page has "Save online" and "Invite your team": only when you press one does your browser send that
+review to Sonah's hosted team version ([below](#save-online-and-invite-your-team)).
 
 Sonah masks nothing and withholds nothing for privacy's sake. The model reads your session as it was recorded and, in
 the code step, the files it is sent and any file that its agents open. The page, the Markdown report, the terminal and
@@ -103,7 +104,9 @@ the last row of the table above says they can open.
 `--backend codex-cli --model gpt-6.1-sol` uses your `codex` login instead, read-only, with its tools and web search off.
 `--backend anthropic-api` posts the same requests to Anthropic's API with your `ANTHROPIC_API_KEY`.
 
-Sonah sends nothing to us: no telemetry, no analytics. It makes one request that you do not ask for, the update check:
+Sonah sends nothing to us on its own: no telemetry, no analytics. Your work reaches Sonah's server only when you press
+"Save online" or "Invite your team" on a graphs page ([below](#save-online-and-invite-your-team)). Sonah makes one
+request that you do not ask for, the update check:
 once a day at most, with a review's first call to the reviewer and in `sonah doctor`, a GET of
 `https://registry.npmjs.org/-/package/getsonah/dist-tags`, npm's public list of getsonah's version tags, so that it can
 tell you when a newer Sonah is out (one line on stderr after the review, a line in `sonah doctor`, and a line in the
@@ -120,6 +123,38 @@ you confirm it (see Sharing below); and `sonah sessions --github OWNER/REPO --pr
 metadata and the list of its commits (their ids, messages and times) and posts nothing ([The Agent-Session
 line](#the-agent-session-line)). Each sends your GitHub token when you have one. Your provider's own terms apply to what
 it receives.
+
+### Save online and Invite your team
+
+The graphs page (of `sonah visual`, of plain `sonah` and of `sonah review --format html`) has "Save online" and
+"Invite your team" when the push remote of the repository names its owner and name: the remote your branch pushes to
+(`branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`), else `origin`, else your only remote,
+and its address read from your local git, never shown. A remote that is a folder on your computer, or a `file:`
+address, names none, and the page then has neither button. Drawing the page sends nothing, and the page makes no request
+when you open it.
+
+When you press one of the two buttons, your browser opens a new tab and posts a form to the server's `/share` page:
+`https://pr.sonah.dev/share`, Sonah's hosted team version (Sonah Team), unless you gave `sonah visual --server URL`
+(https, or http for this computer only). The form holds two fields: whether you pressed Save online or Invite your team,
+and the review as the page holds it: the page as the team's site shows it, and the folder's `facts.json`,
+`meaning.json`, `findings.json` and `run.json`. Those hold the repository's name; the range's two ends and each of its
+commits' full id, subject and body; the changed files' paths and line counts; each changed function's code with its
+added and removed lines; the story of the change; the findings with the lines they quote; and the run's calls, models,
+times and list cost. They also hold code from outside the change: for each changed function, up to 10 other places in
+the repository that call it, each with its path, its line and the line that starts the function it is in, in any
+language; and, where the change is in JavaScript, TypeScript, Python or Go, the paths of up to 5 unchanged test files
+that call each changed function, and up to 300 unchanged functions elsewhere in the repository that call a changed one,
+each with its path, name, owner and line. With them go the repository's owner and name from the remote's address and the
+branch whose tip is the head of the range (none when no branch points at it). No path, token, setting or recording of
+your computer is in it. Over 25 MB the page holds no review, and the buttons only open the server's page of that review,
+which then cannot be saved from there.
+
+Until you sign in there, the server keeps the review for up to an hour, and saves it to your account when you do; when
+you do not, its hourly clean-up deletes it after that hour (within a day at the latest). Whether or not you sign in, its
+log names the repository and the first 7 characters of the head commit each time a review waits to be saved, and a hash
+of your address is counted for a day for its rate limit. Pressing Save online on a newer review of the same branch
+updates the same saved review. "Invite your team" saves it too and opens the invite. What your team can see there
+follows Sonah Team's own rules and plan, on its site.
 
 ## What is never sent
 
@@ -182,7 +217,7 @@ recorded, like the recording itself.
 | The update check's setting (`sonah config update-check`) | `~/.sonah/update-check-setting.json` | Whether the update check is on, once you set it. Readable by you only; one that is not yours, that others can write or that cannot be read turns the check off. |
 | The update check's last answer | `~/.sonah/update-check.json` | When Sonah last asked npm's registry for getsonah's latest version, and the version it answered (none when it did not answer). Readable by you only. Written only with a review's first call to the reviewer and by `sonah doctor`, and not while the check is off. |
 | The page or Markdown you asked for | the `--output` file | Never overwrites an existing file. It holds your session as recorded. |
-| The page of a change (`sonah visual`, and the graphs page of a review's HTML page) | `~/.sonah/visual/<the repository folder's name and a hash of its path>/<the range's two commits and the model>/` (or `--out DIR`) | Only if you ran it, or a review drew it (the review's page links to its `page.html` by its full path; the Markdown report never names it). The page (`page.html`), each request as it was sent (`requests/`) and its answer (`answers/`), what Sonah read of the change (`facts.json`), and what it kept and why (`meaning.json`, `findings.json`, `dropped.json`, `run.json`). A rerun of the same range with the same model replays the stored answers. They quote your code as it is in the commits; they are never sent anywhere. Sonah never deletes this folder: remove it when you no longer need it. |
+| The page of a change (`sonah visual`, and the graphs page of a review's HTML page) | `~/.sonah/visual/<the repository folder's name and a hash of its path>/<the range's two commits and the model>/` (or `--out DIR`) | Only if you ran it, or a review drew it (the review's page links to its `page.html` by its full path; the Markdown report never names it). The page (`page.html`), each request as it was sent (`requests/`) and its answer (`answers/`), what Sonah read of the change (`facts.json`), and what it kept and why (`meaning.json`, `findings.json`, `dropped.json`, `run.json`). A rerun of the same range with the same model replays the stored answers. They quote your code as it is in the commits. The page holds the review that "Save online" and "Invite your team" send, and they are sent only when you press one ([above](#save-online-and-invite-your-team)); nothing else here is ever sent. Sonah never deletes this folder: remove it when you no longer need it. |
 | A PR comment's posting journal | `publication/` in the review's folder above | Only if you posted one. |
 | The /sonah skill (`sonah skill add`) | `~/.claude/skills/sonah/SKILL.md` (or under `CLAUDE_CONFIG_DIR`) | Only if you added it. It holds no session text: when you type `/sonah`, it runs `sonah review --session <the session's id> --background`, which reads and sends what `sonah review` does. `sonah skill remove` deletes it. |
 | The page, Markdown report and log of `sonah review --session ID --background` | `background/` in the review's folder above | Only if you ran one. The page and the report hold your session as recorded; the log holds what the review printed. `active.json` there holds the process id of the review it started, nothing else. |
@@ -232,11 +267,13 @@ and share them only where you would share the recording. The page loads nothing 
 a prompt for the agent and follows the page's links to their place. For Back, each link it follows adds an entry to the
 browser's history, and the script keeps in the current entry the tab you are on, the scroll and the link you took, and
 the new entry names the place. It reads only the address's `#` part and those entries, and sends nothing. The page of
-`sonah visual` quotes your code and loads nothing from the network either. Its script moves between its parts and
-graphs, keeps your light or dark choice in the browser, and sends nothing. When `sonah review --format html` drew the
-graphs page of the session's commits (D219), its page links to that page by its full path on your computer (a `file:`
-link, which names your home folder): a copy of the page that you share names that path, and the link opens nothing on
-another computer. The Markdown report never holds it.
+`sonah visual` quotes your code and loads nothing from the network either. Its script moves between its parts and graphs
+and keeps your light or dark choice in the browser; it sends the review it holds only when you press "Save online" or
+"Invite your team" ([above](#save-online-and-invite-your-team)). A copy of the page that you share holds that review
+too, and its buttons work for whoever opens it: they save it to their own account. When `sonah review --format html`
+drew the graphs page of the session's commits (D219), its page links to that page by its full path on your computer (a
+`file:` link, which names your home folder): a copy of the page that you share names that path, and the link opens
+nothing on another computer. The Markdown report never holds it.
 
 Nothing is ever posted unless you ask. A review with `--github OWNER/REPO --pr N --post-comment` can leave one comment
 and one neutral GitHub check on that pull request: it needs a private repository, a GitHub App token and your typed

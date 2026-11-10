@@ -152,13 +152,20 @@ lists the messages and exit codes.
   met that base), through your own `claude` login: the repository's name, the commits' messages, the changed files'
   paths and each changed function's code with its added and removed lines. It reads no recording. The review skips it
   with `--no-visual`.
-- **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us: no telemetry, no analytics.
-  Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's public registry
-  for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`) and tells you
-  when a newer Sonah is out. That request holds no session text, path, setting or id: npm sees the request itself, from
-  your IP address, as for any package download. Sonah never installs anything. Turn the check off with
-  `sonah config update-check off` or `SONAH_NO_UPDATE_CHECK=1`; it is off when `CI` is set. Sonah asks GitHub only about
-  a pull request you name with `--github`, and posts nothing to GitHub unless you ask and confirm.
+- **When you press "Save online" or "Invite your team" on that page:** your browser sends that review to Sonah's
+  hosted team version, https://pr.sonah.dev (or the server that `sonah visual --server` names): the change's code and
+  diff as the review holds them, the commits' ids and messages, the findings, the paths and names of functions
+  elsewhere in the repository that call the changed ones, the repository's owner and name and the branch
+  ([Privacy](docs/PRIVACY.md#save-online-and-invite-your-team) lists it all). You sign in there and it is saved to
+  your account. Nothing is sent until you press one, and the buttons are there only when the push remote of the
+  repository names its owner and name.
+- **Nothing else about you or your work leaves your computer.** Sonah sends nothing to us on its own: no telemetry, no
+  analytics. Once a day at most, with a review's first call to the reviewer and in `sonah doctor`, it asks npm's
+  public registry for getsonah's latest version (one GET of `https://registry.npmjs.org/-/package/getsonah/dist-tags`)
+  and tells you when a newer Sonah is out. That request holds no session text, path, setting or id: npm sees the
+  request itself, from your IP address, as for any package download. Sonah never installs anything. Turn the check off
+  with `sonah config update-check off` or `SONAH_NO_UPDATE_CHECK=1`; it is off when `CI` is set. Sonah asks GitHub
+  only about a pull request you name with `--github`, and posts nothing to GitHub unless you ask and confirm.
 - **Sonah masks nothing.** The page and the .md show the session as the recording holds it, secrets included. Read the
   report before you share it.
 

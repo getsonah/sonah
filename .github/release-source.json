@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/4",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "f8b49d2ff1fb0c25e684e29bd5c30d002a3289c2",
+  "sourceHead": "2fd195d19870bc929a7e6554145c070427c80c46",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -56,8 +56,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "fc15d670b0ed5e9d0aca158c63747db39ae3b27671b70707cd389f1682ae57ac",
-      "bytes": 154779,
+      "sha256": "8725d3ad4ae4fedb8c2fa31897102a6436eb92d9a5d7c6829642e55bda8dcf45",
+      "bytes": 157712,
       "mode": 420
     },
     {
@@ -80,8 +80,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "97fdcf693cb66e896f7c206d5dbe961a8cc3c8c6ac6b24fce2b219557021144c",
-      "bytes": 11964,
+      "sha256": "bd263233bbfbff69142db1d59cedad1d7d4fe9cf188b4d0239bb3a5790ff7752",
+      "bytes": 12688,
       "mode": 420
     },
     {
@@ -110,25 +110,25 @@
     },
     {
       "path": "docs/INSTALL.md",
-      "sha256": "a8cc70806058bb67298f6fe96700de12ad5b5410c5ced76e6992711d61ad2d12",
-      "bytes": 80989,
+      "sha256": "ba64d7366a7e22266c02702ec025a64d4e83bf090c581a954fbfd4b725239ff6",
+      "bytes": 82305,
       "mode": 420
     },
     {
       "path": "docs/PRIVACY.md",
-      "sha256": "9c635b8e3f5d5200486914dc961d724777c336ec9302334347c467795e379f7f",
-      "bytes": 33325,
+      "sha256": "dc0f4778d6bdc8f440021453efebb1859b331339089a5801f6e05cfb9d0e127e",
+      "bytes": 37052,
       "mode": 420
     },
     {
       "path": "docs/TROUBLESHOOTING.md",
-      "sha256": "2e1ff11c5c1f64cf23c0252901d1f895da9d503567b6bf038d926cbe0452d6cc",
-      "bytes": 76755,
+      "sha256": "ee2e361489b2cff37c3832273c6cc5860ab08e701898a0b721bf119193adffff",
+      "bytes": 77296,
       "mode": 420
     },
     {
       "path": "package.json",
-      "sha256": "e026aa013868c114d7c13dcf337648bea780220d8275565261715617be4d3c0f",
+      "sha256": "bdb24548157987ef51ea881e7db2f407780a4d85ab5cc9e204d7a30484861e0a",
       "bytes": 7638,
       "mode": 420
     },
@@ -362,8 +362,8 @@
     },
     {
       "path": "packages/cli/src/visual-command.js",
-      "sha256": "835638a1ba45df20a0b6102b1c0531c8c340d49fb3561639cd981ae5243258ec",
-      "bytes": 20028,
+      "sha256": "e8b093227eea822d5ad0635e55f1e0ae50d4319d57994028c78f8d9f781e2112",
+      "bytes": 27849,
       "mode": 420
     },
     {
@@ -842,8 +842,8 @@
     },
     {
       "path": "packages/cli/test/d219-review-graphs.test.js",
-      "sha256": "149af22578e0e467c0ace4921e5e678b97a8485fce22daff075c14f0cee77034",
-      "bytes": 43511,
+      "sha256": "ea485a43456edfd184660659e649aa3b85e757adaa70c54080821fe83db18c3d",
+      "bytes": 44077,
       "mode": 420
     },
     {
@@ -1274,8 +1274,8 @@
     },
     {
       "path": "packages/cli/test/visual-command.test.js",
-      "sha256": "ec478e4518a33475dae541489127a681523ebcb32bf322ab6a051816974c9af0",
-      "bytes": 18120,
+      "sha256": "7d1e28035072ad92882a24e0d85962b8b9722c765353c27356e79baba0015120",
+      "bytes": 27181,
       "mode": 420
     },
     {

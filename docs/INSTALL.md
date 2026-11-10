@@ -153,8 +153,10 @@ same tools. They read what they need over your working directory, its repository
 file of the change and, when the change is reviewed in parts, Sonah's copy of the changed files as they were at the
 start commit, and send it to the model as they work. A review that writes its HTML page also draws the graphs page,
 unless `--no-visual`: it sends the repository's name, the messages of the commits from the start of its range to HEAD
-and the code of the functions they change to `claude -p`, on the graphs page's model (`claude-sonnet-5-5`). Nothing
-else about you or your work leaves your computer: no telemetry. The other requests are the update check, once a
+and the code of the functions they change to `claude -p`, on the graphs page's model (`claude-sonnet-5-5`). The
+graphs page sends its review to Sonah's server only when you press its "Save online" or "Invite your team"
+([Draw a branch's change](#draw-a-branchs-change-sonah-visual)). Nothing else about you or your work leaves your
+computer: no telemetry. The other requests are the update check, once a
 day at most, to npm's public registry ([Update](#update) says
 what it does and how to turn it off), and requests to GitHub, only when you name a pull request with `--github`. Nothing
 is masked or withheld, in what is sent or in what Sonah shows and keeps: treat the page, the .md and `~/.sonah` as
@@ -647,6 +649,15 @@ and asks for a range. `git remote set-head origin --auto` sets it (git asks the 
 
 **What it prints.** `Local page: <path>`: open that file in your browser. The page needs no network.
 
+**Save online and Invite your team.** When the push remote of the repository names its owner and name (the remote your
+branch pushes to, else `origin`, else your only remote), the page has "Save online" at its top right and "Invite your
+team" there and at the end of Decide. Pressing either opens a new tab at Sonah's hosted team version,
+https://pr.sonah.dev, and sends it the review the page holds, with the repository's owner and name and the branch
+whose tip is the head; you sign in there and it is saved to your account. Saving a newer review of the same branch
+updates the same saved review, and "Invite your team" also opens the invite. Nothing is sent before you press one, and a
+remote that is a folder on your computer gives a page with neither button.
+[PRIVACY.md](PRIVACY.md#save-online-and-invite-your-team) says what the review holds.
+
 **From a review.** `sonah review --format html` draws this page for the session's commits too, from where the session
 started (with `--code-base`, where your branch and that base meet) to `HEAD`, with the same default model and folder,
 and its page links to it ([The graphs page](#reading-the-result)). It prints `Graphs page: <path>`, not `Local page:`,
@@ -668,6 +679,9 @@ stopped. `--out DIR` uses that folder instead. Sonah never deletes these folders
 - `--replay-only`: send nothing, and draw from the stored answers alone. When some are missing, it says at least how
   many and exits `1`; run it again without `--replay-only` to ask for them.
 - `--out DIR`: the folder for the page, the requests and the answers.
+- `--server URL`: the server that "Save online" and "Invite your team" send the review to (default
+  `https://pr.sonah.dev`), for a Sonah server of your own. It takes https, or http for this computer only (`localhost`,
+  `127.0.0.1` or `[::1]`), with no user, password, query or fragment.
 
 It calls the model through your own `claude` login, as a session review does: never with an API key from your
 environment. [PRIVACY.md](PRIVACY.md#what-leaves-your-computer) says what each request holds. It exits `0` when the
@@ -934,7 +948,7 @@ It can be wrong. That is why every row carries the evidence you need to check it
 
 ## Known limits
 
-Sonah is a beta (`0.3.0-beta.15`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
+Sonah is a beta (`0.3.0-beta.16`), on npm as the package `getsonah`. Commands, the page and the files under `~/.sonah`
 can change between betas.
 
 - Claude Code and Codex are supported. Cursor is experimental. macOS and Linux are supported; Windows has not been

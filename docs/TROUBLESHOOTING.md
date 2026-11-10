@@ -568,7 +568,13 @@ prints what to add, and exits 1.
 
 `sonah visual` prints its problems in fixed words, never git's or the model's text. A usage error prints `sonah visual:
 <the problem>.` and the usage line, and exits `2`: a range of another shape than `BASE..HEAD`, `BASE..` or `BASE` (`...`
-is refused), an unknown option, or an option with no value.
+is refused), an unknown option, an option with no value, or a `--server` address that is not https (http only for
+this computer) or that holds a user, password, query or fragment.
+
+**No "Save online" or "Invite your team" on the page.** The page has them only when the push remote of the repository
+names its owner and name (`git remote -v` lists the remotes): with no remote, a remote that is a folder on your computer
+or a `file:` address, or a head that is not a SHA-1 commit, it has neither. A review over 25 MB keeps the buttons as
+links to the server's page of the review, which cannot save it.
 
 **`Visual review is not complete: at least N answers are still needed. ...`**
 : Exit `1`. With `--replay-only`, the folder does not hold every answer yet: run the same command without

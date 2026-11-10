@@ -585,6 +585,13 @@ test('D219: with the real drawer, the review draws the graphs page with sonah vi
   assert.match(run.out, /^Graphs page usage: \d+ model calls?, list cost \$\d+\.\d\d, as the footer of the page counts them\.$/m);
   assert.ok(run.err.includes(`${W.started}\n`));
   assert.match(readFileSync(graphs, 'utf8'), /^<!doctype html>/i);
+  // D221: the review's graphs page, like sonah visual's, has Save online for the repository its remote names, on the
+  // default server, with its branch.
+  const graphsPage = readFileSync(graphs, 'utf8');
+  assert.ok(graphsPage.includes(`id="saveonline" href="https://pr.sonah.dev/share?owner=example-org&amp;`
+    + `repo=example-api&amp;head=${head}"`));
+  assert.ok(graphsPage.includes('<script type="application/json" id="sonah-upload" data-action="https://pr.sonah.dev/'
+    + 'share">{"repo":{"owner":"example-org","name":"example-api"},"branch":"main",'));
   assert.ok((await readFile(output, 'utf8')).includes(`href="${pathToFileURL(graphs).href}"`));
   // The calls: the visual's model, on the person's login (no API key), none of the review's.
   const calls = readFileSync(join(repo.env.HOME, 'fake-claude.log.jsonl'), 'utf8').split('\n').filter(Boolean)

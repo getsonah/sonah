@@ -16,8 +16,10 @@ import { extract } from '../../visual/src/extract.mjs';
 import { functionRequests, storyRequest, findingsRequest, mapAnswerIds, STORY_SYSTEM, FINDINGS_SYSTEM }
   from '../../visual/src/requests.mjs';
 import { checkFunctions } from '../../visual/src/checks.mjs';
-import { parseVisualArgs, runVisualCommand, visualRange, visualUsage, VISUAL_DEFAULT_MODEL }
-  from '../src/visual-command.js';
+import { shareLink } from '../../visual/src/render.mjs';
+import { parseVisualArgs, remoteRepository, runVisualCommand, visualRange, visualServer, visualShare, visualUsage,
+  VISUAL_DEFAULT_MODEL, VISUAL_DEFAULT_SERVER } from '../src/visual-command.js';
+import { runGit } from '../src/code-snapshot.js';
 
 const exec = promisify(execFile);
 // fileURLToPath, never URL.pathname: a checkout may live under a folder with a space in its name.
@@ -126,9 +128,13 @@ test('the range shapes and the options, before anything is read', () => {
   assert.deepEqual(visualRange('a~2..b^'), { base: 'a~2', head: 'b^' });
   for (const bad of ['', '..', '..b', 'a...b', 'a..b..c', '-x', 'a..-b', 'a ..b', 'a\0..b', 'a\t'])
     assert.equal(visualRange(bad), null, JSON.stringify(bad));
-  assert.deepEqual(parseVisualArgs([]), { range: null, out: null, model: null, replayOnly: false, help: false });
+  assert.deepEqual(parseVisualArgs([]), { range: null, out: null, model: null, replayOnly: false, server: null,
+    help: false });
   assert.deepEqual(parseVisualArgs(['a..b', '--out', 'o', '--model', 'm', '--replay-only']),
-    { range: { base: 'a', head: 'b' }, out: 'o', model: 'm', replayOnly: true, help: false });
+    { range: { base: 'a', head: 'b' }, out: 'o', model: 'm', replayOnly: true, server: null, help: false });
+  // D221: --server, as the page may name it.
+  assert.equal(parseVisualArgs(['--server', 'https://sonah.example.com/team/']).server, 'https://sonah.example.com/team');
+  assert.equal(VISUAL_DEFAULT_SERVER, 'https://pr.sonah.dev');
   assert.equal(parseVisualArgs(['--out', '-h']).help, true, '--help is a question, wherever it stands');
   assert.equal(VISUAL_DEFAULT_MODEL, 'claude-sonnet-5-5');
   for (const line of visualUsage.split('\n')) assert.ok(line.length <= 80, `wider than 80 columns: ${line}`);
@@ -156,11 +162,15 @@ test('a usage error exits 2, names the problem and writes nothing', async () => 
     [['--model', '--replay-only'], '--model needs a value.'],
     [['--replay-only', '--replay-only'], '--replay-only is given twice.'],
     [['--out=elsewhere'], 'unknown option --out=...'],
+    [['--server', 'http://sonah.example.com'], '--server takes an https address, such as https://pr.sonah.dev.'],
+    [['--server', 'https://sonah.example.com/?team=1'], '--server takes an https address, such as https://pr.sonah.dev.'],
+    [['--server', '--replay-only'], '--server needs a value.'],
     [['--fast'], 'unknown option --fast.']]) {
     const r = await run(['visual', ...args], where);
     assert.equal(r.code, 2, args.join(' '));
     assert.equal(r.stderr, `sonah visual: ${said}\nusage: sonah visual [BASE..HEAD] [--out DIR] [--model ID] `
-      + '[--replay-only]\nRun sonah visual --help to see the options.\n', args.join(' '));
+      + '[--replay-only]\n                    [--server URL]\nRun sonah visual --help to see the options.\n',
+    args.join(' '));
     assert.equal(r.stdout, '');
   }
   assert.deepEqual(readdirSync(where.home), []);
@@ -221,7 +231,8 @@ test('no range: the base is where HEAD left the remote\'s default branch, from l
   }
 });
 
-test('a full run writes the local page with no share or upload, on the person\'s login; a rerun replays it',
+test('with no push remote, a full run writes the local page with no share or upload, on the person\'s login; a rerun '
+  + 'replays it',
   async () => {
   const facts = await extract({ repoDir: repo, base, head });
   const where = box('full', standInRules(facts));
@@ -295,4 +306,122 @@ test('a call that stops on the account exits 2 with its fix; no claude on PATH i
     path: onlyGit });
   assert.equal(m.code, 2, m.stderr);
   assert.match(m.stderr, /\nVisual review could not complete: cli_missing\.\nFix: Sonah could not start claude\./);
+});
+
+/** D221: what a local page carries for "Save online" and "Invite your team" (render.mjs: a JSON script element), as
+ *  `{ action, body }`, or null when it carries none. */
+function carried(page) {
+  const found = /<script type="application\/json" id="sonah-upload" data-action="([^"]*)">([\s\S]*?)<\/script>/
+    .exec(page);
+  return found ? { action: found[1], body: JSON.parse(found[2]) } : null;
+}
+/** The page without the upload it carries: the review it would send holds the hosted page, which keeps its font link. */
+const withoutUpload = (page) => page.replace(/<script type="application\/json" id="sonah-upload"[\s\S]*?<\/script>/,
+  '');
+
+test('D221: the remote URL forms that name a repository, the addresses --server takes, and the branch of the head',
+  async () => {
+  const widget = { owner: 'example-org', name: 'widget' };
+  for (const [url, named] of [['https://github.com/example-org/widget.git', widget],
+    ['https://github.com/example-org/widget/', widget], ['git@github.com:example-org/widget.git', widget],
+    ['ssh://git@github.com/example-org/widget.git', widget], ['git@git.example.com:example-org/widget', widget],
+    ['https://gitlab.example.com/group/example-org/widget.git', widget]])
+    assert.deepEqual(remoteRepository(url), named, url);
+  for (const url of ['/srv/git/example-org/widget.git', './example-org/widget', '../example-org/widget.git',
+    'file:///srv/git/example-org/widget.git', 'https://github.com/widget', 'https://github.com/example.org/widget',
+    'https://github.com/example-org/..', 'ext::ssh -i key host example-org/widget', '', null])
+    assert.equal(remoteRepository(url), null, String(url));
+
+  for (const [text, server] of [['https://pr.sonah.dev', 'https://pr.sonah.dev'],
+    ['https://pr.sonah.dev/', 'https://pr.sonah.dev'], ['https://sonah.example.com/team/', 'https://sonah.example.com/team'],
+    ['http://127.0.0.1:8787', 'http://127.0.0.1:8787'], ['http://localhost:8787/', 'http://localhost:8787'],
+    ['http://[::1]:8787', 'http://[::1]:8787']]) assert.equal(visualServer(text), server, text);
+  for (const text of ['http://sonah.example.com', 'https://you@sonah.example.com', 'https://sonah.example.com/?a',
+    'https://sonah.example.com#a', 'ftp://sonah.example.com', 'sonah.example.com', 'https://sonah.example.com/ x', '',
+    null]) assert.equal(visualServer(text), null, String(text));
+
+  const share = (sha, options = {}) => visualShare({ top: repo, head: sha, shareLink, ...options });
+  assert.equal(await share(head), null, 'no remote: no buttons');
+  git(['remote', 'add', 'origin', 'https://github.com/example-org/widget.git']);
+  try {
+    const link = (sha) => shareLink(VISUAL_DEFAULT_SERVER, { owner: 'example-org', repo: 'widget', head: sha });
+    assert.deepEqual(await share(head), { url: link(head), branch: 'feature' }, 'the checked-out branch');
+    assert.deepEqual(await share(base), { url: link(base), branch: 'main' }, 'the branch whose tip it is');
+    // A commit no branch points at goes with no branch: its saves are one saved review per head.
+    const loose = git(['commit-tree', `${head}^{tree}`, '-p', head, '-m', 'Not on a branch']);
+    assert.deepEqual(await share(loose), { url: link(loose), branch: null });
+    assert.deepEqual(await share(head, { server: 'http://127.0.0.1:8787' }), { url: shareLink('http://127.0.0.1:8787',
+      { owner: 'example-org', repo: 'widget', head }), branch: 'feature' });
+    assert.equal(await share(head, { server: null }), null, 'no server: no buttons');
+    assert.equal(await share('a'.repeat(64)), null, 'the server takes a SHA-1 commit only');
+    assert.equal(await share(head, { git: async () => ({ ok: false, stdout: null }) }), null, 'git failed: no buttons');
+    assert.equal(await share(head, { git: async () => { throw new Error('SYNTHETIC'); } }), null);
+    // Only local reads: no git call here reaches a remote.
+    const asked = [];
+    await share(head, { git: (args, options) => { asked.push(args[0]); return runGit(args, options); } });
+    assert.deepEqual([...new Set(asked)].sort(), ['config', 'for-each-ref', 'remote', 'symbolic-ref']);
+  } finally {
+    git(['remote', 'remove', 'origin']);
+  }
+});
+
+test('D221: with a push remote, the page has Save online and Invite your team and carries its review for them',
+  async () => {
+  const facts = await extract({ repoDir: repo, base, head });
+  const where = box('share', standInRules(facts));
+  const out = join(scratch, 'share-out');
+  git(['remote', 'add', 'origin', 'git@github.com:example-org/widget.git']);
+  try {
+    const r = await run(['visual', `${base}..feature`, '--out', out], where);
+    assert.equal(r.code, 0, r.stderr + r.stdout);
+    assert.equal(r.stdout, `Local page: ${join(out, 'page.html')}\n`);
+    const page = readFileSync(join(out, 'page.html'), 'utf8');
+    const link = `https://pr.sonah.dev/share?owner=example-org&amp;repo=widget&amp;head=${head}`;
+    assert.ok(page.includes(`id="saveonline" href="${link}"`), 'Save online links to the server\'s /share page');
+    assert.equal(page.split(`href="${link}"`).length - 1, 3, 'Save online, and Invite your team twice');
+    assert.equal(page.split('data-intent="invite"').length - 1, 2, 'Invite your team at the top and at the end of Decide');
+    const sent = carried(page);
+    assert.equal(sent.action, 'https://pr.sonah.dev/share');
+    assert.deepEqual([sent.body.repo, sent.body.branch, sent.body.base, sent.body.head],
+      [{ owner: 'example-org', name: 'widget' }, 'feature', base, head]);
+    for (const name of ['facts', 'meaning', 'findings', 'run'])
+      assert.deepEqual(sent.body[name], JSON.parse(readFileSync(join(out, `${name}.json`), 'utf8')), name);
+    assert.match(sent.body.page, /^<!doctype html>/i);
+    assert.doesNotMatch(sent.body.page, /id="saveonline"|id="sonah-upload"/, 'it sends the page the team page frames');
+    // Outside what it would send, the page names the SVG namespaces and the server only, and no folder of this computer.
+    for (const url of new Set(withoutUpload(page).match(/https?:\/\/[^\s"'<>)\\]+/g) ?? []))
+      assert.match(url, /^(?:http:\/\/www\.w3\.org\/(?:2000\/svg|1999\/xlink)|https:\/\/pr\.sonah\.dev\/share(?:\?.*)?)$/,
+        url);
+    assert.ok(!page.includes(scratch), 'no path of this computer');
+
+    // --server names another server; the stored answers draw the page again.
+    const again = await run(['visual', `${base}..feature`, '--out', out, '--replay-only', '--server',
+      'http://127.0.0.1:8787/'], where);
+    assert.equal(again.code, 0, again.stderr);
+    const local = readFileSync(join(out, 'page.html'), 'utf8');
+    assert.equal(carried(local).action, 'http://127.0.0.1:8787/share');
+    assert.ok(local.includes(`id="saveonline" href="http://127.0.0.1:8787/share?owner=example-org&amp;repo=widget`
+      + `&amp;head=${head}"`));
+
+    // The branch's push remote, as git pushes it: branch.feature.pushRemote names another remote.
+    git(['remote', 'add', 'fork', 'https://gitlab.example.com/someone/widget-fork.git']);
+    git(['config', 'branch.feature.pushRemote', 'fork']);
+    const fork = await run(['visual', `${base}..feature`, '--out', out, '--replay-only'], where);
+    assert.equal(fork.code, 0, fork.stderr);
+    assert.deepEqual(carried(readFileSync(join(out, 'page.html'), 'utf8')).body.repo,
+      { owner: 'someone', name: 'widget-fork' });
+
+    // A remote that is a folder on this computer names no repository: the page has neither button and no upload.
+    git(['config', '--unset', 'branch.feature.pushRemote']);
+    git(['remote', 'remove', 'fork']);
+    git(['remote', 'set-url', 'origin', join(scratch, 'elsewhere', 'widget.git')]);
+    const plain = await run(['visual', `${base}..feature`, '--out', out, '--replay-only'], where);
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.doesNotMatch(readFileSync(join(out, 'page.html'), 'utf8'), /id="saveonline"|data-intent=|id="sonah-upload"/);
+  } finally {
+    if (git(['config', '--list', '--local']).includes('branch.feature.pushremote='))
+      git(['config', '--unset', 'branch.feature.pushRemote']);
+    const left = git(['remote']).split('\n').filter(Boolean);
+    for (const name of ['origin', 'fork']) if (left.includes(name)) git(['remote', 'remove', name]);
+  }
 });
