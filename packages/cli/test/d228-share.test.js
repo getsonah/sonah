@@ -1855,9 +1855,12 @@ test('D228 review (second look 2, review 2): a push made with an address leaves 
   s.repo.git(['push', '-q', 'origin', 'feature']);
   // The commit dropped and the branch force-pushed with the repository's address pasted in rather than the remote's
   // name, which leaves `remote` null on that run (`ticketFields`): the remote's branch holds the first commit again,
-  // and no ref here was moved by that push, so this clone's own cache is behind the branch.
+  // and this clone's own cache is behind the branch. Before git 2.56 such a push moves no ref here; from 2.56 it moves
+  // `origin/feature` too, when the address is, as here, the push URL of exactly one remote. A push from another clone
+  // leaves the cache behind with any git, so the ref is put back where the older git leaves it.
   s.repo.git(['reset', '--hard', kept]);
   s.repo.git(['push', '-q', '--force', PUSH_REMOTE, 'feature']);
+  s.repo.git(['update-ref', 'refs/remotes/origin/feature', dropped]);
   assert.equal(s.repo.git(['rev-parse', 'refs/remotes/origin/feature']), dropped, 'the cache this clone keeps');
   const of = (patch) => ({ status: null, common: s.common, dir: s.top, repo: 'acme/widgets', branch: 'feature', base,
     server: s.server.url, login: 'octo', ...patch });
@@ -1866,7 +1869,7 @@ test('D228 review (second look 2, review 2): a push made with an address leaves 
   await updateRun(s.where, 'bbbbbbbbbbbb', of({ remote: null, state: 'pending_upload', why: 'upload_failed',
     sha: kept, out: s.folderOf(base, kept), at: '2026-11-11T11:00:00.000Z' }));
   assert.equal(await pushedTip(s.common, await s.runs(), 'feature', { env: s.env, git: gitOut }), kept,
-    'the names that are there are read, and asked of the remote, since an address push moved no ref here');
+    'the names that are there are read, and asked of the remote, since this clone\'s cache is behind the branch');
 
   const pass = await runEntry(['push-run', '--repo', s.repo.work], { env: s.env, cwd: s.repo.work });
   assert.equal(pass.code, 0, pass.stderr);

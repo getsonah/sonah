@@ -2,7 +2,7 @@
   "about": "Written when this release was exported: each file of this release with its SHA-256, and its source commit",
   "version": "sonah.clean-source/4",
   "auditVersion": "sonah.release-audit/1",
-  "sourceHead": "a2422ec209c3745827fe339ec79399eca6738cd2",
+  "sourceHead": "cb7124708d69c0eabf4e010318ba21b738c78fb6",
   "sourceState": "selected current working-tree bytes; inherited history intentionally omitted",
   "containsInheritedHistory": false,
   "licenses": {
@@ -974,8 +974,8 @@
     },
     {
       "path": "packages/cli/test/d228-share.test.js",
-      "sha256": "483598c1c1921e58c2cbb83c2964e101e5cffca6712070249ed01b5d82b70d82",
-      "bytes": 135530,
+      "sha256": "5a86372bb360c256b6d337c0983e3e59a8e35f91a7cd68ed09de8edff474a528",
+      "bytes": 135850,
       "mode": 420
     },
     {
