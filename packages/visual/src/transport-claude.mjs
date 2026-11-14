@@ -37,6 +37,9 @@ export class TransportError extends Error {
 
 export const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 export const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+/** With a deadline, a call starts only while at least this much is left before it (the private client's rule: less
+ *  is too little for claude to answer). */
+export const DEADLINE_MIN_MS = 1_000;
 const KILL_GRACE_MS = 5_000;  // SIGTERM, then SIGKILL after this
 const STDIO_GRACE_MS = 2_000; // after SIGKILL, settle without `close` after this
 
@@ -116,16 +119,30 @@ const costOf = (r) => (isObj(r) && Number.isFinite(r.total_cost_usd) ? r.total_c
  * A transport: async (request) -> { text, model, costUsd, ms }, or a thrown TransportError.
  * Each call runs in a fresh empty folder, so no repository setting is read. `env` is the parent environment the clean
  * one is taken from (tests pass their own).
+ * Two stops from outside, each null by default (then every call runs as it always did):
+ * - `deadline`, a time in milliseconds on Date.now()'s clock (a background job's last minute): each call's time limit
+ *   is the shorter of `timeoutMs` and what is left before it, so a call still running then stops as its own time limit
+ *   stops it, `timeout`; a call asked with less than DEADLINE_MIN_MS left fails at once as `timeout`, and no claude
+ *   starts. Such a call's claude leads a process group of its own (not on Windows, which has none): every stop of it
+ *   signals the whole group, so what that claude started ends with it, and the group is killed if this process exits
+ *   while the call runs (a job's backstop exit).
+ * - `signal`, an AbortSignal (a person's Ctrl-C or SIGTERM): once it is aborted, a call still running stops, and a call
+ *   asked after it fails at once without starting claude, each as `call_failed`.
  */
 export function claudeTransport({ bin = 'claude', model = 'sonnet', effort = null, timeoutMs = DEFAULT_TIMEOUT_MS,
-  env = process.env, maxOutputBytes = MAX_OUTPUT_BYTES } = {}) {
+  env = process.env, maxOutputBytes = MAX_OUTPUT_BYTES, deadline = null, signal = null } = {}) {
+  if (deadline !== null && !Number.isFinite(deadline)) throw new TypeError('claudeTransport: deadline is a time');
   const transport = async (request) => {
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
+    if (signal?.aborted) throw new TransportError('call_failed');
+    const left = deadline === null ? Infinity : deadline - Date.now();
+    if (left < DEADLINE_MIN_MS) throw new TransportError('timeout');
     const dir = await mkdtemp(join(tmpdir(), 'sonah-visual-call-'));
     try {
       const run = await runOnce({ bin, argv: claudeArgs({ system: request.system, model, effort }),
-        cwd: dir, env: claudeEnv(env), input: request.prompt, timeoutMs, maxOutputBytes });
+        cwd: dir, env: claudeEnv(env), input: request.prompt, timeoutMs: Math.min(timeoutMs, left), maxOutputBytes,
+        signal, group: deadline !== null && process.platform !== 'win32' });
       if (run.spawnFailed) throw new TransportError('cli_missing', { ms: elapsed() });
       const s = readStream(run.output);
       const costUsd = costOf(s.result);
@@ -144,37 +161,66 @@ export function claudeTransport({ bin = 'claude', model = 'sonnet', effort = nul
   return transport;
 }
 
-/** Start the CLI once, write the prompt, collect stdout. Never reads stderr (it can echo input). */
-function runOnce({ bin, argv, cwd, env, input, timeoutMs, maxOutputBytes }) {
+// The process groups of the calls running with a deadline. They are not in this process's group, so they are killed
+// when this process exits first (one 'exit' listener, added with the first of them).
+const groups = new Set();
+let groupsEndOnExit = false;
+function trackGroup(pid) {
+  groups.add(pid);
+  if (groupsEndOnExit) return;
+  groupsEndOnExit = true;
+  process.on('exit', () => { for (const g of groups) try { process.kill(-g, 'SIGKILL'); } catch { /* gone */ } });
+}
+
+/** Start the CLI once, write the prompt, collect stdout. Never reads stderr (it can echo input). `signal` stops it
+ *  (`call_failed`); with `group`, the CLI leads a process group of its own, and a stop signals the whole group. */
+function runOnce({ bin, argv, cwd, env, input, timeoutMs, maxOutputBytes, signal = null, group = false }) {
   return new Promise((resolve) => {
     let child, output = '', size = 0, stop = null, done = false, closed = false;
     let timer = null, graceTimer = null;
+    const onAbort = () => halt('call_failed');
     const finish = (r) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       clearTimeout(graceTimer);
+      signal?.removeEventListener('abort', onAbort);
       resolve({ output, stop, ...r });
+    };
+    const kill = (how) => {
+      if (group) try { process.kill(-child.pid, how); return; } catch { /* the group is gone: the child alone */ }
+      try { child.kill(how); } catch { /* already gone */ }
     };
     const halt = (why) => {
       if (stop || closed) return;
       stop = why;
-      try { child.kill('SIGTERM'); } catch { /* already gone */ }
+      kill('SIGTERM');
       graceTimer = setTimeout(() => {
         if (closed) return;
-        try { child.kill('SIGKILL'); } catch { /* already gone */ }
+        kill('SIGKILL');
         graceTimer = setTimeout(() => {
           for (const p of [child.stdin, child.stdout, child.stderr]) try { p?.destroy(); } catch { /* ignore */ }
           finish({ exitCode: null });
         }, STDIO_GRACE_MS);
       }, KILL_GRACE_MS);
     };
+    // Stopped before it started: no claude.
+    if (signal?.aborted) {
+      stop = 'call_failed';
+      finish({ exitCode: null });
+      return;
+    }
     try {
-      child = spawn(bin, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(bin, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...(group ? { detached: true } : {}) });
     } catch {
       finish({ spawnFailed: true, exitCode: null });
       return;
     }
+    if (group && Number.isSafeInteger(child.pid)) {
+      trackGroup(child.pid);
+      child.once('close', () => groups.delete(child.pid));
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
     child.on('error', () => { if (!closed) finish({ spawnFailed: stop === null && output === '', exitCode: null }); });
     timer = setTimeout(() => halt('timeout'), timeoutMs);
     child.stdin.on('error', () => {});

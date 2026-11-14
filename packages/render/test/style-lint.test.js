@@ -180,6 +180,26 @@ test('style lint: the page\'s word tables are report-words.js\'s, so the linter 
   assert.equal(Object.hasOwn(page, 'STYLE_KINDS'), false, 'its words are declared where they are written');
 });
 
+// D227 review 1 (the hosted product's item 10, Part 2 section 3: "Each module with words declares STYLE_KINDS and
+// STYLE_FIXTURES for the style linter"): a module the linter can discover that exports a word table (a name ending in
+// `_WORDS`) declares its kinds, so none of its fixed sentences passes unlinted and uncounted by D100's census
+// (visual-lock.js's did, D226). The modules named here do not, each for its reason; a module that comes to declare its
+// tables leaves this list.
+const UNDECLARED_WORD_MODULES = Object.freeze({
+  'packages/render/session-page.js': 'its tables are report-words.js\'s, which the linter reads (above)',
+  'packages/cli/src/review-budget.js': 'D129\'s names of the usage windows, written before D100; left for its own '
+    + 'change',
+  'packages/cli/src/visual-command.js': 'D216\'s words of sonah visual, released without the declaration; left for its '
+    + 'own change',
+});
+test('style lint: every module with a word table declares its kinds, but those named with their reason', async () => {
+  const modules = await discovered();
+  const table = ([name, value]) => /_WORDS$/.test(name) && value !== null && typeof value === 'object';
+  const undeclared = modules.filter(([, ns]) => !Object.hasOwn(ns, 'STYLE_KINDS') && Object.entries(ns).some(table))
+    .map(([path]) => path);
+  assert.deepEqual(undeclared.sort(), Object.keys(UNDECLARED_WORD_MODULES).sort());
+});
+
 /** The relative modules `path` imports, statically or dynamically, and re-exports, as paths from the repository root. */
 async function importsOf(path) {
   const text = await readFile(join(ROOT, path), 'utf8');

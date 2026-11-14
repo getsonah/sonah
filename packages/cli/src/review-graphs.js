@@ -181,7 +181,8 @@ export async function reviewGraphsPage({ options, backend, repo, codePass, snaps
       : null;
     const drawn = stop ? await Promise.race([drawing, stop]) : await drawing;
     if (drawn === STOPPED) {
-      // The job is left to end on its own: the drawer starts no new call once the signal is aborted.
+      // The job is left to end on its own: the drawer starts no new call once the signal is aborted, and (D226) stops
+      // the call still running, then releases its folder's lock.
       drawing.catch(() => {});
       return skip('stopped', range);
     }

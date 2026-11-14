@@ -1,5 +1,202 @@
 # Changelog
 
+## 0.3.0-beta.17 (2026-11-13)
+
+This beta is experimental, and we want to hear how the report reads for you.
+
+A push can now send its review to Sonah Team, Sonah's hosted team version at https://pr.sonah.dev, with no button
+press, and only once you turn that on: `sonah hook add --push`, once in a repository, after `sonah connect`. Each push
+of a branch from that repository is then reviewed in the background, on your Claude Code plan, and the review goes to
+the Sonah Team server this computer is connected to. A repository where you did not turn the push hook on sends
+nothing, nor does a push before you connect or with `CI` set, and `sonah hook remove --push` turns it off.
+
+The other team commands come with it. `sonah connect` connects this computer to Sonah Team, with a code from the
+server's page for connecting a laptop or, until that page offers one, a token from its `/settings/tokens` page with
+`sonah connect --token`; `sonah disconnect` ends the connection, and `sonah status` shows it with the reviews of your
+pushes. `sonah share` puts a page you drew here on Sonah Team with no push. `sonah fixes` lists the comments of your
+team that wait for you, `sonah fix` takes one of them to Claude Code after your yes, and `sonah remind on` makes Claude
+Code show you those comments when it starts. [Privacy](docs/PRIVACY.md#sonah-team-each-call-and-what-the-server-keeps)
+lists every call they make and what the server keeps. What `sonah review` finds, and its own page, are the same as in
+0.3.0-beta.16.
+
+To update, run `npm install -g getsonah@latest`. [Update](docs/INSTALL.md#update) gives the other ways. After you
+update, your stored answers replay. Commands, the page and the files under `~/.sonah` can still change between betas.
+
+### Connect this computer: `sonah connect`, `sonah status` and `sonah disconnect`
+
+`sonah connect` connects this computer to Sonah Team, Sonah's hosted team version (https://pr.sonah.dev, or the server
+`--server` names), with a code from it: it shows the login, the team and the seat that the code connects you as, and
+keeps the upload token only after you say yes; a no revokes it. In a pipe or a script it sends nothing.
+`sonah connect --token` does the same with a token from the server's `/settings/tokens` page on standard input.
+`sonah status` shows the connection: the server, your login, your team and your seat (a free seat is told that your
+teammates cannot read your reviews). `sonah disconnect` revokes the token on the server and deletes the connection.
+The token is kept in `~/.sonah/team/connection.json`, readable by you only, never printed, and sent only to its own
+server in the `Authorization` header. The token's name on the server holds your computer's host name
+([Privacy](docs/PRIVACY.md#sonah-team-connecting-this-computer)).
+
+### Review each push: `sonah hook add --push`
+
+`sonah hook add --push` turns on the push hook in one repository: with it on, each push of a branch from there is
+reviewed in the background, on your Claude Code login (it counts toward your plan), and the review goes to the Sonah
+Team server you connected to, with no button press ([Privacy](docs/PRIVACY.md#sonah-team-the-push-hook)). Sonah
+reviews at most 3 branches of one push, the newest first; nothing runs when `CI` is set, before you connect, or once
+the server refuses your token. `git push --no-verify` pushes once with no review, and `sonah hook remove --push` turns
+it off. Sonah writes its hook only where git runs no other one: with husky, lefthook, pre-commit or `core.hooksPath`, it
+prints the one line to add. `sonah connect` offers it in the repository you run it in (`--hook`, `--no-hook`), then the
+commit link of `sonah hook add`. `sonah status` and `sonah doctor` show each repository with the hook: whether git runs
+it (a later husky or lefthook install can stop it), and whether the node and the Sonah it names are still there and
+still this install.
+
+Each push from a repository with the push hook now starts its review in the background: `git push` prints `sonah:
+Sonah reviews feature-x in the background (sonah status).` and returns at once. The review waits until the remote
+shows the pushed commit, asks the server with one `GET /api/fixes` whether it still takes your token and that you are
+in a team (a refused token ends the push's reviews and marks the connection, so later pushes start nothing; a server
+that does not answer does not stop it), draws the branch's page as `sonah visual` does, into the same folder, so a page
+you drew of that range is sent with its stored answers and no new call, and sends it with the pushed branch and the
+agent sessions its commits name (`sessions`) to `POST /api/uploads` ([Privacy](docs/PRIVACY.md#sonah-team-the-push-hook)).
+It runs at low priority, one review at a time on your computer, on your Claude Code login (never an `ANTHROPIC_API_KEY`
+of your shell), and gives up 30 minutes after its push. A usage limit, a sign-in or a payment that stops Claude Code's
+calls stops the other branches of the push too. An upload that does not reach the server is kept, and the next push of
+the repository sends it, as it sends a review whose sending a shutdown or a killed process cut off; once the server
+refuses the token, nothing more is sent. A push to a remote given as an address rather than a name
+(`git push git.example.com:acme/widgets.git`, or an ssh-config alias) is reviewed like any other, and `sonah status`
+shows its review. A review drawn while you connect again as the same login is sent with the new
+token, and one drawn under a connection you replaced or ended is not sent. `sonah disconnect`, a connection as another
+login and `sonah hook remove --push` end the reviews of pushes that still wait, also one that already waits for
+another review to finish, and the reviews that wait to be sent: from then on, Sonah starts no call for them and sends
+nothing. `sonah status` lists the last 10 reviews of your pushes and shares (`--all` every one, `--json` as JSON):
+the repository, branch, commit, state, why, the review's page on the server and its log in `~/.sonah/team/logs/`
+(never the token; a push's reviews, once done, delete the logs that nothing wrote to in 30 days); and how many review
+comments wait for you, from the server's last answer.
+
+### Share a page with no push: `sonah share`
+
+`sonah share` puts a page that Sonah already drew on this computer on Sonah Team, with no push and with no new model
+call. Run it in the repository: it sends the newest finished page of the commit at `HEAD`, whichever of plain `sonah`,
+`sonah visual` or a push's review drew it, under the branch whose tip that commit is and the owner and name of your
+push remote. It prints the page's link on the server. `--dir DIR` names another folder of a page, `--branch NAME` the
+branch, and `--repo DIR` the repository. A review of that branch and commit that is still waiting to be sent, because
+its upload did not reach the server, is the one `sonah share` sends, and `sonah status` then shows it `shared`, with
+its link and the server it went to. A review of the branch that waits to be sent keeps waiting until it reaches the
+server: sharing an older page of that branch, a folder another Sonah holds, and a review another Sonah is already
+sending each leave it for the next push or `sonah share`. Which review of one repository's branch is the newest is read
+from your branch and its commits: the review of the commit your branch holds on the remote, else the one whose commit
+holds the other's, so dropping a commit and force-pushing sends the review of the commit your branch holds and not the
+dropped one's. Reviews that went to two remotes are two reviews on the server — your fork's branch and the team
+repository's branch of the same name — and neither takes the other's place. One repository that you reach under two
+spellings of its owner and name — `https://github.com/Acme/widgets.git` and `git@github.com:acme/widgets.git` — is one
+review, here as on the server, so a review of an older commit of it is never put up over the newer one you are reading.
+Sonah reads that branch as the remote has it, which only a push moves, so a commit you amended or dropped here and have
+not pushed leaves the review of the pushed commit the newest; it reads the remote-tracking branch your push moved, and
+asks the remote when your clone keeps no such branch, as a `--single-branch` or `--depth` clone does, and when your
+remote's refspecs keep what it holds among your own branches, as a mirror or a backup remote's do. A branch you pushed
+through two remotes of one repository — an `https` one beside an `ssh` one — is read through both of them, and Sonah
+asks the remote itself whenever another clone of the repository on your computer has a review of that branch too, since
+the branch your own clone remembers moves with your pushes there and not with that clone's, and whenever one of those
+pushes was made with the repository's address rather than a remote's name, which moves no branch your clone remembers
+either. Where your remote gives no answer at all — you are offline, its host is unreachable, or its key needs a
+passphrase no background Sonah can ask for — the branch your own clone remembers answers for it; and where a remote of
+one review can be read neither way, Sonah reads no branch for it and orders its reviews by their commits and their
+times. Where the reviews of
+a branch that wait lie on lines that no commit of them holds, Sonah keeps one of them and sends it, instead of marking
+every one of them as replaced. A branch that another Sonah is sending now — a `sonah share` in another terminal, or a
+push in another clone of the repository — is left to it, and the next push or `sonah share` takes up what still waits.
+Two clones of one repository on your computer are one review of each branch on the server: each reads the other's
+reviews of the branch when it works out which is the newest, and the clone whose review is no longer the newest leaves
+it waiting instead of sending it over the other's. The review of the commit your branch holds on the remote is the
+newest of them whatever the other clone's review is of; and where git on your computer can relate the two commits in
+no way at all — the other clone never pushed its commit, so your clone holds no object of it — the one drawn later is,
+which every clone reads the same way, so one clone sends and the other leaves its own review waiting, as `sonah
+status` says there. It needs a connection (`sonah connect`), and it names each problem
+with its fix: no finished page of `HEAD` (run `sonah` first, or pass `--dir`), no branch at that commit, a remote that
+names no repository, or another Sonah holding the page's folder ([Privacy](docs/PRIVACY.md#sonah-team-sonah-share)).
+
+### Take up a comment of your team: `sonah fixes` and `sonah fix`
+
+`sonah fixes` lists the review comments of your team that wait for you, and `sonah fix <comment id>` takes one of them
+to Claude Code. `sonah fixes` asks the connected server for the comments of this clone's repository, as your push
+remote names it (in a folder that is no clone of one, the one repository each clone whose push hook is for that server
+names), and prints each with who wrote it, how, on which pull request or branch, the item it is on, the first line of
+their words and the command for it. `--json` prints the same as JSON. The push hook's line after a push, and `sonah
+status`'s count, now name `sonah fixes`; both read the server's last answer and make no call of their own.
+
+`sonah fix c_0123456789abcdef`, in a terminal of its own, asks the server what that comment needs, finds the worktree
+of your clone that has the review's branch checked out (it never switches a branch), and picks the Claude Code session
+that wrote the change: it resumes a copy of that session when one recording of it is on this computer and its commit
+shows in it, and starts a new session otherwise, saying which and why. It shows you the whole prompt and where it goes,
+then asks: `y` sends it, `e` opens it in `$VISUAL` or `$EDITOR` first, and `n` sends nothing. Only after a yes does
+Claude Code start, in that folder and on your terminal; its exit code is not passed through, so Sonah exits 0 once it
+ends and 1 when you said no. The prompt is the one the review panel shows, built from the same fields. A second
+`sonah fix` of the same comment forks the newest session of the first, so one comment is one fix. Sonah keeps each
+launch in `~/.sonah/team/fixes/<comment id>.json`, readable by you only, with the prompt as it was sent; the next push
+or `sonah share` of the repository names those comments in its upload, which is how the server marks a fix pushed
+([Privacy](docs/PRIVACY.md#sonah-team-sonah-fixes-and-sonah-fix)). Without the commit link of `sonah hook add` in the
+worktree of the fix, Sonah says that the server cannot mark the fix pushed; where Sonah's line is in a hook file
+another tool owns, that it cannot tell; and where that file holds no line of Sonah's, it asks you for the line
+`sonah hook add` prints. Each of those lines names that worktree, which is not always the folder you ran the command
+in, and names it to `sonah hook add` as `--repo`. It refuses, with the fix for each, when the id is not
+one, when the terminal runs inside Claude Code or is no terminal, when `claude` is not on PATH, when this computer has
+no connection, when no worktree or more than one has the branch, and when more than one recording carries the session.
+
+The text a review comment becomes when its author takes it to Claude Code, which Sonah Team's review panel shows, is
+now built by this package (`packages/visual/src/fix-prompt.mjs`), with the checks of names, ids and words that the
+server uses. `sonah fix` sends Claude Code that text, as the panel shows it.
+
+### Be told when Claude Code starts: `sonah remind`
+
+`sonah remind on` makes Claude Code show you the comments of your team that wait for you when it starts or resumes in
+one of their repositories: one SessionStart entry in Claude Code's `settings.json` (`CLAUDE_CONFIG_DIR`, else
+`~/.claude`). Every other setting in that file stays as it is, and the file is written back as JSON with two-space
+indents. A file that is not plain JSON is left as it is, with the entry printed for you to add. Sonah gives Claude Code
+the comments as a message for you (`systemMessage`), not as context for the agent (`additionalContext`): each comment
+with who wrote it, how, on what, the first line of their words and its link. It is read from the list Sonah keeps, with
+no call; when that list is a minute old or more, Sonah asks the server again in the background, at most once a minute a
+repository, and only for repositories it already has a list of; a repository the server no longer lists for you is
+dropped ([Privacy](docs/PRIVACY.md#sonah-team-the-claude-code-start-reminder)). Claude Code keeps what a hook prints in
+its own recording of the session, so the comments it showed are in Claude Code's recordings. `sonah remind off` removes
+the entry, and `sonah status` says when it is on, when the node or the Sonah it runs is gone, and when it reads another
+Sonah folder. It refuses on Windows and from a folder that npx made for one run, and leaves the reminder of the earlier
+client `sonah-pr` alone.
+
+### "Save online" goes to the server you connected to
+
+"Save online" and "Invite your team" on the graphs page of `sonah visual` and plain `sonah` now send the review to the
+Sonah Team server that this computer was connected to when Sonah drew the page, and to https://pr.sonah.dev when it
+was connected to none. `sonah visual --server URL` still names another server. The page carries that address only,
+never your upload token. The graphs page that `sonah review --format html` draws names that server too. A page keeps
+the server it was drawn with: after you connect, disconnect or connect to another server, its buttons still send to
+that one until the page of that range is drawn again, and `sonah share` sends a page to the server you are connected
+to now.
+
+### One Sonah draws a page at a time
+
+The graphs page is now drawn by one Sonah at a time in its folder. When `sonah visual` or plain `sonah` finds another
+Sonah drawing the same page into the same folder, it stops at once with `Visual review could not complete:
+folder_in_use.` and exits `2`; the graphs page of `sonah review --format html` prints the same two lines after `Graphs
+page: `, and the review keeps its own exit code. Once the other one ends, the same command reuses its answers. While a
+page is drawn, its folder holds `draw.lock` with the process id and start time of the Sonah that draws it; a lock left
+by a Sonah that was killed is taken back. Ctrl-C or SIGTERM while `sonah review` draws its graphs page now also stops
+the `claude` call that was running, not only the calls after it. The background review of a push uses a deadline that
+stops its calls still running when the deadline passes.
+
+### What Sonah sends and keeps
+
+[Privacy](docs/PRIVACY.md#sonah-team-each-call-and-what-the-server-keeps) now lists every call that Sonah makes to
+Sonah Team, with what each sends and how long it waits, and what the server keeps: the token as its hash, with its name
+and no expiry; each upload, with the token's id, which Sonah cannot delete, and which reaches your team's webhooks
+whatever your seat; the session ids of each fix that `sonah fix` starts or a push marks pushed; its log lines and its
+usage counts; the rows of its rate limits, one for each code tried from your address, whether it matches or not, and
+for each call made with a token, which https://pr.sonah.dev keeps for a day; and, on https://pr.sonah.dev, the
+hosting's request log of each call, with your IP address. It says that a Sonah Team server you run with a GitHub App
+comments on your pull request on its own, that `sonah disconnect` revokes a token you gave with `--token`, and that
+`sonah fix` leaves an `ANTHROPIC_API_KEY` of your shell for Claude Code. Its "What stays on your computer" names every
+file under `~/.sonah/team/` (what a killed review leaves there among them), the push hook's files and the start
+reminder's entry, and its steps to delete everything name each undo, and that Claude Code's recordings keep the
+prompts that `sonah fix` gave it. It says that, in a partial clone, the git reads of the review of a push, `sonah
+share` and `sonah fix` may make git fetch a commit your clone does not hold from your remote. The README says where a
+code for `sonah connect` comes from: the Sonah Team server's page for connecting a laptop, and until that page offers
+one, a token from its `/settings/tokens` page with `sonah connect --token`.
+
 ## 0.3.0-beta.16 (2026-11-11)
 
 This beta is experimental, and we want to hear how the report reads for you.

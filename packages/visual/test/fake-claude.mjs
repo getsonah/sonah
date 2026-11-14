@@ -3,6 +3,8 @@
 // It is driven by $HOME/fake-claude.json, { rules: [{ when, mode, text, model, cost }] }: the first rule whose `when`
 // is in the prompt or the system prompt (or that has no `when`) decides the reply. Each call is logged to
 // $HOME/fake-claude.log.jsonl as { argv, env, cwd, stdin }. It makes no network call.
+// D226: mode `slow` replies as `ok` after the rule's `ms` milliseconds (a call still running when a test stops it), and
+// first appends its process id to $HOME/fake-claude.pids, so a test can tell whether that process ended.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,6 +32,11 @@ const served = (rule) => rule.model ?? (model === 'sonnet' ? 'claude-sonnet-test
 const say = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 
 function reply(rule) {
+  if (rule.mode === 'slow') {
+    appendFileSync(join(home, 'fake-claude.pids'), `${process.pid}\n`);
+    setTimeout(() => reply({ ...rule, mode: 'ok' }), rule.ms ?? 1000);
+    return undefined;
+  }
   say({ type: 'system', subtype: 'init', model: served(rule), claude_code_version: '0.0.0-test', tools: [] });
   const cost = rule.cost ?? 0.0125;
   switch (rule.mode ?? 'ok') {

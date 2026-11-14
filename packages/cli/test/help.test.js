@@ -66,9 +66,12 @@ test('the usage table advertises every command the dispatch implements', async (
   // on a session page. D76 retires `init` and `ledgers`; `capture`, `capture-outcome` and (D77) `trailer` stay only for
   // hooks early previews installed, doing nothing, and are no longer advertised. Owner decision 2026-10-14 adds
   // `config`, the code step's switch. D142 adds `skill`, the /sonah skill's add and remove. D143 adds `hook`
-  // (`hook add`, `hook remove`), the commit-to-session link. D216 adds `visual`, the page of a branch's change.
-  assert.deepEqual(listed.sort(), ['config', 'decision', 'doctor', 'feedback', 'hook', 'review', 'sessions', 'skill',
-    'slice', 'visual']);
+  // (`hook add`, `hook remove`), the commit-to-session link. D216 adds `visual`, the page of a branch's change. D224 adds
+  // `connect`, `disconnect` and `status`, this computer's connection to a Sonah Team server.
+  // D228: `share`, a page Sonah drew here put on Sonah Team. D229: `fixes`, the comments that wait for you, and `fix`,
+  // Claude Code started on one of them. D230: `remind`, the Claude Code start reminder.
+  assert.deepEqual(listed.sort(), ['config', 'connect', 'decision', 'disconnect', 'doctor', 'feedback', 'fix', 'fixes',
+    'hook', 'remind', 'review', 'sessions', 'share', 'skill', 'slice', 'status', 'visual']);
 });
 
 test('every command answers --help without running, writing or reaching out', async (t) => {

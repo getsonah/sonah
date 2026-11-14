@@ -168,7 +168,8 @@ export function lefthookLines(name, hasEvent) {
     : `${HOOK_EVENT}:\n  commands:\n    ${LEFTHOOK_COMMAND}:\n      run: '${LEFTHOOK_RUN}'`;
 }
 
-export const HOOK_USAGE = 'sonah hook add|remove [--repo DIR]';
+/** D225: `--push` turns the push hook on or off instead (push-hook.js); without it, the commit link, as D143 has it. */
+export const HOOK_USAGE = 'sonah hook add|remove [--push] [--repo DIR]';
 
 /** The words of `sonah hook` and of its line in `sonah doctor`. */
 export const HOOK_WORDS = Object.freeze({
@@ -491,17 +492,33 @@ export async function removeHook(dir, { git = runGit } = {}) {
   return { outcome: deleted.length ? 'removed' : 'nothing', deleted, left, lines };
 }
 
-/** `sonah hook add|remove [--repo DIR]`. Exit 0: the link is on, or Sonah's files are gone; 1: Sonah could not turn the
- *  link on by itself and printed what you add; 2: usage, or a problem that it names with its fix. */
+/** `sonah hook add|remove [--push] [--repo DIR]`. Exit 0: the link is on, or Sonah's files are gone; 1: Sonah could not
+ *  turn the link on by itself and printed what you add; 2: usage, or a problem that it names with its fix. D225: with
+ *  `--push`, the push hook's command (push-hook.js `runPushHookCommand`, by the same codes) runs instead; `push` holds
+ *  its inputs (env, fetch, platform), for tests. Plain `remove` says one line more when the push hook stays. */
 export async function runHookCommand(argv, { stdout = process.stdout, stderr = process.stderr, cwd = process.cwd(),
-  git = runGit } = {}) {
+  git = runGit, push = {} } = {}) {
   const [action, ...rest] = argv;
   const usage = () => { stderr.write(`usage: ${HOOK_USAGE}\n`); return 2; };
   if (!['add', 'remove'].includes(action)) return usage();
-  if (rest.length !== 0 && (rest.length !== 2 || rest[0] !== '--repo' || !rest[1] || rest[1].startsWith('--'))) return usage();
-  const dir = resolve(cwd, rest[1] ?? '.');
+  let pushed = false, repo = null;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--push' && !pushed) pushed = true;
+    else if (rest[i] === '--repo' && repo === null && rest[i + 1] && !rest[i + 1].startsWith('--')) repo = rest[++i];
+    else return usage();
+  }
+  const dir = resolve(cwd, repo ?? '.');
+  if (pushed) {
+    const { runPushHookCommand } = await import('./push-hook.js');
+    return runPushHookCommand(action, dir, { stdout, stderr, git, ...push });
+  }
   try {
     const result = action === 'add' ? await addHook(dir, { git }) : await removeHook(dir, { git });
+    if (action === 'remove') {
+      const { pushHookStaysLine } = await import('./push-hook.js');
+      const stays = await pushHookStaysLine(dir, { git });
+      if (stays) result.lines.push(stays);
+    }
     stdout.write(`${result.lines.join('\n')}\n`);
     return result.outcome === 'add_line' ? 1 : 0;
   } catch (e) {

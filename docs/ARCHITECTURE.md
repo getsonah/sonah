@@ -137,6 +137,79 @@ which reaches no network): each side named by the person, or with no range the m
    `render.mjs` writes `page.html` with its CSS and script inline. The command passes no share address, so the page
    holds no "Save online" or "Invite your team" button and no upload, and it makes no request when it is opened.
 
+`visual-command.js` `drawVisualPage` runs these steps for `sonah visual`, plain `sonah` and the graphs page of `sonah
+review --format html` (D219), and for the review of a push (D227). It holds the folder's lock while it draws
+(`cli/src/visual-lock.js`, D226): `draw.lock` in the folder names the drawing process and its start time, so a second
+drawer stops with `folder_in_use`, and a lock whose process is gone is taken back. The transport takes two stops from
+outside: a signal (Ctrl-C or SIGTERM) and a deadline, which ends a call still running when it passes; with a deadline,
+each `claude` leads a process group of its own (not on Windows), so the stop ends what it started too.
+
+## The connection to Sonah Team (`sonah connect`)
+
+`cli/src/connect-command.js` runs `sonah connect`, `sonah disconnect` and `sonah status` (D224), the first of the
+commands for Sonah Team, the hosted team version. `cli/src/team-api.js` makes their calls to that server with Node's
+fetch: the device code's exchange and the token's own route (`GET` and `DELETE /api/token`), with the token only in
+the `Authorization` header and no redirect followed. `cli/src/team-home.js` keeps the one connection in
+`team/connection.json` under Sonah's folder (mode `0600`, written whole), the only file that holds the token. No model
+is called, and nothing of a session or a repository is read or sent.
+
+`cli/src/push-hook.js` runs `sonah hook add --push` and `sonah hook remove --push` (D225): it writes a script into the
+git common dir, `sonah/pre-push.sh`, that names this install's node and `sonah.js`, and the hook `pre-push` that sources
+it by D143's rules (only where git runs no other hook; otherwise it prints the line to add), and lists the repository
+in `team/hooks.json`. At each push the script hands the refs to the hidden `sonah pre-push` (`cli/src/push-hook-run.js`,
+dispatched before anything else, with a crash handler that always exits 0): it leaves one ticket per pushed branch, at
+most 3, in `team/queue/` (`cli/src/push-queue.js`), records each as `waiting` in `team/runs.json`, starts the
+repository's runner when none is going, and makes no network or model call. Everything it loads at a push is Node's own
+modules and the light team modules — `push-queue.js`, `team-home.js`, `team-git.js`, `settings.js`,
+`visual-lock.js`, `visual-server.js`, `fix-prompt.mjs`, `strict-json.js` and `push-run-states.js` — since Node
+evaluates a module's whole static import closure before the entry runs; that closure is named module by module in
+`cli/test/d225-push-hook.test.js`, which fails on any change to it. `cli/src/team-git.js` holds the git calls
+of the team commands. `sonah status` and `sonah doctor` read each listed repository's hook from its files
+(`pushHookReport`).
+
+The runner is the hidden `sonah push-run --repo DIR` (`cli/src/push-run.js`, D227), started detached, in a process group
+of its own, at low priority, with its own crash handler that always exits 0. It takes the repository's tickets in turn
+(one runner a repository: `runner.lock` in its queue folder), and for each: waits until the remote shows the commit,
+probes the server with `GET /api/fixes` (a 401 to the token the connection holds marks it refused and ends the pass, and
+nothing more is sent; the answer's waiting comments go to `team/waiting.json`, `cli/src/fix-waiting.js`), finds the base
+on the remote's default branch, draws with `drawVisualPage` (the full model id, no API key, `visualOutDir`'s folder, the
+ticket's deadline and a signal that SIGTERM aborts) while it holds the laptop's one job slot (`team/locks/job.lock`),
+then reads the folder under its lock, draws the page anew in mode `hosted`, adds the upload's `sessions`
+(`cli/src/upload-sessions.js`, from the range's `Agent-Session` lines) and sends it to `POST /api/uploads` with the
+token the connection holds then. Before each step that spends or sends, and at each poll while it draws, it reads
+`team/hooks.json` and the connection again: once the repository's push hook is off or the connection ended, the run
+ends, its drawing stopped, and nothing more is sent. Each run's state and why (closed lists in
+`evidence/src/push-run-states.js`, which `ledger.js` re-exports) go to `team/runs.json`, its steps to a log in
+`team/logs/`. A backstop ends the process a
+minute after a ticket's deadline. `sonah status` reads the runs and the waiting comments from these files.
+
+`cli/src/fix-command.js` runs `sonah fixes` and `sonah fix` (D229), the laptop half of the fix loop. `sonah fixes`
+makes one `GET /api/fixes` a repository — this clone's, as `shareTarget`'s push remote names it, else the one
+repository each clone in `team/hooks.json` whose hook is for this connection's server names, a call a clone — checks
+each entry by shape and keeps the list in `team/waiting.json`, which `sonah status` and the push hook's own line read
+with no call. `sonah fix <comment id>`
+reads one comment with `GET /api/fixes/<id>`, checks every field by shape (`checkFix`), finds the worktree of the
+clone that has the review's branch checked out (it never switches a branch), and picks the session the prompt goes to:
+the one that the range's `Agent-Session` lines name and that touched a file of the item, forked only when one plain
+recording of it is here and D143 shows the commit in it
+(`pickSession`, through `commit-sessions.js` and `session-id.js`). It builds the prompt with
+`visual/src/fix-prompt.mjs`, the module the server's own panel builds it with, shows it whole and asks; only after a
+yes does it run `claude` by spawn, with the prompt as one argument, in that folder and on this terminal. Each launch
+goes to `team/fixes/<comment id>.json` (`cli/src/fix-launches.js`), with the prompt as it was sent; the push run and
+`sonah share` read the newest of those records for the upload's `answers`, which is what lets the server mark a fix
+pushed. Nothing of the server's answer becomes a command, a path, a flag or an environment value, and Claude Code's
+own exit code is not passed through.
+
+`cli/src/remind.js` runs `sonah remind on|off` (D230): one SessionStart entry in Claude Code's `settings.json`, its
+command `'<node>' '<sonah.js>' remind-hook # sonah:remind`, and nothing else of that file changed (a file that is not
+plain JSON is left as it is). Claude Code runs the entry at each start; `cli/src/remind-hook.js` reads the connection,
+one `git remote -v` of the folder and `team/waiting.json` with no call, and prints the comments that wait as one
+`systemMessage`, a message Claude Code shows the person, and never as `additionalContext`, the field that adds context
+for the agent. When a repository's list is a minute old,
+it starts the hidden `sonah remind-refresh` detached, which asks `GET /api/fixes` again for the folder's repositories
+the cache already holds, each at most once a minute (`team/locks/remind.json`). The hook's import closure is held to
+the push hook's rule: Node's own modules and the team files' readers, never the review's.
+
 ## Where the model can and cannot reach
 
 The reviewer gets text (and pasted images) and returns text; it cannot act. The `claude` reviewer runs in an empty
@@ -162,6 +235,7 @@ is how the tests run the whole pipeline with stand-in reviewers and agents.
 | The update check's last answer | `~/.sonah/update-check.json` |
 | The page and the .md | The `--output` file, and the .md beside the page |
 | `sonah visual`'s page, requests, answers and run | `~/.sonah/visual/<repository folder>-<hash of its path>/<base>-<head>-<model>/` (or `--out DIR`) |
+| The team commands' own files | `~/.sonah/team/`: `connection.json`, `hooks.json`, `refused.json`, `queue/`, `runs.json`, `waiting.json`, `logs/`, `locks/` and `fixes/<comment id>.json` |
 
 `SONAH_HOME` moves `~/.sonah`, and `--state-dir` moves one review's folder. Every file is written readable by its
 owner only (folders `0700`, files `0600`); `sonah visual` makes its folders `0700` and writes its files with the

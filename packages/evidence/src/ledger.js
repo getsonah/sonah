@@ -181,6 +181,111 @@ export const COMMIT_LINK_STATES = Object.freeze(['off', 'on', 'moved', 'not_run'
 export const COMMIT_LINK_ROUTES = Object.freeze(['runner', 'pre-commit']);
 export const HOOK_PROBLEMS = Object.freeze(['hook_not_git', 'hook_bare_repository', 'hook_file_foreign', 'hook_path_link']);
 
+/** D224 (item 10, C2): the connection to a Sonah Team server (cli/src/connect-command.js, team-api.js).
+ *  TEAM_SEATS: a token's person's seat as the server's GET /api/token names it (null: in no team).
+ *  TEAM_API_ERRORS: how a call to the server went wrong (team-api.js `TeamApiError`): `unreachable`, no answer (no
+ *  connection, a name that does not resolve, the time ran out); `redirect`, a 3xx, which Sonah does not follow;
+ *  `refused`, any other answer that is not a 2xx; `answer`, a 2xx whose body is not of the route's shape.
+ *  TEAM_PROBLEMS: what stops `sonah connect`, `sonah disconnect` or `sonah status`, each said with its fix:
+ *    team_no_terminal          a code given where Sonah cannot ask before it keeps the connection (not a terminal);
+ *    team_replace_no_terminal  a token for another server or login, while this computer has a connection, and no
+ *                              terminal to ask whether to replace it;
+ *    team_not_a_token          what came on standard input is not of a token's shape;
+ *    team_bad_code             the server knows no such code (400 bad_code: used, expired or mistyped);
+ *    team_rate_limited         the server asks Sonah to wait (429);
+ *    team_too_many_tokens      the person has as many tokens as the server allows (409 too_many_tokens);
+ *    team_bad_token            the server does not take the token (401: revoked, or another server's);
+ *    team_unreachable, team_redirect, team_refused, team_answer   TEAM_API_ERRORS, for any other call;
+ *    team_unwritable           Sonah could not write the connection file;
+ *    team_not_connected        `sonah disconnect` with no connection to end. */
+export const TEAM_SEATS = Object.freeze(['paid', 'free']);
+export const TEAM_API_ERRORS = Object.freeze(['unreachable', 'redirect', 'refused', 'answer']);
+export const TEAM_PROBLEMS = Object.freeze(['team_no_terminal', 'team_replace_no_terminal', 'team_not_a_token',
+  'team_bad_code', 'team_rate_limited', 'team_too_many_tokens', 'team_bad_token', 'team_unreachable', 'team_redirect',
+  'team_refused', 'team_answer', 'team_unwritable', 'team_not_connected']);
+
+/** D225 (item 10, C3): the push hook (cli/src/push-hook.js, push-hook-run.js), which leaves each pushed branch for review.
+ *  PUSH_HOOK_STATES and PUSH_HOOK_ROUTES: what the files say of the push hook in one repository, in COMMIT_LINK_STATES's
+ *  and COMMIT_LINK_ROUTES's words, for the hook `pre-push` (its `.old` and `.legacy`) and Sonah's push script in the git
+ *  common dir, which the hook sources.
+ *  PUSH_HOOK_PROBLEMS: what stops `sonah hook add --push` or `remove --push` before it writes anything, besides
+ *  HOOK_PROBLEMS:
+ *    push_hook_temporary_install  this Sonah runs from a folder that npx, pnpm dlx, bunx or yarn dlx made for one run,
+ *                                 whose path the push script would name after the folder is gone (add only);
+ *    push_hook_windows            Windows, where Sonah does not turn the push hook on (add only);
+ *    push_hook_list_unreadable    team/hooks.json is there, and is not the person's own file of its shape.
+ *  PUSH_HOOK_CHECKS: what `sonah status` and `sonah doctor` find wrong with a listed repository's push hook besides its
+ *  state: `node_gone`, the node that its script runs is not there; `sonah_gone`, the Sonah that it runs is not there;
+ *  `other_install`, it runs another install of Sonah than the one that reports; `other_server`, it is for another
+ *  server than this computer's connection; `repository_gone`, its git common dir is no repository now. */
+export const PUSH_HOOK_STATES = COMMIT_LINK_STATES;
+export const PUSH_HOOK_ROUTES = COMMIT_LINK_ROUTES;
+export const PUSH_HOOK_PROBLEMS = Object.freeze(['push_hook_temporary_install', 'push_hook_windows',
+  'push_hook_list_unreadable']);
+export const PUSH_HOOK_CHECKS = Object.freeze(['node_gone', 'sonah_gone', 'other_install', 'other_server',
+  'repository_gone']);
+
+/** D227 (item 10, C4): the push run (cli/src/push-run.js) and its record in team/runs.json: where one pushed
+ *  branch's run stands and why, each said in fixed words (push-run.js PUSH_RUN_WORDS.why). Both lists are read at
+ *  every write of a run, and the hidden `sonah pre-push` writes one at every push, so they stand in a module of
+ *  Node's own modules alone (push-run-states.js, D225 review, second look 1) and are read here as they always were.
+ *  Their words are documented with them. */
+export { PUSH_RUN_REASONS, PUSH_RUN_STATES } from './push-run-states.js';
+
+/** D228 (item 10, C5): what stops `sonah share` (cli/src/share-command.js) before it sends anything, each said with its
+ *  fix; the connection's and the server's ends are said in the push run's words (PUSH_RUN_REASONS):
+ *    share_not_git        the folder is in no git working tree;
+ *    share_no_review      no finished page of the commit at HEAD in Sonah's visual folder of the repository, nor in a
+ *                         run of it (exit 1: run sonah, or pass --dir);
+ *    share_not_a_review   --dir holds no finished page, or the page's commit is not in this repository;
+ *    share_no_branch      no branch points at the page's commit, and no --branch names one;
+ *    share_bad_branch     --branch names a branch the server would refuse (fix-prompt.mjs `isBranch`);
+ *    share_no_repository  the push remote names no owner and repository (visual-command.js `remoteRepository`);
+ *    share_folder_in_use  another Sonah draws or reads the page's folder now (D226's lock). */
+export const SHARE_PROBLEMS = Object.freeze(['share_not_git', 'share_no_review', 'share_not_a_review',
+  'share_no_branch', 'share_bad_branch', 'share_no_repository', 'share_folder_in_use']);
+
+/** D229 (item 10, C6): what stops `sonah fixes` or `sonah fix` (cli/src/fix-command.js), each said with its fix; the
+ *  connection's and the server's own ends are said in the push run's words (PUSH_RUN_REASONS) and the connection's
+ *  (TEAM_PROBLEMS):
+ *    fix_no_repository        the clone names no owner and repository, and no clone with the push hook does either;
+ *    fix_bad_list             the server's list of waiting comments is not of its shape (fix-waiting.js `checkList`);
+ *    fix_bad_id               the word given is no comment id (fix-prompt.mjs `isCommentId`: `c_` and 16 hex);
+ *    fix_inside_claude        CLAUDECODE is set, so this terminal runs inside Claude Code;
+ *    fix_no_terminal          `sonah fix` shows the prompt and asks, and this is not a terminal;
+ *    fix_no_claude            no claude on PATH;
+ *    fix_bad_answer           the server's answer is not of its shape (`checkFix`, or `fixPrompt`'s own checks);
+ *    fix_not_waiting          no such comment waits for you (404 not_found);
+ *    fix_not_fixable          the comment is not one a fix can answer (409);
+ *    fix_not_git              the folder is in no git repository;
+ *    fix_not_this_repo        this clone is of another repository than the review;
+ *    fix_no_worktree          no worktree has the review's branch checked out (Sonah never switches a branch);
+ *    fix_several_worktrees    the branch is checked out in more than one worktree;
+ *    fix_several_recordings   more than one recording carries the session's id, so Sonah reads none of them;
+ *    fix_record_unreadable    team/fixes/<id>.json is there and is not a launch record (fix-launches.js);
+ *    fix_claude_failed        Claude Code did not start. */
+export const FIX_PROBLEMS = Object.freeze(['fix_no_repository', 'fix_bad_list', 'fix_bad_id', 'fix_inside_claude',
+  'fix_no_terminal', 'fix_no_claude', 'fix_bad_answer', 'fix_not_waiting', 'fix_not_fixable', 'fix_not_git',
+  'fix_not_this_repo', 'fix_no_worktree', 'fix_several_worktrees', 'fix_several_recordings', 'fix_record_unreadable',
+  'fix_claude_failed']);
+
+/** D230 (item 10, C7): the Claude Code start reminder (cli/src/remind.js, remind-hook.js).
+ *  REMIND_STATES: what Claude Code's settings say of it: `off`, no entry of Sonah's; `on`, Sonah's SessionStart entry
+ *  is there; `private_client`, the entry of the private laptop client (`# sonah-pr:remind`) is, which Sonah never
+ *  changes; `not_checked`, settings.json is there and is not plain JSON of its shape, so Sonah cannot tell.
+ *  REMIND_CHECKS: what `sonah status` finds wrong with Sonah's entry: PUSH_HOOK_CHECKS's `node_gone`, `sonah_gone` and
+ *  `other_install`, of the node and the Sonah it runs; D230 review 1: `other_home`, it reads another Sonah folder
+ *  (SONAH_HOME) than the command that reports, so it shows another connection's comments.
+ *  REMIND_PROBLEMS: what stops `sonah remind on` before it writes anything, each said with its fix (exit 2):
+ *    remind_windows            Windows, where Sonah does not turn the reminder on;
+ *    remind_temporary_install  this Sonah runs from a folder that npx, pnpm dlx, bunx or yarn dlx made for one run,
+ *                              whose path the entry would name after the folder is gone.
+ *  A settings file that is not plain JSON and a Claude Code folder that is not there are not problems but outcomes
+ *  (exit 1: Sonah prints the entry to add, or says to run claude once). */
+export const REMIND_STATES = Object.freeze(['off', 'on', 'private_client', 'not_checked']);
+export const REMIND_CHECKS = Object.freeze(['node_gone', 'sonah_gone', 'other_install', 'other_home']);
+export const REMIND_PROBLEMS = Object.freeze(['remind_windows', 'remind_temporary_install']);
+
 /** D143 (the owner's default, 2026-10-23): how a commit is linked to the session its Agent-Session line names (cli
  *  commit-sessions.js `linkOf`), by structure only:
  *    shown     one recording here carries the id, and one tool call of it (or of a helper of it) spans the commit's

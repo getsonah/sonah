@@ -333,6 +333,23 @@ test('D219: the dry run says whether a review would draw the graphs page, and dr
 
 const SNAPSHOT = Object.freeze({ root: true, repository: true, top: '/nowhere' });
 
+test('D228 (decision 15, widened): the review gives its drawer no server, so the drawer names the connected one',
+  async () => {
+  const start = 'a'.repeat(40), head = 'b'.repeat(40);
+  // The owner widened decision 15 on 2026-11-12: this page names the server this computer is connected to, as
+  // `sonah visual`'s does. It gets that by naming no server at all, so `drawVisualPage` reads the connection
+  // (visual-command.js); a `server` given here, even VISUAL_DEFAULT_SERVER, would pin the page to one server again.
+  let given = null;
+  const page = await reviewGraphsPage({ options: {}, backend: 'claude-cli', repo: { start, head, atHead: ['x.js'],
+    goneAtHead: [] }, codePass: { files: [{ path: 'x.js', state: 'reviewed' }] }, snapshot: SNAPSHOT,
+  env: { SONAH_HOME: '/nowhere' }, stdout: { write: () => {} }, stderr: { write: () => {} },
+  draw: async (options) => { given = options; return { status: 'complete', page: '/nowhere/page.html', run: {} }; } });
+  assert.deepEqual(page, { graphsPage: 'file:///nowhere/page.html' });
+  assert.ok(given, 'the drawer ran');
+  assert.equal(Object.hasOwn(given, 'server'), false, 'the review names no server to the drawer');
+  assert.equal(given.server, undefined);
+});
+
 test('D219: reviewGraphsPage never rejects, even when a stream throws', async () => {
   const start = 'a'.repeat(40), head = 'b'.repeat(40);
   // No file of the change to compare with HEAD (none changed, or the code review waits, D210): one line, no drawing.

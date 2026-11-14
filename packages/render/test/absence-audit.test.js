@@ -339,7 +339,42 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // + [0, 15, 8]. Its page's problem and fix of the visual's closed code (REPORT_GRAPHS_FAILURE_WORDS): 4 sonah (what
   // Sonah found, could not make, start or finish) and 4 other (what the person's claude login, plan or account did, with
   // the fix). None states an absence. + [0, 4, 4].
-  assert.deepEqual(AUDIT_CLASSES.map(count), [102, 599, 534]);
+  // D224, the connection to Sonah Team: 12 sonah (what Sonah could not read, reach, write, revoke or follow, and what it
+  // did not connect, send or change) and 40 other (whose a code or token is, the seat, the questions, what Sonah kept,
+  // revoked or deleted, a token left live, and every fix). None states an absence. + [0, 12, 40].
+  // D225, the push hook: 41 sonah (what Sonah wrote, deleted, keeps, reviews, did not turn on, did not find, cannot read or
+  // tell, and what it found of its own hook files and the paths they name) and 19 other (what to add or run, a review's
+  // cost, the offer's questions, a label, a list of branches). None states an absence. + [0, 41, 19]. Its review: 1
+  // sonah (what a push does once git runs Sonah's push script). + [0, 1, 0].
+  // D227, the push run: 19 sonah (the push's two lines that Sonah reviews it, and the why of a run: what Sonah sees of the
+  // remote, waits for, found, cannot read, find, reach, start or draw, did not send or review, stopped, and where its
+  // process ended) and 11 other (a newer push, what the server or the person's Claude Code plan or account did, a
+  // refusal's status, where Sonah put the review, a heading and a count). None states an absence. + [0, 19, 11]. Its
+  // review: 1 sonah (what Sonah did not review once the push hook was turned off). + [0, 1, 0]. Its review 1: D226's
+  // fix of a folder that another drawer holds (visual-lock.js, which now declares its table): 1 sonah. + [0, 1, 0].
+  // D228, sonah share: 6 sonah (what Sonah did not find in git or in its own visual folder, could not read as a
+  // finished page, or found another Sonah holding) and 10 other (a branch name the server would refuse, every fix, the
+  // folder it sends and the page it put online). None states an absence. + [0, 6, 10]. Its review 2: 1 sonah (what a
+  // share sent after another Sonah held the page's folder, and what sends the review now). + [0, 1, 0].
+  // D229, sonah fixes and sonah fix: 3 absence in (no agent commit of the change touched the item's files, by git's
+  // range and paths; the session that wrote it is not on this computer, by the recordings' file names; its one
+  // recording here does not show it made the commit here, by the calls searched), 25 sonah (what Sonah found of git,
+  // of this terminal, of PATH, of the worktrees, of the recordings and of its own launch record; what it could not
+  // read of the server's answer or of the commits; the copy of the session that wrote the change; what this clone
+  // holds of the reviewed head; the commit link it did not find; the editor that did not finish; what it left out of
+  // the server's list; and what it sent or could not tell the server) and 31 other (what the person typed, what the
+  // server says of a comment, every fix, and the listing's heading, lines, state and counts). + [3, 25, 31]. The push
+  // hook's own count of them, read with the command that lists them: 1 other, and `sonah status`'s count read again
+  // in its class. + [0, 0, 1]. Its review 2: 1 sonah (what Sonah cannot tell of the commit link where its line is in
+  // another tool's hook file) and 2 other (the fix of a refusal, and of a server that keeps no comment for someone in
+  // no team); the clone with no repository read again in its class. + [0, 1, 2]. Its review 3: 1 sonah (what Sonah
+  // cannot tell of the commit link where the hook git runs is another tool's and holds no line of Sonah's); the two
+  // lines beside it read again in their class, each naming the worktree it read. + [0, 1, 0].
+  // D230, sonah remind and the start reminder: 18 sonah (what Sonah added, updated, removed, left as it is, did not
+  // find or turn on, what the reminder does, and what it found of Claude Code's settings and of the node and the Sonah
+  // its entry names) and 7 other (what to add, remove or run, and the reminder's count, comment and rest). None states
+  // an absence. + [0, 18, 7]. Its review 1: 1 sonah (the entry reads another Sonah folder than the command). + [0, 1, 0].
+  assert.deepEqual(AUDIT_CLASSES.map(count), [105, 727, 655]);
   // The absence keys: proved, or held for the owner. D115: and the session review's row sentences (REVIEW_ROW_KEYS),
   // each registered on its proof.
   const proved = Object.values(ABSENCE_REGISTRY).reduce((n, m) => n + Object.keys(m).length, 0);
@@ -369,7 +404,10 @@ test('D100: the census reads every key the linter reads, in its closed classes, 
   // done asks on the agent's word in (a row sentence).
   // D207's review of real reports: 3 more, by the recorded writes' search (what holds of every file outside the evaluated
   // session: that no recorded write changed them).
-  assert.deepEqual([proved - rows, rows, held], [99, 10, 3]);
+  // D229: 3 more, why `sonah fix` starts a new session where that is an absence — no agent commit of the change
+  // touched the item's files (`commit_path_lines`, the one proof this phase adds), the session is not on this computer
+  // (`recording_file_names`) and its recording here does not show the commit (`commit_call_search`).
+  assert.deepEqual([proved - rows, rows, held], [102, 10, 3]);
 });
 
 test('D100: each proof names code that declares it, and every proof is used', async () => {

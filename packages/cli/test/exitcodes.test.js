@@ -216,6 +216,63 @@ test('the commands old hooks call drain a 1 MB payload: exit 0, silent, and the 
   assert.deepEqual(await tree(home), before, 'nothing was stored');
 });
 
+// D225: the hidden `pre-push`, which the push script of `sonah hook add --push` runs at each push, stays for good and
+// must never fail, slow or stop a push: it exits 0 and says nothing outside a repository with the push hook, with its
+// --help or any other word, with an empty input or a 1 MB one (read to its end, so the writer gets no EPIPE), and
+// writes nothing.
+test('pre-push exits 0, silent, drains a 1 MB input and writes nothing where no push hook is on', async (t) => {
+  const home = await sealed(t);
+  const before = await tree(home);
+  const sha = 'a'.repeat(40);
+  const refs = `refs/heads/feature ${sha} refs/heads/feature ${'0'.repeat(40)}\n`;
+  const big = refs.repeat(Math.ceil((1024 * 1024) / refs.length) + 10);
+  for (const [args, input] of [[['pre-push', 'origin', 'ssh://example.invalid/acme/widgets.git'], refs],
+    [['pre-push', 'origin', 'ssh://example.invalid/acme/widgets.git'], big], [['pre-push'], ''],
+    [['pre-push', '--help'], refs], [['pre-push', '-h'], '']]) {
+    const r = await runWithInput(args, input, { home });
+    assert.deepEqual(r, { code: 0, stdout: '', stderr: '', writeError: null }, `${args.join(' ')} (${input.length} bytes)`);
+  }
+  assert.deepEqual(await tree(home), before, 'nothing was stored');
+});
+
+// D227: the hidden `push-run --repo DIR`, which `pre-push` starts in the background, stays for good too: it exits 0
+// and prints nothing with no argument, with --help, outside a git repository, for a folder that is not there, or with
+// its input a 1 MB one (drained), and writes nothing where no push hook left a ticket.
+test('push-run exits 0, silent, drains a 1 MB input and writes nothing where no ticket waits', async (t) => {
+  const home = await sealed(t);
+  const before = await tree(home);
+  const big = 'x'.repeat(1024 * 1024 + 10);
+  for (const [args, input] of [[['push-run'], ''], [['push-run', '--help'], ''], [['push-run', '-h'], big],
+    [['push-run', '--repo', home], big], [['push-run', '--repo', join(home, 'not there')], ''],
+    [['push-run', '--repo', home, '--json'], '']]) {
+    const r = await runWithInput(args, input, { home });
+    assert.deepEqual(r, { code: 0, stdout: '', stderr: '', writeError: null }, `${args.join(' ')} (${input.length} bytes)`);
+  }
+  assert.deepEqual(await tree(home), before, 'nothing was stored');
+});
+
+// D230: the hidden `remind-hook`, which the SessionStart entry of `sonah remind on` runs at each start of Claude Code,
+// and `remind-refresh <folder>`, which the hook starts in the background, stay for good too. Neither may fail or slow
+// that start, and Claude Code shows what a hook prints: they exit 0 and print nothing with no connection, with --help or
+// any other word, with Claude Code's input, an empty one, one that is not JSON or a 1 MB one (read to its end, so the
+// writer gets no EPIPE), and write nothing.
+test('remind-hook and remind-refresh exit 0, silent, drain a 1 MB input and write nothing with no connection',
+  async (t) => {
+    const home = await sealed(t);
+    const before = await tree(home);
+    const input = JSON.stringify({ session_id: '3c3c3c3c-0000-4000-8000-000000000000', cwd: home,
+      hook_event_name: 'SessionStart', source: 'startup' });
+    const big = `${input}${' '.repeat(1024 * 1024)}`;
+    for (const [args, stdin] of [[['remind-hook'], input], [['remind-hook'], big], [['remind-hook'], ''],
+      [['remind-hook'], 'not json'], [['remind-hook', '--help'], input], [['remind-hook', '-h'], ''],
+      [['remind-refresh', home], ''], [['remind-refresh'], big], [['remind-refresh', '--help'], ''],
+      [['remind-refresh', 'not/absolute'], ''], [['remind-refresh', home, home], '']]) {
+      const r = await runWithInput(args, stdin, { home });
+      assert.deepEqual(r, { code: 0, stdout: '', stderr: '', writeError: null }, `${args.join(' ')} (${stdin.length} bytes)`);
+    }
+    assert.deepEqual(await tree(home), before, 'nothing was stored');
+  });
+
 // M34 integration review F1: a kept command's output must name only commands the usage table holds (the retirement once
 // left `init`'s consent text naming `sonah scan --deep` and `sonah pr --deep`). That text retired with `init` (D76);
 // docs/PRIVACY.md ("What leaves your computer") says which commands reach the network.
@@ -223,7 +280,8 @@ test('no kept command names a retired command', async (t) => {
   const home = await sealed(t);
   const usage = (await runSealed(['--help'], { home })).stdout;
   const commands = new Set([...usage.matchAll(/^\s+sonah\s+([a-z][a-z-]*)/gm)].map((m) => m[1]));
-  for (const args of [['review', '--help'], ['doctor', '--no-probe'], ['feedback'], ['not-a-command']]) {
+  for (const args of [['review', '--help'], ['doctor', '--no-probe'], ['feedback'], ['not-a-command'], ['status'],
+    ['disconnect'], ['connect', 'ABCD-EFGH', '--server', 'http://127.0.0.1:9'], ['share']]) {
     const r = await runSealed(args, { home });
     assert.notEqual(r.code, 'timeout', args.join(' '));
     const text = r.stdout + r.stderr;
@@ -251,4 +309,53 @@ test('pr --post stops before it resolves a token, a target or the range (B3; `pr
   assert.equal(r.stdout, '', 'nothing was rendered, so nothing was built');
   assert.doesNotMatch(r.stderr, /reading sessions|compiling /, 'the range was never read');
   assert.deepEqual(await tree(home), before, 'a refused command touches no file under SONAH_HOME');
+});
+
+// D224: the connection commands' codes, from the real entry in a sealed home, with no server to reach: `status` with no
+// connection says so and exits 0; `disconnect` with none exits 2; `connect` with a code outside a terminal stops before
+// it sends anything (2), as does a usage error (2) and a --token whose standard input holds no token (2). Nothing is
+// written under HOME or SONAH_HOME.
+test('connect, disconnect and status exit by the contract and write nothing when they do not connect', async (t) => {
+  const home = await sealed(t);
+  const before = await tree(home);
+  const cases = [
+    [['status'], 0, /no connection to a Sonah Team server/],
+    [['disconnect'], 2, /no connection to a Sonah Team server/],
+    [['connect'], 2, /^sonah connect: give the code/],
+    [['connect', 'ABCD-EFGH', '--server', 'http://example.com'], 2, /--server takes an https address/],
+    [['connect', 'ABCD-EFGH', '--server', 'http://127.0.0.1:9'], 2, /this is not a terminal\. Sonah sent nothing/],
+    [['status', 'now'], 2, /^sonah status: it takes no argument/],
+    // The token is read from standard input, here an ended pipe with no token on it.
+    [['connect', '--token', '--server', 'http://127.0.0.1:9'], 2, /^That is not an upload token\./],
+  ];
+  for (const [args, code, said] of cases) {
+    const r = args[1] === '--token' ? await runWithInput(args, '\n', { home }) : await runSealed(args, { home });
+    assert.equal(r.code, code, args.join(' '));
+    assert.match(r.stdout + r.stderr, said, args.join(' '));
+    assert.doesNotMatch(r.stderr, /at .*\(node:/, 'no stack trace');
+  }
+  assert.deepEqual(await tree(home), before, 'nothing appeared under HOME or SONAH_HOME');
+});
+
+// D228 review 3: `sonah share`'s codes, from the real entry in a sealed home, with no server to reach. D228's contract
+// names this file among the tests that pin share's behaviour, and no case here ran a share. A usage error exits 2
+// before anything is read, and with no connection the share says so and exits 2 in a folder that is no git repository,
+// since it reads the connection first. Nothing is written under HOME or SONAH_HOME.
+test('share exits by the contract with no connection, and a usage error stops it before that', async (t) => {
+  const home = await sealed(t);
+  const before = await tree(home);
+  const cases = [
+    [['share'], 2, /^This computer has no connection to Sonah Team now\./],
+    [['share', 'now'], 2, /^sonah share: it takes no argument/],
+    [['share', '--dir'], 2, /^sonah share: --dir needs a value/],
+    [['share', '--branch', 'a', '--branch', 'b'], 2, /^sonah share: --branch is given twice/],
+    [['share', '--out', 'x'], 2, /^sonah share: unknown option --out/],
+  ];
+  for (const [args, code, said] of cases) {
+    const r = await runSealed(args, { home });
+    assert.equal(r.code, code, args.join(' '));
+    assert.match(r.stdout + r.stderr, said, args.join(' '));
+    assert.doesNotMatch(r.stderr, /at .*\(node:/, 'no stack trace');
+  }
+  assert.deepEqual(await tree(home), before, 'nothing appeared under HOME or SONAH_HOME');
 });

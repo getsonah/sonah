@@ -133,6 +133,15 @@ export const ABSENCE_PROOFS = Object.freeze({
   scopes: Object.freeze(['recording']),
   proves: 'named by the commit only: every tool call of the one recording that the id names, and of its helpers\' '
     + 'recordings, was read, and none spans the commit\'s committer time in a folder of the commit\'s repository' }),
+  // D229: what `sonah fix` says when it starts a new session because no agent commit of the change touched the item's
+  // files. It rests on git's own two answers for the range, which is why it is its own proof and not
+  // `commit_range_lines` (whose claim says nothing of the paths a commit changed).
+  commit_path_lines: Object.freeze({ kind: 'system', where: [['packages/cli/src/commit-sessions.js', 'commitsOf'],
+    ['packages/cli/src/team-git.js', 'changedPaths']],
+  scopes: Object.freeze(['system']),
+  proves: 'no commit of the change names an agent session that touched these files: git listed the range with each '
+    + 'message\'s Agent-Session trailers and the paths each of its commits changed, and no commit that names a session '
+    + 'changed a file of the item' }),
   recording_not_read: Object.freeze({ kind: 'system', where: [['packages/cli/src/session-id.js', 'recordingsNamed'],
     ['packages/cli/src/commit-sessions.js', 'sessionsOf']],
   scopes: Object.freeze(['system']),
@@ -448,6 +457,14 @@ export const ABSENCE_REGISTRY = Object.freeze({
     'REPORT_OUTPUT_WORDS.notPushed.new': Object.freeze({ git_remote_refs: 'system' }),
     'REPORT_OUTPUT_WORDS.notPushed.old': Object.freeze({ git_remote_refs: 'system' }),
     'REPORT_OUTPUT_WORDS.notPushed.both': Object.freeze({ git_remote_refs: 'system' }),
+  }),
+  // D229: why `sonah fix` starts a new session, where that is an absence: no agent commit of the change touched the
+  // item's files (git's range and paths), the session that wrote it is not on this computer (the file names), and the
+  // one recording here does not show it made that commit here (the calls searched, as D143's `named` link).
+  'packages/cli/src/fix-command.js': Object.freeze({
+    'FIX_WORDS.why.no_agent_commit': Object.freeze({ commit_path_lines: 'system' }),
+    'FIX_WORDS.why.not_here': Object.freeze({ recording_file_names: 'system' }),
+    'FIX_WORDS.why.not_shown': Object.freeze({ commit_call_search: 'recording' }),
   }),
   // D143: the links of a range's or a pull request's commits, and no session named in a range or a whole pull request.
   // A commit is named by the commit only on one of three proofs: the calls searched, no recording read (several, or
@@ -1816,6 +1833,345 @@ export const READ_CENSUS = Object.freeze({
     'BARE_WORDS.notice': ['other', '56976abd5b7cdaa3'],
     'BARE_WORDS.help': ['other', 'bff6fdb0c4156808'],
     'BARE_WORDS.openFix': ['sonah', '8572881c48cefeb9'],
+  }),
+  // D224 (read 2026-11-11): the connection to Sonah Team (`sonah connect`, `disconnect`, `status`). Whose a code or a
+  // token is, the seat the server names (a free seat's reviews readable by its person alone), the questions, the prompt,
+  // what Sonah kept, revoked or deleted, a token left live with where to revoke it, a connection the server no longer
+  // takes, and every fix (other: the server's answers, the person's own machine and choices, instructions); what Sonah
+  // could not read, reach, write, revoke or follow, and what it did not connect, send or change (sonah, as Sonah's own
+  // record proves it). None states anything of the recording, the session or the code, so none states an absence.
+  'packages/cli/src/connect-command.js': Object.freeze({
+    'CONNECT_WORDS.whose.code': ['other', '0359609ff5296e6e'],
+    'CONNECT_WORDS.whose.token': ['other', '5f8c859b1d3e54e6'],
+    'CONNECT_WORDS.seat.paid': ['other', '76fee2f70bb25a57'],
+    'CONNECT_WORDS.seat.free': ['other', 'bafbac78c94a9955'],
+    'CONNECT_WORDS.seat.none': ['other', '85afad444ef7aa56'],
+    'CONNECT_WORDS.seat.notRead': ['sonah', 'df7602bed70f4f4d'],
+    'CONNECT_WORDS.replacing': ['other', '204756a8de90f57a'],
+    'CONNECT_WORDS.ask': ['other', '634e6ad7d627cc13'],
+    'CONNECT_WORDS.askReplace': ['other', '6173db3400467da7'],
+    'CONNECT_WORDS.tokenPrompt': ['other', '77e06441bacc1bf0'],
+    'CONNECT_WORDS.connected': ['other', 'b785e83dc4fb4801'],
+    'CONNECT_WORDS.kept': ['other', '7d854521d454bbf4'],
+    'CONNECT_WORDS.saidNo': ['sonah', 'ea57420f40c72a0e'],
+    'CONNECT_WORDS.newRevoked': ['other', 'ef1fb678c8cada19'],
+    'CONNECT_WORDS.newLive': ['other', '6ceb949407683237'],
+    'CONNECT_WORDS.tokenStays': ['other', '168837441e3cb187'],
+    'CONNECT_WORDS.oldRevoked': ['other', '6cc9c1c198ace4dd'],
+    'CONNECT_WORDS.oldEnded': ['other', '8261223a6c087274'],
+    'CONNECT_WORDS.oldLive': ['other', 'fe4deaf3f8004f9b'],
+    'CONNECT_WORDS.disconnected': ['other', '11afa665de04629e'],
+    'CONNECT_WORDS.alreadyEnded': ['other', 'ebbbe0d21f9710f8'],
+    'CONNECT_WORDS.deletedLive': ['sonah', '6f7d0655be0a6891'],
+    'CONNECT_WORDS.deletedUnreadable': ['sonah', 'a8c1fd2b9339f3be'],
+    'CONNECT_WORDS.status.connected': ['other', '355b65187ac812a4'],
+    'CONNECT_WORDS.status.none': ['other', 'f80ca048645ef736'],
+    'CONNECT_WORDS.status.unreadable': ['sonah', '01ceb303efc19f54'],
+    'CONNECT_WORDS.status.refused': ['other', 'ea25c80e556c9154'],
+    'TEAM_PROBLEM_WORDS.team_answer': ['sonah', 'c44043e5ab803080'],
+    'TEAM_PROBLEM_WORDS.team_bad_code': ['other', '21fcf62cdbe669c4'],
+    'TEAM_PROBLEM_WORDS.team_bad_token': ['other', 'ab8741c5f94b4af8'],
+    'TEAM_PROBLEM_WORDS.team_no_terminal': ['sonah', 'b0b56d122d37fae8'],
+    'TEAM_PROBLEM_WORDS.team_not_a_token': ['other', 'a4a32ade16cd27e6'],
+    'TEAM_PROBLEM_WORDS.team_not_connected': ['sonah', '929c475e515340f9'],
+    'TEAM_PROBLEM_WORDS.team_rate_limited': ['other', '6266e3da3a4a0b07'],
+    'TEAM_PROBLEM_WORDS.team_redirect': ['sonah', 'b04ff8b5f656c080'],
+    'TEAM_PROBLEM_WORDS.team_refused': ['other', 'df2f07088edbb3a1'],
+    'TEAM_PROBLEM_WORDS.team_replace_no_terminal': ['sonah', 'f660b48af513ae4a'],
+    'TEAM_PROBLEM_WORDS.team_too_many_tokens': ['other', '9466a4032f5e9934'],
+    'TEAM_PROBLEM_WORDS.team_unreachable': ['sonah', '09c4d6b41342f578'],
+    'TEAM_PROBLEM_WORDS.team_unwritable': ['sonah', '8d0bd276cdb82a86'],
+    'TEAM_FIX_WORDS.team_answer': ['other', 'e6a677da88f416e2'],
+    'TEAM_FIX_WORDS.team_bad_code': ['other', '6dbd471b4514af3b'],
+    'TEAM_FIX_WORDS.team_bad_token': ['other', '25d15d05805ae05b'],
+    'TEAM_FIX_WORDS.team_no_terminal': ['other', 'c274c6bfff6cdffb'],
+    'TEAM_FIX_WORDS.team_not_a_token': ['other', 'cd8d9d359b6842b5'],
+    'TEAM_FIX_WORDS.team_rate_limited': ['other', '22f07cf01d0f1af4'],
+    'TEAM_FIX_WORDS.team_redirect': ['other', '96fbaba1466a84f1'],
+    'TEAM_FIX_WORDS.team_refused': ['other', 'e6a677da88f416e2'],
+    'TEAM_FIX_WORDS.team_replace_no_terminal': ['other', '783fb85789d24ccb'],
+    'TEAM_FIX_WORDS.team_too_many_tokens': ['other', 'd9d55ce692642672'],
+    'TEAM_FIX_WORDS.team_unreachable': ['other', 'f66f9f7560ab2ab7'],
+    'TEAM_FIX_WORDS.team_unwritable': ['other', '40965cd585f486ec'],
+    // D225 (read 2026-11-11): the push hook's offer and the commit link's after it: what a review costs, the questions
+    // and the commands to run instead (other).
+    'CONNECT_WORDS.hookCost': ['other', '49429ed760f4493c'],
+    'CONNECT_WORDS.askHook': ['other', '35ac05d474cb978a'],
+    'CONNECT_WORDS.hookLater': ['other', '3bbae0ef052a982f'],
+    'CONNECT_WORDS.askLink': ['other', '0d36101d3d6d0be9'],
+    'CONNECT_WORDS.linkLater': ['other', 'c6caaaf92b457335'],
+  }),
+  // D225 (read 2026-11-11): the push hook (`sonah hook add --push`, `remove --push`, its script's line, and its lines in
+  // `sonah status` and `sonah doctor`). What Sonah wrote, deleted, keeps, reviews, did not turn on, did not find, cannot
+  // read or tell, and what it found of its own hook files, of the node and the Sonah that they name, and of the
+  // repository (sonah, as D143's hook words are); what to add or run, a review's cost, a label and a list of branches
+  // (other). None states anything of the recording, the session or the code, so none states an absence.
+  'packages/cli/src/push-hook.js': Object.freeze({
+    'PUSH_HOOK_WORDS.turnedOn': ['sonah', '54612fb68bae8c4c'],
+    'PUSH_HOOK_WORDS.alreadyOn': ['sonah', 'b0510e392c9816a4'],
+    'PUSH_HOOK_WORDS.scriptWritten': ['sonah', '1616841ee2b9ac1b'],
+    'PUSH_HOOK_WORDS.notOnForeign': ['sonah', '6a2b7fda5619fb26'],
+    'PUSH_HOOK_WORDS.notOnPreCommit': ['sonah', 'a3b8ea7068067005'],
+    'PUSH_HOOK_WORDS.notOnHooksPath': ['sonah', 'e0a09757f501be1d'],
+    'PUSH_HOOK_WORDS.notOnLink': ['sonah', '21ae2e89e62dfd3f'],
+    'PUSH_HOOK_WORDS.notOnNotExecutable': ['sonah', 'bdb0e1d9c3ac8aab'],
+    'PUSH_HOOK_WORDS.madeExecutable': ['sonah', 'f081b2d883bf5aac'],
+    'PUSH_HOOK_WORDS.addLine': ['other', 'bcfaa565872e13c1'],
+    'PUSH_HOOK_WORDS.addLefthook': ['other', '6447563af085cb55'],
+    'PUSH_HOOK_WORDS.mergeLefthook': ['other', 'dea9ff4de3187f02'],
+    'PUSH_HOOK_WORDS.lefthookAhead': ['other', 'aee189402bbbbaa6'],
+    'PUSH_HOOK_WORDS.preCommitSteps': ['other', 'e3fde7663a478fea'],
+    'PUSH_HOOK_WORDS.thenStatus': ['other', '13f0a31694d20e8d'],
+    'PUSH_HOOK_WORDS.about': ['sonah', '29292e2c5bafb418'],
+    // Review of D225 (read 2026-11-11): what a push does once git runs Sonah's push script, after a line to add (sonah,
+    // as `about` and D143's optInOnce are).
+    'PUSH_HOOK_WORDS.aboutOnce': ['sonah', 'b7b94d8a21383adf'],
+    'PUSH_HOOK_WORDS.cost': ['other', '17da2e0cc397092d'],
+    'PUSH_HOOK_WORDS.cap': ['sonah', '7ddef1ff9ea5c400'],
+    'PUSH_HOOK_WORDS.skipOnce': ['other', '9a707745e2ce3f64'],
+    'PUSH_HOOK_WORDS.stopIt': ['other', 'd0bfe167ff873dc8'],
+    'PUSH_HOOK_WORDS.notConnected': ['sonah', '9684c06c79202aa9'],
+    'PUSH_HOOK_WORDS.noClaude': ['sonah', 'bc8845fc6b5c6685'],
+    'PUSH_HOOK_WORDS.privateClient': ['sonah', '885f7712271575ba'],
+    'PUSH_HOOK_WORDS.scriptMoved': ['sonah', '062573689ebfc2c4'],
+    'PUSH_HOOK_WORDS.removed': ['sonah', '384206cc7926060a'],
+    'PUSH_HOOK_WORDS.unlisted': ['sonah', '9a36122e12b32e77'],
+    'PUSH_HOOK_WORDS.nothingToRemove': ['sonah', '83ad414d806edbde'],
+    'PUSH_HOOK_WORDS.stays': ['sonah', '692460610279fc66'],
+    'PUSH_HOOK_WORDS.problems.push_hook_temporary_install': ['sonah', '3464100c1e03fe3e'],
+    'PUSH_HOOK_WORDS.problems.push_hook_windows': ['sonah', '91adae623f7e57c5'],
+    'PUSH_HOOK_WORDS.problems.push_hook_list_unreadable': ['sonah', 'a5ba3f035c0e64f8'],
+    'PUSH_HOOK_WORDS.report.heading': ['other', 'b972bf6b251ed516'],
+    'PUSH_HOOK_WORDS.report.off': ['sonah', '9fb922bb488dc661'],
+    'PUSH_HOOK_WORDS.report.on.runner': ['sonah', 'e275f78713058395'],
+    'PUSH_HOOK_WORDS.report.on.pre-commit': ['sonah', 'b81653b64ead55ec'],
+    'PUSH_HOOK_WORDS.report.moved': ['sonah', '9162c3f934865bd4'],
+    'PUSH_HOOK_WORDS.report.notRun': ['sonah', '33a88ce8524322ff'],
+    'PUSH_HOOK_WORDS.report.notExecutable': ['sonah', 'f9331ef5a98c6725'],
+    'PUSH_HOOK_WORDS.report.notChecked': ['sonah', '437363d9d3a45b40'],
+    'PUSH_HOOK_WORDS.report.lineNotChecked': ['sonah', '11000e68cf74313c'],
+    'PUSH_HOOK_WORDS.report.check': ['other', '08ca006719e74dcf'],
+    'PUSH_HOOK_WORDS.report.fix': ['other', '381f5d71cdb668b2'],
+    'PUSH_HOOK_WORDS.report.nodeGone': ['sonah', '5eb4ee3f90cb28fc'],
+    'PUSH_HOOK_WORDS.report.sonahGone': ['sonah', '4458e1e9e3be5dde'],
+    'PUSH_HOOK_WORDS.report.otherInstall': ['sonah', '95a9061ebb75d94e'],
+    'PUSH_HOOK_WORDS.report.otherServer': ['sonah', '177a60d6873dc0d1'],
+    'PUSH_HOOK_WORDS.report.refresh': ['other', '5fb42d1d727e6d7a'],
+    'PUSH_HOOK_WORDS.report.gone': ['sonah', 'e3bf724edaa06995'],
+    'PUSH_HOOK_WORDS.report.waiting': ['other', '9695043f139fc2a5'],
+  }),
+  // D225 (read 2026-11-11): the hidden `sonah pre-push`'s lines: the branches Sonah keeps for review and those it
+  // leaves out, and why it does not review a push (no connection, one it cannot read, a token its server refuses, a hook
+  // for another server) (sonah). None states anything of the recording, the session or the code.
+  'packages/cli/src/push-hook-run.js': Object.freeze({
+    'PRE_PUSH_WORDS.queued': ['sonah', 'fcafbab8d7cc5c99'],
+    'PRE_PUSH_WORDS.rest': ['sonah', 'bd076f3b3dd9d033'],
+    'PRE_PUSH_WORDS.notConnected': ['sonah', '1c0a14de8ff3ff88'],
+    'PRE_PUSH_WORDS.unreadable': ['sonah', '4da3dd9d47f98903'],
+    'PRE_PUSH_WORDS.refused': ['sonah', 'c28f972847c1d804'],
+    'PRE_PUSH_WORDS.otherServer': ['sonah', 'ef004c8171bdb05a'],
+    // D227 (read 2026-11-11): the push now starts its review, or one that runs takes it (sonah: what Sonah reviews).
+    'PRE_PUSH_WORDS.started': ['sonah', '27ea1aee30124529'],
+    'PRE_PUSH_WORDS.behind': ['sonah', '154273beaa34c016'],
+    // D229 (read 2026-11-12): how many comments of your team wait on a branch this push left, from the cache (other:
+    // a count of what the server last listed, with the command that lists them).
+    'PRE_PUSH_WORDS.waiting': ['other', 'e11d05188583959a'],
+  }),
+  // D227 (read 2026-11-11): the push run's why of each run in `sonah status` and its log. What Sonah sees or does not see
+  // of the remote, waits for, found, cannot read, find, reach, start or draw, did not send or review, stopped, and
+  // where its process ended (sonah); a newer push, what the server or the person's Claude Code plan or account did, a
+  // refusal's status, where Sonah put the review, a heading and a count (other). None states anything of the recording,
+  // the session or the code, so none states an absence.
+  'packages/cli/src/push-run.js': Object.freeze({
+    'PUSH_RUN_WORDS.why.remote_not_seen': ['sonah', 'dfe74564178f6e5a'],
+    'PUSH_RUN_WORDS.why.job_slot': ['sonah', '90b4c7ba5dab6e6f'],
+    'PUSH_RUN_WORDS.why.folder_in_use': ['sonah', 'f10ae2ec32dc3df6'],
+    // D228 review 2 (read 2026-11-12): what a share sent after another Sonah held the page's folder, and what sends
+    // the review now (sonah: Sonah's own record of the run says both).
+    'PUSH_RUN_WORDS.why.folder_held': ['sonah', '131953595af0b7c7'],
+    // D228 review 1 (read 2026-11-12): a share puts a page of a branch up too, so the words name a newer review of
+    // it and not a newer push (other, as before; was 9ea402287740b4f2).
+    'PUSH_RUN_WORDS.why.newer_push': ['other', '4925bf6380695a7b'],
+    'PUSH_RUN_WORDS.why.on_default_branch': ['sonah', 'f144250851570db0'],
+    // D227 review (read 2026-11-11): what Sonah did not review once the person turned the push hook off (sonah). D227
+    // review 1 (read 2026-11-12): what Sonah did not send once it was off, a review drawn or one that waited to be sent
+    // too (sonah; was 8709dde5dd85c19e).
+    'PUSH_RUN_WORDS.why.hook_removed': ['sonah', 'df949dba6c101130'],
+    'PUSH_RUN_WORDS.why.remote_never_showed': ['sonah', '365cac75eab7f21b'],
+    'PUSH_RUN_WORDS.why.not_connected': ['sonah', '86e40b05faedd724'],
+    'PUSH_RUN_WORDS.why.connection_unreadable': ['sonah', '859cef40062c06aa'],
+    // D228 review 1 (read 2026-11-12): `sonah share` sends a review too, so the words name the connection of a push
+    // or of a share (sonah, as before; was b20509da3d6602e5).
+    'PUSH_RUN_WORDS.why.connection_changed': ['sonah', 'b570b220366a2a3c'],
+    'PUSH_RUN_WORDS.why.refused': ['other', '72fcc6c9e1f1ec1b'],
+    // D228 (read 2026-11-12): `sonah share` says a server's end in these words too, so the two that named only a
+    // push name both ways now (other, sonah as before; was 891fe6418bf1f2df and 863e8fcddc562e13).
+    'PUSH_RUN_WORDS.why.not_member': ['other', 'bf9623fb1bd0e0db'],
+    'PUSH_RUN_WORDS.why.no_repository': ['sonah', '9b316d2c0224b976'],
+    'PUSH_RUN_WORDS.why.repository_gone': ['sonah', 'f89469a1aa5bcdf7'],
+    'PUSH_RUN_WORDS.why.no_base': ['sonah', 'ce63a2694130dfac'],
+    'PUSH_RUN_WORDS.why.usage_limit': ['other', 'd39019171016326a'],
+    'PUSH_RUN_WORDS.why.auth': ['other', '0d1b80aabf8b51cb'],
+    'PUSH_RUN_WORDS.why.billing': ['other', '353f40d3287b46a0'],
+    'PUSH_RUN_WORDS.why.cli_missing': ['sonah', '67d394b41991c771'],
+    'PUSH_RUN_WORDS.why.model_not_found': ['other', '97e07fe6c9d0511b'],
+    // D228 review 1 (read 2026-11-12): a share reads the folder again too, so the words name a push and a share
+    // (sonah, as before; was a257c478b99416d9).
+    'PUSH_RUN_WORDS.why.draw_failed': ['sonah', '20e46eeff1237726'],
+    'PUSH_RUN_WORDS.why.too_large': ['sonah', 'e6e2b31da5572ecb'],
+    'PUSH_RUN_WORDS.why.upload_refused': ['other', 'c7084d8c3315501b'],
+    'PUSH_RUN_WORDS.why.time_limit': ['sonah', '1f17b71e3b043d11'],
+    'PUSH_RUN_WORDS.why.upload_failed': ['sonah', '04a34dba3291904f'],
+    'PUSH_RUN_WORDS.why.uploaded': ['other', 'bcaf35fb378dfcbc'],
+    'PUSH_RUN_WORDS.why.process_ended': ['sonah', 'a0abf370594c755b'],
+    // D228 review 3 (read 2026-11-12): a share puts a page up with no push, and its run is in the list this heading
+    // stands over, so the heading names the pushes and the shares (other, as before; was ee45c40314ae6f09).
+    'PUSH_RUN_WORDS.heading': ['other', '8fd4f7e3f5243736'],
+    // D229 (read again 2026-11-12): the count now names `sonah fixes`, the command that lists them (other).
+    'PUSH_RUN_WORDS.waiting': ['other', 'e42d26f3af2ff353'],
+  }),
+  // D228 (read 2026-11-12): `sonah share`'s problems and their fixes. What Sonah did not find in git or in its own
+  // visual folder, could not read as a finished page, or found another Sonah holding (sonah, as HOOK_WORDS
+  // problems.hook_not_git, PUSH_RUN_WORDS why.no_repository and why.folder_in_use say the same of the same things); a
+  // branch name the server would refuse, every fix, the folder it sends and the page it put online (other: a rule of
+  // the server, an instruction, a positive fact). None states anything of the recording, the session or the code, so
+  // none states an absence.
+  'packages/cli/src/share-command.js': Object.freeze({
+    'SHARE_WORDS.problem.share_not_git': ['sonah', '0c3723ae02c69e1a'],
+    'SHARE_WORDS.problem.share_no_review': ['sonah', 'dd2860795fcfab75'],
+    'SHARE_WORDS.problem.share_not_a_review': ['sonah', '693df96dc1ec51f5'],
+    'SHARE_WORDS.problem.share_no_branch': ['sonah', '8930d75a23786e92'],
+    'SHARE_WORDS.problem.share_bad_branch': ['other', '7b76f2c36d57f891'],
+    'SHARE_WORDS.problem.share_no_repository': ['sonah', '9b316d2c0224b976'],
+    'SHARE_WORDS.problem.share_folder_in_use': ['sonah', '32e1f385e7955366'],
+    'SHARE_WORDS.fix.share_not_git': ['other', '8296ebe14c11c9ec'],
+    'SHARE_WORDS.fix.share_no_review': ['other', 'b3947157a384b76e'],
+    'SHARE_WORDS.fix.share_not_a_review': ['other', '992671e88c3db263'],
+    'SHARE_WORDS.fix.share_no_branch': ['other', '7cc1058ba5765b04'],
+    'SHARE_WORDS.fix.share_bad_branch': ['other', '7b86b67c78b66a0f'],
+    'SHARE_WORDS.fix.share_no_repository': ['other', 'c3218743d0bff526'],
+    'SHARE_WORDS.fix.share_folder_in_use': ['other', '84b6b0e0f075a3ab'],
+    'SHARE_WORDS.sending': ['other', '2a6897938783d343'],
+    'SHARE_WORDS.shared': ['other', '0697edf71f61cf02'],
+  }),
+  // D229 (read 2026-11-12): `sonah fixes` and `sonah fix`. The problems: what Sonah found of git, of this terminal, of
+  // PATH, of the worktrees, of the recordings and of its own launch record, and what it could not read of the server's
+  // answer (sonah); what the person typed and what the server says of a comment (other). Every fix is what to run
+  // (other). The listing's heading, each comment's line, its state, its count and what was left out (other; `dropped`
+  // is what Sonah left out, sonah). The one fix: the prompt's heading, where a new session goes and why it is new when
+  // the person asked (other); the copy of the session that wrote the change, what this clone holds of the reviewed
+  // head, what Sonah could not read of the commits or the recording, the commit link it did not find, the editor that
+  // did not finish, and what Sonah sent or could not tell the server (sonah). Three state an absence, each on its
+  // proof: no agent commit touched these files, the session is not on this computer, and its recording here does not
+  // show the commit.
+  'packages/cli/src/fix-command.js': Object.freeze({
+    'FIX_WORDS.problem.fix_no_repository': ['sonah', 'e1856be27c2fd53f'],
+    'FIX_WORDS.problem.fix_bad_list': ['sonah', '45a2b8091a125bd9'],
+    'FIX_WORDS.problem.fix_bad_id': ['other', '88e4d63e25061ec9'],
+    'FIX_WORDS.problem.fix_inside_claude': ['sonah', '670634f391b694e6'],
+    'FIX_WORDS.problem.fix_no_terminal': ['sonah', '7b755ce48dd279fe'],
+    'FIX_WORDS.problem.fix_no_claude': ['sonah', 'f83d94b2b20d4de0'],
+    'FIX_WORDS.problem.fix_bad_answer': ['sonah', '5895ffeb01a45a58'],
+    'FIX_WORDS.problem.fix_not_waiting': ['other', '101c72202e0d2240'],
+    'FIX_WORDS.problem.fix_not_fixable': ['other', 'f7e4ceee95c851da'],
+    'FIX_WORDS.problem.fix_not_git': ['sonah', '248aa0a2e4e42d33'],
+    'FIX_WORDS.problem.fix_not_this_repo': ['sonah', 'de24fe54fc5ccbe9'],
+    'FIX_WORDS.problem.fix_no_worktree': ['sonah', 'b3c5f14126354ba5'],
+    'FIX_WORDS.problem.fix_several_worktrees': ['sonah', '5a954345ea710883'],
+    'FIX_WORDS.problem.fix_several_recordings': ['sonah', '2d7f932679bf82b5'],
+    'FIX_WORDS.problem.fix_record_unreadable': ['sonah', '5f643a80d8a62619'],
+    'FIX_WORDS.problem.fix_claude_failed': ['sonah', '6628ecede8180f69'],
+    'FIX_WORDS.fix.fix_no_repository': ['other', '7bbc4bd81bbeac13'],
+    'FIX_WORDS.fix.fix_bad_list': ['other', 'b47b67d9346253e3'],
+    'FIX_WORDS.fix.fix_bad_id': ['other', '2284d52193a560c4'],
+    'FIX_WORDS.fix.fix_inside_claude': ['other', '73afb2d62991a779'],
+    'FIX_WORDS.fix.fix_no_terminal': ['other', 'fa8b958810afdafa'],
+    'FIX_WORDS.fix.fix_no_claude': ['other', '08c9160c82b140e6'],
+    'FIX_WORDS.fix.fix_bad_answer': ['other', '4fdd690c100574aa'],
+    'FIX_WORDS.fix.fix_not_waiting': ['other', '774bea9744ec326a'],
+    'FIX_WORDS.fix.fix_not_fixable': ['other', 'bb4878bc17eaf75c'],
+    'FIX_WORDS.fix.fix_not_git': ['other', '7746aee117fbbb58'],
+    'FIX_WORDS.fix.fix_not_this_repo': ['other', 'c46fc005af43eb08'],
+    'FIX_WORDS.fix.fix_no_worktree': ['other', '08af7d7ab5429866'],
+    'FIX_WORDS.fix.fix_several_worktrees': ['other', 'da699997a060d6cc'],
+    'FIX_WORDS.fix.fix_several_recordings': ['other', '4c46e5a75c2df539'],
+    'FIX_WORDS.fix.fix_record_unreadable': ['other', 'b4b6b87c4306b173'],
+    'FIX_WORDS.fix.fix_claude_failed': ['other', '84057b07272b917c'],
+    'FIX_WORDS.none': ['other', '1dcf2606c17cba36'],
+    'FIX_WORDS.heading': ['other', '0e3329b60d6d6886'],
+    'FIX_WORDS.entry': ['other', 'f90d8842bcb11365'],
+    'FIX_WORDS.onIt': ['other', '342abeca64716347'],
+    'FIX_WORDS.more': ['other', 'f259e9ecef08beae'],
+    'FIX_WORDS.dropped': ['sonah', '1be9cdd1ccd99d31'],
+    'FIX_WORDS.prompt': ['other', '64b1c9af601571e5'],
+    'FIX_WORDS.toFork': ['sonah', '816d18581b63ab6a'],
+    'FIX_WORDS.toLast': ['sonah', '3a98d94430cbfd04'],
+    'FIX_WORDS.toNew': ['other', '4e1402e654b6dbd7'],
+    'FIX_WORDS.why.asked': ['other', '937dc1caafff282c'],
+    'FIX_WORDS.why.no_agent_commit': ['absence', '2debbbd9e1a8f0c3'],
+    'FIX_WORDS.why.range_unreadable': ['sonah', '3a5e99a4a68feadf'],
+    'FIX_WORDS.why.several_sessions': ['sonah', 'a92f6f56f806011d'],
+    'FIX_WORDS.why.not_here': ['absence', '7d51729ad499dc4d'],
+    'FIX_WORDS.why.not_readable': ['sonah', 'e0d7be5a9d76ecc4'],
+    'FIX_WORDS.why.not_shown': ['absence', 'd31764415df529ca'],
+    'FIX_WORDS.headNotHere': ['sonah', 'c2372fdb7b2e39cc'],
+    'FIX_WORDS.headNotHeld': ['sonah', 'e3cc661d3636d616'],
+    'FIX_WORDS.noLink': ['sonah', '1db0f70ae92092c5'],
+    'FIX_WORDS.linkNotChecked': ['sonah', 'da8166dbe2c8a0bd'],
+    'FIX_WORDS.linkAddLine': ['sonah', 'c3bfed270362a3bf'],
+    'FIX_WORDS.refusedFix': ['other', '0b77b9d24fb48537'],
+    'FIX_WORDS.notMemberFix': ['other', 'aea84b5ef8a81189'],
+    'FIX_WORDS.question': ['other', '4220eb39b3197a90'],
+    'FIX_WORDS.noEditor': ['other', '6e078553de6020d7'],
+    'FIX_WORDS.editorFailed': ['sonah', 'cb8dbafc1e2d5b66'],
+    'FIX_WORDS.editorFirstWord': ['other', '0a5731e0fe574715'],
+    'FIX_WORDS.nothingSent': ['sonah', '1861deefafcf6cda'],
+    'FIX_WORDS.notTold': ['sonah', '5e3a972a6e8e1c17'],
+    'FIX_WORDS.finalState': ['other', '0d289c1f4b1144e9'],
+  }),
+  // D230 (read 2026-11-13): the Claude Code start reminder's lines, what Claude Code shows when it starts: a count, a
+  // comment as `sonah fixes` lists it, and how many more (other). None states anything of the recording, the session or
+  // the code.
+  'packages/cli/src/remind-hook.js': Object.freeze({
+    'REMIND_HOOK_WORDS.waiting': ['other', 'e42d26f3af2ff353'],
+    'REMIND_HOOK_WORDS.entry': ['other', 'f90d8842bcb11365'],
+    'REMIND_HOOK_WORDS.more': ['other', 'f259e9ecef08beae'],
+  }),
+  // D230 (read 2026-11-13): `sonah remind on|off` and its lines in `sonah status`. What Sonah added, updated, removed,
+  // left as it is, did not find or turn on, what the reminder does, and what Sonah found of Claude Code's settings and
+  // of the node and the Sonah its entry names (sonah, as the push hook's words are); what to add, remove or run (other).
+  // None states anything of the recording, the session or the code, so none states an absence.
+  'packages/cli/src/remind.js': Object.freeze({
+    'REMIND_WORDS.added': ['sonah', '4625293e187cdf1a'],
+    'REMIND_WORDS.updated': ['sonah', 'cd95e228afdfd4eb'],
+    'REMIND_WORDS.present': ['sonah', '199fd66f6e559977'],
+    'REMIND_WORDS.about': ['sonah', '9302c44056c11aa6'],
+    'REMIND_WORDS.stopIt': ['other', '65b78c9a41e72231'],
+    'REMIND_WORDS.notConnected': ['sonah', '452b0966cc1203e7'],
+    'REMIND_WORDS.removed': ['sonah', '8083068aadb853ab'],
+    'REMIND_WORDS.none': ['sonah', '59bf2a8e690652b3'],
+    'REMIND_WORDS.notPlain': ['sonah', '830992c26d09c50e'],
+    'REMIND_WORDS.addEntry': ['other', 'de511e2e7b30154a'],
+    'REMIND_WORDS.removeEntry': ['other', 'c47656a80959e026'],
+    'REMIND_WORDS.noFolder': ['sonah', 'eac566c2c109a919'],
+    'REMIND_WORDS.privateClient': ['sonah', '1ab89bc0560bf2f3'],
+    'REMIND_WORDS.problems.remind_windows': ['sonah', 'b4b52c5542113edf'],
+    'REMIND_WORDS.problems.remind_temporary_install': ['sonah', '6ac763b84365f914'],
+    'REMIND_WORDS.report.on': ['sonah', '6cecb398c881f22d'],
+    'REMIND_WORDS.report.privateClient': ['sonah', '2546a6cbe2e9d954'],
+    'REMIND_WORDS.report.notChecked': ['sonah', 'e1d7ad4696a11362'],
+    'REMIND_WORDS.report.nodeGone': ['sonah', 'a8a2bfe084a744cf'],
+    'REMIND_WORDS.report.sonahGone': ['sonah', '702f37fb6f7672c2'],
+    'REMIND_WORDS.report.otherInstall': ['sonah', '991b06ed10bd2703'],
+    // D230 review 1: the entry reads another Sonah folder than this command.
+    'REMIND_WORDS.report.otherHome': ['sonah', 'de87e4ab876951ea'],
+    'REMIND_WORDS.report.refresh': ['other', 'bc4add247613c982'],
+  }),
+  // D226 (read 2026-11-12, in D227's review 1, when the module declared its table): the fix of a drawing that another
+  // Sonah's drawing of the same folder stopped: what another Sonah is doing, and what Sonah reuses (sonah). It states
+  // nothing of the recording, the session or the code.
+  'packages/cli/src/visual-lock.js': Object.freeze({
+    'VISUAL_LOCK_WORDS.folder_in_use': ['sonah', '92a68c0d8642f4b1'],
   }),
   // D219 (read 2026-11-09): the review's graphs page of the session's commits. The started line, the page's path, its
   // usage, the mark on the visual's lines and how to draw it alone, and the dry run's "on" and "off (--no-visual)" (other:

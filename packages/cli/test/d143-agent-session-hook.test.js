@@ -109,6 +109,9 @@ test('hook add writes the script and the runner, and the closed vocabularies hol
   assert.equal(await readFile(hooks, 'utf8'), AGENT_SESSION_RUNNER);
   assert.equal(await readFile(script, 'utf8'), AGENT_SESSION_SCRIPT);
   assert.ok(((await stat(hooks)).mode & 0o111) !== 0, 'the runner is executable');
+  // D225: plain `hook add` writes only the commit link's files: no push hook.
+  assert.deepEqual((await readdir(join(s.repo, '.git', 'sonah'))).sort(), ['agent-session.sh']);
+  await assert.rejects(lstat(join(s.repo, '.git', 'hooks', 'pre-push')));
   assert.ok(r.out.includes(HOOK_WORDS.turnedOn(hooks)));
   assert.ok([HOOK_WORDS.optIn, HOOK_WORDS.publicLine, HOOK_WORDS.stopIt].every((w) => r.out.includes(w)), 'the opt-in words');
   assert.ok(!r.out.includes(HOOK_WORDS.optInOnce));
@@ -712,10 +715,11 @@ test('the closed problems and the usage: nothing is written', async (t) => {
   await assert.rejects(lstat(join(s.repo, '.git', 'hooks', 'prepare-commit-msg')));
   r = await s.hook(['remove']);
   assert.equal(await readFile(script, 'utf8'), '#!/bin/sh\n# not Sonah\'s\n', 'remove leaves a file that is not Sonah\'s');
+  // D225 changes the usage on purpose: `--push` turns the push hook on or off instead (d225-push-hook.test.js).
   for (const argv of [[], ['on'], ['add', '--repo'], ['add', '--force'], ['remove', '--repo', s.repo, 'x']]) {
     r = await s.hook(argv);
     assert.equal(r.code, 2, JSON.stringify(argv));
-    assert.match(r.err, /^usage: sonah hook add\|remove \[--repo DIR\]/);
+    assert.match(r.err, /^usage: sonah hook add\|remove \[--push\] \[--repo DIR\]/);
   }
 });
 

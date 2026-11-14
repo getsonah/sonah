@@ -605,6 +605,15 @@ same command again:
 - `billing`: the account cannot pay for the call. Check the plan and billing of your Claude account.
 - `model_not_found`: your account cannot use that model. Choose another one with `--model`.
 - `usage_limit`: your Claude plan's usage limit was reached. Wait until it resets.
+- `folder_in_use`: another Sonah is drawing the same page into the same folder now (a second terminal, the graphs page
+  of a review, or a review of a push), and Sonah draws a folder one at a time. It stops at once and writes nothing.
+  Wait until the other one ends, then run the same command again: it reuses the answers the other one stored. While a
+  page is drawn, its folder holds `draw.lock`, which names the process id of the Sonah that draws it and when that
+  process started. A lock whose process has ended, or whose id now names a process that started at another time, is
+  taken back by the next run, so a Sonah that was killed does not keep the folder locked. On a drive with no hard links
+  (FAT or exFAT, some network shares), Sonah cannot tell an empty `draw.lock` from one that another Sonah is writing at
+  that moment, so it leaves it. If `folder_in_use` stays while no other Sonah runs, delete `draw.lock` and each
+  `draw.lock.claim-` file in that folder.
 
 The answers that came back before a stop stay stored, so the next run asks only for the rest.
 
@@ -648,8 +657,8 @@ stderr; each other line it prints about it starts with `Graphs page`:
   - `Sonah draws it only on the claude-cli backend.`: on `--backend codex-cli` or `anthropic-api` you chose another
     provider, so nothing is sent to `claude`, and no command is named.
   - `because you stopped it.`: you pressed Ctrl-C (or the process got SIGTERM) while it was drawn. Only the graphs page
-    stops: Sonah starts no new call for it, and the review writes its page, its report and its usage record, with its
-    own exit code. Run the `sonah visual` command the line names; it reuses the answers that came back.
+    stops: Sonah stops the call that was running and starts no new call for it, and the review writes its page, its
+    report and its usage record, with its own exit code. Run the `sonah visual` command the line names; it reuses the answers that came back.
 
 **`Graphs page: Visual review could not complete: <code>.`** and **`Graphs page: Fix: ...`** (on stderr)
 : The graphs page was not drawn, for one of the codes above. The review's page is written without the link, and says
@@ -657,13 +666,412 @@ stderr; each other line it prints about it starts with `Graphs page`:
   visual <range>` command (for `no_change`, a range such as `main..HEAD`): the page of a /sonah background review says
   why too. A failed call, answers still needed or any other failure says `Sonah could not finish it.` there. The
   review's exit code is its own: a graphs page that fails never changes it. Fix what the line says, then run the `sonah
-  visual <range>` that the next line names: it reuses the answers that came back. After `no_change` no such line
+  visual <range>` that the next line names: it reuses the answers that came back. For `folder_in_use` (another Sonah
+  drew the same page at the time), the page says `Sonah could not finish it.`: run that command once the other one
+  ends. After `no_change` no such line
   follows: give a range whose head is ahead of its base, such as `main..HEAD`. `--no-visual` skips the graphs page.
 
 **`Graphs page: on. ...`** or **`Graphs page: off ...`** (the last line of a `--dry-run` with `--format html`)
 : Whether the review would draw the graphs page, and if not, why: `(--no-visual)`, another backend, a limit, the code
   review off, no git repository, or no start commit. The dry run reads no commit for it, so a review whose work is not
   committed can still say `on`.
+
+## Sonah Team (`sonah connect`)
+
+`sonah connect`, `sonah connect --token`, `sonah disconnect` and `sonah status` print their problems in fixed words,
+then a `Fix:` line, and never the token. A usage error prints `sonah connect: <the problem>.` and the usage, and exits
+`2`: no code, a code of another shape than 4 to 40 letters, digits, spaces or hyphens, a token on the command line
+(`--token` takes it on standard input only, so that it stays out of your shell's history), an unknown option, or a
+`--server` address that is not https (http only for this computer) or that holds a user, password, query or fragment,
+or `--hook` and `--no-hook` together or twice. `sonah disconnect` and `sonah status` take no argument.
+
+**No code to give `sonah connect`.** A code comes from the Sonah Team server's page for connecting a laptop, and that
+page offers one only from the server's next release. Until then, make an upload token on the server's
+`/settings/tokens` page and run `sonah connect --token`, then paste it (it does not show) or pipe it in.
+
+These exit `2`, and Sonah keeps no connection:
+
+- **`Sonah asks before it keeps a connection, and this is not a terminal.`** `sonah connect <code>` ran in a pipe, a
+  script or with its output sent to a file. It sent nothing, so the code still works: run it in a terminal, or pass a
+  token on standard input with `sonah connect --token`.
+- **`<server> does not know this code.`** The code was mistyped, already used, or older than 10 minutes. Get a new code.
+- **`<server> asks Sonah to wait a minute.`** Too many codes from your address did not match. Wait one minute.
+- **`You have as many upload tokens on <server> as it allows.`** A person has at most 10 live tokens. Revoke one on
+  `<server>/settings/tokens`, where each is listed by its name (`sonah on <host name>` for a computer that connected
+  with a code).
+- **`<server> does not take this token.`** For `--token`: the token was revoked, mistyped, or belongs to another
+  server. Make a new one on `<server>/settings/tokens`.
+- **`That is not an upload token.`** For `--token`: what came on standard input is not 16 to 512 characters with no
+  space. Copy the whole token.
+- **`Sonah could not reach <server>.`**, **`<server> answered with a redirect, and Sonah does not follow one.`**,
+  **`<server> answered with the status <n>.`** or **`<server> gave an answer that Sonah cannot read.`** Check the
+  address that `--server` names, and your network. Sonah follows no redirect, so that the token never goes anywhere
+  else: name the server's own address.
+- **`This computer has a connection to <server> as @<login>, and Sonah asks before it replaces one.`** For `--token`
+  outside a terminal: the token is another login's or another server's. Run `sonah disconnect` first, or run the
+  command in a terminal and answer its question.
+- **`Sonah could not write <file>, so it kept no connection.`** Check that you own your `SONAH_HOME` folder. Sonah
+  revoked the token that the code made, or says where to revoke it.
+- **`This computer has no connection to a Sonah Team server.`** From `sonah disconnect`: there is nothing to end.
+
+These exit `1`:
+
+- **`Sonah did not connect this computer.`** You answered no. Sonah revoked the token that the code made; when it
+  could not, it says so, and you revoke it on `<server>/settings/tokens`. A token you passed with `--token` stays live.
+- **`... is still live. Revoke it at <server>/settings/tokens.`** Sonah could not revoke a token that it no longer
+  keeps: the one a new connection replaced, or this computer's after `sonah disconnect` when the server did not answer.
+  Revoke it on that page. Until then it works for anyone who has it.
+- **`Sonah cannot read <file> as a connection.`** From `sonah status`: the file is not yours, others can write it, or it
+  is not of its shape, so Sonah does not use it. `sonah disconnect` deletes it (and exits `1`, since it could revoke no
+  token from it); then connect again.
+- **`<server> no longer takes the token of this computer.`** From `sonah status`: someone revoked it on the server's
+  page. Run `sonah disconnect`, then connect again with a new code.
+
+**`You have a free seat in the team <team> there.`** Your reviews on Sonah Team are readable by you only while your
+seat is free. An admin of the team can give you a paid seat.
+
+**`You are in no team there yet.`** The server takes your reviews only once you are a member of a team: accept an
+invite, or ask an admin to add you.
+
+**`Sonah could not read your team and seat from the server.`** `sonah status` could not reach the server (or it asked
+Sonah to wait): the connection is unchanged. From `sonah connect`, the server did not answer whose the token is, and
+the login comes from the code's exchange.
+
+## The push hook (`sonah hook add --push`)
+
+`sonah hook add --push` prints what it wrote, or the line to add and where, and exits `1` when you have a line to add.
+Its last lines say what a push does: `Each push from this repository now leaves ...` when git runs the hook now, and
+`Once git runs Sonah's push script, ...` when you have a line to add first. These stop it before it writes anything:
+
+- **`... is in no git working tree`** or **`... is a bare repository`** (exit `2`): run it in your clone, or give it
+  with `--repo DIR`.
+- **`This Sonah runs from ..., in a folder that npx, pnpm dlx, bunx or yarn dlx made for one run.`** (exit `2`): the
+  hook would name a folder that goes away. Install Sonah with `npm install -g getsonah`, and run `sonah hook add --push`
+  with it.
+- **`Sonah turns the push hook on only on macOS and Linux.`** (exit `2`).
+- **`Sonah cannot read ... as its list of repositories with a push hook.`** (exit `2`, also from `sonah hook remove
+  --push`, `sonah status` and `sonah doctor`): `~/.sonah/team/hooks.json` is not yours, others can write it, or it is
+  not of its shape. Delete it, then run `sonah hook add --push` again in each repository.
+- **`... is there, and Sonah did not write it.`** (exit `2`): a file that Sonah did not write is at
+  `.git/sonah/pre-push.sh`. Move it away, then run the command again.
+- **`... belongs to sonah-pr, an earlier client of Sonah Team, which already reviews each push here.`** (exit `1`): run
+  `sonah-pr hook uninstall` in that repository first, so that a push is not reviewed twice.
+
+What a push prints, on lines that start with `sonah:`:
+
+- **`Sonah reviews <branches> in the background (sonah status).`** The hook kept the pushed branches and started their
+  review. **`..., after the push that it reviews now (sonah status).`** A review of an earlier push runs, and takes these
+  next. **`Sonah keeps <branches> for review (sonah status).`** Sonah could not start the review in the background: the
+  next push starts it, and it takes these too.
+- **`Sonah reviews at most 3 branches of one push, the newest first. It leaves out ...`** A push of more branches, such
+  as `git push --all`. Push a branch on its own to have it reviewed.
+- **`This computer has no connection to Sonah Team, so Sonah does not review this push.`** Run `sonah connect <code>`.
+- **`... no longer takes the token of this computer, so Sonah does not review this push.`** The server answered `401`
+  to a call made with the token: the review of a push, `sonah status`, `sonah hook add --push`, `sonah share`,
+  `sonah fixes`, `sonah fix` or the start reminder's refresh. Run `sonah disconnect`, then `sonah connect` with a new
+  code.
+- **`The push hook of this repository is for ..., and this computer has its connection to ...`** You connected to
+  another server since you turned the hook on. Run `sonah hook add --push` in the repository to move the hook.
+- **`Sonah cannot read its connection to Sonah Team, so Sonah does not review this push.`** Run `sonah status`.
+- **`Sonah moved or was uninstalled, so Sonah does not review this push.`** The node or the Sonah that the hook names is
+  gone (Node or Sonah moved, reinstalled or removed). Run `sonah hook add --push` again, or `sonah hook remove --push`.
+- Nothing at all: the repository is not on Sonah's list (`sonah status` shows it), `CI` is set, the push held no branch
+  (a tag or a deleted branch), or `git push --no-verify` skipped the hook. A push never fails because of Sonah.
+
+`sonah status` and `sonah doctor` print each repository with the push hook under `Push hook in <folder>, for <server>:`.
+What each line means:
+
+- **`On. Git runs Sonah's hook at each push.`**, or pre-commit's hook runs it as `pre-push.legacy`: it works.
+- **`Off. lefthook moved Sonah's hook to ... .old, and nothing runs it there.`** A `lefthook install` ran after
+  `sonah hook add --push`. Run `sonah hook add --push` again: it prints Sonah's command for your lefthook file.
+- **`Off. ... runs no line of Sonah's, and Sonah's push script is still there.`** Another tool replaced the hook, or
+  `core.hooksPath` now points to a folder with none. husky 9's install sets it to `.husky/_`, whose own `pre-push` runs
+  only `.husky/pre-push`: the line names that file while it holds no line of Sonah's, or is not there. Run `sonah hook
+  add --push` and add what it prints.
+- **`Off. ... is Sonah's hook, but it is not executable, so git skips it.`** Run `sonah hook add --push`.
+- **`Off. Sonah's push script is not in the git folder of this repository.`** Its `.git/sonah/pre-push.sh` was deleted.
+  Run `sonah hook add --push` again, or `sonah hook remove --push`.
+- **`Not checked. ...`** Sonah's line is in a file of another tool or of yours, and Sonah does not follow that file.
+  Push a branch, and look for the line of Sonah in what `git push` prints.
+- **`The node that the hook runs is no longer at ...`**, **`The Sonah that the hook runs is no longer at ...`** or
+  **`The hook runs getsonah <version> at ..., and not this install of Sonah.`** Node or Sonah moved, or an nvm, volta or
+  pnpm switch left the hook on another install. Run `sonah hook add --push` again in that repository.
+- **`This computer has its connection to ..., so a push from here starts no review.`** The hook is for another server.
+  Run `sonah hook add --push` again in that repository.
+- **`... is no longer a git repository, so no push runs this hook.`** The repository was deleted or moved. Nothing runs,
+  and the line needs nothing from you. A moved repository needs `sonah hook add --push` in its new place.
+
+`sonah status` exits `1`, and `sonah doctor` lists `push_hook` among what needs attention, when a line of these needs
+you: the lines that start with `Off.`, a node or a Sonah that is gone or is another install, or another server.
+
+### The reviews of pushes and shares (`sonah status`)
+
+`sonah status` lists the last 10 reviews of your pushes and shares under `Reviews of your pushes and shares, newest
+first:` (`--all` lists every one Sonah keeps, `--json` prints them as JSON): `<owner>/<name> <branch> <commit>:
+<state>`, then why, the review's page on the server, and its log, `~/.sonah/team/logs/<name>-<commit>.log`, which says
+each step. A page `sonah share` put online is in that list too, in a repository with no push hook. What each state and
+why means, and what to do:
+
+- **`waiting`**: the push kept it. `Sonah does not see this commit on its branch of the remote yet.` git updates the
+  remote-tracking branch once the push went through; Sonah looks for 10 minutes.
+- **`queued`**: the remote shows it, and Sonah reviews another branch first; `Sonah reviews another push on this
+  computer now.` (one review draws at a time, whatever its repository); `Another Sonah draws the page of the same
+  change now.` (a `sonah visual` or plain `sonah` of the same range: Sonah waits for it, then uses its answers).
+- **`running`**, **`uploading`**: the page is drawn, then sent.
+- **`done`**: `Sonah put this review on <server>.` The `page:` line is its link.
+- **`shared`**: `Sonah put this review on <server>.` You put this page online yourself with `sonah share`
+  ([below](#share-a-page-yourself-sonah-share)). The `page:` line is its link.
+- **`skipped`**: `Sonah found this commit on the default branch of <remote> already, so it did not review it.`; or
+  `You turned off the push hook of this repository, so Sonah sent no review of this push.`: `sonah hook remove --push`
+  ran while the push waited (also for another review to finish), while it was drawn, or while its review waited to be
+  sent. Sonah starts no call for it from then on and sends nothing; a drawing that already ran keeps its answers in its
+  folder. Turn the hook on again with `sonah hook add --push`, then push again.
+- **`replaced`**: `A newer review of <branch> took the place of this one.` Sonah reviews only the newest push of a
+  branch that waits, and sends only the newest review of one repository's branch that waits to be sent. Reviews that
+  went to two remotes are two reviews on the server — your fork's branch and the team repository's branch of the same
+  name — and neither takes the other's place. Which review is the newest is
+  read from your branch and its commits: the review of the commit your branch holds on the remote, else the one whose
+  commit holds the other's. So after you drop a commit and force-push, the review Sonah sends is the one of the commit
+  your branch holds, not the dropped commit's. Sonah reads that branch as the remote has it, which only a push moves:
+  a commit you amended or dropped here and have not pushed yet leaves the review of the pushed commit the newest. It
+  reads the remote-tracking branch that your push moved, and asks the remote (`git ls-remote`, as `git fetch` would)
+  when your clone keeps no such branch — a clone made with `--single-branch` or `--depth` keeps one for its one
+  branch only — and when another clone of the repository on your computer has a review of that branch too, since the
+  branch your own clone remembers moves with your pushes there and with no push of that clone's. A branch you pushed
+  through two remotes of one repository, an `https` one beside an `ssh` one, is read through both of them, and a push
+  you made with the repository's address rather than a remote's name has the remote asked too, since it moved no
+  branch your clone remembers. Where that call gives no answer at all — you are offline, or the host is unreachable —
+  the branch your own clone remembers answers for it. A
+  review you put online with `sonah share`, of a commit that another review of a commit your branch holds is ahead of,
+  or of a commit on another line than your branch's tip, replaces nothing. Where the commits of several reviews of one
+  branch lie on lines that no commit of them holds and Sonah cannot read your branch on the remote (it was deleted
+  there, or every push of it was made with a plain address), Sonah keeps one of them and sends it, and the rest get
+  these words — the ones of another clone of the repository are left to that clone instead, and keep waiting there.
+- **`pending_upload`**: `Sonah could not reach <server>.`, `<server> answered with the status <code>.` or `Another
+  Sonah held the folder of this page, so sonah share sent nothing.` (a `sonah share` that waited for the page's folder
+  to its own 10-minute deadline; nothing waits for that folder now). Sonah drew the review and keeps it; the next push
+  of the repository, or `sonah share`, sends it, unless the server refused the token meanwhile (then after you connect
+  again as the same login). A branch that another Sonah is sending now — a `sonah share` you ran in another terminal,
+  or a push in another clone of the repository — is left to it: that Sonah sends its own review, and the next push or
+  `sonah share` takes up what still waits.
+- **`gave_up`**: `Sonah stopped this review 30 minutes after the push.` The calls stop then. A long change, a slow
+  plan, or many pushes at once that wait for one another: push the branch again later, or run `sonah visual`.
+- **`stopped`**: `Sonah's process ended while it ran this review.` The computer slept or shut down, or the process was
+  killed. Push the branch again. A review that was being sent when its process ended (its page was drawn whole) is sent
+  by the next push of the repository, with no new call: `sonah status` shows it `stopped` until then.
+- **`failed`**, and why:
+  - `Sonah did not see this commit on its branch of the remote within 10 minutes of the push.` Check that `git push`
+    ended with no error, and push again.
+  - `This computer has no connection to Sonah Team now.`, `Sonah cannot read its connection to Sonah Team.`, or `This
+    computer has another connection to Sonah Team now.`: you disconnected, or connected to another server or as another
+    login, after the push: Sonah starts no call for it from then on, and sends nothing. Push again. Connecting again as
+    the same login (with no `sonah disconnect` first) keeps the push's review: it is sent with the new token.
+  - `<server> no longer takes the token of this computer.` The server answered `401`: the token was revoked. The
+    other branches of the push fail the same way, and the next push starts nothing. Run `sonah disconnect`, then
+    `sonah connect` with a new code.
+  - `You are in no team on <server>, so the server takes no review from you.` Join a team there, then push or share
+    again.
+  - `The URL of the push remote names no owner and repository, ...` A local path or a `file:` remote. Sonah Team keeps
+    reviews of an owner's repository, as `git remote get-url --push origin` names it.
+  - `No worktree of this repository is on this computer now, ...` The folder you pushed from, and every other worktree
+    of the repository, are gone.
+  - `Sonah cannot find where the change starts: the default branch of <remote> is not in this repository.` Run `git
+    fetch <remote>`; `git remote set-head <remote> --auto` saves which branch is the default.
+  - `Your Claude Code plan reached its usage limit, ...`, `Claude Code needs you to sign in. ...`, `Your Claude Code
+    account cannot pay for the calls. ...`: the other branches of the push fail the same way, and start no call. Do
+    what the line says, then push again. `Sonah could not start Claude Code. ...` and `Your Claude Code account cannot
+    use claude-sonnet-5-5, ...` fail that branch only.
+  - `Sonah could not draw the page of this change: <code>.` A call failed (`timeout`, `provider_busy`, `call_failed`,
+    `output_limit`) or the drawing failed (`visual_failed`). Push again: the answers that came back are reused.
+  - `This review is over the 25 MB that an upload can hold, ...` Review a smaller range with `sonah visual`.
+  - `<server> refused the upload with the status <code> (<error>).` The log names the status. Check `sonah status`'s
+    connection lines.
+
+Then, from the server's last answer, `<n> comments wait for you on <owner>/<name>.`: the review comments that wait for
+you there. `sonah status` makes no call for the reviews or the comments; only its connection lines ask the server.
+
+## Share a page yourself (`sonah share`)
+
+`sonah share` puts a page that Sonah already drew here on the Sonah Team server you connected to. It prints its
+problems in fixed words, then a `Fix:` line, and never the token. When it works it prints `Sonah sends the page in
+<folder>.`, then `Sonah put this review of <branch> on <server>.` and `page: <the link>`, and exits `0`.
+
+A usage error prints `sonah share: <the problem>.` and the usage, and exits `2`: an unknown option, an option given
+twice, an option with no value (`--dir`, `--branch` and `--repo` each take one), or an argument that is not an option
+(`sonah share` takes none).
+
+These exit `2`, and nothing is sent:
+
+- **`This computer has no connection to Sonah Team now.`**, **`Sonah cannot read its connection to Sonah Team.`** or
+  **`<server> no longer takes the token of this computer.`** Sonah reads the connection first, so with none it reads
+  nothing of your repository. Run `sonah connect <code>`, or `sonah status`, or `sonah disconnect` and then
+  `sonah connect` with a new code.
+- **`This folder is in no git repository.`** Run it in your clone, or name one with `--repo DIR`.
+- **`<folder> holds no finished page of a commit in this repository.`** The `--dir` folder holds no page that a run
+  finished, or its commit is not in this repository (a page of another clone, or of a commit that is gone). Give
+  `--dir` a folder that `sonah visual` wrote for this repository.
+- **`No branch points at <commit>, and Sonah Team keeps each review under its branch.`** The page's commit is on no
+  branch here (a detached `HEAD`, or the branch moved on). Name the branch with `--branch NAME`.
+- **`Sonah Team takes no branch of that name.`** The `--branch` name is one git or the server refuses. Give a branch
+  name that git takes.
+- **`The URL of the push remote names no owner and repository, ...`** A local path or a `file:` remote. Sonah Team
+  keeps reviews of an owner's repository, as `git remote get-url --push origin` names it.
+- **`Another Sonah draws or reads the folder of this page now.`** A `sonah visual`, a plain `sonah` or the review of a
+  push holds the page's folder. Run `sonah share` again once it ends. If the message stays while no other Sonah runs,
+  delete `draw.lock` and each `draw.lock.claim-` file in that folder. Sonah says the same when the folder is still
+  held 10 minutes later: it sent nothing, `sonah status` shows the review `pending_upload` with `Another Sonah held the
+  folder of this page, so sonah share sent nothing.`, and the next push of the repository, or `sonah share`, sends it.
+  It says the same again when another Sonah is already sending this review, where no lock is held at all: `sonah
+  status` shows that review `uploading` under the other Sonah's process, which sends it, so run nothing again.
+
+These exit `2` as well, after Sonah sent the page. They are the words of a push's review, which `sonah share` says
+too, and each names what to run.
+
+- **`You are in no team on <server>, so the server takes no review from you.`** Accept an invite there, or ask an
+  admin to add you, then run `sonah share` again.
+- **`<server> no longer takes the token of this computer.`** The server answered `401` to the upload: the token was
+  revoked. Sonah marks the connection refused, so nothing more is sent, by `sonah share` or by a push. Run
+  `sonah disconnect`, then `sonah connect` with a new code, and run `sonah share` again.
+- **`This computer has another connection to Sonah Team now.`** You connected to another server, or as another login,
+  while the page was being sent. Run `sonah share` again.
+- **`This review is over the 25 MB that an upload can hold, so Sonah did not send it.`** Draw a smaller range with
+  `sonah visual`, then share that page with `--dir`.
+- **`<server> refused the upload with the status <code> (<error>).`** The log in `~/.sonah/team/logs/` names the
+  status. Check what `sonah status` says about the connection.
+- **`Sonah could not reach <server>.`** or **`<server> answered with the status <code>.`** Sonah tried again after 5
+  and 20 seconds and gave up 10 minutes after you ran it. The review is kept, and `sonah status` shows it
+  `pending_upload`: run `sonah share` again, or push the branch, and it is sent with no new call.
+
+This exits `3`:
+
+- **`Sonah could not draw the page of this change: visual_failed.`** Sonah could not read the folder's files as a
+  finished page while it held the folder's lock. Draw the page again with `sonah visual`, or name another folder with
+  `--dir`.
+
+This exits `1`:
+
+- **`Sonah has no finished page of <commit>, the commit at HEAD.`** Nothing drew the page of this commit yet, or every
+  folder of it is unfinished. Run `sonah` or `sonah visual` here, then `sonah share`; or name a folder with
+  `--dir DIR`. Sonah looks in the folders it keeps for this working tree under `~/.sonah/visual/` and in the pages that
+  the reviews of your pushes of this repository drew. A page you drew with `--out DIR` is found through `--dir` only.
+
+## Take up a comment (`sonah fixes` and `sonah fix`)
+
+`sonah fixes` lists the review comments of your team that wait for you, and `sonah fix <comment id>` takes one of them
+to Claude Code. Both print their problems in fixed words, then a `Fix:` line, and never the token.
+
+`sonah fixes` prints a heading a repository, then each comment with who wrote it, how, where, the item, the first line
+of their words and `sonah fix <id>`; `(Claude Code is on it)` marks one you already started. With none it prints
+`No comment waits for you on <owner>/<name>.` It exits `0`, and `2` for these:
+
+- **`No remote of this clone names an owner and a repository. No clone whose push hook is for <server> names one
+  either.`** Sonah Team keeps reviews of an owner's repository, as `git remote get-url --push origin` names it. Run
+  `sonah fixes` in your clone, or name one with `--repo DIR`. Outside a clone, Sonah asks for the clones whose push
+  hook is for the server this computer is connected to (`sonah hook add --push`); a clone you hooked while connected
+  to another server is left out, as a push of it is, and `sonah status` shows each hook's server.
+- **`<server> gave a list of comments that Sonah cannot read.`** The answer is not of its shape, or it is of another
+  repository. Update Sonah, then run `sonah fixes` again.
+- **`This computer has no connection to Sonah Team now.`** or **`<server> no longer takes the token of this
+  computer.`** Run `sonah connect <code>`, or `sonah disconnect` and then `sonah connect` with a new code.
+- **`<n> of the entries of the server are not of their shape, so Sonah leaves them out.`** This one line goes to
+  standard error and the rest of the list is printed: the other comments are shown and `sonah fixes` exits `0`.
+- **`<server> answered with the status <n> (<code>).`** Any other refusal of the server, of either command. With
+  `403 (not_member)` you are in no team on it: `Open <server> and join a team there.` Otherwise the `Fix:` line names
+  `sonah status`, which shows the server of this connection. Neither command takes a `--server`, so another server is
+  a `sonah disconnect` and a `sonah connect`.
+
+`sonah fix` shows the whole prompt and where it goes, then asks `Send it? (y)es, (e)dit, (n)o: `. It exits `0` once
+Claude Code ran and ended (Claude Code's own exit code is not passed through), and `1` when you said no
+(`Sonah sent nothing.`). It also exits `0`, with `This fix ended as <state>: nothing to do.`, when the comment's fix is
+resolved, superseded or closed on the server.
+
+These exit `2`, and nothing reaches Claude Code:
+
+- **`That is not a comment id: an id starts with c_ and has 16 more characters.`** Copy the id from the comment's page
+  on Sonah Team.
+- **`This terminal runs inside Claude Code: it has CLAUDECODE in its environment.`** Claude Code does not start inside
+  another session. Run `sonah fix` in a terminal of its own.
+- **`sonah fix shows you the prompt and asks before it sends it, and this is not a terminal.`** Run it in a terminal,
+  not in a pipe or a script.
+- **`Sonah found no claude on PATH.`** Install Claude Code, then run `sonah fix` again.
+- **`No comment <id> waits for you on <server>.`** The server answered `404`: the id is not yours, or its comment is
+  gone. Open the review page and copy the id of a comment that waits for you.
+- **`Comment <id> is not one that a fix can answer.`** The server answered `409`: only a question, an override's note
+  or a reply by someone else opens a fix. A Confirm and a Not right decide nothing for your agent.
+- **`<server> gave an answer that Sonah cannot read (<field>).`** The field named is not of its shape. Nothing runs,
+  and nothing of that answer reaches the prompt. Update Sonah, then run `sonah fix` again.
+- **`<folder> is in no git repository.`** Run it in your clone of the review's repository, or name one with
+  `--repo DIR`.
+- **`This clone is not of <owner>/<name>.`** No remote of this clone names the review's repository. Run it in your
+  clone of it, or name one with `--repo DIR`. With no `--repo`, Sonah also looks in the clones with the push hook.
+- **`No worktree of this clone has <branch> checked out, and Sonah never switches a branch of yours.`** Run
+  `git switch <branch>` in that clone, or add a worktree for the branch, then run `sonah fix` again.
+- **`More than one worktree has <branch> checked out: <folders>.`** git allows it with `git worktree add --force`, and
+  Sonah picks none of them. Remove one of those worktrees.
+- **`More than one recording carries session <id>: <files>.`** More than one recording of the session that wrote the
+  change is here, so Sonah reads none of them. Where they are in two Claude Code folders, name one with
+  `--config-dir DIR`, and Sonah says so; where one folder holds them all (the session was resumed from another folder,
+  or a project folder was renamed), no folder picks between them and `sonah fix --new` is the way on, in a new
+  session.
+- **`<file> is there, and Sonah cannot read it as a launch record.`** `~/.sonah/team/fixes/<comment id>.json` holds
+  something else. Move that file away to start this fix again.
+- **`Claude Code did not start (<code>).`** Sonah said yes to your yes and could not run `claude`. Check that `claude`
+  runs in this terminal.
+
+These two lines are not refusals:
+
+- **`The commits of <folder> carry no Agent-Session line, so Sonah Team cannot mark this fix pushed.`** The commit
+  link of `sonah hook add` is off in that worktree, and the line is what the server reads to see that your fix was
+  pushed. The line names the worktree of the fix, which is not always the folder you ran `sonah fix` in, and gives it
+  to the command: run `sonah hook add --repo <folder>`; the fix itself goes on. Sonah reads the link as your own git
+  reads it, so a `core.hooksPath` from any of your git config files counts.
+- **`Sonah cannot tell whether the commits of <folder> carry an Agent-Session line.`** … **`Look for it in git log
+  after this fix.`** Sonah's line is in a hook file that another tool or you own (husky, lefthook, your own
+  `prepare-commit-msg`), which is what `sonah hook add` prints for you to add, and Sonah cannot tell whether that file
+  reaches it. `sonah doctor` says the same of this folder, and asks nothing of you: look for the line in `git log`
+  after this fix.
+- **`Sonah cannot tell whether the commits of <folder> carry an Agent-Session line.`** … **`Run sonah hook add --repo
+  <folder>, and add the line it prints.`** The hook git runs in that worktree is another tool's and holds no line of
+  Sonah's, so nothing of Sonah's runs at your commits. This is where `sonah hook add` ends when you did not add the
+  line it printed. `sonah doctor` asks for the same line.
+- **`Sonah could not tell the server that this fix started (<kind>). The fix goes on.`** The call that tells your team
+  you took the comment up did not get through: no answer in five seconds, or an answer that was not a yes (`<kind>`
+  says which). Claude Code starts all the same, and your next push still marks the fix pushed. A `401` here does not
+  mark the connection refused; `sonah status` says whether the server still takes the token.
+
+## The Claude Code start reminder (`sonah remind`)
+
+`sonah remind on` adds one SessionStart entry to Claude Code's `settings.json` (in `CLAUDE_CONFIG_DIR`, else
+`~/.claude`), and `sonah remind off` removes it. Its lines:
+
+- **`<file> is not plain JSON, so Sonah leaves it as it is.`** Your settings hold a comment, a trailing comma, a key
+  given twice, or a `hooks` that is not an object, and Sonah writes only a file it can read back exactly. `on` prints
+  the entry: add it to the file's `hooks`, in its `SessionStart` list. `off` says which hook to remove. Both exit `1`.
+- **`Claude Code's folder <folder> is not there.`** Claude Code makes it the first time it runs. Start Claude Code once,
+  then run `sonah remind on` again (exit `1`). Sonah makes no folder of Claude Code's.
+- **`<file> has the reminder of sonah-pr, an earlier client of Sonah Team.`** Two reminders would show the same comments
+  twice. Run `sonah-pr remind off`, then `sonah remind on` (exit `1`). `sonah remind off` never removes sonah-pr's.
+- **`Sonah turns the reminder on only on macOS and Linux.`** and **`This Sonah runs from <path>, in a folder that npx
+  ... made for one run.`** The entry names the Sonah that runs it, and that folder goes after the run. Install Sonah
+  with `npm install -g getsonah`, then run its `sonah remind on` (exit `2`).
+
+**Claude Code shows no message.** The reminder shows comments only in a folder whose git remotes name a repository that
+Sonah has a list of (from `sonah fixes`, a push's review, or the reminder's own refresh), and only those nobody started
+Claude Code on yet. It shows nothing before `sonah connect`, after the server refuses your token (`sonah status` says
+so), or when the list is another connection's. A list is asked for again at most once a minute for each repository, in
+the background, so a comment written a moment ago shows at the next start after that. Run `sonah fixes` to see the
+list now.
+
+**`sonah status` says the reminder runs a node or a Sonah that is no longer there, or another install.** The entry names
+the node and the Sonah that ran `sonah remind on`, and a node upgrade, a version manager's switch or a new install moves
+them. Claude Code then runs a file that is gone at each start. Run `sonah remind on` again to point it at this install,
+or `sonah remind off`. Sonah never names a node of fnm's folder for one shell (`fnm_multishells`), which goes with that
+shell.
+
+**`sonah status` says the reminder reads another Sonah folder.** The entry names the `SONAH_HOME` of the shell that ran
+`sonah remind on`, and Claude Code's start reads that folder's connection and comments, not the one this command reads.
+Run `sonah remind on` from the shell whose connection you want it to use. An entry made with no `SONAH_HOME` names no
+folder: it reads the `SONAH_HOME` that Claude Code runs with, else `~/.sonah`, so `sonah status` says nothing of it.
 
 ## Exit codes
 
@@ -672,15 +1080,53 @@ judgment of the agent's work: a review with findings that ran to the end exits `
 
 | Code | Meaning |
 | --- | --- |
-| `0` | The command did its job: Sonah's review ran to completion, whatever it lists; or `sonah review --background` printed its one line, whatever it says (when the line says the review started, it runs on, and its log says how it ended) |
-| `1` | Sonah's review ran but did not complete (a part of the session was not reviewed, or, with `--code-pass` on the command line, the code step did not cover the whole change and finish its checks; the output says which and why); or no session was found for this repository, or `--session` got an empty id; or `sonah doctor` found something to fix; or `sonah hook add` could not turn the commit link on by itself and printed the line for you to add; or `sonah skill add` or `sonah skill remove` found a file that Sonah did not write and changed nothing; or `sonah sessions --commits A..B` found no commit that names a session, or `sonah sessions --github OWNER/REPO --pr N` found none in a list that GitHub gave whole; or `sonah decision` refused an answer (the reason is printed). A code step that ran by default or by your setting never sets it by itself. |
-| `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model, a range git cannot list, a pull request GitHub does not answer for, or one whose list GitHub did not give whole and whose listed commits name no session) |
-| `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer; or `sonah skill add` or `sonah skill remove` could not write or delete its file |
-| `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again. Ctrl-C while `sonah review` draws the graphs page (D219) stops that page only: the review writes its page and exits with its own code |
+| `0` | The command did its job: Sonah's review ran to completion, whatever it lists; or `sonah review --background` printed its one line, whatever it says (when the line says the review started, it runs on, and its log says how it ended). The hidden commands that a hook or a push starts, `sonah pre-push`, `sonah push-run`, `sonah remind-hook` and `sonah remind-refresh`, always exit `0` |
+| `1` | Sonah's review ran but did not complete (a part of the session was not reviewed, or, with `--code-pass` on the command line, the code step did not cover the whole change and finish its checks; the output says which and why); or no session was found for this repository, or `--session` got an empty id; or `sonah doctor` found something to fix; or `sonah hook add` could not turn the commit link on by itself and printed the line for you to add; or `sonah skill add` or `sonah skill remove` found a file that Sonah did not write and changed nothing; or `sonah sessions --commits A..B` found no commit that names a session, or `sonah sessions --github OWNER/REPO --pr N` found none in a list that GitHub gave whole; or `sonah decision` refused an answer (the reason is printed); or `sonah connect` heard no from you, or `sonah connect`, `sonah disconnect` or `sonah status` left a token for you to revoke, found a connection file it cannot read, or found that the server no longer takes the token (below); or `sonah hook add --push` printed a line for you to add, or found an earlier client's push hook; or `sonah connect` or `sonah status` found a push hook that needs you; or `sonah status` found a start reminder whose entry needs you; or `sonah share` found no finished page of the commit at `HEAD`; or you answered no to `sonah fix`; or `sonah remind on` printed the entry for you to add, found no Claude Code folder, or found the earlier client's reminder; or `sonah remind off` found a settings file that is not plain JSON. A code step that ran by default or by your setting never sets it by itself. |
+| `2` | Invalid arguments, or a problem Sonah names with its fix (a missing recording, an existing output file, a wrong model, a range git cannot list, a pull request GitHub does not answer for, or one whose list GitHub did not give whole and whose listed commits name no session; for `sonah connect`, no terminal to ask in, or a code, token or server that does not answer as it should; `sonah disconnect` with no connection; for `sonah hook add --push`, a Sonah run by npx, pnpm dlx, bunx or yarn dlx, Windows, or a list of repositories it cannot read; for `sonah visual` and plain `sonah`, another Sonah drawing the same page into the same folder, `folder_in_use`; for `sonah status`, an option other than `--json` and `--all`; for `sonah share`, no connection, a folder in no git repository, a `--dir` that holds no finished page of this repository, no branch at the page's commit, a `--branch` name that git refuses, a push remote that names no repository, a page folder another Sonah holds, or a server that did not take the page; for `sonah fixes`, a clone that names no repository, a list the server gave that Sonah cannot read, or any refusal of the server; for `sonah fix`, a word that is no comment id, a terminal inside Claude Code or none, no `claude` on PATH, an answer of the server that is not of its shape, a comment the server does not know or cannot answer, any other refusal of the server, no worktree or more than one with the review's branch, more than one recording of the session, a launch record Sonah cannot read, and a `claude` that did not start; for `sonah remind on`, Windows or a Sonah run by npx, pnpm dlx, bunx or yarn dlx, which `sonah remind off` does not check) |
+| `3` | Sonah's review failed: it could not run, it crashed, or it was stopped (Ctrl-C while it was asking the model, or one of your optional stops); or `sonah decision` could not record an answer; or `sonah skill add` or `sonah skill remove` could not write or delete its file; or `sonah share` could not read the page's folder as a finished page (`visual_failed`) |
+| `130` | Ctrl-C at another moment (while it reads the recording, plans or writes the page): it ends the usual way, and the same command starts again. Ctrl-C while `sonah review` draws the graphs page (D219) stops that page only: the review writes its page and exits with its own code. Ctrl-C at the prompt of `sonah connect --token` |
+
+`sonah connect`, `sonah disconnect` and `sonah status` (D224) use the same codes: `0` when they did their job (the
+connection is kept, revoked and deleted, or shown, also when there is none); `1` when you answered no, when a token is
+left live for you to revoke, when the connection file cannot be read, or when the server no longer takes the token; `2`
+for invalid arguments or a problem they name with its fix (no terminal for the question, a code or token the server
+refuses, a server Sonah could not reach, no connection for `sonah disconnect`); `3` when they failed; and `130` after
+Ctrl-C at `sonah connect --token`'s prompt. With D225, `sonah connect` also exits `1` when the push hook it turned on
+needs you to add a line, and `sonah status` when a repository's push hook needs you.
+
+`sonah hook add --push` and `sonah hook remove --push` (D225) use the same codes as `sonah hook add`: `0` when the push
+hook is on or its files are gone, `1` when it printed a line for you to add or found an earlier client's push hook, `2`
+for invalid arguments or a problem it names. The hidden `sonah pre-push`, which the hook runs at each push, always exits
+`0`, also when Sonah fails inside it, so that a push never fails because of Sonah. So does the hidden `sonah push-run`
+(D227), the review in the background that `sonah pre-push` starts: it prints nothing, and each review's state in `sonah
+status` and its log say how it ended. `sonah status --json` and `--all` (D227) exit as `sonah status` does.
 
 `sonah visual` uses the same codes: `0` when the page is written, `1` when it ran and answers are still needed, `2` for
-invalid arguments or a problem it names with its fix (a call that stopped on your sign-in, plan or usage included), and
-`3` when it failed. Ctrl-C stops it; the same command goes on from the answers it stored.
+invalid arguments or a problem it names with its fix (a call that stopped on your sign-in, plan or usage included, and
+`folder_in_use`: another Sonah drawing the same folder), and `3` when it failed. Ctrl-C stops it; the same command goes on from the answers it stored.
+
+`sonah share` (D228) uses the same codes: `0` when the server took the page (its link is printed); `1` when Sonah has
+no finished page of the commit at `HEAD` (run `sonah` or `sonah visual`, or name a folder with `--dir`); `2` for
+invalid arguments, for no connection or one Sonah cannot read, for each problem it names with its fix (no git
+repository, a `--dir` that holds no finished page of this repository, no branch at the page's commit, a `--branch`
+name git refuses, a push remote that names no repository, a page folder another Sonah holds) and for a server that did
+not take the page (no answer, a refusal, no team, or over 25 MB); and `3` when it could not read the page's folder as
+a finished page. It makes no model call, so no sign-in, plan or usage limit stops it.
+
+`sonah fixes` and `sonah fix` (D229) use the same codes. `sonah fixes`: `0` when it printed the list, whatever it
+holds, and `2` when no repository is named, when the list is not of its shape, or when the server refuses. `sonah fix`:
+`0` once Claude Code ran and ended, and `0` for a fix the server shows as resolved, superseded or closed; `1` when you
+said no; `2` for invalid arguments and for each refusal above; `3` when Sonah itself failed. Claude Code's own exit
+code is never passed through, since it could collide with Sonah's own `2` and `3`. Only `sonah fix` reaches a model,
+and only through the Claude Code that it starts after your yes.
+
+`sonah remind on` and `sonah remind off` (D230) use the same codes: `0` when the entry is on, updated, already there,
+removed or not there; `1` when the settings file is not plain JSON (`on` prints the entry for you to add), when Claude
+Code's folder is not there, or when the earlier client's reminder is there; `2` for invalid arguments, on Windows, or
+from a folder made for one run; `3` when Sonah failed. `sonah status` exits `1` when the entry runs a node or a Sonah
+that is gone, or another install, or reads another Sonah folder. The hidden `sonah remind-hook`, which Claude Code runs at each start, and `sonah
+remind-refresh`, which it starts in the background, always exit `0` and print nothing but the reminder's one line, so a
+start of Claude Code never fails because of Sonah.
 
 Plain `sonah`, with no command, in a terminal runs `sonah visual` and exits with its code. After a problem with its fix
 (`2`), it adds a line that points to `sonah --help`. In a pipe or a script, it prints the usage and exits `2`.

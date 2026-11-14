@@ -3,7 +3,14 @@
 //   exit 0  the command ran to completion
 //   exit 1  the command ran, and something needs you: `review` did not complete; `doctor` found something to fix;
 //           `sessions` found none; `hook add` printed a line for you to add; `skill add|remove` found a file it did
-//           not write; `decision` refused an answer (docs/TROUBLESHOOTING.md, Exit codes, lists each)
+//           not write; `decision` refused an answer; `connect` heard no, or `connect`, `disconnect` or `status` left a
+//           token for you to revoke or a connection that no longer works; `hook add --push` printed a line for you to
+//           add, or found the private client's push hook; `connect` or `status` found a push hook that needs you
+//           (D230: or `status`, a reminder whose entry needs you);
+//           `share` has no drawn page of this commit to put online; `fix` asked and you said no; `remind on` printed
+//           an entry for you to add, found no Claude Code folder or the private client's reminder, or `remind off`
+//           found a settings file it cannot read (docs/TROUBLESHOOTING.md, Exit codes, lists each).
+//           D225, D227 and D230: the hidden `pre-push`, `push-run`, `remind-hook` and `remind-refresh` always exit 0
 //   exit 2  usage error, or a problem Sonah names with its fix
 //   exit 3  the tool itself failed, or `skill add|remove` could not write or delete its file
 //
@@ -58,6 +65,96 @@ if (cmd === 'capture' || cmd === 'capture-outcome' || cmd === 'trailer') {
       process.stdin.on('data', () => {}).once('end', done).once('close', done).once('error', done);
     });
   } catch { /* nothing to drain */ }
+  process.exit(0);
+}
+// D225: the hidden `pre-push <remote> <url>`, which the push script that `sonah hook add --push` writes runs at each push
+// (push-hook-run.js). Files on disk call it by name, so it stays for good. It must never fail, slow or stop a push: it
+// has its own crash handler (any crash ends it with exit 0 and no word, never the exit 3 above), it ends after 5 seconds
+// whatever is slow, and it runs before --help and the update check. It writes nothing on standard output.
+if (cmd === 'pre-push') {
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  process.on('uncaughtException', () => process.exit(0));
+  process.on('unhandledRejection', () => process.exit(0));
+  process.exitCode = 0;
+  setTimeout(() => process.exit(0), 5000).unref();
+  try {
+    const { runPrePush } = await import('../src/push-hook-run.js');
+    await runPrePush(argv.slice(1));
+    // A pipe's writes are not synchronous everywhere: its lines reach git before the process ends.
+    await new Promise((done) => process.stderr.write('', done));
+  } catch { /* a push is never failed */ }
+  process.exit(0);
+}
+// D227: the hidden `push-run --repo DIR`, which `pre-push` starts detached, in a process group of its own, at low
+// priority: the background review of the pushed branches (push-run.js). Files on disk start it by name through the
+// push hook, so it stays for good. It has its own crash handler (any crash ends it with exit 0 and no word, never the
+// exit 3 above: nobody reads it), runs before --help and the update check, prints nothing, and reads no standard input
+// (what comes there is drained). Its runs say in team/runs.json and their logs how they ended; its backstop and its
+// calls' deadlines end it.
+if (cmd === 'push-run') {
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  process.on('uncaughtException', () => process.exit(0));
+  process.on('unhandledRejection', () => process.exit(0));
+  process.exitCode = 0;
+  // What comes on stdin is read and dropped as it comes, and its end awaited (2 s at most) before the exit, so a writer
+  // gets no EPIPE; the push hook gives it none.
+  let drained = Promise.resolve();
+  try {
+    if (!process.stdin.isTTY) drained = new Promise((done) => {
+      process.stdin.on('data', () => {}).once('end', done).once('close', done).once('error', done).resume();
+    });
+  } catch { /* nothing to drain */ }
+  try {
+    const { pushRunMain } = await import('../src/push-run.js');
+    await pushRunMain(argv.slice(1));
+  } catch { /* nobody reads it */ }
+  await Promise.race([drained, new Promise((done) => setTimeout(done, 2000).unref())]);
+  process.exit(0);
+}
+// D230: the hidden `remind-hook`, which the SessionStart entry of `sonah remind on` runs each time Claude Code starts or
+// resumes (remind-hook.js). Claude Code's settings call it by name, so it stays for good. It must never fail or slow
+// that start, and Claude Code shows what a hook writes: it has its own crash handler (any crash ends it with exit 0
+// and no word, never the exit 3 above), it ends after 5 seconds whatever is slow, it runs before --help and the update
+// check, and it writes nothing but its one JSON line on standard output.
+if (cmd === 'remind-hook') {
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  process.on('uncaughtException', () => process.exit(0));
+  process.on('unhandledRejection', () => process.exit(0));
+  process.exitCode = 0;
+  setTimeout(() => process.exit(0), 5000).unref();
+  try {
+    const { runRemindHook } = await import('../src/remind-hook.js');
+    await runRemindHook(argv.slice(1));
+  } catch { /* a start of Claude Code is never failed */ }
+  process.exit(0);
+}
+// D230: the hidden `remind-refresh <folder>`, which `remind-hook` starts detached, in a process group of its own, when
+// the cache of a repository of the folder is a minute old: one GET /api/fixes a repository (remind-hook.js). Files on
+// disk start it by name through the reminder, so it stays for good. It has its own crash handler (exit 0, no word:
+// nobody reads it), runs before --help and the update check, prints nothing, reads no standard input (what comes
+// there is drained), and ends after 30 seconds whatever is slow.
+if (cmd === 'remind-refresh') {
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  process.on('uncaughtException', () => process.exit(0));
+  process.on('unhandledRejection', () => process.exit(0));
+  process.exitCode = 0;
+  setTimeout(() => process.exit(0), 30_000).unref();
+  // As push-run's: what comes on stdin is read and dropped, and its end awaited (2 s at most) before the exit.
+  let drained = Promise.resolve();
+  try {
+    if (!process.stdin.isTTY) drained = new Promise((done) => {
+      process.stdin.on('data', () => {}).once('end', done).once('close', done).once('error', done).resume();
+    });
+  } catch { /* nothing to drain */ }
+  try {
+    const { runRemindRefresh } = await import('../src/remind-hook.js');
+    await runRemindRefresh(argv.slice(1));
+  } catch { /* nobody reads it */ }
+  await Promise.race([drained, new Promise((done) => setTimeout(done, 2000).unref())]);
   process.exit(0);
 }
 if (cmd === '--version' || cmd === '-v') {
@@ -126,6 +223,32 @@ if (cmd === 'review') {
   // D216: one page of a branch's change, with graphs (visual-command.js); never checks for updates.
   const { runVisualCommand } = await import('../src/visual-command.js');
   process.exitCode = await runVisualCommand(argv.slice(1));
+} else if (cmd === 'connect' || cmd === 'disconnect' || cmd === 'status') {
+  // D224: this computer's connection to a Sonah Team server (connect-command.js); never checks for updates.
+  const team = await import('../src/connect-command.js');
+  const run = { connect: team.runConnectCommand, disconnect: team.runDisconnectCommand,
+    status: team.runStatusCommand }[cmd];
+  process.exitCode = await run(argv.slice(1));
+} else if (cmd === 'share') {
+  // D228: a page Sonah already drew here put on the connected Sonah Team server (share-command.js); it reaches that
+  // server and no other, and never checks for updates.
+  const { runShareCommand } = await import('../src/share-command.js');
+  process.exitCode = await runShareCommand(argv.slice(1));
+} else if (cmd === 'fixes') {
+  // D229: the comments of your teammates that wait for you, from the connected server (fix-command.js); never checks
+  // for updates.
+  const { runFixesCommand } = await import('../src/fix-command.js');
+  process.exitCode = await runFixesCommand(argv.slice(1));
+} else if (cmd === 'fix') {
+  // D229: Claude Code started on one comment, in this terminal (fix-command.js). It shows the prompt and asks first,
+  // and it never checks for updates: its output is the prompt that you read before you answer.
+  const { runFixCommand } = await import('../src/fix-command.js');
+  process.exitCode = await runFixCommand(argv.slice(1));
+} else if (cmd === 'remind') {
+  // D230: the Claude Code start reminder, one SessionStart entry in Claude Code's settings (remind.js); never checks
+  // for updates.
+  const { runRemindCommand } = await import('../src/remind.js');
+  process.exitCode = await runRemindCommand(argv.slice(1));
 } else if (cmd === 'feedback') {
   const { feedbackBundle } = await import('../src/feedback.js');
   const r = await feedbackBundle({ version: await versionText() });
@@ -185,12 +308,29 @@ function usage() {
       'Node, sign-in, one model check, session locations'),
     row('sonah hook add [--repo DIR]', 'Claude Code\'s commits get an Agent-Session line'),
     row('sonah hook remove [--repo DIR]', 'remove that hook (lines in history stay)'),
+    // D225: the push hook of one repository.
+    row('sonah hook add --push [--repo DIR]', 'review each push in the background, on Sonah Team'),
+    row('sonah hook remove --push [--repo DIR]', 'remove the push hook'),
     row('sonah skill add', 'add /sonah to Claude Code, to review a session'),
     row('sonah skill remove', 'remove the skill that sonah skill add wrote'),
     row('sonah config', 'show your settings'),
     row('sonah config code-pass off', 'turn the code step off (on turns it on)'),
     row('sonah config update-check off', 'turn the update check off (on turns it on)'),
     row('sonah visual [BASE..HEAD]', 'draw a page of a branch\'s change, with graphs'),
+    // D224: the connection to a Sonah Team server.
+    row('sonah connect <code> [--server URL] [--hook|--no-hook]', 'connect this computer to Sonah Team with a code'),
+    row('sonah connect --token [--server URL] [--hook|--no-hook]', 'the same, with a token on standard input'),
+    row('sonah disconnect', 'revoke the token and delete the connection'),
+    // D227: and the reviews of pushes, with --json and --all.
+    row('sonah status [--json] [--all]', 'the connection, push hooks and reviews of pushes'),
+    // D228: a page drawn here put on Sonah Team, with no push.
+    row('sonah share [--dir DIR] [--branch NAME] [--repo DIR]', 'put a page Sonah drew here on Sonah Team'),
+    // D229: the comments that wait for you, and Claude Code started on one.
+    row('sonah fixes [--repo DIR] [--json]', 'the comments of your team that wait for you'),
+    row(['sonah fix <comment id> [--repo DIR]', '[--config-dir DIR] [--new]'],
+      'start Claude Code on one comment here'),
+    // D230: the Claude Code start reminder.
+    row('sonah remind on|off', 'Claude Code shows those comments when it starts'),
     row('sonah feedback', 'setup facts and recording counts; no session text'),
     row('sonah slice <session.jsonl>', 'print the parsed recording as JSON, for debugging'),
     '',

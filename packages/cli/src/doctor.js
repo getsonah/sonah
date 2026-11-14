@@ -15,6 +15,8 @@ import { EFFORT_PROBLEMS } from '../../evidence/src/ledger.js';
 import { PROBE_REQUEST, probeOutcome } from './review-probe.js';
 import { CODE_PASS_DEFAULT, codePassSettingLine, readSettings, settingsPath } from './settings.js';
 import { commitLinkFacts, commitLinkStatus } from './agent-session-hook.js';
+import { pushHookReport } from './push-hook.js';
+import { readConnection } from './team-home.js';
 import { skillDoctorLines } from './skill.js';
 import { UPDATE_NOTICE_WORDS } from './update-check.js';
 
@@ -214,6 +216,13 @@ export async function commitLinkLine({ cwd = process.cwd(), git } = {}) {
   } catch { return null; }
 }
 
+/** D225: the push hook of each repository on Sonah's list (push-hook.js `pushHookReport`), from its files and the saved
+ *  connection alone (no network), or null when the list names none: doctor then prints no line for it. */
+export async function pushHookLines({ env = process.env, home = env.HOME ?? homedir() } = {}) {
+  const saved = await readConnection({ env, home });
+  return pushHookReport({ env, home, connection: saved.state === 'ok' ? saved.connection : null });
+}
+
 /** One explicit doctor invocation. With --no-probe, no model is created. Injected boundaries
  * let synthetic tests check every failure without using the user's providers or settings. D171: `updateNotice`, the
  * CLI's update check (update-check.js `updateCheckWhenAsked`), started once the options are read, gives `{ installed,
@@ -222,7 +231,7 @@ export async function commitLinkLine({ cwd = process.cwd(), git } = {}) {
 export async function doctor(options = {}, { env = process.env, home = env.HOME ?? homedir(),
   nodeVersion = process.versions.node, runCli = execute, createJudge = createReviewJudge,
   adapters = detectAdapters, onProbe = () => {}, commitLink = commitLinkLine, cwd = process.cwd(),
-  updateNotice = async () => null } = {}) {
+  pushHooks = pushHookLines, updateNotice = async () => null } = {}) {
   const selected = parseDoctorArgs([
     ...('probe' in options && !options.probe ? ['--no-probe'] : []),
     ...['backend', 'model', 'effort'].flatMap((key) => options[key] === undefined ? [] : [`--${key}`, options[key]]),
@@ -367,6 +376,13 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
     lines.push(link.line);
     if (link.attention) attention.push('commit_link');
   }
+  // D225: the push hook of each repository on Sonah's list. It needs the person when git does not run a hook, or the
+  // node or the Sonah it names is gone or is not this install, or it is for another server than the connection's.
+  const hooks = await pushHooks({ env, home });
+  if (hooks) {
+    lines.push(...hooks.lines);
+    if (hooks.attention) attention.push('push_hook');
+  }
   // D171 (the owner, 2026-10-28): a newer Sonah is said in one line, before the last; it never needs attention, since
   // this Sonah still runs.
   const newer = await newerAnswer;
@@ -375,6 +391,7 @@ export async function doctor(options = {}, { env = process.env, home = env.HOME 
   return { healthy: attention.length === 0, attention, text: lines.join('\n'), facts: { node, claude, auth,
     login: login.fact, agentOptions, safeMode, codex, model, adapters: found, settings,
     commitLink: link ? { state: link.state, route: link.route } : null,
+    pushHooks: hooks ? hooks.repos : null,
     newer: newer ? { installed: newer.installed, latest: newer.latest } : null } };
 }
 
